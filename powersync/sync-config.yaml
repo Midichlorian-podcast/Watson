@@ -1,4 +1,6 @@
 # Sync rules — co si klient stáhne.
+# ⚠️ POZN.: po ZMĚNĚ těchto pravidel (přidání sloupce/tabulky) MUSÍŠ restartovat PowerSync
+#    službu, jinak klient jede dle starých pravidel: `docker restart watson-powersync`.
 # R5 — scoping podle členství v projektu: klient dostane jen úkoly projektů,
 # jichž je členem (parameter query čte user_id z JWT `sub`).
 bucket_definitions:

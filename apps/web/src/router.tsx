@@ -1,15 +1,19 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import type { IconName } from "@watson/ui";
 import { AppLayout } from "./layout/AppLayout";
+import { Nadchazejici } from "./screens/Nadchazejici";
 import { Placeholder } from "./screens/Placeholder";
 import { Today } from "./screens/Today";
+import { Ukoly } from "./screens/Ukoly";
 
 const rootRoute = createRootRoute({ component: AppLayout });
 
-const indexRoute = createRoute({
+const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", component: Today });
+const ukolyRoute = createRoute({ getParentRoute: () => rootRoute, path: "/ukoly", component: Ukoly });
+const nadchRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/",
-  component: Today,
+  path: "/nadchazejici",
+  component: Nadchazejici,
 });
 
 /** Dočasné routy pro nav cíle (nahradí je reálné obrazovky v dalších úkolech). */
@@ -23,8 +27,6 @@ const stub = (path: string, labelKey: string, icon: IconName) =>
 const stubRoutes = [
   stub("/hledat", "nav.search", "hledat"),
   stub("/schranka", "nav.inbox", "schranka"),
-  stub("/nadchazejici", "nav.upcoming", "nadchazejici"),
-  stub("/ukoly", "nav.tasks", "ukoly"),
   stub("/projekty", "nav.projects", "projekty"),
   stub("/cile", "nav.goals", "cile"),
   stub("/reporty", "nav.reports", "reporty"),
@@ -34,7 +36,7 @@ const stubRoutes = [
   stub("/nastaveni", "nav.settings", "nastaveni"),
 ];
 
-const routeTree = rootRoute.addChildren([indexRoute, ...stubRoutes]);
+const routeTree = rootRoute.addChildren([indexRoute, ukolyRoute, nadchRoute, ...stubRoutes]);
 
 export const router = createRouter({ routeTree });
 
