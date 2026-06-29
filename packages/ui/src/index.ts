@@ -1,4 +1,6 @@
 export { cn } from "./cn";
+export { Icon, ICONS } from "./Icon";
+export type { IconName } from "./Icon";
 export { PriorityBadge } from "./PriorityBadge";
 export { Avatar, AvatarGroup } from "./Avatar";
 export { Chip, StatusChip } from "./Chip";

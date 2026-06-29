@@ -4,11 +4,31 @@
     "tagline": "Drží tvou práci pohromadě a ukáže, co řešit."
   },
   "nav": {
+    "search": "Hledat",
+    "inbox": "Schránka",
     "today": "Dnes",
+    "upcoming": "Nadcházející",
     "tasks": "Úkoly",
     "board": "Board",
     "calendar": "Kalendář",
-    "inbox": "Doručené"
+    "projects": "Projekty",
+    "goals": "Cíle",
+    "reports": "Reporty",
+    "flows": "Postupy",
+    "settings": "Nastavení",
+    "favorites": "Oblíbené",
+    "priority1": "Priorita 1",
+    "assignedToMe": "Přiřazeno mně",
+    "workspaces": "Pracovní prostory"
+  },
+  "shell": {
+    "newTask": "Úkol",
+    "search": "Hledat",
+    "notifications": "Oznámení",
+    "theme": "Přepnout motiv",
+    "assistant": "Watson",
+    "collapse": "Sbalit panel",
+    "soon": "Připravujeme"
   },
   "today": {
     "heading": "Co dnes řešit",
@@ -29,6 +49,7 @@
   "common": {
     "save": "Uložit",
     "cancel": "Zrušit",
-    "done": "Hotovo"
+    "done": "Hotovo",
+    "signOut": "Odhlásit"
   }
 }

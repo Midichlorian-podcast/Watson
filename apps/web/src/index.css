@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "@watson/ui/tokens.css";
 
+/* Ať Tailwind generuje utility i z komponent v packages/ui */
+@source "../../../packages/ui/src";
+
 /* Mapování brand tokenů do Tailwind v4 témata (utility jako bg-paper, text-navy...). */
 @theme {
   --color-navy: var(--w-navy);

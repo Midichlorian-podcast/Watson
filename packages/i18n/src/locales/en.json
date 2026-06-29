@@ -4,11 +4,31 @@
     "tagline": "Keeps your work together and shows what matters."
   },
   "nav": {
+    "search": "Search",
+    "inbox": "Inbox",
     "today": "Today",
+    "upcoming": "Upcoming",
     "tasks": "Tasks",
     "board": "Board",
     "calendar": "Calendar",
-    "inbox": "Inbox"
+    "projects": "Projects",
+    "goals": "Goals",
+    "reports": "Reports",
+    "flows": "Flows",
+    "settings": "Settings",
+    "favorites": "Favorites",
+    "priority1": "Priority 1",
+    "assignedToMe": "Assigned to me",
+    "workspaces": "Workspaces"
+  },
+  "shell": {
+    "newTask": "Task",
+    "search": "Search",
+    "notifications": "Notifications",
+    "theme": "Toggle theme",
+    "assistant": "Watson",
+    "collapse": "Collapse panel",
+    "soon": "Coming soon"
   },
   "today": {
     "heading": "What to handle today",
@@ -29,6 +49,7 @@
   "common": {
     "save": "Save",
     "cancel": "Cancel",
-    "done": "Done"
+    "done": "Done",
+    "signOut": "Sign out"
   }
 }
