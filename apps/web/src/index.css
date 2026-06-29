@@ -15,6 +15,16 @@
   --color-line: var(--w-line);
   --color-success: var(--w-success);
   --color-overdue: var(--w-overdue);
+  --color-panel-2: var(--w-panel-2);
+  --color-sidebar: var(--w-sidebar);
+  --color-sidebar-ink: var(--w-sidebar-ink);
+  --color-brass-soft: var(--w-brass-soft);
+  --color-success-soft: var(--w-success-soft);
+  --color-overdue-soft: var(--w-overdue-soft);
+  --color-p1: var(--w-p1);
+  --color-p2: var(--w-p2);
+  --color-p3: var(--w-p3);
+  --color-p4: var(--w-p4);
 
   --font-display: var(--w-font-display);
   --font-body: var(--w-font-body);

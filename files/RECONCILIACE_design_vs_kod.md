@@ -14,6 +14,20 @@
 
 ---
 
+## ✅ ROZHODNUTO (2026-06-29)
+- **Governance:** **Claude Design handoff je zdroj pravdy.** Kde se liší od starších rozhodnutí
+  (spec/invarianty), **vyhrává handoff** a propisuje se do kódu i specu. → appka má jednu hlavu.
+- **K1 (barva vs priorita): design vyhrává.** Levý okraj karty = priorita (P1 červená / P2 žlutá /
+  P3 modrá / P4 šedá). Tělo karty = výchozí barva projektu **nebo** per-uživatelská barva úkolu
+  (týž úkol může každý vidět jinak barevný). Nebarevný odznak P1–P4 smí zůstat jako doplněk.
+  R6 v původní podobě nahrazeno. Plné pravidlo: `design/handoff_watson/README.md`.
+- **K2 (role):** sjednoceno na **Vlastník / Admin / Člen / Host** (design) + app-level **super-admin**
+  (mail/admin vrstva). Duplicitní „manager" z kódu splyne s Admin.
+- **K3 (localStorage):** efemérní UI stav lokálně OK; trvalé per-uživatel preference přes sync.
+- **K4 (Schránka):** „Schránka" = úkolový inbox (design); mailová sekce dostane jiný název.
+- **Pořadí stavby (uživatel):** teď postavit hotový design (MVP) + rozjet mailovou část, pak
+  systematicky přidávat. Design lock proveden (tokeny → `packages/ui/src/tokens.css`).
+
 ## 0. TL;DR — co z toho plyne
 1. **Design je z velké části hotová MVP+v2 vize** — ale 3 velké bloky (Postupy, Cíle, Reporty) jsou
    **v2**. Nesmí spadnout do MVP (riziko S4). Mapování fází viz §2.
