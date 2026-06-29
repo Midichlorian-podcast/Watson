@@ -33,7 +33,16 @@
   "today": {
     "heading": "What to handle today",
     "overdue": "Overdue",
-    "empty": "Nothing for today. Enjoy the calm."
+    "empty": "Nothing for today. Enjoy the calm.",
+    "morning": "Good morning",
+    "afternoon": "Good afternoon",
+    "evening": "Good evening",
+    "summaryToday": "{{count}} for today",
+    "summaryOverdue": "{{count}} overdue",
+    "addPlaceholder": "Add task…",
+    "add": "Add",
+    "doneSection": "Done",
+    "duePast": "Overdue"
   },
   "priority": {
     "acute": "Acute",

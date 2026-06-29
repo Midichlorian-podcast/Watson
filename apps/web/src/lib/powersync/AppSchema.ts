@@ -10,6 +10,8 @@ const tasks = new Table(
     project_id: column.text,
     name: column.text,
     priority: column.integer,
+    color: column.text,
+    due_date: column.text,
     completed_at: column.text,
     created_at: column.text,
   },

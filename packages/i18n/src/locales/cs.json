@@ -33,7 +33,16 @@
   "today": {
     "heading": "Co dnes řešit",
     "overdue": "Zpožděné",
-    "empty": "Na dnešek nemáš nic. Hezký klid."
+    "empty": "Na dnešek nemáš nic. Hezký klid.",
+    "morning": "Dobré ráno",
+    "afternoon": "Dobré odpoledne",
+    "evening": "Dobrý večer",
+    "summaryToday": "{{count}} na dnes",
+    "summaryOverdue": "{{count}} po termínu",
+    "addPlaceholder": "Přidat úkol…",
+    "add": "Přidat",
+    "doneSection": "Hotovo",
+    "duePast": "Po termínu"
   },
   "priority": {
     "acute": "Akutní",

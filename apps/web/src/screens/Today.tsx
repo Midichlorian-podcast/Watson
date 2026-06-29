@@ -1,19 +1,38 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
-import { PriorityBadge } from "@watson/ui";
+import { Button, Icon, TaskCard } from "@watson/ui";
 import { API_URL } from "../lib/api";
+import { useSession } from "../lib/auth-client";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 
 type Project = { id: string; name: string };
+type Pri = 1 | 2 | 3 | 4;
 
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const dayOf = (x: TaskRow) => (x.due_date ? x.due_date.slice(0, 10) : null);
+
+function dueInfo(due: string | null) {
+  if (!due) return null;
+  const d = due.slice(0, 10);
+  const tdy = todayISO();
+  return { day: d, overdue: d < tdy, isToday: d === tdy };
+}
+
+/**
+ * Dnes (dashboard) dle Claude Design: Watson pruh + quick-add + ODDĚLENÁ sekce
+ * „Zpožděné" (MASTER §11, nemíchat s dnešními) + dnešní úkoly + hotovo.
+ */
 export function Today() {
   const { t } = useTranslation();
+  const { data: session } = useSession();
   const [text, setText] = useState("");
+  const [due, setDue] = useState("");
+  const [openOverdue, setOpenOverdue] = useState(true);
+  const [openDone, setOpenDone] = useState(false);
 
-  // Projekty uživatele (kvůli platnému project_id) — ze serveru.
   const { data: projects } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => {
@@ -24,19 +43,36 @@ export function Today() {
   });
   const inboxId = projects?.[0]?.id;
 
-  // Úkoly z LOKÁLNÍ PowerSync DB (reaktivní, offline-first).
   const { data: tasks } = usePsQuery<TaskRow>(
-    "SELECT * FROM tasks ORDER BY completed_at IS NOT NULL, created_at DESC",
+    "SELECT * FROM tasks ORDER BY due_date IS NULL, due_date, created_at DESC",
   );
 
-  async function addTask(e: React.FormEvent) {
+  const g = useMemo(() => {
+    const tdy = todayISO();
+    const all = tasks ?? [];
+    const open = all.filter((x) => !x.completed_at);
+    return {
+      overdue: open.filter((x) => {
+        const d = dayOf(x);
+        return d !== null && d < tdy;
+      }),
+      today: open.filter((x) => {
+        const d = dayOf(x);
+        return d === null || d === tdy;
+      }),
+      done: all.filter((x) => x.completed_at),
+    };
+  }, [tasks]);
+
+  async function addTask(e: FormEvent) {
     e.preventDefault();
     if (!text.trim() || !inboxId) return;
     await powerSync.execute(
-      "INSERT INTO tasks (id, project_id, name, priority, created_at) VALUES (uuid(), ?, ?, 4, ?)",
-      [inboxId, text.trim(), new Date().toISOString()],
+      "INSERT INTO tasks (id, project_id, name, priority, due_date, created_at) VALUES (uuid(), ?, ?, 4, ?, ?)",
+      [inboxId, text.trim(), due || null, new Date().toISOString()],
     );
     setText("");
+    setDue("");
   }
 
   async function toggle(task: TaskRow) {
@@ -46,68 +82,134 @@ export function Today() {
     ]);
   }
 
-  return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
-      <p className="font-display text-xs font-bold uppercase tracking-[0.18em] text-brass-text">
-        {t("nav.today")}
-      </p>
-      <h1 className="mt-1 font-display text-3xl font-extrabold tracking-tight text-navy">
-        {t("today.heading")}
-      </h1>
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 11 ? t("today.morning") : hour < 18 ? t("today.afternoon") : t("today.evening");
+  const firstName = session?.user?.name?.split(" ")[0] ?? "";
 
+  const card = (task: TaskRow) => {
+    const di = dueInfo(task.due_date);
+    const due = di
+      ? {
+          label: di.overdue
+            ? `${t("today.duePast")} · ${di.day}`
+            : di.isToday
+              ? t("nav.today")
+              : di.day,
+          overdue: di.overdue,
+        }
+      : undefined;
+    return (
+      <li key={task.id}>
+        <TaskCard
+          name={task.name ?? ""}
+          priority={(task.priority ?? 4) as Pri}
+          color={task.color ?? undefined}
+          due={due}
+          done={Boolean(task.completed_at)}
+          onToggle={() => toggle(task)}
+        />
+      </li>
+    );
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl px-5 py-7">
+      {/* Watson pruh */}
+      <div
+        className="flex items-center gap-3 rounded-2xl border border-line bg-card px-4 py-3"
+        style={{ boxShadow: "var(--w-shadow-sm)" }}
+      >
+        <span
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl"
+          style={{ background: "var(--w-brass)", color: "var(--w-navy)" }}
+        >
+          <Icon name="dnes" size={20} />
+        </span>
+        <div className="min-w-0">
+          <p className="font-display text-sm font-semibold text-navy">
+            {greeting}
+            {firstName ? `, ${firstName}` : ""}.
+          </p>
+          <p className="text-xs text-ink-2">
+            {t("today.summaryToday", { count: g.today.length })}
+            {g.overdue.length > 0
+              ? ` · ${t("today.summaryOverdue", { count: g.overdue.length })}`
+              : ""}
+          </p>
+        </div>
+      </div>
+
+      {/* Quick add (termín volitelně; parser přijde v #7) */}
       <form onSubmit={addTask} className="mt-5 flex gap-2">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Přidat úkol…"
-          className="flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm"
+          placeholder={t("today.addPlaceholder")}
+          className="min-w-0 flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm outline-none focus:border-brass"
         />
-        <button
-          type="submit"
-          disabled={!inboxId}
-          className="rounded-lg bg-navy px-4 font-display text-sm font-semibold text-white disabled:opacity-50"
-        >
-          Přidat
-        </button>
+        <input
+          type="date"
+          value={due}
+          onChange={(e) => setDue(e.target.value)}
+          aria-label={t("today.add")}
+          className="rounded-lg border border-line bg-card px-2 py-2 font-mono text-xs text-ink-2 outline-none focus:border-brass"
+        />
+        <Button type="submit" disabled={!inboxId}>
+          {t("today.add")}
+        </Button>
       </form>
 
-      <ul className="mt-6 flex flex-col gap-2">
-        {(tasks ?? []).map((task) => {
-          const done = Boolean(task.completed_at);
-          return (
-            <li
-              key={task.id}
-              className="flex items-center gap-3 rounded-xl border border-line bg-card px-4 py-3"
-              style={{ boxShadow: "var(--w-shadow)" }}
-            >
-              <button
-                type="button"
-                onClick={() => toggle(task)}
-                aria-label={done ? "Označit jako nehotové" : "Dokončit"}
-                className="grid h-5 w-5 place-items-center rounded-full border"
-                style={{
-                  borderColor: done ? "var(--w-success)" : "var(--w-line)",
-                  background: done ? "var(--w-success)" : "transparent",
-                  color: "#fff",
-                }}
-              >
-                {done ? "✓" : ""}
-              </button>
-              <span
-                className={`flex-1 text-sm ${done ? "text-ink-3 line-through" : "text-ink"}`}
-              >
-                {task.name}
-              </span>
-              <PriorityBadge priority={(task.priority ?? 4) as 1 | 2 | 3 | 4} />
+      {/* Zpožděné — VLASTNÍ oddělená sekce (MASTER §11) */}
+      {g.overdue.length > 0 && (
+        <section className="mt-7">
+          <button
+            type="button"
+            onClick={() => setOpenOverdue((s) => !s)}
+            className="flex w-full items-center gap-2"
+          >
+            <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-overdue">
+              {t("today.overdue")}
+            </span>
+            <span className="font-mono text-xs text-ink-3">{g.overdue.length}</span>
+            <span className="ml-auto text-ink-3">{openOverdue ? "▾" : "▸"}</span>
+          </button>
+          {openOverdue && <ul className="mt-3 flex flex-col gap-2">{g.overdue.map(card)}</ul>}
+        </section>
+      )}
+
+      {/* Dnešní úkoly */}
+      <section className="mt-7">
+        <h2 className="font-display text-xs font-bold uppercase tracking-[0.18em] text-brass-text">
+          {t("today.heading")}
+        </h2>
+        <ul className="mt-3 flex flex-col gap-2">
+          {g.today.map(card)}
+          {g.today.length === 0 && (
+            <li className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-ink-3">
+              {t("today.empty")}
             </li>
-          );
-        })}
-        {tasks && tasks.length === 0 && (
-          <li className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-ink-3">
-            {t("today.empty")}
-          </li>
-        )}
-      </ul>
+          )}
+        </ul>
+      </section>
+
+      {/* Hotovo */}
+      {g.done.length > 0 && (
+        <section className="mt-7">
+          <button
+            type="button"
+            onClick={() => setOpenDone((s) => !s)}
+            className="flex w-full items-center gap-2"
+          >
+            <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-3">
+              {t("today.doneSection")}
+            </span>
+            <span className="font-mono text-xs text-ink-3">{g.done.length}</span>
+            <span className="ml-auto text-ink-3">{openDone ? "▾" : "▸"}</span>
+          </button>
+          {openDone && <ul className="mt-3 flex flex-col gap-2">{g.done.map(card)}</ul>}
+        </section>
+      )}
     </div>
   );
 }

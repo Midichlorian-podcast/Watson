@@ -121,16 +121,20 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
   // Zápis přes parametrizované raw SQL — obchází mapování typů drizzle a plně řídí
   // timestamp/null (postgres-js cast ISO string / NULL → timestamptz).
   const completed = (data.completed_at as string | undefined) ?? null;
+  const color = (data.color as string | undefined) ?? null;
+  const due = (data.due_date as string | undefined) ?? null;
 
   try {
     if (body.op === "PUT") {
       await db.execute(sql`
-        INSERT INTO tasks (id, project_id, name, priority, created_by, completed_at)
+        INSERT INTO tasks (id, project_id, name, priority, color, due_date, created_by, completed_at)
         VALUES (${body.id}, ${projectId}, ${(data.name as string) ?? ""},
-                ${(data.priority as number) ?? 4}, ${userId}, ${completed})
+                ${(data.priority as number) ?? 4}, ${color}, ${due}, ${userId}, ${completed})
         ON CONFLICT (id) DO UPDATE
           SET name = EXCLUDED.name,
               priority = EXCLUDED.priority,
+              color = EXCLUDED.color,
+              due_date = EXCLUDED.due_date,
               completed_at = EXCLUDED.completed_at,
               updated_at = now()
       `);
@@ -139,6 +143,8 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
         UPDATE tasks SET
           name = COALESCE(${(data.name as string) ?? null}, name),
           priority = COALESCE(${(data.priority as number) ?? null}, priority),
+          color = ${"color" in data ? color : sql`color`},
+          due_date = ${"due_date" in data ? due : sql`due_date`},
           completed_at = ${"completed_at" in data ? completed : sql`completed_at`},
           updated_at = now()
         WHERE id = ${body.id}
