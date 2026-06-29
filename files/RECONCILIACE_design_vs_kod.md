@@ -27,6 +27,8 @@
 - **K4 (Schránka):** „Schránka" = úkolový inbox (design); mailová sekce dostane jiný název.
 - **Pořadí stavby (uživatel):** teď postavit hotový design (MVP) + rozjet mailovou část, pak
   systematicky přidávat. Design lock proveden (tokeny → `packages/ui/src/tokens.css`).
+- **Logika prototypu vytažena** do `files/logika/` (parser, opakování/výskyty, postupy/cíle/projekty,
+  shell/stav/zkratky — 95/97 metod, implementační detail + odhalené produkční opravy). Závazná spec.
 
 ## 0. TL;DR — co z toho plyne
 1. **Design je z velké části hotová MVP+v2 vize** — ale 3 velké bloky (Postupy, Cíle, Reporty) jsou

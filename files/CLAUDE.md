@@ -2,7 +2,7 @@
 
 > Vstupní instrukce pro Claude Code. Čti první. Sváže celou specifikaci, datový model, AI pravidla, identitu a postup stavby. **Obsahuje finální opravy po auditu (sekce „Revize").**
 >
-> **⚑ Zdroj pravdy produktu/designu = Claude Design handoff (`design/handoff_watson/`).** Kde se liší od starších rozhodnutí v tomto dokumentu, **platí handoff** (rozhodnuto uživatelem 2026-06-29). Srovnání rozdílů + fázování: `files/RECONCILIACE_design_vs_kod.md`.
+> **⚑ Zdroj pravdy produktu/designu = Claude Design handoff (`design/handoff_watson/`).** Kde se liší od starších rozhodnutí v tomto dokumentu, **platí handoff** (rozhodnuto uživatelem 2026-06-29). Srovnání rozdílů + fázování: `files/RECONCILIACE_design_vs_kod.md`. **Detailní logika prototypu** (parser, opakování/výskyty, postupy, stav, datový model úkolu): `files/logika/` — závazná pro implementaci.
 
 ## Co stavíš
 **Watson** — vlastní, **offline-first**, real-time **týmový nástroj** (úkoly + projekty + kalendář + spolupráce + AI asistent), **obecný jako Todoist** (uživatel si sám tvoří týmy/workspaces a projekty). Pro **telefon, tablet i počítač** (PWA + Tauri desktop; nativní mobil až v3). Jazyky **CZ + EN** od začátku. Persona produktu i AI: **bystrý, diskrétní, vřelý asistent** („tvůj Watson").
