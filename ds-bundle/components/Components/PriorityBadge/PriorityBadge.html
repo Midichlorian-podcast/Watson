@@ -1,0 +1,26 @@
+<!-- @dsCard group="Components" name="Priority badge" subtitle="P1–P4 · nebarevný odznak (R6)" -->
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../../../styles.css">
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
+  .stack { display: flex; flex-direction: column; gap: 16px; align-items: center; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .cap { font-family: var(--w-font-display); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--w-ink-3); }
+</style>
+</head>
+<body>
+  <div class="stack">
+    <div class="cap">Priorita — nebarevný odznak (barva ≠ priorita)</div>
+    <div class="row">
+      <span class="w-priority-badge" data-priority="1" aria-label="Priorita P1">P1</span>
+      <span class="w-priority-badge" data-priority="2" aria-label="Priorita P2">P2</span>
+      <span class="w-priority-badge" data-priority="3" aria-label="Priorita P3">P3</span>
+      <span class="w-priority-badge" data-priority="4" aria-label="Priorita P4">P4</span>
+    </div>
+  </div>
+</body>
+</html>

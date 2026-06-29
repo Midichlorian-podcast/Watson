@@ -1,0 +1,164 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watson — vizuální identita</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#16161A; --ink-2:#55554F; --ink-3:#8C8A82;
+    --navy:#17283F; --navy-2:#24395A; --brass:#C68A3E; --brass-2:#A8722E;
+    --paper:#F5F4F0; --card:#FFFFFF; --line:#E7E5DF;
+    --green:#2E9C6E; --red:#C2473C;
+    --fd:"Montserrat", ui-sans-serif, system-ui, sans-serif;
+    --body:"Inter", ui-sans-serif, system-ui, sans-serif;
+    --shadow:0 1px 2px rgba(20,20,30,.04), 0 12px 32px rgba(23,40,63,.08);
+    --radius:16px;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);line-height:1.55;
+    background-image:radial-gradient(circle at 1px 1px, rgba(23,40,63,.04) 1px, transparent 0);background-size:24px 24px;}
+  .wrap{max-width:960px;margin:0 auto;padding:36px 18px 90px}
+  .eyebrow{font-family:var(--fd);font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--brass-2)}
+  h1{font-family:var(--fd);font-size:clamp(30px,7vw,52px);line-height:1;letter-spacing:-.03em;margin:.3em 0 .15em;font-weight:800;color:var(--navy)}
+  .sub{color:var(--ink-2);max-width:60ch;font-size:15.5px}
+  h2{font-family:var(--fd);font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--navy);margin:40px 2px 16px;display:flex;align-items:center;gap:12px}
+  h2::after{content:"";flex:1;height:1px;background:var(--line)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+
+  /* logo lockup */
+  .lockup{display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding:26px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .iconwrap{display:flex;gap:14px;align-items:center}
+  .word{font-family:var(--fd);font-weight:800;font-size:46px;letter-spacing:-.03em;color:var(--navy);line-height:1}
+  .word .dot{color:var(--brass)}
+  .variant{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px}
+  .chip-ico{display:flex;flex-direction:column;align-items:center;gap:7px;font-family:var(--fd);font-size:10px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em}
+
+  /* palette */
+  .pal{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+  .sw{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+  .sw .col{height:64px}
+  .sw .meta{padding:8px 10px}
+  .sw .nm{font-family:var(--fd);font-weight:700;font-size:12.5px}
+  .sw .hx{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--ink-3)}
+
+  /* type */
+  .type{padding:22px;display:flex;flex-direction:column;gap:14px}
+  .type .row{border-bottom:1px solid var(--line);padding-bottom:12px}
+  .type .row:last-child{border:0;padding:0}
+  .lab{font-family:var(--fd);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+  .d1{font-family:var(--fd);font-weight:800;font-size:30px;letter-spacing:-.02em;color:var(--navy)}
+  .d2{font-family:var(--fd);font-weight:600;font-size:18px}
+  .b1{font-family:var(--body);font-size:15px;color:var(--ink-2)}
+  .m1{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;color:var(--navy)}
+
+  /* ui feel: task card */
+  .demo{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+  .tcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+  .tcard .top{display:flex;align-items:center;gap:8px}
+  .pdot{width:9px;height:9px;border-radius:50%;flex:none}
+  .tname{font-family:var(--fd);font-weight:700;font-size:14px}
+  .meta2{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .pillx{font-family:var(--fd);font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .pillx.status{background:#EAF6F0;color:#1c7a52}
+  .pillx.date{background:#FBEDEA;color:#a23a30}
+  .av{width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;font-family:var(--fd);font-weight:700;font-size:10px;display:flex;align-items:center;justify-content:center;margin-left:auto}
+  .av.b{background:var(--brass)}
+
+  /* voice */
+  .voice{display:flex;flex-direction:column;gap:10px;padding:20px}
+  .bub{max-width:75%;padding:11px 14px;border-radius:14px;font-size:14px;line-height:1.5}
+  .bub.w{align-self:flex-start;background:var(--navy);color:#fff;border-bottom-left-radius:5px}
+  .bub.w b{color:#F3C98A}
+  .bub.u{align-self:flex-end;background:#fff;border:1px solid var(--line);border-bottom-right-radius:5px;color:var(--ink)}
+  .vlabel{font-family:var(--fd);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);align-self:flex-start}
+  .principles{padding:0 20px 20px;font-size:13.5px;color:var(--ink-2)}
+  .principles b{color:var(--navy)}
+
+  .closing{margin-top:36px;background:var(--navy);color:#fff;border-radius:var(--radius);padding:22px 24px}
+  .closing h3{font-family:var(--fd);margin:0 0 6px;font-size:16px;font-weight:800}
+  .closing p{margin:0;font-size:14px;color:#cdd6e2}
+  .closing b{color:#F3C98A}
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Vizuální identita</div>
+  <h1>Watson</h1>
+  <p class="sub">Bystrý, diskrétní a vřelý asistent, který drží tvou práci pohromadě a ukáže, co řešit. Tón: klidný profesionál s lidskou jiskrou.</p>
+
+  <h2>Logo &amp; ikona</h2>
+  <div class="lockup">
+    <div class="iconwrap">
+      <!-- app icon -->
+      <svg width="76" height="76" viewBox="0 0 76 76" aria-label="Watson ikona">
+        <rect x="2" y="2" width="72" height="72" rx="18" fill="#17283F"/>
+        <text x="38" y="52" text-anchor="middle" font-family="Montserrat, sans-serif" font-weight="800" font-size="44" fill="#FFFFFF" letter-spacing="-1">W</text>
+        <circle cx="57" cy="55" r="5.5" fill="#C68A3E"/>
+      </svg>
+      <div class="word">Watson<span class="dot">.</span></div>
+    </div>
+    <div style="margin-left:auto;max-width:30ch;font-size:13px;color:var(--ink-2)">Monogram <b>W</b> v ukotvené dlaždici + brassová „tečka přítomnosti" (Watson je vždy po ruce). Wordmark v Montserrat 800.</div>
+  </div>
+  <div class="variant">
+    <div class="chip-ico"><svg width="48" height="48" viewBox="0 0 76 76"><rect width="76" height="76" rx="18" fill="#17283F"/><text x="38" y="52" text-anchor="middle" font-family="Montserrat" font-weight="800" font-size="44" fill="#fff">W</text><circle cx="57" cy="55" r="5.5" fill="#C68A3E"/></svg>Ikona tmavá</div>
+    <div class="chip-ico"><svg width="48" height="48" viewBox="0 0 76 76"><rect width="76" height="76" rx="18" fill="#C68A3E"/><text x="38" y="52" text-anchor="middle" font-family="Montserrat" font-weight="800" font-size="44" fill="#17283F">W</text></svg>Ikona brass</div>
+    <div class="chip-ico"><svg width="48" height="48" viewBox="0 0 76 76"><rect width="76" height="76" rx="18" fill="#F5F4F0" stroke="#E7E5DF"/><text x="38" y="52" text-anchor="middle" font-family="Montserrat" font-weight="800" font-size="44" fill="#17283F">W</text><circle cx="57" cy="55" r="5.5" fill="#C68A3E"/></svg>Ikona světlá</div>
+  </div>
+
+  <h2>Paleta</h2>
+  <div class="pal">
+    <div class="sw"><div class="col" style="background:#17283F"></div><div class="meta"><div class="nm">Navy</div><div class="hx">#17283F</div></div></div>
+    <div class="sw"><div class="col" style="background:#C68A3E"></div><div class="meta"><div class="nm">Brass</div><div class="hx">#C68A3E</div></div></div>
+    <div class="sw"><div class="col" style="background:#F5F4F0"></div><div class="meta"><div class="nm">Paper</div><div class="hx">#F5F4F0</div></div></div>
+    <div class="sw"><div class="col" style="background:#16161A"></div><div class="meta"><div class="nm">Ink</div><div class="hx">#16161A</div></div></div>
+    <div class="sw"><div class="col" style="background:#2E9C6E"></div><div class="meta"><div class="nm">Success</div><div class="hx">#2E9C6E</div></div></div>
+    <div class="sw"><div class="col" style="background:#C2473C"></div><div class="meta"><div class="nm">Po termínu</div><div class="hx">#C2473C</div></div></div>
+  </div>
+  <p style="font-size:13px;color:var(--ink-2);margin-top:10px">Navy nese důvěru a klid (hlavní tmavá), brass je ta lidská jiskra (akcent, zvýraznění, „přítomnost" Watsona). Paper a bílá drží rozhraní vzdušné. <b>Pozn.:</b> tahle paleta je značka Watsona — uživatelský barevný systém pro projekty/štítky (palety + vlastní hex) je oddělený a bohatý.</p>
+
+  <h2>Typografie</h2>
+  <div class="card type">
+    <div class="row"><div class="lab">Display / nadpisy — Montserrat 800</div><div class="d1">Dnes máš tři věci.</div></div>
+    <div class="row"><div class="lab">UI / mezinadpisy — Montserrat 600</div><div class="d2">Co dnes řešit</div></div>
+    <div class="row"><div class="lab">Text — Inter</div><div class="b1">Watson ti drží úkoly, kalendář a tým na jednom místě — a v klidu napoví, co je důležité.</div></div>
+    <div class="row"><div class="lab">Čísla &amp; čas — mono</div><div class="m1">12 úkolů · 3 po termínu · 14:30</div></div>
+  </div>
+
+  <h2>Pocit z rozhraní</h2>
+  <div class="demo">
+    <div class="tcard">
+      <div class="top"><span class="pdot" style="background:#C2473C"></span><span class="tname">Odeslat grantovou zprávu</span></div>
+      <div class="meta2"><span class="pillx date">Po termínu · út</span><span class="pillx status">Probíhá</span><span class="av">AK</span></div>
+    </div>
+    <div class="tcard">
+      <div class="top"><span class="pdot" style="background:#C68A3E"></span><span class="tname">Proškolit nové baristy</span></div>
+      <div class="meta2"><span class="pillx status">Každý zvlášť · 3/5</span><span class="av b">T</span><span class="av">M</span></div>
+    </div>
+  </div>
+
+  <h2>Hlas Watsona</h2>
+  <div class="card">
+    <div class="voice">
+      <div class="vlabel">Ráno / digest</div>
+      <div class="bub w">Dobré ráno. Dnes tě čekají <b>tři důležité věci</b> — chceš je projít?</div>
+      <div class="vlabel">Návrh (nikdy neimponuje)</div>
+      <div class="bub w">Tohle vypadá na úkol pro celý tým trenérů. Mám ho <b>rozeslat</b>?</div>
+      <div class="bub u">Jo, pošli</div>
+      <div class="bub w">Hotovo. Rozeslal jsem to pěti trenérům a dám vědět, až to odklikne poslední.</div>
+      <div class="vlabel">Po termínu (klidně, ne alarmem)</div>
+      <div class="bub w">Tři věci jsou po termínu. Navrhuju nové realistické termíny — <b>mrkneš na ně</b>?</div>
+      <div class="vlabel">Hranice (transparentně)</div>
+      <div class="bub w">Tady bych sahal na cizí úkol — radši ti to <b>nechám potvrdit</b>.</div>
+    </div>
+    <div class="principles">
+      <b>Zásady hlasu:</b> stručně a věcně · navrhuje, neimponuje („Mám…?", „Navrhuju…") · vždy potvrdí, co udělal · nikdy nestraší · transparentní (řekne, když něco nechává na tobě) · respektuje tiché hodiny · v CZ i EN stejně klidný a lidský.
+    </div>
+  </div>
+
+  <div class="closing">
+    <h3>Hotovo — identita Watsona stojí</h3>
+    <p>Logo/ikona, paleta (<b>navy + brass</b>), typografie (<b>Montserrat + Inter</b>) a <b>hlas Watsona</b> jsou připravené. Vše je zabaleno do <b>CLAUDE.md</b> spolu s konsolidovanou spec, datovým modelem, AI pravidly a pořadím stavby — jako jedno zadání pro Claude Code, se kterým se může začít stavět.</p>
+  </div>
+</div>

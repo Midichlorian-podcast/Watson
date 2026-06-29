@@ -1,0 +1,35 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build outputs
+dist/
+.output/
+.turbo/
+*.tsbuildinfo
+
+# tauri
+apps/desktop/src-tauri/target/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+.keys/
+
+# editor / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# claude code — lokální override (sdílíme jen settings.json, ne local)
+.claude/settings.local.json
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# test / coverage
+coverage/

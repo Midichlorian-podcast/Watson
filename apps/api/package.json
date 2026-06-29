@@ -1,0 +1,26 @@
+{
+  "name": "@watson/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "echo \"(lint: TODO)\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.8",
+    "@watson/db": "workspace:*",
+    "@watson/shared": "workspace:*",
+    "better-auth": "^1.6.20",
+    "hono": "^4.6.16",
+    "jose": "^6.2.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

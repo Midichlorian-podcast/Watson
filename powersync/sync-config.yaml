@@ -1,0 +1,11 @@
+# Sync rules — co si klient stáhne.
+# R5 — scoping podle členství v projektu: klient dostane jen úkoly projektů,
+# jichž je členem (parameter query čte user_id z JWT `sub`).
+bucket_definitions:
+  user_projects:
+    # jeden bucket na každý projekt, kde je uživatel členem (parametr z JWT)
+    parameters: SELECT project_id FROM project_members WHERE user_id = request.user_id()
+    data:
+      - SELECT id, project_id, name, priority, completed_at, created_at
+        FROM tasks
+        WHERE project_id = bucket.project_id

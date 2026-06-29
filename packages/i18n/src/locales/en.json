@@ -1,0 +1,34 @@
+{
+  "app": {
+    "name": "Watson",
+    "tagline": "Keeps your work together and shows what matters."
+  },
+  "nav": {
+    "today": "Today",
+    "tasks": "Tasks",
+    "board": "Board",
+    "calendar": "Calendar",
+    "inbox": "Inbox"
+  },
+  "today": {
+    "heading": "What to handle today",
+    "overdue": "Overdue",
+    "empty": "Nothing for today. Enjoy the calm."
+  },
+  "priority": {
+    "acute": "Acute",
+    "soon": "As soon as possible",
+    "notAcute": "Not acute",
+    "future": "Future"
+  },
+  "assignment": {
+    "single": "Single assignee",
+    "shared_any": "Anyone can do it",
+    "shared_all": "Each separately"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "done": "Done"
+  }
+}

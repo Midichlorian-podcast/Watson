@@ -1,0 +1,33 @@
+# PowerSync service config (self-hosted, dev).
+# Schema: https://unpkg.com/@powersync/service-schema@latest/json-schema/powersync-config.json
+telemetry:
+  disable_telemetry_sharing: true
+
+replication:
+  connections:
+    - type: postgresql
+      # zdroj = náš hlavní Watson Postgres (stejná docker síť, service "postgres")
+      uri: postgres://watson:watson@postgres:5432/watson
+      sslmode: disable
+
+storage:
+  # bucket storage = dedikovaný Postgres (od v1.3.8 netřeba MongoDB)
+  type: postgresql
+  uri: postgres://watson:watson@pg-storage:5432/watson
+  sslmode: disable
+
+port: 8080
+
+sync_rules:
+  path: /config/sync-config.yaml
+
+client_auth:
+  # JWKS z našeho Hono backendu (na hostu) — service ho čte přes host.docker.internal
+  jwks_uri: http://host.docker.internal:8787/api/powersync/jwks
+  block_local_jwks: false
+  audience:
+    - powersync
+
+api:
+  tokens:
+    - watson-dev-admin-token-change-me

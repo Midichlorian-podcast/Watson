@@ -1,0 +1,67 @@
+# Lokální vývojová infrastruktura pro Watson.
+#  - postgres     = hlavní DB (zdroj pro PowerSync; wal_level=logical)
+#  - pg-storage   = bucket storage pro PowerSync (od v1.3.8 stačí Postgres, žádné Mongo)
+#  - powersync    = self-hosted PowerSync service (offline-first sync engine)
+services:
+  postgres:
+    image: postgres:16
+    container_name: watson-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: watson
+      POSTGRES_PASSWORD: watson
+      POSTGRES_DB: watson
+    ports:
+      - "5432:5432"
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+    volumes:
+      - watson_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U watson -d watson"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  pg-storage:
+    image: postgres:16
+    container_name: watson-pg-storage
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: watson
+      POSTGRES_PASSWORD: watson
+      POSTGRES_DB: watson
+    volumes:
+      - watson_pgstorage:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U watson -d watson"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  powersync:
+    image: journeyapps/powersync-service:1.23.0
+    container_name: watson-powersync
+    restart: unless-stopped
+    command: ["start", "-r", "unified"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pg-storage:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./powersync:/config
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      NODE_OPTIONS: --max-old-space-size=1000
+    # umožní service dosáhnout na Hono backend běžící na hostu (JWKS)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  watson_pgdata:
+  watson_pgstorage:

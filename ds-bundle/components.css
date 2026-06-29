@@ -1,0 +1,94 @@
+/*
+ * Watson — komponentní styly (plain CSS, jen z --w-* tokenů).
+ * Tohle je "pravda" pro vzhled komponent dodaná do každého návrhu.
+ * V produkční appce (apps/web) je stejná sada vyjádřená Tailwind v4 utilitami
+ * přes @theme mapování (bg-navy, text-brass-text, font-display, …).
+ */
+
+/* ── Prioritní odznak (R6: NEBAREVNÝ, P1–P4) ─────────────────── */
+.w-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--w-line);
+  border-radius: var(--w-radius-pill);
+  padding: 2px 8px;
+  font-family: var(--w-font-display);
+  font-size: var(--w-text-xs);
+  font-weight: var(--w-weight-semibold);
+  line-height: 1.4;
+  color: var(--w-ink-2);
+  background: var(--w-card);
+}
+/* P1 nese mírně víc důrazu — pořád NEBAREVNĚ (tmavší ink/linka, ne barva). */
+.w-priority-badge[data-priority="1"] {
+  color: var(--w-ink);
+  border-color: var(--w-ink-3);
+}
+.w-priority-badge[data-priority="4"] {
+  color: var(--w-ink-3);
+}
+
+/* ── Chip (status / termín) ──────────────────────────────────── */
+.w-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--w-font-display);
+  font-size: var(--w-text-xs);
+  font-weight: var(--w-weight-semibold);
+  padding: 3px 9px;
+  border-radius: var(--w-radius-pill);
+  color: var(--w-ink-2);
+  background: var(--w-paper);
+}
+.w-chip--status { background: var(--w-success-soft); color: #1c7a52; }
+.w-chip--overdue { background: var(--w-overdue-soft); color: var(--w-overdue); }
+
+/* Mono pro čísla/čas (např. „3/5", „14:30") */
+.w-num { font-family: var(--w-font-mono); }
+
+/* ── Avatar + skupina ────────────────────────────────────────── */
+.w-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--w-navy);
+  color: #fff;
+  font-family: var(--w-font-display);
+  font-weight: var(--w-weight-semibold);
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.w-avatar--brass { background: var(--w-brass); }
+.w-avatar-group { display: inline-flex; align-items: center; }
+.w-avatar-group > .w-avatar + .w-avatar { margin-left: -6px; box-shadow: 0 0 0 2px var(--w-card); }
+
+/* ── Karta úkolu ─────────────────────────────────────────────── */
+.w-task-card {
+  background: var(--w-card);
+  border: 1px solid var(--w-line);
+  border-radius: var(--w-radius-sm);
+  padding: 14px 16px;
+  box-shadow: var(--w-shadow);
+  font-family: var(--w-font-body);
+}
+.w-task-card__top { display: flex; align-items: center; gap: 8px; }
+/* uživatelská barva úkolu/projektu = samostatný akcent (NE priorita) */
+.w-task-card__dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.w-task-card__name {
+  font-family: var(--w-font-display);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--w-ink);
+}
+.w-task-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.w-task-card__assignees { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }

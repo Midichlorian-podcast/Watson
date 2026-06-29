@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watson — ikonový systém</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f5f4f0; --panel:#fff; --panel-2:#faf9f6;
+    --navy:#17283f; --ink:#16161a; --ink-2:#55554f; --ink-3:#8c8a82; --line:#e7e5df;
+    --brass:#c68a3e; --brass-text:#a8722e; --brass-soft:rgba(198,138,62,.13);
+    --overdue:#c2473c; --success:#2e9c6e;
+    --disp:"Montserrat",ui-sans-serif,system-ui,sans-serif;
+    --body:"Inter",ui-sans-serif,system-ui,sans-serif;
+    --mono:ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1120px;margin:0 auto;padding:54px 40px 90px;}
+  .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);}
+  h1{font-family:var(--disp);font-weight:800;font-size:38px;letter-spacing:-.02em;color:var(--navy);margin:13px 0 0;line-height:1.05;}
+  .lead{font-size:15.5px;color:var(--ink-2);max-width:60ch;margin:13px 0 0;line-height:1.6;text-wrap:pretty;}
+  .rule{height:3px;width:42px;background:var(--brass);border-radius:2px;margin:30px 0 0;}
+  h2{font-family:var(--disp);font-weight:800;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--navy);margin:0;}
+  .sec{margin-top:56px;}
+  .sec-head{display:flex;align-items:baseline;gap:13px;margin-bottom:20px;}
+  .sec-head .n{font-family:var(--mono);font-size:12px;color:var(--brass-text);}
+  .sec-sub{font-size:13px;color:var(--ink-3);}
+
+  /* construction */
+  .spec{display:grid;grid-template-columns:300px 1fr;gap:34px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:30px 32px;box-shadow:0 1px 2px rgba(20,20,30,.04),0 22px 50px rgba(23,40,63,.07);}
+  .gridbox{position:relative;width:240px;height:240px;border:1px solid var(--line);border-radius:14px;background:
+    linear-gradient(var(--line) 1px,transparent 1px) 0 0/100% 20px,
+    linear-gradient(90deg,var(--line) 1px,transparent 1px) 0 0/20px 100%,
+    var(--panel-2);background-clip:padding-box;}
+  .gridbox svg{position:absolute;inset:20px;width:200px;height:200px;color:var(--navy);}
+  .specrules{display:flex;flex-direction:column;gap:14px;}
+  .specrules .r{display:flex;gap:13px;align-items:flex-start;}
+  .specrules .b{width:26px;height:26px;border-radius:8px;background:var(--brass-soft);color:var(--brass-text);display:flex;align-items:center;justify-content:center;flex:none;}
+  .specrules .b svg{width:16px;height:16px;}
+  .specrules .t b{font-family:var(--disp);font-weight:700;font-size:13.5px;color:var(--navy);}
+  .specrules .t span{display:block;font-size:13px;color:var(--ink-2);margin-top:1px;line-height:1.5;}
+
+  /* before/after */
+  .ba{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:4px;}
+  .bacard{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+  .bacard .row{display:flex;}
+  .bacard .h{flex:1;display:flex;flex-direction:column;align-items:center;gap:9px;padding:22px 10px 18px;}
+  .bacard .h + .h{border-left:1px solid var(--line);}
+  .bacard .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);}
+  .bacard .nm{font-family:var(--disp);font-weight:600;font-size:12px;color:var(--navy);text-align:center;padding:11px;border-top:1px solid var(--line);background:var(--panel-2);}
+  .ico-old{color:var(--ink-2);} .ico-old svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;}
+  .ico-new{color:var(--navy);} .ico-new svg{width:30px;height:30px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:butt;stroke-linejoin:round;}
+
+  /* gallery */
+  .grid{display:grid;grid-template-columns:repeat(6,1fr);gap:13px;}
+  .cell{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px 8px 12px;display:flex;flex-direction:column;align-items:center;gap:11px;transition:border-color .12s,transform .12s,box-shadow .12s;}
+  .cell:hover{border-color:var(--brass);transform:translateY(-2px);box-shadow:0 10px 24px rgba(23,40,63,.08);}
+  .cell .ic{color:var(--navy);height:28px;display:flex;align-items:center;}
+  .cell .ic svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:butt;stroke-linejoin:round;}
+  .cell .nm{font-family:var(--mono);font-size:10.5px;letter-spacing:.02em;color:var(--ink-3);text-align:center;}
+
+  /* context demo */
+  .demo{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:4px;}
+  .panelcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px 20px;box-shadow:0 1px 2px rgba(20,20,30,.04),0 22px 50px rgba(23,40,63,.07);}
+  .panelcard .ph{font-family:var(--disp);font-weight:700;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:14px;}
+  .trow{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 13px 11px 0;margin-bottom:9px;position:relative;overflow:hidden;}
+  .trow .rail{width:4px;align-self:stretch;border-radius:0 3px 3px 0;flex:none;}
+  .trow .ck{width:19px;height:19px;border-radius:50%;border:2px solid var(--line);flex:none;margin-left:13px;}
+  .trow .ttl{font-family:var(--disp);font-weight:600;font-size:14.5px;color:var(--ink);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .trow .flag{flex:none;display:flex;}
+  .trow .flag svg{width:15px;height:15px;}
+  .trow .due{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);display:flex;align-items:center;gap:5px;flex:none;}
+  .trow .due svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:butt;stroke-linejoin:round;}
+  .trow .av{width:23px;height:23px;border-radius:50%;background:var(--navy);color:#fff;font-family:var(--disp);font-weight:600;font-size:9.5px;display:flex;align-items:center;justify-content:center;flex:none;}
+  .pip{width:11px;height:11px;border-radius:50%;flex:none;}
+
+  /* add bar */
+  .addbar{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;}
+  .addinput{font-family:var(--disp);font-weight:600;font-size:15px;color:var(--ink-3);padding:4px 2px 14px;border-bottom:1px solid var(--line);}
+  .iconrow{display:flex;gap:7px;flex-wrap:wrap;margin-top:13px;}
+  .ib{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink-2);display:flex;align-items:center;justify-content:center;position:relative;}
+  .ib svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:butt;stroke-linejoin:round;}
+  .ib.on{background:var(--brass-soft);border-color:var(--brass);color:var(--brass-text);}
+  .ib .badge{position:absolute;right:-3px;top:-3px;width:9px;height:9px;border-radius:50%;border:2px solid var(--panel);}
+  .cap{font-size:12.5px;color:var(--ink-3);margin-top:11px;line-height:1.5;}
+
+  /* channel legend */
+  .legend{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:4px;}
+  .lcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:17px 18px;}
+  .lcard .lt{font-family:var(--disp);font-weight:700;font-size:13.5px;color:var(--navy);display:flex;align-items:center;gap:9px;}
+  .lcard .ld{font-size:12.5px;color:var(--ink-2);margin-top:8px;line-height:1.55;}
+  .swatch-rail{width:5px;height:20px;border-radius:3px;background:var(--brass);}
+  .footer{margin-top:60px;background:var(--navy);border-radius:16px;padding:26px 30px;color:#fff;}
+  .footer .ft{font-family:var(--disp);font-weight:800;font-size:16px;}
+  .footer .fd{font-size:13.5px;color:rgba(255,255,255,.72);margin-top:7px;line-height:1.6;max-width:74ch;}
+  @media(max-width:780px){.spec{grid-template-columns:1fr}.demo{grid-template-columns:1fr}.grid{grid-template-columns:repeat(3,1fr)}.legend{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="kicker">Watson · návrh · ikonový systém</div>
+  <h1>Jeden ikonový jazyk pro celou aplikaci</h1>
+  <p class="lead">Vlastní sada postavená na geometrii Montserratu — ne generické tenké „AI" ikony s kulatými konci. Architektonická monolinka s plochými konci, jedním brass akcentem a pevnou mřížkou. Níže je konstrukce, srovnání se starým stylem, kompletní sada a ukázka v kontextu nového barevného modelu.</p>
+  <div class="rule"></div>
+
+  <!-- CONSTRUCTION -->
+  <div class="sec">
+    <div class="sec-head"><span class="n">01</span><h2>Konstrukce</h2><span class="sec-sub">mřížka 24 · tah 2px · ploché konce · brass „pip"</span></div>
+    <div class="spec">
+      <div class="gridbox"><svg id="bigIcon" viewBox="0 0 24 24"></svg></div>
+      <div class="specrules" id="specRules"></div>
+    </div>
+  </div>
+
+  <!-- BEFORE / AFTER -->
+  <div class="sec">
+    <div class="sec-head"><span class="n">02</span><h2>Proč ne generické</h2><span class="sec-sub">stará tenká monolinka vs. Watson</span></div>
+    <div class="ba" id="baRow"></div>
+  </div>
+
+  <!-- GALLERY -->
+  <div class="sec">
+    <div class="sec-head"><span class="n">03</span><h2>Pole úkolu</h2><span class="sec-sub">sada pro zakládání i detail</span></div>
+    <div class="grid" id="gPole"></div>
+  </div>
+  <div class="sec">
+    <div class="sec-head"><span class="n">04</span><h2>Akce</h2><span class="sec-sub">jednotné napříč modaly i řádky</span></div>
+    <div class="grid" id="gAkce"></div>
+  </div>
+  <div class="sec">
+    <div class="sec-head"><span class="n">05</span><h2>Navigace</h2><span class="sec-sub">boční menu — bez emoji, bez kolize</span></div>
+    <div class="grid" id="gNav"></div>
+  </div>
+
+  <!-- COLOR MODEL -->
+  <div class="sec">
+    <div class="sec-head"><span class="n">06</span><h2>Vyřešený barevný model</h2><span class="sec-sub">tři nezávislé kanály — puntík rušíme</span></div>
+    <div class="legend">
+      <div class="lcard">
+        <div class="lt"><span class="swatch-rail"></span> Projekt = proužek</div>
+        <div class="ld">Levý barevný proužek karty nese identitu projektu. Výchozí = barva projektu; každý si ji přebarví <b>jen pro sebe</b> (projekt i konkrétní úkol). Pořadí: osobní barva úkolu → osobní barva projektu → výchozí.</div>
+      </div>
+      <div class="lcard">
+        <div class="lt"><span style="display:inline-flex;color:var(--overdue)"><svg viewBox="0 0 24 24" style="width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round"><line x1="6" y1="3" x2="6" y2="21"/><path d="M6 4.5 H18 L15 8 L18 11.5 H6 Z" fill="currentColor"/></svg></span> Priorita = vlajka</div>
+        <div class="ld">Priorita se stěhuje z barvy řádku na <b>vlajku-glyph</b> (P1 plná, P4 žádná). Tím se barevný kanál uvolní pro projekt a obě věci se přestanou bít.</div>
+      </div>
+      <div class="lcard">
+        <div class="lt"><span class="pip" style="background:var(--ink-3)"></span> Puntík = zrušen</div>
+        <div class="ld">Tečka projektu byla redundantní — proužek ji nahrazuje. Hotovo zůstává: přeškrtnutí + ztlumení. Cizí osobní barvu nikdy nevidíš, vždy jen svou.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTEXT -->
+  <div class="sec">
+    <div class="sec-head"><span class="n">07</span><h2>V kontextu</h2><span class="sec-sub">řádky + lišta zakládání</span></div>
+    <div class="demo">
+      <div class="panelcard">
+        <div class="ph">Úkoly — barva podle projektu, priorita vlajkou</div>
+        <div id="demoRows"></div>
+      </div>
+      <div class="panelcard">
+        <div class="ph">Přidat úkol — input + ikonový řádek</div>
+        <div class="addbar">
+          <div class="addinput">Zavolat účetní ohledně faktur…</div>
+          <div class="iconrow" id="addIcons"></div>
+        </div>
+        <div class="cap">Nenastavená ikona je ztlumená; nastavená nese badge s hodnotou. Ťuk → drobný popover. Na mobilu se řádek vysune nad klávesnici.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="ft">Schvaluješ tento směr?</div>
+    <div class="fd">Když řekneš ano, zapojím set do FieldKitu a postupně ho rozjedu napříč aplikací (menu, modaly, řádky, kalendář) — a zároveň postavím barevný model: proužek = projekt, vlajka = priorita, puntík pryč.</div>
+  </div>
+
+</div>
+
+<script>
+  // ── Watson icon set — grid 24, stroke 2, butt caps, brass pip ──
+  const I = {
+    // POLE ÚKOLU
+    projekt:["Projekt",'<path d="M3 6.5 H9.2 L11.4 9 H21 V19 H3 Z"/>'],
+    priorita:["Priorita",'<line x1="6" y1="3" x2="6" y2="21"/><path d="M6 4.5 H18 L15 8 L18 11.5 H6 Z"/>'],
+    prirazeni:["Přiřadit",'<circle cx="12" cy="8.2" r="3.4"/><path d="M5.6 20 C5.6 16.2 8.2 14.2 12 14.2 C15.8 14.2 18.4 16.2 18.4 20"/>'],
+    termin:["Termín",'<rect x="4" y="5.2" width="16" height="14.8" rx="1.4"/><line x1="4" y1="9.6" x2="20" y2="9.6"/><line x1="8.4" y1="3.2" x2="8.4" y2="6.6"/><line x1="15.6" y1="3.2" x2="15.6" y2="6.6"/><circle cx="9" cy="14" r="1.35" fill="#c68a3e" stroke="none"/>'],
+    trvani:["Trvání",'<line x1="7" y1="4" x2="17" y2="4"/><line x1="7" y1="20" x2="17" y2="20"/><path d="M7.6 4.5 C7.6 9 11 11 11 12 C11 13 7.6 15 7.6 19.5"/><path d="M16.4 4.5 C16.4 9 13 11 13 12 C13 13 16.4 15 16.4 19.5"/>'],
+    deadline:["Deadline",'<circle cx="12" cy="12.4" r="7.6"/><path d="M12 7.6 V12.4 L15.4 14.2"/>'],
+    opakovani:["Opakování",'<path d="M5 12 A7 7 0 0 1 15.6 6"/><path d="M15.6 3 V6.3 H12.3"/><path d="M19 12 A7 7 0 0 1 8.4 18"/><path d="M8.4 21 V17.7 H11.7"/>'],
+    barva:["Barva",'<path d="M12 3.4 C12 3.4 6.2 10 6.2 14.2 A5.8 5.8 0 0 0 17.8 14.2 C17.8 10 12 3.4 12 3.4 Z"/><path d="M9 14.6 A3 3 0 0 0 11.6 17.4" stroke-width="1.5"/>'],
+    priloha:["Příloha",'<path d="M14.6 7.4 L8.4 13.6 A3 3 0 0 0 12.6 17.8 L18.4 12 A5 5 0 0 0 11.4 4.9 L5.8 10.5"/>'],
+    postup:["Postup",'<line x1="7.7" y1="12" x2="9.8" y2="12"/><line x1="14.2" y1="12" x2="16.3" y2="12"/><circle cx="5.4" cy="12" r="2.3"/><circle cx="12" cy="12" r="2.3"/><circle cx="18.6" cy="12" r="2.3" fill="#c68a3e" stroke="none"/>'],
+    podukol:["Podúkol",'<path d="M6.5 4.5 V12 A2 2 0 0 0 8.5 14 H11"/><rect x="12.5" y="11" width="6.4" height="6.4" rx="1.2"/><path d="M14.1 14.2 L15.5 15.6 L17.6 12.8"/>'],
+    popis:["Popis",'<line x1="5" y1="7.5" x2="19" y2="7.5"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="16.5" x2="13.5" y2="16.5"/>'],
+    // AKCE
+    pridat:["Přidat",'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>'],
+    hotovo:["Hotovo",'<path d="M5 12.5 L10 17.5 L19 6.8"/>'],
+    upravit:["Upravit",'<path d="M5 19 L5.6 15.4 L16 5 A1.4 1.4 0 0 1 19 8 L8.6 18.4 Z"/><line x1="13.4" y1="7.6" x2="16.4" y2="10.6"/>'],
+    duplikovat:["Duplikovat",'<rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 14.5 A1.5 1.5 0 0 1 3.5 13 V5 A1.5 1.5 0 0 1 5 3.5 H13 A1.5 1.5 0 0 1 14.5 5"/>'],
+    smazat:["Smazat",'<line x1="5" y1="7" x2="19" y2="7"/><path d="M8 7 V5.6 A1.1 1.1 0 0 1 9.1 4.5 H14.9 A1.1 1.1 0 0 1 16 5.6 V7"/><path d="M6.6 7 L7.4 18.8 A1.6 1.6 0 0 0 9 20.4 H15 A1.6 1.6 0 0 0 16.6 18.8 L17.4 7"/>'],
+    odkaz:["Odkaz",'<path d="M10.5 13.5 A3.6 3.6 0 0 1 10.5 8.4 L13.2 5.7 A3.8 3.8 0 0 1 18.5 11 L16.8 12.7"/><path d="M13.5 10.5 A3.6 3.6 0 0 1 13.5 15.6 L10.8 18.3 A3.8 3.8 0 0 1 5.5 13 L7.2 11.3"/>'],
+    vice:["Více",'<circle cx="6" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.7" fill="currentColor" stroke="none"/>'],
+    zavrit:["Zavřít",'<line x1="6.5" y1="6.5" x2="17.5" y2="17.5"/><line x1="17.5" y1="6.5" x2="6.5" y2="17.5"/>'],
+    // NAVIGACE
+    hledat:["Hledat",'<circle cx="10.5" cy="10.5" r="6"/><line x1="15" y1="15" x2="20" y2="20"/>'],
+    schranka:["Schránka",'<path d="M4 13.2 L6.6 5.4 A1 1 0 0 1 7.5 4.8 H16.5 A1 1 0 0 1 17.4 5.4 L20 13.2 V18.6 A1.2 1.2 0 0 1 18.8 19.8 H5.2 A1.2 1.2 0 0 1 4 18.6 Z"/><path d="M4 13.2 H8.2 L9.6 16 H14.4 L15.8 13.2 H20"/>'],
+    dnes:["Dnes",'<line x1="3.6" y1="18.4" x2="20.4" y2="18.4"/><path d="M7.6 18.4 A4.4 4.4 0 0 1 16.4 18.4"/><line x1="12" y1="6" x2="12" y2="8"/><line x1="5.6" y1="9.2" x2="6.9" y2="10.2"/><line x1="18.4" y1="9.2" x2="17.1" y2="10.2"/>'],
+    nadchazejici:["Nadcházející",'<rect x="4" y="5.2" width="16" height="14.8" rx="1.4"/><line x1="4" y1="9.6" x2="20" y2="9.6"/><line x1="8.4" y1="3.2" x2="8.4" y2="6.6"/><line x1="15.6" y1="3.2" x2="15.6" y2="6.6"/><path d="M10.8 15.4 H13.6"/><path d="M12.3 14 L13.7 15.4 L12.3 16.8"/>'],
+    ukoly:["Úkoly",'<path d="M4 7 L5.4 8.4 L7.8 6"/><line x1="10.5" y1="7.3" x2="20" y2="7.3"/><path d="M4 13 L5.4 14.4 L7.8 12"/><line x1="10.5" y1="13.3" x2="20" y2="13.3"/><line x1="10.5" y1="18.6" x2="20" y2="18.6"/><line x1="4.4" y1="18.6" x2="7.8" y2="18.6"/>'],
+    projekty:["Projekty",'<rect x="3.8" y="3.8" width="7" height="7" rx="1.4"/><rect x="13.2" y="3.8" width="7" height="7" rx="1.4" fill="#c68a3e" stroke="none"/><rect x="3.8" y="13.2" width="7" height="7" rx="1.4"/><rect x="13.2" y="13.2" width="7" height="7" rx="1.4"/>'],
+    tym:["Tým",'<circle cx="9" cy="9.2" r="3"/><path d="M3.6 19 C3.6 15.6 6 13.7 9 13.7 C12 13.7 14.4 15.6 14.4 19"/><circle cx="16.6" cy="9.6" r="2.4"/><path d="M15.2 13.9 C18.6 13.9 20.4 15.9 20.4 19"/>'],
+    cile:["Cíle",'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.4" fill="#c68a3e" stroke="none"/>'],
+    reporty:["Reporty",'<line x1="4" y1="20" x2="20.4" y2="20"/><line x1="7.2" y1="20" x2="7.2" y2="13" stroke-width="2.4"/><line x1="12" y1="20" x2="12" y2="8" stroke-width="2.4"/><line x1="16.8" y1="20" x2="16.8" y2="15" stroke-width="2.4"/>'],
+    nastaveni:["Nastavení",'<line x1="4" y1="8.5" x2="20" y2="8.5"/><line x1="4" y1="15.5" x2="20" y2="15.5"/><circle cx="9" cy="8.5" r="2.4" fill="#fff"/><circle cx="15" cy="15.5" r="2.4" fill="#fff"/>'],
+    zvonek:["Zvonek",'<path d="M6.6 17 C6.6 11.2 7.8 8.6 12 8.6 C16.2 8.6 17.4 11.2 17.4 17 Z"/><line x1="5" y1="17" x2="19" y2="17"/><path d="M10.2 20 A2.1 2.1 0 0 0 13.8 20"/><line x1="12" y1="6" x2="12" y2="8.6"/>'],
+    motiv:["Motiv",'<circle cx="12" cy="12" r="7.4"/><path d="M12 4.6 A7.4 7.4 0 0 0 12 19.4 Z" fill="currentColor" stroke="none"/>'],
+  };
+  const svg = (inner, w) => '<svg viewBox="0 0 24 24" style="'+(w?'width:'+w+'px;height:'+w+'px;':'')+'">'+inner+'</svg>';
+
+  // construction big icon (calendar)
+  document.getElementById('bigIcon').innerHTML = I.termin[1];
+  document.getElementById('bigIcon').style.strokeWidth='2';
+  document.getElementById('bigIcon').setAttribute('fill','none');
+  document.getElementById('bigIcon').setAttribute('stroke','currentColor');
+  document.getElementById('bigIcon').setAttribute('stroke-linecap','butt');
+  document.getElementById('bigIcon').setAttribute('stroke-linejoin','round');
+
+  const specs = [
+    [I.projekt[1],"Mřížka 24 px","Vše konstruováno na 24px poli, ~2px vnitřní okraj. Kruhy a úhly 90°/45° — geometrie sedící Montserratu."],
+    [I.priorita[1],"Tah 2 px, ploché konce","Jednotná síla 2px s butt (plochými) konci místo všudypřítomných kulatých — odtud ten editoriální, ne-tovární dojem."],
+    [I.cile[1],"Brass pip","Jeden volitelný brass bod jako bod pozornosti — Watsonovo oko. Rozlišovací znak sady, použitý střídmě."],
+    [I.nastaveni[1],"Vlastní řešení","Nudné defaulty nahrazeny: Nastavení = posuvníky (ne ozubené kolo), Dnes = slunce nad obzorem, Postup = štafeta."],
+  ];
+  document.getElementById('specRules').innerHTML = specs.map(s=>
+    '<div class="r"><div class="b">'+svg(s[0])+'</div><div class="t"><b>'+s[1]+'</b><span>'+s[2]+'</span></div></div>'
+  ).join('');
+
+  // before / after (old generic vs new)
+  const OLD = {
+    nastaveni:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L13.9 2h-3.8l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h3.8l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.06-.43.1-.86.1-1.3Z"/>',
+    dnes:'<circle cx="12" cy="12" r="4"/><line x1="12" y1="3" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21"/><line x1="3" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21" y2="12"/><line x1="5.6" y1="5.6" x2="7" y2="7"/><line x1="17" y1="17" x2="18.4" y2="18.4"/><line x1="17" y1="7" x2="18.4" y2="5.6"/><line x1="5.6" y1="18.4" x2="7" y2="17"/>',
+    postup:'<path d="M4 12 H20"/><path d="M15 7 L20 12 L15 17"/>',
+  };
+  const baItems = [["nastaveni","Nastavení"],["dnes","Dnes"],["postup","Postup"]];
+  document.getElementById('baRow').innerHTML = baItems.map(([k,nm])=>
+    '<div class="bacard"><div class="row">'+
+      '<div class="h"><span class="lbl">Generické</span><span class="ico-old">'+svg(OLD[k])+'</span></div>'+
+      '<div class="h"><span class="lbl">Watson</span><span class="ico-new">'+svg(I[k][1])+'</span></div>'+
+    '</div><div class="nm">'+nm+'</div></div>'
+  ).join('');
+
+  // galleries
+  const pole = ["projekt","priorita","prirazeni","termin","trvani","deadline","opakovani","barva","priloha","postup","podukol","popis"];
+  const akce = ["pridat","hotovo","upravit","duplikovat","smazat","odkaz","vice","zavrit"];
+  const nav  = ["hledat","schranka","dnes","nadchazejici","ukoly","projekty","tym","cile","reporty","nastaveni","zvonek","motiv"];
+  const cell = k => '<div class="cell"><div class="ic">'+svg(I[k][1])+'</div><div class="nm">'+I[k][0]+'</div></div>';
+  document.getElementById('gPole').innerHTML = pole.map(cell).join('');
+  document.getElementById('gAkce').innerHTML = akce.map(cell).join('');
+  document.getElementById('gNav').innerHTML  = nav.map(cell).join('');
+
+  // context rows — color=project rail, priority=flag glyph, no dot
+  const flag = c => '<span class="flag" style="color:'+c+'"><svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round"><line x1="6" y1="3" x2="6" y2="21"/><path d="M6 4.5 H18 L15 8 L18 11.5 H6 Z" fill="'+c+'"/></svg></span>';
+  const flagOutline = c => '<span class="flag" style="color:'+c+'"><svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round"><line x1="6" y1="3" x2="6" y2="21"/><path d="M6 4.5 H18 L15 8 L18 11.5 H6 Z"/></svg></span>';
+  const cal = I.termin[1];
+  const rows = [
+    ["#c68a3e","Připravit podklady pro Q3 plánování",flag("#c2473c"),"po termínu · čt","TN"],
+    ["#2e9c6e","Revize smlouvy s dodavatelem",flag("#c68a3e"),"dnes · 15:00","JD"],
+    ["#7c5cfc","Proškolit tým na nový proces",flagOutline("#2a6fdb"),"pá · 9:00","AK"],
+    ["#2a6fdb","Odeslat nabídku klientovi",'<span class="flag"></span>',"út","MB"],
+  ];
+  document.getElementById('demoRows').innerHTML = rows.map(r=>
+    '<div class="trow"><div class="rail" style="background:'+r[0]+'"></div>'+
+    '<div class="ck"></div><div class="ttl">'+r[1]+'</div>'+r[2]+
+    '<div class="due">'+svg(cal,13)+r[3]+'</div>'+
+    '<div class="av">'+r[4]+'</div></div>'
+  ).join('');
+
+  // add bar icons
+  const addSet = [["projekt",1,"#c68a3e"],["priorita",1,"#c2473c"],["prirazeni",0],["termin",1,"#2e9c6e"],["trvani",0],["deadline",0],["opakovani",0],["barva",1,"#7c5cfc"],["priloha",0],["postup",0]];
+  document.getElementById('addIcons').innerHTML = addSet.map(([k,on,c])=>
+    '<div class="ib'+(on?' on':'')+'" title="'+I[k][0]+'">'+svg(I[k][1])+(on&&c?'<span class="badge" style="background:'+c+'"></span>':'')+'</div>'
+  ).join('');
+</script>
+</body>
+</html>

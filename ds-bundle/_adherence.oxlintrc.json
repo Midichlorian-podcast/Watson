@@ -1,0 +1,161 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "components/Components/PriorityBadge/**",
+              "components/Components/TaskCard/**"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Montserrat|Inter))/i]",
+        "message": "Font not provided by the design system. Available: Montserrat, Inter."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='PriorityBadge'] > JSXAttribute > JSXIdentifier[name!=/^(?:priority|className|key|ref|className|style|children)$/]",
+        "message": "<PriorityBadge> doesn't accept that prop. Declared props: priority, className."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='TaskCardDue'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|overdue|key|ref|className|style|children)$/]",
+        "message": "<TaskCardDue> doesn't accept that prop. Declared props: label, overdue."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {
+      "PriorityBadge": {
+        "replaces": []
+      },
+      "TaskCardDue": {
+        "replaces": []
+      }
+    },
+    "tokens": [
+      "--w-brass",
+      "--w-brass-text",
+      "--w-card",
+      "--w-font-body",
+      "--w-font-display",
+      "--w-font-mono",
+      "--w-ink",
+      "--w-ink-2",
+      "--w-ink-3",
+      "--w-line",
+      "--w-navy",
+      "--w-navy-2",
+      "--w-overdue",
+      "--w-overdue-soft",
+      "--w-paper",
+      "--w-radius",
+      "--w-radius-pill",
+      "--w-radius-sm",
+      "--w-shadow",
+      "--w-shadow-sm",
+      "--w-space-1",
+      "--w-space-2",
+      "--w-space-3",
+      "--w-space-4",
+      "--w-space-5",
+      "--w-space-6",
+      "--w-space-7",
+      "--w-space-8",
+      "--w-success",
+      "--w-success-soft",
+      "--w-text-2xl",
+      "--w-text-3xl",
+      "--w-text-base",
+      "--w-text-lg",
+      "--w-text-sm",
+      "--w-text-xl",
+      "--w-text-xs",
+      "--w-weight-body",
+      "--w-weight-display",
+      "--w-weight-medium",
+      "--w-weight-semibold"
+    ],
+    "tokenKinds": {
+      "--w-navy": "color",
+      "--w-navy-2": "color",
+      "--w-brass": "color",
+      "--w-brass-text": "font",
+      "--w-paper": "color",
+      "--w-card": "color",
+      "--w-ink": "color",
+      "--w-ink-2": "color",
+      "--w-ink-3": "color",
+      "--w-line": "color",
+      "--w-success": "color",
+      "--w-overdue": "color",
+      "--w-success-soft": "color",
+      "--w-overdue-soft": "color",
+      "--w-font-display": "font",
+      "--w-font-body": "font",
+      "--w-font-mono": "font",
+      "--w-text-xs": "font",
+      "--w-text-sm": "font",
+      "--w-text-base": "font",
+      "--w-text-lg": "font",
+      "--w-text-xl": "font",
+      "--w-text-2xl": "font",
+      "--w-text-3xl": "font",
+      "--w-weight-body": "font",
+      "--w-weight-medium": "font",
+      "--w-weight-semibold": "font",
+      "--w-weight-display": "font",
+      "--w-space-1": "spacing",
+      "--w-space-2": "spacing",
+      "--w-space-3": "spacing",
+      "--w-space-4": "spacing",
+      "--w-space-5": "spacing",
+      "--w-space-6": "spacing",
+      "--w-space-7": "spacing",
+      "--w-space-8": "spacing",
+      "--w-radius": "radius",
+      "--w-radius-sm": "radius",
+      "--w-radius-pill": "radius",
+      "--w-shadow-sm": "shadow",
+      "--w-shadow": "shadow"
+    },
+    "fontFamilies": [
+      "Inter",
+      "Montserrat"
+    ]
+  }
+}

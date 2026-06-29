@@ -1,0 +1,47 @@
+<!-- @dsCard group="Components" name="Task card" subtitle="Karta úkolu · po termínu · per-osoba 3/5" -->
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../../../styles.css">
+<style>
+  body { padding: 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; max-width: 760px; margin: 0 auto; }
+</style>
+</head>
+<body>
+  <div class="grid">
+
+    <!-- po termínu, jeden řešitel (single / shared_any) -->
+    <div class="w-task-card">
+      <div class="w-task-card__top">
+        <span class="w-task-card__dot" style="background:#C2473C"></span>
+        <span class="w-task-card__name">Odeslat grantovou zprávu nadaci</span>
+      </div>
+      <div class="w-task-card__meta">
+        <span class="w-priority-badge" data-priority="1">P1</span>
+        <span class="w-chip w-chip--overdue"><span class="w-num">Po termínu · út</span></span>
+        <span class="w-chip w-chip--status">Probíhá</span>
+        <span class="w-task-card__assignees"><span class="w-avatar">AK</span></span>
+      </div>
+    </div>
+
+    <!-- per-osoba progres (shared_all): odznak „3/5" + skupina avatarů -->
+    <div class="w-task-card">
+      <div class="w-task-card__top">
+        <span class="w-task-card__dot" style="background:#C68A3E"></span>
+        <span class="w-task-card__name">Proškolit nové baristy na espresso</span>
+      </div>
+      <div class="w-task-card__meta">
+        <span class="w-priority-badge" data-priority="3">P3</span>
+        <span class="w-chip">Každý zvlášť · <span class="w-num">3/5</span></span>
+        <span class="w-task-card__assignees">
+          <span class="w-avatar-group"><span class="w-avatar w-avatar--brass">T</span><span class="w-avatar">M</span><span class="w-avatar">J</span></span>
+        </span>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

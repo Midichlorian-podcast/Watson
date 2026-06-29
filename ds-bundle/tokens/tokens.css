@@ -1,0 +1,67 @@
+/*
+ * Watson — design tokeny (brand seed).
+ * Zdroj pravdy: packages/ui/src/tokens.css (vychází z files/identita_watson.html).
+ * Brand paleta značky Watsona je ODDĚLENÁ od uživatelského barevného systému
+ * projektů/štítků a NIKDY není vázaná na prioritu (R6).
+ *
+ * ⚠️ Tohle je výchozí seed. Až na webu doladíš obrazovky, finální tokeny
+ *    z Claude Designu nahradí packages/ui/src/tokens.css ("design lock").
+ */
+:root {
+  /* ── Brand paleta ─────────────────────────────────────────── */
+  --w-navy: #17283f;        /* hlavní tmavá — důvěra/klid, nadpisy */
+  --w-navy-2: #24395a;      /* sekundární tmavá */
+  --w-brass: #c68a3e;       /* AKCENT — jen velké prvky/zvýraznění */
+  --w-brass-text: #a8722e;  /* tmavší brass pro TEXT (kontrast, H8) */
+  --w-paper: #f5f4f0;       /* pozadí aplikace */
+  --w-card: #ffffff;        /* karty, panely */
+  --w-ink: #16161a;         /* hlavní text */
+  --w-ink-2: #55554f;       /* sekundární text */
+  --w-ink-3: #8c8a82;       /* terciární / placeholdery */
+  --w-line: #e7e5df;        /* linky, rámečky */
+
+  /* ── Sémantické (nezávislé na uživatelských barvách) ───────── */
+  --w-success: #2e9c6e;     /* hotovo / pozitivní */
+  --w-overdue: #c2473c;     /* po termínu / chyba */
+  /* jemná pozadí pro chipy (odvozená) */
+  --w-success-soft: #eaf6f0;
+  --w-overdue-soft: #fbedea;
+
+  /* ── Typografie ───────────────────────────────────────────── */
+  --w-font-display: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  --w-font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --w-font-mono: ui-monospace, Menlo, Consolas, monospace;
+
+  /* Typografická škála (rem) */
+  --w-text-xs: 0.6875rem;   /* 11px — labely, chipy */
+  --w-text-sm: 0.8125rem;   /* 13px */
+  --w-text-base: 0.9375rem; /* 15px — běžný text */
+  --w-text-lg: 1.125rem;    /* 18px — UI mezinadpis */
+  --w-text-xl: 1.5rem;      /* 24px */
+  --w-text-2xl: 1.875rem;   /* 30px — display */
+  --w-text-3xl: 3rem;       /* 48px — hero wordmark */
+
+  --w-weight-body: 400;
+  --w-weight-medium: 500;
+  --w-weight-semibold: 600;
+  --w-weight-display: 800;  /* wordmark / hlavní nadpisy */
+
+  /* ── Spacing (4px base) ───────────────────────────────────── */
+  --w-space-1: 4px;
+  --w-space-2: 8px;
+  --w-space-3: 12px;
+  --w-space-4: 16px;
+  --w-space-5: 24px;
+  --w-space-6: 32px;
+  --w-space-7: 48px;
+  --w-space-8: 64px;
+
+  /* ── Tvar ─────────────────────────────────────────────────── */
+  --w-radius: 16px;
+  --w-radius-sm: 10px;
+  --w-radius-pill: 999px;
+
+  /* ── Stíny ────────────────────────────────────────────────── */
+  --w-shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.04);
+  --w-shadow: 0 1px 2px rgba(20, 20, 30, 0.04), 0 12px 32px rgba(23, 40, 63, 0.08);
+}

@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Watson — vizuální směry" description="Tři směry dashboardu Dnes pro výběr jazyka" -->
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<script src="./ds-base.js"></script>
+<style>
+  body { background: #eceae6; }
+</style>
+</helmet>
+
+<div style="width:3820px; height:1080px;"></div>
+
+<div style="position:absolute; left:40px; top:24px; width:1180px;">
+  <div style="font-family:var(--w-font-display); font-weight:800; font-size:18px; color:var(--w-navy); letter-spacing:-.01em;">Watson · tři vizuální směry</div>
+  <div style="font-family:var(--w-font-body); font-size:13px; color:var(--w-ink-2); margin-top:3px;">Obrazovka „Dnes" (dashboard) ve třech jazycích. Vyber směr — pak ho rozjedu přes všech 10 obrazovek jako klikací prototyp se světlým i tmavým režimem.</div>
+</div>
+
+<!-- ============================ SMĚR A · KLID ============================ -->
+<div style="position:absolute; left:40px; top:104px; width:1180px;">
+  <div data-drags-parent="1" style="display:flex; align-items:baseline; gap:12px; margin:0 0 13px 2px;">
+    <span style="font-family:var(--w-font-display); font-weight:800; font-size:13px; letter-spacing:.09em; color:var(--w-navy);">SMĚR A · KLID</span>
+    <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-3);">Editoriální klid · vzdušné · hairline · jeden brass akcent</span>
+  </div>
+  <div style="background:#fff; border:1px solid var(--w-line); border-radius:18px; overflow:hidden; box-shadow:0 1px 2px rgba(20,20,30,.04), 0 30px 70px rgba(23,40,63,.12);">
+    <div style="display:flex; align-items:center; gap:30px; padding:18px 30px; border-bottom:1px solid var(--w-line);">
+      <div style="display:flex; align-items:center; gap:9px;">
+        <span style="width:9px; height:9px; border-radius:50%; background:var(--w-brass);"></span>
+        <span style="font-family:var(--w-font-display); font-weight:800; font-size:18px; letter-spacing:-.01em; color:var(--w-navy);">Watson</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:26px; font-family:var(--w-font-display); font-weight:600; font-size:13.5px;">
+        <span style="color:var(--w-navy); padding-bottom:2px; border-bottom:2px solid var(--w-brass);">Dnes</span>
+        <span style="color:var(--w-ink-3);">Úkoly</span>
+        <span style="color:var(--w-ink-3);">Board</span>
+        <span style="color:var(--w-ink-3);">Kalendář</span>
+        <span style="color:var(--w-ink-3);">Tým</span>
+      </div>
+      <div style="margin-left:auto; display:flex; align-items:center; gap:14px;">
+        <div style="display:flex; align-items:center; gap:8px; border:1px solid var(--w-line); border-radius:999px; padding:8px 16px; width:170px; color:var(--w-ink-3); font-family:var(--w-font-body); font-size:13px;">
+          <span style="width:13px; height:13px; border:1.6px solid var(--w-ink-3); border-radius:50%; display:inline-block;"></span>Hledat…
+        </div>
+        <span style="width:32px; height:32px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:11px; display:flex; align-items:center; justify-content:center;">AK</span>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1.7fr 1fr; gap:42px; padding:34px 36px 38px;">
+      <div>
+        <div style="font-family:var(--w-font-mono); font-size:11.5px; letter-spacing:.1em; color:var(--w-ink-3); text-transform:uppercase;">Čtvrtek · 25. června</div>
+        <div style="width:38px; height:3px; background:var(--w-brass); border-radius:2px; margin:14px 0 12px;"></div>
+        <h1 style="font-family:var(--w-font-display); font-weight:800; font-size:34px; line-height:1.08; letter-spacing:-.02em; color:var(--w-navy); margin:0;">Dnes máš pět věcí.</h1>
+        <p style="font-family:var(--w-font-body); font-size:15px; color:var(--w-ink-2); margin:10px 0 0; max-width:46ch;">Report je po termínu — vzala bych ho první. Zbytek dne pak bude v klidu.</p>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; margin:32px 0 2px;">
+          <span style="font-family:var(--w-font-display); font-weight:700; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--w-ink-3);">Co dnes řešit</span>
+          <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-3);">5 úkolů · 1 po termínu</span>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:15px; padding:15px 2px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+          <span style="width:18px; height:18px; border:2px solid var(--w-line); border-radius:50%; flex:none;"></span>
+          <span style="width:8px; height:8px; border-radius:50%; background:#c68a3e; flex:none;"></span>
+          <div style="min-width:0; flex:1;">
+            <div style="font-family:var(--w-font-display); font-weight:600; font-size:15.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Připravit podklady pro čtvrtletní report</div>
+            <div style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-3); margin-top:2px;">Q3 plánování</div>
+          </div>
+          <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-overdue); flex:none;">po termínu · čt</span>
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--w-ink-3); color:var(--w-ink); background:#fff; flex:none;">P1</span>
+          <span style="width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center; flex:none;">AK</span>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:15px; padding:15px 2px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+          <span style="width:18px; height:18px; border:2px solid var(--w-line); border-radius:50%; flex:none;"></span>
+          <span style="width:8px; height:8px; border-radius:50%; background:#2e9c6e; flex:none;"></span>
+          <div style="min-width:0; flex:1;">
+            <div style="font-family:var(--w-font-display); font-weight:600; font-size:15.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Revize smlouvy s dodavatelem IT</div>
+            <div style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-3); margin-top:2px;">Provoz</div>
+          </div>
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-2); flex:none;">Ke kontrole</span>
+          <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-2); flex:none;">dnes · 15:00</span>
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); background:#fff; flex:none;">P2</span>
+          <span style="width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center; flex:none;">MB</span>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:15px; padding:15px 2px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+          <span style="width:18px; height:18px; border:2px solid var(--w-line); border-radius:50%; flex:none;"></span>
+          <span style="width:8px; height:8px; border-radius:50%; background:#7c5cfc; flex:none;"></span>
+          <div style="min-width:0; flex:1;">
+            <div style="font-family:var(--w-font-display); font-weight:600; font-size:15.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Proškolit tým na nový CRM</div>
+            <div style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-3); margin-top:2px;">Onboarding</div>
+          </div>
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-2); flex:none;">Každý zvlášť · <span style="font-family:var(--w-font-mono);">3/5</span></span>
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); background:#fff; flex:none;">P3</span>
+          <span style="display:inline-flex; align-items:center; flex:none;">
+            <span style="width:24px; height:24px; border-radius:50%; background:var(--w-brass); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">T</span>
+            <span style="width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center; margin-left:-6px; box-shadow:0 0 0 2px #fff;">M</span>
+            <span style="width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center; margin-left:-6px; box-shadow:0 0 0 2px #fff;">J</span>
+          </span>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:15px; padding:15px 2px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+          <span style="width:18px; height:18px; border:2px solid var(--w-line); border-radius:50%; flex:none;"></span>
+          <span style="width:8px; height:8px; border-radius:50%; background:#2a6fdb; flex:none;"></span>
+          <div style="min-width:0; flex:1;">
+            <div style="font-family:var(--w-font-display); font-weight:600; font-size:15.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Schválit fakturace za květen</div>
+            <div style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-3); margin-top:2px;">Obchod</div>
+          </div>
+          <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-2); flex:none;">dnes · 17:00</span>
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); background:#fff; flex:none;">P2</span>
+          <span style="width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center; flex:none;">JD</span>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:15px; padding:15px 2px;" style-hover="background:#faf9f6;">
+          <span style="width:18px; height:18px; border:2px solid var(--w-line); border-radius:50%; flex:none;"></span>
+          <span style="width:8px; height:8px; border-radius:50%; background:#2c9c9c; flex:none;"></span>
+          <div style="min-width:0; flex:1;">
+            <div style="font-family:var(--w-font-display); font-weight:600; font-size:15.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Texty na novou landing page</div>
+            <div style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-3); margin-top:2px;">Web redesign</div>
+          </div>
+          <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-2); flex:none;">zítra</span>
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); background:#fff; flex:none;">P3</span>
+          <span style="width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center; flex:none;">EP</span>
+        </div>
+      </div>
+
+      <div>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+          <span style="width:7px; height:7px; border-radius:50%; background:var(--w-brass);"></span>
+          <span style="font-family:var(--w-font-display); font-weight:700; font-size:12px; letter-spacing:.07em; text-transform:uppercase; color:var(--w-navy);">Watson radí</span>
+        </div>
+        <div style="border-top:1px solid var(--w-line);">
+          <div style="display:flex; gap:12px; padding:14px 0; border-bottom:1px solid var(--w-line);">
+            <span style="font-family:var(--w-font-mono); font-size:13px; color:var(--w-brass-text); flex:none; padding-top:1px;">›</span>
+            <div>
+              <div style="font-family:var(--w-font-body); font-size:13.5px; color:var(--w-ink-2); line-height:1.45;">Report je po termínu — přeplánovat na dnes 11:00?</div>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:12px; color:var(--w-brass-text); cursor:pointer;">Přeplánovat</span>
+            </div>
+          </div>
+          <div style="display:flex; gap:12px; padding:14px 0; border-bottom:1px solid var(--w-line);">
+            <span style="font-family:var(--w-font-mono); font-size:13px; color:var(--w-brass-text); flex:none; padding-top:1px;">›</span>
+            <div>
+              <div style="font-family:var(--w-font-body); font-size:13.5px; color:var(--w-ink-2); line-height:1.45;">Tři schůzky se kryjí s blokem hluboké práce.</div>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:12px; color:var(--w-brass-text); cursor:pointer;">Vyřešit</span>
+            </div>
+          </div>
+          <div style="display:flex; gap:12px; padding:14px 0; border-bottom:1px solid var(--w-line);">
+            <span style="font-family:var(--w-font-mono); font-size:13px; color:var(--w-brass-text); flex:none; padding-top:1px;">›</span>
+            <div>
+              <div style="font-family:var(--w-font-body); font-size:13.5px; color:var(--w-ink-2); line-height:1.45;">Fakturace čekají na schválení do 17:00.</div>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:12px; color:var(--w-brass-text); cursor:pointer;">Otevřít</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:30px;">
+          <span style="font-family:var(--w-font-display); font-weight:700; font-size:12px; letter-spacing:.07em; text-transform:uppercase; color:var(--w-ink-3);">Dnes v kalendáři</span>
+          <div style="margin-top:12px;">
+            <div style="display:flex; gap:14px; padding:11px 0; border-bottom:1px solid var(--w-line);">
+              <span style="font-family:var(--w-font-mono); font-size:12.5px; color:var(--w-ink-3); width:44px; flex:none;">09:00</span>
+              <span style="font-family:var(--w-font-body); font-size:13.5px; color:var(--w-ink);">Stand-up týmu</span>
+            </div>
+            <div style="display:flex; gap:14px; padding:11px 0; border-bottom:1px solid var(--w-line);">
+              <span style="font-family:var(--w-font-mono); font-size:12.5px; color:var(--w-ink-3); width:44px; flex:none;">11:00</span>
+              <span style="font-family:var(--w-font-body); font-size:13.5px; color:var(--w-ink);">1:1 s Tomášem</span>
+            </div>
+            <div style="display:flex; gap:14px; padding:11px 0; border-bottom:1px solid var(--w-line); border-left:3px solid var(--w-brass); padding-left:12px; margin-left:-15px;">
+              <span style="font-family:var(--w-font-mono); font-size:12.5px; color:var(--w-brass-text); width:44px; flex:none;">14:00</span>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:13.5px; color:var(--w-navy);">Hluboká práce</span>
+            </div>
+            <div style="display:flex; gap:14px; padding:11px 0;">
+              <span style="font-family:var(--w-font-mono); font-size:12.5px; color:var(--w-ink-3); width:44px; flex:none;">15:00</span>
+              <span style="font-family:var(--w-font-body); font-size:13.5px; color:var(--w-ink);">Revize smlouvy</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ SMĚR B · NÁBOJ ============================ -->
+<div style="position:absolute; left:1300px; top:104px; width:1180px;">
+  <div data-drags-parent="1" style="display:flex; align-items:baseline; gap:12px; margin:0 0 13px 2px;">
+    <span style="font-family:var(--w-font-display); font-weight:800; font-size:13px; letter-spacing:.09em; color:var(--w-navy);">SMĚR B · NÁBOJ</span>
+    <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-3);">Teplý a lidský · navy hlavička · výrazný panel Watsona · měkké karty</span>
+  </div>
+  <div style="background:#fff; border:1px solid var(--w-line); border-radius:18px; overflow:hidden; box-shadow:0 1px 2px rgba(20,20,30,.04), 0 30px 70px rgba(23,40,63,.12);">
+    <div style="display:flex; align-items:center; gap:30px; padding:16px 28px; background:var(--w-navy);">
+      <div style="display:flex; align-items:center; gap:9px;">
+        <span style="width:9px; height:9px; border-radius:50%; background:var(--w-brass);"></span>
+        <span style="font-family:var(--w-font-display); font-weight:800; font-size:18px; color:#fff;">Watson</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:24px; font-family:var(--w-font-display); font-weight:600; font-size:13.5px;">
+        <span style="color:#fff;">Dnes</span>
+        <span style="color:rgba(255,255,255,.55);">Úkoly</span>
+        <span style="color:rgba(255,255,255,.55);">Board</span>
+        <span style="color:rgba(255,255,255,.55);">Kalendář</span>
+        <span style="color:rgba(255,255,255,.55);">Tým</span>
+      </div>
+      <div style="margin-left:auto; display:flex; align-items:center; gap:14px;">
+        <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,.10); border-radius:999px; padding:8px 16px; width:160px; color:rgba(255,255,255,.6); font-family:var(--w-font-body); font-size:13px;">
+          <span style="width:13px; height:13px; border:1.6px solid rgba(255,255,255,.6); border-radius:50%; display:inline-block;"></span>Hledat…
+        </div>
+        <span style="width:32px; height:32px; border-radius:50%; background:var(--w-brass); color:#fff; font-family:var(--w-font-display); font-weight:700; font-size:11px; display:flex; align-items:center; justify-content:center; box-shadow:0 0 0 2px rgba(255,255,255,.18);">AK</span>
+      </div>
+    </div>
+
+    <div style="background:var(--w-paper); padding:24px;">
+      <div style="display:flex; align-items:center; gap:18px; background:#fff; border:1px solid var(--w-line); border-radius:18px; padding:20px 22px; box-shadow:var(--w-shadow); position:relative; overflow:hidden;">
+        <div style="position:absolute; right:-32px; top:-32px; width:128px; height:128px; border-radius:50%; background:rgba(198,138,62,.08);"></div>
+        <div style="width:50px; height:50px; border-radius:50%; border:2px solid var(--w-brass); background:#fff; display:flex; align-items:center; justify-content:center; font-family:var(--w-font-display); font-weight:800; font-size:20px; color:var(--w-brass-text); flex:none;">W</div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-family:var(--w-font-display); font-weight:800; font-size:20px; color:var(--w-navy);">Dobré ráno, Adélo.</div>
+          <div style="font-family:var(--w-font-body); font-size:14px; color:var(--w-ink-2); margin-top:3px; max-width:64ch;">Tři věci dnes spěchají. Report je po termínu — kdybys ho vzala první, zbytek dne bude v klidu.</div>
+        </div>
+        <div style="display:flex; gap:10px; flex:none;">
+          <button style="font-family:var(--w-font-display); font-weight:700; font-size:13px; color:#fff; background:var(--w-brass); border:none; border-radius:10px; padding:10px 16px; cursor:pointer;" style-hover="background:var(--w-brass-text);">Začít report</button>
+          <button style="font-family:var(--w-font-display); font-weight:600; font-size:13px; color:var(--w-navy); background:#fff; border:1px solid var(--w-line); border-radius:10px; padding:10px 16px; cursor:pointer;" style-hover="background:var(--w-paper);">Přeplánovat 2</button>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1.5fr 1fr; gap:18px; margin-top:18px;">
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px;">
+            <span style="font-family:var(--w-font-display); font-weight:700; font-size:13px; color:var(--w-navy);">Dnes · 5 úkolů</span>
+            <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-brass-text); cursor:pointer;">Zobrazit vše</span>
+          </div>
+
+          <div style="background:#fff; border:1px solid var(--w-line); border-radius:14px; padding:14px 16px; box-shadow:var(--w-shadow);" style-hover="box-shadow:0 1px 2px rgba(20,20,30,.04), 0 14px 34px rgba(23,40,63,.13); transform:translateY(-1px);">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="width:18px; height:18px; border:2px solid var(--w-line); border-radius:6px; flex:none;"></span>
+              <span style="width:9px; height:9px; border-radius:50%; background:#c68a3e; flex:none;"></span>
+              <span style="font-family:var(--w-font-display); font-weight:700; font-size:14.5px; color:var(--w-ink); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Připravit podklady pro čtvrtletní report</span>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--w-ink-3); color:var(--w-ink); background:#fff; flex:none;">P1</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:11px;">
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:#fbedea; color:#c2473c; font-family:var(--w-font-mono);">po termínu · čt</span>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:#eaf6f0; color:#1c7a52;">Probíhá</span>
+              <span style="margin-left:auto; width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">AK</span>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid var(--w-line); border-radius:14px; padding:14px 16px; box-shadow:var(--w-shadow);" style-hover="box-shadow:0 1px 2px rgba(20,20,30,.04), 0 14px 34px rgba(23,40,63,.13); transform:translateY(-1px);">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="width:18px; height:18px; border:2px solid var(--w-line); border-radius:6px; flex:none;"></span>
+              <span style="width:9px; height:9px; border-radius:50%; background:#2e9c6e; flex:none;"></span>
+              <span style="font-family:var(--w-font-display); font-weight:700; font-size:14.5px; color:var(--w-ink); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Revize smlouvy s dodavatelem IT</span>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); background:#fff; flex:none;">P2</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:11px;">
+              <span style="font-family:var(--w-font-mono); font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-2);">dnes · 15:00</span>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-2);">Ke kontrole</span>
+              <span style="margin-left:auto; width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">MB</span>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid var(--w-line); border-radius:14px; padding:14px 16px; box-shadow:var(--w-shadow);" style-hover="box-shadow:0 1px 2px rgba(20,20,30,.04), 0 14px 34px rgba(23,40,63,.13); transform:translateY(-1px);">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="width:18px; height:18px; border:2px solid var(--w-line); border-radius:6px; flex:none;"></span>
+              <span style="width:9px; height:9px; border-radius:50%; background:#7c5cfc; flex:none;"></span>
+              <span style="font-family:var(--w-font-display); font-weight:700; font-size:14.5px; color:var(--w-ink); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Proškolit tým na nový CRM</span>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); background:#fff; flex:none;">P3</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:11px;">
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-2);">Každý zvlášť · <span style="font-family:var(--w-font-mono);">3/5</span></span>
+              <span style="margin-left:auto; display:inline-flex; align-items:center;">
+                <span style="width:24px; height:24px; border-radius:50%; background:var(--w-brass); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">T</span>
+                <span style="width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center; margin-left:-6px; box-shadow:0 0 0 2px #fff;">M</span>
+                <span style="width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center; margin-left:-6px; box-shadow:0 0 0 2px #fff;">J</span>
+              </span>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid var(--w-line); border-radius:14px; padding:14px 16px; box-shadow:var(--w-shadow);" style-hover="box-shadow:0 1px 2px rgba(20,20,30,.04), 0 14px 34px rgba(23,40,63,.13); transform:translateY(-1px);">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="width:18px; height:18px; border:2px solid var(--w-line); border-radius:6px; flex:none;"></span>
+              <span style="width:9px; height:9px; border-radius:50%; background:#2a6fdb; flex:none;"></span>
+              <span style="font-family:var(--w-font-display); font-weight:700; font-size:14.5px; color:var(--w-ink); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Schválit fakturace za květen</span>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); background:#fff; flex:none;">P2</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-top:11px;">
+              <span style="font-family:var(--w-font-mono); font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-2);">dnes · 17:00</span>
+              <span style="margin-left:auto; width:24px; height:24px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">JD</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          <div style="background:#fff; border:1px solid var(--w-line); border-radius:14px; padding:16px; box-shadow:var(--w-shadow);">
+            <div style="font-family:var(--w-font-display); font-weight:700; font-size:13px; color:var(--w-navy); margin-bottom:10px;">Dnes v kalendáři</div>
+            <div style="display:flex; gap:12px; align-items:center; padding:8px 0; border-bottom:1px solid var(--w-line);">
+              <span style="font-family:var(--w-font-mono); font-size:12.5px; color:var(--w-ink-3); width:42px; flex:none;">09:00</span>
+              <span style="font-family:var(--w-font-body); font-size:13.5px; color:var(--w-ink);">Stand-up týmu</span>
+            </div>
+            <div style="display:flex; gap:12px; align-items:center; padding:8px 0; border-bottom:1px solid var(--w-line);">
+              <span style="font-family:var(--w-font-mono); font-size:12.5px; color:var(--w-ink-3); width:42px; flex:none;">11:00</span>
+              <span style="font-family:var(--w-font-body); font-size:13.5px; color:var(--w-ink);">1:1 s Tomášem</span>
+            </div>
+            <div style="display:flex; gap:12px; align-items:center; padding:8px 10px; border-radius:8px; background:var(--w-paper); border-left:3px solid var(--w-brass); margin-top:4px;">
+              <span style="font-family:var(--w-font-mono); font-size:12.5px; color:var(--w-brass-text); width:38px; flex:none;">14:00</span>
+              <span style="font-family:var(--w-font-display); font-weight:600; font-size:13.5px; color:var(--w-navy);">Hluboká práce</span>
+            </div>
+          </div>
+
+          <div style="background:#fff; border:1px solid var(--w-line); border-radius:14px; padding:16px; box-shadow:var(--w-shadow);">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px;">
+              <span style="font-family:var(--w-font-display); font-weight:700; font-size:13px; color:var(--w-navy);">Board</span>
+              <span style="font-family:var(--w-font-body); font-size:11.5px; color:var(--w-ink-3);">Web redesign</span>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+              <div style="background:var(--w-paper); border-radius:10px; padding:10px 6px; text-align:center;">
+                <div style="font-family:var(--w-font-mono); font-size:20px; color:var(--w-navy);">7</div>
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:9.5px; letter-spacing:.03em; text-transform:uppercase; color:var(--w-ink-3); margin-top:2px;">K udělání</div>
+              </div>
+              <div style="background:var(--w-paper); border-radius:10px; padding:10px 6px; text-align:center;">
+                <div style="font-family:var(--w-font-mono); font-size:20px; color:var(--w-navy);">4</div>
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:9.5px; letter-spacing:.03em; text-transform:uppercase; color:var(--w-ink-3); margin-top:2px;">Probíhá</div>
+              </div>
+              <div style="background:var(--w-paper); border-radius:10px; padding:10px 6px; text-align:center;">
+                <div style="font-family:var(--w-font-mono); font-size:20px; color:var(--w-navy);">12</div>
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:9.5px; letter-spacing:.03em; text-transform:uppercase; color:var(--w-ink-3); margin-top:2px;">Hotovo</div>
+              </div>
+            </div>
+            <div style="margin-top:12px; height:6px; border-radius:3px; background:var(--w-line); overflow:hidden;">
+              <div style="width:52%; height:100%; background:var(--w-brass);"></div>
+            </div>
+            <div style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-ink-3); margin-top:6px;">52 % hotovo · 12 z 23</div>
+          </div>
+
+          <div style="background:var(--w-navy); border-radius:14px; padding:16px 18px;">
+            <div style="font-family:var(--w-font-display); font-weight:700; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,.6);">Tento týden</div>
+            <div style="display:flex; gap:22px; margin-top:12px;">
+              <div>
+                <div style="font-family:var(--w-font-mono); font-size:24px; color:var(--w-brass);">12</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:rgba(255,255,255,.6); margin-top:1px;">hotovo</div>
+              </div>
+              <div>
+                <div style="font-family:var(--w-font-mono); font-size:24px; color:#e8857c;">3</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:rgba(255,255,255,.6); margin-top:1px;">po termínu</div>
+              </div>
+              <div>
+                <div style="font-family:var(--w-font-mono); font-size:24px; color:#fff;">5</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:rgba(255,255,255,.6); margin-top:1px;">dnes</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ SMĚR C · VÝKON ============================ -->
+<div style="position:absolute; left:2560px; top:104px; width:1180px;">
+  <div data-drags-parent="1" style="display:flex; align-items:baseline; gap:12px; margin:0 0 13px 2px;">
+    <span style="font-family:var(--w-font-display); font-weight:800; font-size:13px; letter-spacing:.09em; color:var(--w-navy);">SMĚR C · VÝKON</span>
+    <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-3);">Hustý a profesionální · sidebar · tabulka úkolů · víc barev projektů</span>
+  </div>
+  <div style="background:#fff; border:1px solid var(--w-line); border-radius:18px; overflow:hidden; box-shadow:0 1px 2px rgba(20,20,30,.04), 0 30px 70px rgba(23,40,63,.12); display:flex;">
+    <div style="width:212px; background:var(--w-navy); padding:18px 14px; display:flex; flex-direction:column; gap:3px; flex:none;">
+      <div style="display:flex; align-items:center; gap:9px; padding:0 6px; margin-bottom:14px;">
+        <span style="width:9px; height:9px; border-radius:50%; background:var(--w-brass);"></span>
+        <span style="font-family:var(--w-font-display); font-weight:800; font-size:17px; color:#fff;">Watson</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,.08); border-radius:8px; padding:8px 10px; margin-bottom:10px;">
+        <span style="width:12px; height:12px; border:1.5px solid rgba(255,255,255,.5); border-radius:50%; flex:none;"></span>
+        <span style="font-family:var(--w-font-body); font-size:12.5px; color:rgba(255,255,255,.55); flex:1;">Hledat</span>
+        <span style="font-family:var(--w-font-mono); font-size:11px; color:rgba(255,255,255,.4);">⌘K</span>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:8px; border-left:3px solid var(--w-brass); background:rgba(255,255,255,.08); font-family:var(--w-font-display); font-weight:600; font-size:13px; color:#fff;">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style="color:var(--w-brass); flex:none;"><circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" stroke-width="1.4"/><circle cx="7.5" cy="7.5" r="1.7" fill="currentColor"/></svg>Dnes
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:8px; border-left:3px solid transparent; font-family:var(--w-font-display); font-weight:600; font-size:13px; color:rgba(255,255,255,.6);">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style="color:currentColor; flex:none;"><rect x="2" y="2" width="11" height="11" rx="2.5" stroke="currentColor" stroke-width="1.4"/><path d="M5 7.6 L6.7 9.3 L10 5.8" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Úkoly
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:8px; border-left:3px solid transparent; font-family:var(--w-font-display); font-weight:600; font-size:13px; color:rgba(255,255,255,.6);">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style="color:currentColor; flex:none;"><rect x="2" y="2.5" width="3" height="10" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="6" y="2.5" width="3" height="6.5" rx="1" stroke="currentColor" stroke-width="1.3"/><rect x="10" y="2.5" width="3" height="8.5" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>Board
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:8px; border-left:3px solid transparent; font-family:var(--w-font-display); font-weight:600; font-size:13px; color:rgba(255,255,255,.6);">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style="color:currentColor; flex:none;"><rect x="2" y="3" width="11" height="10" rx="2" stroke="currentColor" stroke-width="1.3"/><line x1="2" y1="6" x2="13" y2="6" stroke="currentColor" stroke-width="1.3"/><line x1="5" y1="1.7" x2="5" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="10" y1="1.7" x2="10" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Kalendář
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:8px; border-left:3px solid transparent; font-family:var(--w-font-display); font-weight:600; font-size:13px; color:rgba(255,255,255,.6);">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style="color:currentColor; flex:none;"><circle cx="5.5" cy="6" r="2.5" stroke="currentColor" stroke-width="1.3"/><circle cx="10.2" cy="7" r="2.1" stroke="currentColor" stroke-width="1.3"/></svg>Tým
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:8px; border-left:3px solid transparent; font-family:var(--w-font-display); font-weight:600; font-size:13px; color:rgba(255,255,255,.6);">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style="color:currentColor; flex:none;"><rect x="3.9" y="3.9" width="7.2" height="7.2" rx="1.4" transform="rotate(45 7.5 7.5)" stroke="currentColor" stroke-width="1.3"/></svg>Projekty
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:8px; border-left:3px solid transparent; font-family:var(--w-font-display); font-weight:600; font-size:13px; color:rgba(255,255,255,.6);">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style="color:currentColor; flex:none;"><circle cx="7.5" cy="7.5" r="5.3" stroke="currentColor" stroke-width="1.3"/><circle cx="7.5" cy="7.5" r="1.9" stroke="currentColor" stroke-width="1.3"/></svg>Nastavení
+      </div>
+
+      <div style="margin-top:auto; display:flex; align-items:center; gap:9px; padding:10px 6px 0; border-top:1px solid rgba(255,255,255,.1);">
+        <span style="width:28px; height:28px; border-radius:50%; background:var(--w-brass); color:#fff; font-family:var(--w-font-display); font-weight:700; font-size:10px; display:flex; align-items:center; justify-content:center; flex:none;">AK</span>
+        <div style="min-width:0;">
+          <div style="font-family:var(--w-font-display); font-weight:600; font-size:12.5px; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Adéla Kučerová</div>
+          <div style="font-family:var(--w-font-body); font-size:11px; color:rgba(255,255,255,.5);">Kancelář Praha</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1; min-width:0; background:#fff; display:flex; flex-direction:column;">
+      <div style="display:flex; align-items:center; gap:14px; padding:14px 18px; border-bottom:1px solid var(--w-line);">
+        <div style="font-family:var(--w-font-display); font-weight:800; font-size:17px; color:var(--w-navy);">Dnes</div>
+        <div style="display:flex; background:var(--w-paper); border-radius:9px; padding:3px; gap:2px;">
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:12.5px; padding:5px 12px; border-radius:6px; background:#fff; color:var(--w-navy); box-shadow:var(--w-shadow-sm);">Seznam</span>
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:12.5px; padding:5px 12px; border-radius:6px; color:var(--w-ink-3);">Board</span>
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:12.5px; padding:5px 12px; border-radius:6px; color:var(--w-ink-3);">Kalendář</span>
+        </div>
+        <div style="margin-left:auto; display:flex; align-items:center; gap:10px;">
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--w-line); color:var(--w-ink-2);">Filtr · Po termínu</span>
+          <span style="font-family:var(--w-font-display); font-weight:600; font-size:12px; padding:6px 11px; border-radius:8px; border:1px solid var(--w-line); color:var(--w-ink-2);">Řadit · Priorita</span>
+          <button style="font-family:var(--w-font-display); font-weight:700; font-size:12.5px; color:#fff; background:var(--w-brass); border:none; border-radius:8px; padding:7px 13px; cursor:pointer;" style-hover="background:var(--w-brass-text);">+ Úkol</button>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:11px; padding:11px 18px; background:#fbf6ee; border-bottom:1px solid var(--w-line);">
+        <span style="width:6px; height:6px; border-radius:50%; background:var(--w-brass); flex:none;"></span>
+        <span style="font-family:var(--w-font-display); font-weight:700; font-size:11.5px; letter-spacing:.04em; color:var(--w-brass-text); flex:none;">WATSON</span>
+        <span style="font-family:var(--w-font-body); font-size:13px; color:var(--w-ink-2); flex:1; min-width:0;">3 úkoly po termínu, 5 dnes. Doporučuju soustředěný blok <span style="font-family:var(--w-font-mono);">9–11</span> na report.</span>
+        <span style="font-family:var(--w-font-mono); font-size:11.5px; color:var(--w-ink-3); flex:none;">12 hotovo · 3 po termínu</span>
+        <button style="font-family:var(--w-font-display); font-weight:600; font-size:12px; color:var(--w-brass-text); background:#fff; border:1px solid var(--w-line); border-radius:7px; padding:6px 11px; cursor:pointer; flex:none;" style-hover="background:var(--w-paper);">Přeplánovat 3</button>
+      </div>
+
+      <div style="display:flex; flex:1;">
+        <div style="flex:1; min-width:0;">
+          <div style="display:grid; grid-template-columns:24px 1fr 70px 116px 116px 96px; align-items:center; gap:12px; padding:9px 18px; border-bottom:1px solid var(--w-line);">
+            <span></span>
+            <span style="font-family:var(--w-font-mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--w-ink-3);">Úkol</span>
+            <span style="font-family:var(--w-font-mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--w-ink-3);">Prio</span>
+            <span style="font-family:var(--w-font-mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--w-ink-3);">Termín</span>
+            <span style="font-family:var(--w-font-mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--w-ink-3);">Stav</span>
+            <span style="font-family:var(--w-font-mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--w-ink-3); text-align:right;">Řešitelé</span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:24px 1fr 70px 116px 116px 96px; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+            <span style="width:17px; height:17px; border:2px solid var(--w-line); border-radius:5px;"></span>
+            <div style="min-width:0; display:flex; align-items:center; gap:9px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#c68a3e; flex:none;"></span>
+              <div style="min-width:0;">
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:13.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Připravit podklady pro čtvrtletní report</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:var(--w-ink-3);">Q3 plánování</div>
+              </div>
+            </div>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--w-ink-3); color:var(--w-ink); justify-self:start;">P1</span>
+            <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-overdue);">po termínu · čt</span>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:#eaf6f0; color:#1c7a52; justify-self:start;">Probíhá</span>
+            <span style="display:flex; justify-content:flex-end;"><span style="width:23px; height:23px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">AK</span></span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:24px 1fr 70px 116px 116px 96px; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+            <span style="width:17px; height:17px; border:2px solid var(--w-line); border-radius:5px;"></span>
+            <div style="min-width:0; display:flex; align-items:center; gap:9px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#2e9c6e; flex:none;"></span>
+              <div style="min-width:0;">
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:13.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Revize smlouvy s dodavatelem IT</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:var(--w-ink-3);">Provoz</div>
+              </div>
+            </div>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); justify-self:start;">P2</span>
+            <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-2);">dnes · 15:00</span>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-2); justify-self:start;">Ke kontrole</span>
+            <span style="display:flex; justify-content:flex-end;"><span style="width:23px; height:23px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">MB</span></span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:24px 1fr 70px 116px 116px 96px; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+            <span style="width:17px; height:17px; border:2px solid var(--w-line); border-radius:5px;"></span>
+            <div style="min-width:0; display:flex; align-items:center; gap:9px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#7c5cfc; flex:none;"></span>
+              <div style="min-width:0;">
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:13.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Proškolit tým na nový CRM</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:var(--w-ink-3);">Onboarding</div>
+              </div>
+            </div>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); justify-self:start;">P3</span>
+            <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-2);">tento týden</span>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-2); justify-self:start;">Každý zvlášť</span>
+            <span style="display:flex; justify-content:flex-end; align-items:center; gap:5px;">
+              <span style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-ink-2);">3/5</span>
+              <span style="display:inline-flex; align-items:center;">
+                <span style="width:23px; height:23px; border-radius:50%; background:var(--w-brass); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">T</span>
+                <span style="width:23px; height:23px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center; margin-left:-6px; box-shadow:0 0 0 2px #fff;">M</span>
+              </span>
+            </span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:24px 1fr 70px 116px 116px 96px; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+            <span style="width:17px; height:17px; border:2px solid var(--w-line); border-radius:5px;"></span>
+            <div style="min-width:0; display:flex; align-items:center; gap:9px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#2a6fdb; flex:none;"></span>
+              <div style="min-width:0;">
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:13.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Schválit fakturace za květen</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:var(--w-ink-3);">Obchod</div>
+              </div>
+            </div>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); justify-self:start;">P2</span>
+            <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-2);">dnes · 17:00</span>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-3); justify-self:start;">Nezahájeno</span>
+            <span style="display:flex; justify-content:flex-end;"><span style="width:23px; height:23px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">JD</span></span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:24px 1fr 70px 116px 116px 96px; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+            <span style="width:17px; height:17px; border:2px solid var(--w-line); border-radius:5px;"></span>
+            <div style="min-width:0; display:flex; align-items:center; gap:9px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#2c9c9c; flex:none;"></span>
+              <div style="min-width:0;">
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:13.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Texty na novou landing page</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:var(--w-ink-3);">Web redesign</div>
+              </div>
+            </div>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); justify-self:start;">P3</span>
+            <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-2);">zítra</span>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:#eaf6f0; color:#1c7a52; justify-self:start;">Probíhá</span>
+            <span style="display:flex; justify-content:flex-end;"><span style="width:23px; height:23px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">EP</span></span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:24px 1fr 70px 116px 116px 96px; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+            <span style="width:17px; height:17px; border:2px solid var(--w-line); border-radius:5px;"></span>
+            <div style="min-width:0; display:flex; align-items:center; gap:9px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#2e9c6e; flex:none;"></span>
+              <div style="min-width:0;">
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:13.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Rezervovat zasedačku na celotýmovku</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:var(--w-ink-3);">Provoz</div>
+              </div>
+            </div>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-3); justify-self:start;">P4</span>
+            <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-2);">pá · 09:00</span>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-3); justify-self:start;">Nezahájeno</span>
+            <span style="display:flex; justify-content:flex-end;"><span style="width:23px; height:23px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">LH</span></span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:24px 1fr 70px 116px 116px 96px; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid var(--w-line);" style-hover="background:#faf9f6;">
+            <span style="width:17px; height:17px; border:2px solid var(--w-line); border-radius:5px;"></span>
+            <div style="min-width:0; display:flex; align-items:center; gap:9px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#2e9c6e; flex:none;"></span>
+              <div style="min-width:0;">
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:13.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Vyúčtovat služební cesty</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:var(--w-ink-3);">Provoz</div>
+              </div>
+            </div>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); justify-self:start;">P3</span>
+            <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-2);">27. 6.</span>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-3); justify-self:start;">Nezahájeno</span>
+            <span style="display:flex; justify-content:flex-end;"><span style="width:23px; height:23px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">PN</span></span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:24px 1fr 70px 116px 116px 96px; align-items:center; gap:12px; padding:10px 18px;" style-hover="background:#faf9f6;">
+            <span style="width:17px; height:17px; border:2px solid var(--w-line); border-radius:5px;"></span>
+            <div style="min-width:0; display:flex; align-items:center; gap:9px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#2a6fdb; flex:none;"></span>
+              <div style="min-width:0;">
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:13.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Sjednotit šablony nabídek</div>
+                <div style="font-family:var(--w-font-body); font-size:11.5px; color:var(--w-ink-3);">Obchod</div>
+              </div>
+            </div>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:2px 7px; border-radius:999px; border:1px solid var(--w-line); color:var(--w-ink-2); justify-self:start;">P2</span>
+            <span style="font-family:var(--w-font-mono); font-size:12px; color:var(--w-ink-2);">příští týden</span>
+            <span style="font-family:var(--w-font-display); font-weight:600; font-size:11px; padding:3px 9px; border-radius:999px; background:var(--w-paper); color:var(--w-ink-2); justify-self:start;">Každý zvlášť</span>
+            <span style="display:flex; justify-content:flex-end; align-items:center; gap:5px;">
+              <span style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-ink-2);">2/4</span>
+              <span style="display:inline-flex; align-items:center;">
+                <span style="width:23px; height:23px; border-radius:50%; background:var(--w-brass); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center;">A</span>
+                <span style="width:23px; height:23px; border-radius:50%; background:var(--w-navy); color:#fff; font-family:var(--w-font-display); font-weight:600; font-size:10px; display:flex; align-items:center; justify-content:center; margin-left:-6px; box-shadow:0 0 0 2px #fff;">M</span>
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <div style="width:240px; border-left:1px solid var(--w-line); flex:none; padding:16px; display:flex; flex-direction:column; gap:18px;">
+          <div>
+            <div style="font-family:var(--w-font-display); font-weight:700; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--w-ink-3); margin-bottom:10px;">Přehled týdne</div>
+            <div style="display:flex; gap:8px;">
+              <div style="flex:1; background:var(--w-paper); border-radius:10px; padding:10px 6px; text-align:center;">
+                <div style="font-family:var(--w-font-mono); font-size:18px; color:var(--w-navy);">12</div>
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:9px; letter-spacing:.03em; text-transform:uppercase; color:var(--w-ink-3); margin-top:2px;">hotovo</div>
+              </div>
+              <div style="flex:1; background:var(--w-paper); border-radius:10px; padding:10px 6px; text-align:center;">
+                <div style="font-family:var(--w-font-mono); font-size:18px; color:var(--w-overdue);">3</div>
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:9px; letter-spacing:.03em; text-transform:uppercase; color:var(--w-ink-3); margin-top:2px;">po term.</div>
+              </div>
+              <div style="flex:1; background:var(--w-paper); border-radius:10px; padding:10px 6px; text-align:center;">
+                <div style="font-family:var(--w-font-mono); font-size:18px; color:var(--w-navy);">5</div>
+                <div style="font-family:var(--w-font-display); font-weight:600; font-size:9px; letter-spacing:.03em; text-transform:uppercase; color:var(--w-ink-3); margin-top:2px;">dnes</div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-family:var(--w-font-display); font-weight:700; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--w-ink-3); margin-bottom:8px;">Po termínu · 3</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--w-line);">
+              <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">Čtvrtletní report</span>
+              <span style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-overdue); flex:none;">čt</span>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--w-line);">
+              <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">Podklady k auditu</span>
+              <span style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-overdue); flex:none;">út</span>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+              <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">Odpověď klientovi Zeman</span>
+              <span style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-overdue); flex:none;">po</span>
+            </div>
+          </div>
+
+          <div>
+            <div style="font-family:var(--w-font-display); font-weight:700; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--w-ink-3); margin-bottom:8px;">Projekty</div>
+            <div style="display:flex; align-items:center; gap:8px; padding:5px 0;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#c68a3e; flex:none;"></span>
+              <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-2); flex:1;">Q3 plánování</span>
+              <span style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-ink-3);">8</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; padding:5px 0;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#2e9c6e; flex:none;"></span>
+              <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-2); flex:1;">Provoz</span>
+              <span style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-ink-3);">11</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; padding:5px 0;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#7c5cfc; flex:none;"></span>
+              <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-2); flex:1;">Onboarding</span>
+              <span style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-ink-3);">4</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; padding:5px 0;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#2a6fdb; flex:none;"></span>
+              <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-2); flex:1;">Obchod</span>
+              <span style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-ink-3);">6</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; padding:5px 0;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#2c9c9c; flex:none;"></span>
+              <span style="font-family:var(--w-font-body); font-size:12.5px; color:var(--w-ink-2); flex:1;">Web redesign</span>
+              <span style="font-family:var(--w-font-mono); font-size:11px; color:var(--w-ink-3);">5</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+</body>
+</html>

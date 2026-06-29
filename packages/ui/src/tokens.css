@@ -1,0 +1,33 @@
+/**
+ * Watson — design tokeny (PLACEHOLDER).
+ * Hodnoty pocházejí z vizuální identity (identita_watson.html).
+ * ⚠️ Tento soubor NAHRADÍ výstup z Claude Design po "design locku" (po kroku 4).
+ * Do té doby slouží jen jako rozumný brand základ, ať scaffold není ošklivý.
+ */
+:root {
+  /* Brand paleta (značka Watsona — oddělená od uživatelského barevného systému) */
+  --w-navy: #17283f;
+  --w-navy-2: #24395a;
+  --w-brass: #c68a3e; /* akcent / velké prvky */
+  --w-brass-text: #a8722e; /* tmavší pro text kvůli kontrastu (H8) */
+  --w-paper: #f5f4f0;
+  --w-card: #ffffff;
+  --w-ink: #16161a;
+  --w-ink-2: #55554f;
+  --w-ink-3: #8c8a82;
+  --w-line: #e7e5df;
+
+  /* Sémantické (nezávislé na uživatelských barvách projektů/štítků) */
+  --w-success: #2e9c6e;
+  --w-overdue: #c2473c; /* po termínu */
+
+  /* Typografie */
+  --w-font-display: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  --w-font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --w-font-mono: ui-monospace, Menlo, Consolas, monospace;
+
+  /* Tvar */
+  --w-radius: 16px;
+  --w-radius-sm: 10px;
+  --w-shadow: 0 1px 2px rgba(20, 20, 30, 0.04), 0 12px 32px rgba(23, 40, 63, 0.08);
+}

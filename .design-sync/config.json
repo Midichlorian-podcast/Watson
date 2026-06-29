@@ -1,0 +1,9 @@
+{
+  "projectId": "d19e3c1a-5ff1-47e1-a699-2227ff30b7ff",
+  "projectName": "Watson",
+  "pkg": "packages/ui",
+  "shape": "package",
+  "mode": "hand-authored-seed",
+  "note": "packages/ui je malý seed (tokens.css + PriorityBadge), Tailwind-utility styling, žádný dist/storybook. Bundle je ručně psaný dle dokumentovaného layoutu, ne přes converter. tokens.css je PLACEHOLDER — bude nahrazen výstupem z Claude Designu (design lock).",
+  "readmeHeader": ".design-sync/conventions.md"
+}

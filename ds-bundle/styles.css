@@ -1,0 +1,20 @@
+/*
+ * Watson — vstupní stylesheet pro Claude Design.
+ * Každý návrh dostává PRÁVĚ tranzitivní @import uzávěr tohoto souboru,
+ * takže fonty, tokeny i komponentní styly musí viset právě odsud.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&family=Inter:wght@400;500;600&display=swap");
+@import "./tokens/tokens.css";
+@import "./components.css";
+
+/* Základ plochy aplikace */
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background-color: var(--w-paper);
+  color: var(--w-ink);
+  font-family: var(--w-font-body);
+  font-size: var(--w-text-base);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}

@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# esbuild potřebuje postinstall pro nativní binárku (Vite, tsx).
+# wa-sqlite NEbuildíme (nese předkompilovanou WASM; build by vyžadoval emscripten).
+allowBuilds:
+  esbuild: true
+  "@journeyapps/wa-sqlite": false

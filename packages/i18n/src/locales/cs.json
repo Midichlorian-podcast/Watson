@@ -1,0 +1,34 @@
+{
+  "app": {
+    "name": "Watson",
+    "tagline": "Drží tvou práci pohromadě a ukáže, co řešit."
+  },
+  "nav": {
+    "today": "Dnes",
+    "tasks": "Úkoly",
+    "board": "Board",
+    "calendar": "Kalendář",
+    "inbox": "Doručené"
+  },
+  "today": {
+    "heading": "Co dnes řešit",
+    "overdue": "Zpožděné",
+    "empty": "Na dnešek nemáš nic. Hezký klid."
+  },
+  "priority": {
+    "acute": "Akutní",
+    "soon": "Co nejdřív",
+    "notAcute": "Neakutní",
+    "future": "Budoucnost"
+  },
+  "assignment": {
+    "single": "Jeden řešitel",
+    "shared_any": "Stačí kdokoli",
+    "shared_all": "Každý zvlášť"
+  },
+  "common": {
+    "save": "Uložit",
+    "cancel": "Zrušit",
+    "done": "Hotovo"
+  }
+}

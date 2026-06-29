@@ -1,0 +1,37 @@
+@import "tailwindcss";
+@import "@watson/ui/tokens.css";
+
+/* Mapování brand tokenů do Tailwind v4 témata (utility jako bg-paper, text-navy...). */
+@theme {
+  --color-navy: var(--w-navy);
+  --color-navy-2: var(--w-navy-2);
+  --color-brass: var(--w-brass);
+  --color-brass-text: var(--w-brass-text);
+  --color-paper: var(--w-paper);
+  --color-card: var(--w-card);
+  --color-ink: var(--w-ink);
+  --color-ink-2: var(--w-ink-2);
+  --color-ink-3: var(--w-ink-3);
+  --color-line: var(--w-line);
+  --color-success: var(--w-success);
+  --color-overdue: var(--w-overdue);
+
+  --font-display: var(--w-font-display);
+  --font-body: var(--w-font-body);
+  --font-mono: var(--w-font-mono);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--w-paper);
+  color: var(--w-ink);
+  font-family: var(--w-font-body);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
