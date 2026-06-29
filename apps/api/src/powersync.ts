@@ -83,6 +83,11 @@ interface TableDef {
   creatorCol?: string;
   /** Jak zjistit project_id pro membership kontrolu (R5). */
   projectVia: { kind: "column"; col: string } | { kind: "task"; col: string };
+  /** FK sloupce na řádek (se sloupcem project_id), jehož projekt musí být útočníkův —
+   *  brání cross-project referenci (parent_id/section_id/status_id). */
+  refProjectCols?: { col: string; table: string }[];
+  /** Sloupce s user_id, které musí být členem projektu řádku (assignments.user_id). */
+  memberCols?: string[];
 }
 
 const TABLES: Record<string, TableDef> = {
@@ -108,6 +113,11 @@ const TABLES: Record<string, TableDef> = {
     hasUpdatedAt: true,
     creatorCol: "created_by",
     projectVia: { kind: "column", col: "project_id" },
+    refProjectCols: [
+      { col: "parent_id", table: "tasks" },
+      { col: "section_id", table: "sections" },
+      { col: "status_id", table: "statuses" },
+    ],
   },
   sections: {
     columns: { project_id: "text", name: "text", position: "int" },
@@ -118,6 +128,7 @@ const TABLES: Record<string, TableDef> = {
     columns: { task_id: "text", user_id: "text", completed_at: "ts" },
     hasUpdatedAt: false,
     projectVia: { kind: "task", col: "task_id" },
+    memberCols: ["user_id"],
   },
   checklist_items: {
     columns: { task_id: "text", text: "text", checked: "bool", position: "int" },
@@ -174,6 +185,14 @@ async function projectFromDb(
   )) as Rows;
   const v = (rows[0]?.v as string) ?? null;
   return def.projectVia.kind === "column" ? v : projectViaTask(db, v);
+}
+
+/** Projekt řádku libovolné tabulky se sloupcem project_id (tasks/sections/statuses). */
+async function projectOfRow(db: Db, table: string, id: string): Promise<string | null> {
+  const rows = (await db.execute(
+    sql`SELECT project_id AS pid FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
+  )) as Rows;
+  return (rows[0]?.pid as string) ?? null;
 }
 
 async function isProjectMember(db: Db, projectId: string, userId: string): Promise<boolean> {
@@ -250,16 +269,24 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
   const data = body.data ?? {};
   const db = getDb();
 
-  // R5 — uživatel musí být členem KAŽDÉHO projektu, kterého se řádek dotkne
-  // (cílový z dat i současný z DB) → brání přesunu řádku do/z cizího projektu.
+  // R5 — uživatel musí být členem KAŽDÉHO projektu, kterého se řádek dotkne:
+  // cílový (z dat), současný (z DB — i u PUT kvůli upsert ON CONFLICT) a projekty FK referencí.
   const need = new Set<string>();
   if (body.op === "PUT" || body.op === "PATCH") {
     const t = await projectFromData(db, def, data);
     if (t) need.add(t);
   }
-  if (body.op === "PATCH" || body.op === "DELETE") {
+  if (body.op === "PUT" || body.op === "PATCH" || body.op === "DELETE") {
     const cur = await projectFromDb(db, body.table, def, body.id);
     if (cur) need.add(cur);
+  }
+  // FK reference (parent_id/section_id/status_id) musí ukazovat do projektu, kde je útočník člen.
+  for (const ref of def.refProjectCols ?? []) {
+    const refId = data[ref.col] as string | undefined;
+    if (refId) {
+      const p = await projectOfRow(db, ref.table, refId);
+      if (p) need.add(p);
+    }
   }
   // DELETE neexistujícího řádku = no-op (idempotentní upload).
   if (!(body.op === "DELETE" && need.size === 0)) {
@@ -268,12 +295,26 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
       if (!(await isProjectMember(db, p, userId))) return c.json({ error: "forbidden" }, 403);
     }
   }
+  // member sloupce (assignments.user_id) musí být člen projektu řádku.
+  for (const col of def.memberCols ?? []) {
+    const uid = data[col] as string | undefined;
+    if (!uid) continue;
+    for (const p of need) {
+      if (!(await isProjectMember(db, p, uid))) {
+        return c.json({ error: "assignee not a project member" }, 403);
+      }
+    }
+  }
 
   try {
     await applyWrite(db, body.table, def, body.op, body.id, data, userId);
   } catch (err) {
     console.error("[watson-api] write selhal:", err);
-    return c.json({ error: String(err) }, 500);
+    // Deterministická data/constraint chyba (Postgres 22xxx/23xxx) → 400, ať klient op zahodí
+    // a neblokuje upload frontu donekonečna (500 = PowerSync retry forever).
+    const code = (err as { code?: string }).code;
+    const deterministic = typeof code === "string" && /^(22|23)\d{3}$/.test(code);
+    return c.json({ error: String(err) }, deterministic ? 400 : 500);
   }
 
   return c.json({ ok: true });
