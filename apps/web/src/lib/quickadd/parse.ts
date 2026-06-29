@@ -192,7 +192,8 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
     base = base.replace(recVocab(), " ");
   }
   const personQueries: string[] = [];
-  const are = /[@+](\p{L}+)/gu;
+  // hranice před @/+ → nechytat e-mailovou adresu (adam@firma.cz)
+  const are = /(?<![\p{L}\d])[@+](\p{L}+)/gu;
   let am: RegExpExecArray | null;
   while ((am = are.exec(work))) {
     const t = am[0].trim();
@@ -200,7 +201,10 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
     personQueries.push(am[1]!);
   }
   base = base.replace(/\s{2,}/g, " ").trim();
-  const cleanName = base.replace(/[@+]\p{L}+/gu, " ").replace(/\s{2,}/g, " ").trim();
+  const cleanName = base
+    .replace(/(?<![\p{L}\d])[@+]\p{L}+/gu, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 
   // Termín (due) z dateKind/customDate
   let due: string | undefined;

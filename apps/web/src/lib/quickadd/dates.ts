@@ -68,12 +68,19 @@ export function nthWeekdayISO(nth: number, wd: number, today: string): string | 
     }
     return null;
   };
-  let dt = find(b.getFullYear(), b.getMonth());
-  if (!dt || dt < b) {
-    const n = new Date(b.getFullYear(), b.getMonth() + 1, 1);
-    dt = find(n.getFullYear(), n.getMonth());
+  // hledej první budoucí výskyt napříč měsíci (nth=5 nemusí existovat v každém měsíci)
+  let y = b.getFullYear();
+  let m = b.getMonth();
+  for (let k = 0; k < 14; k++) {
+    const dt = find(y, m);
+    if (dt && dt >= b) return toISO(dt);
+    m += 1;
+    if (m > 11) {
+      m = 0;
+      y += 1;
+    }
   }
-  return dt ? toISO(dt) : null;
+  return null;
 }
 
 /** Nejbližší `day`-tý den v měsíci ≥ today (clamp na délku měsíce). */
