@@ -1,8 +1,9 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
-import { type FormEvent, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
-import { Button, Icon, TaskCard } from "@watson/ui";
+import { Icon, TaskCard } from "@watson/ui";
+import { QuickAdd } from "../components/QuickAdd";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import type { TaskRow } from "../lib/powersync/AppSchema";
@@ -28,8 +29,6 @@ function dueInfo(due: string | null) {
 export function Today() {
   const { t } = useTranslation();
   const { data: session } = useSession();
-  const [text, setText] = useState("");
-  const [due, setDue] = useState("");
   const [openOverdue, setOpenOverdue] = useState(true);
   const [openDone, setOpenDone] = useState(false);
 
@@ -63,17 +62,6 @@ export function Today() {
       done: all.filter((x) => x.completed_at),
     };
   }, [tasks]);
-
-  async function addTask(e: FormEvent) {
-    e.preventDefault();
-    if (!text.trim() || !inboxId) return;
-    await powerSync.execute(
-      "INSERT INTO tasks (id, project_id, name, priority, due_date, created_at) VALUES (uuid(), ?, ?, 4, ?, ?)",
-      [inboxId, text.trim(), due || null, new Date().toISOString()],
-    );
-    setText("");
-    setDue("");
-  }
 
   async function toggle(task: TaskRow) {
     await powerSync.execute("UPDATE tasks SET completed_at = ? WHERE id = ?", [
@@ -140,25 +128,10 @@ export function Today() {
         </div>
       </div>
 
-      {/* Quick add (termín volitelně; parser přijde v #7) */}
-      <form onSubmit={addTask} className="mt-5 flex gap-2">
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={t("today.addPlaceholder")}
-          className="min-w-0 flex-1 rounded-lg border border-line bg-card px-3 py-2 text-sm outline-none focus:border-brass"
-        />
-        <input
-          type="date"
-          value={due}
-          onChange={(e) => setDue(e.target.value)}
-          aria-label={t("today.add")}
-          className="rounded-lg border border-line bg-card px-2 py-2 font-mono text-xs text-ink-2 outline-none focus:border-brass"
-        />
-        <Button type="submit" disabled={!inboxId}>
-          {t("today.add")}
-        </Button>
-      </form>
+      {/* Chytré přidání úkolu — parser přirozené češtiny (#7) */}
+      <div className="mt-5">
+        <QuickAdd projects={projects ?? []} inboxId={inboxId} />
+      </div>
 
       {/* Zpožděné — VLASTNÍ oddělená sekce (MASTER §11) */}
       {g.overdue.length > 0 && (

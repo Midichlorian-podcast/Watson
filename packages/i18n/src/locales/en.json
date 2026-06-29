@@ -30,6 +30,9 @@
     "collapse": "Collapse panel",
     "soon": "Coming soon"
   },
+  "quickadd": {
+    "placeholder": "Add task… (e.g. call Petra tomorrow at 3pm p1 #Sales)"
+  },
   "today": {
     "heading": "What to handle today",
     "overdue": "Overdue",
