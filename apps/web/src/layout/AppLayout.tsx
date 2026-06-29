@@ -1,5 +1,6 @@
 import { Outlet } from "@tanstack/react-router";
 import { useState } from "react";
+import { WriteRejectedToast } from "../components/WriteRejectedToast";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 
@@ -14,6 +15,7 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <WriteRejectedToast />
     </div>
   );
 }

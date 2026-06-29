@@ -49,6 +49,14 @@ export class WatsonConnector implements PowerSyncBackendConnector {
       const code = (ex as { code?: string }).code;
       if (code && FATAL.some((r) => r.test(code))) {
         console.error("[powersync] zahozuji nevratnou operaci", last, ex);
+        // S3 — op se zahodí (další sync vrátí lokální optimistickou změnu); upozorni uživatele.
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("watson:write-rejected", {
+              detail: { table: last?.table, op: last?.op, code },
+            }),
+          );
+        }
         await tx.complete();
       } else {
         throw ex; // dočasná chyba → PowerSync zkusí znovu

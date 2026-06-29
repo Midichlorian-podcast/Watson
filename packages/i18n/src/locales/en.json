@@ -33,6 +33,9 @@
   "quickadd": {
     "placeholder": "Add task… (e.g. call Petra tomorrow at 3pm p1 #Sales)"
   },
+  "sync": {
+    "writeRejected": "Change not saved — you didn't have permission. Reverted."
+  },
   "today": {
     "heading": "What to handle today",
     "overdue": "Overdue",

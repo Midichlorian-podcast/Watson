@@ -33,6 +33,9 @@
   "quickadd": {
     "placeholder": "Přidat úkol… (např. zavolat Petře zítra v 15 p1 #Obchod)"
   },
+  "sync": {
+    "writeRejected": "Změna se neuložila — neměl(a) jsi oprávnění. Vrácena zpět."
+  },
   "today": {
     "heading": "Co dnes řešit",
     "overdue": "Zpožděné",
