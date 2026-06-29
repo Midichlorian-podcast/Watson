@@ -1,0 +1,177 @@
+[
+  {
+    "input": "Odeslat report p1",
+    "expected": { "name": "Odeslat report", "priority": 1 },
+    "why": "§3 /\\bp([1-4])\\b/i: p1 samostatné slovo na hranici → priority=1, token vyříznut z názvu."
+  },
+  {
+    "input": "Připravit podklady p2",
+    "expected": { "name": "Připravit podklady", "priority": 2 },
+    "why": "§3: p2 na konci jako samostatné slovo → priority=2."
+  },
+  {
+    "input": "Zavolat klientovi p3",
+    "expected": { "name": "Zavolat klientovi", "priority": 3 },
+    "why": "§3: p3 → priority=3."
+  },
+  {
+    "input": "Vynést koš p4",
+    "expected": { "name": "Vynést koš", "priority": 4 },
+    "why": "§3: p4 → priority=4 (nejnižší priorita)."
+  },
+  {
+    "input": "Revize smlouvy P2",
+    "expected": { "name": "Revize smlouvy", "priority": 2 },
+    "why": "§3 flag i → velké P2 je case-insensitive → priority=2."
+  },
+  {
+    "input": "Dokončit prezentaci P1",
+    "expected": { "name": "Dokončit prezentaci", "priority": 1 },
+    "why": "§3 case-insensitive: P1 → priority=1."
+  },
+  {
+    "input": "Nakoupit potraviny",
+    "expected": { "name": "Nakoupit potraviny" },
+    "why": "§3: žádný p1-p4 token → priority zůstává undefined (v draftu default 2, ale parser ho nenastaví)."
+  },
+  {
+    "input": "Rozdělit do p5 skupin",
+    "expected": { "name": "Rozdělit do p5 skupin" },
+    "why": "§3 edge: p5 mimo rozsah 1-4 → regex nechytí → priority undefined, p5 zůstává v názvu."
+  },
+  {
+    "input": "Sledovat top1 žebříček",
+    "expected": { "name": "Sledovat top1 žebříček" },
+    "why": "§3 edge: 'top1' → p NENÍ na hranici slova (\\b mezi 'o' a 'p' neexistuje, p je uprostřed slova) → nechytí, zůstává v názvu."
+  },
+  {
+    "input": "Číst appendix1 dokument",
+    "expected": { "name": "Číst appendix1 dokument" },
+    "why": "§3 edge: 'appendix1' nemá p1 (znak před '1' je 'x') → nic se nechytne, priority undefined."
+  },
+  {
+    "input": "Číst appendix p4",
+    "expected": { "name": "Číst appendix", "priority": 4 },
+    "why": "§3: samostatné p4 (od appendixu odděleno mezerou) → priority=4; 'appendix' zůstává."
+  },
+  {
+    "input": "Naplánovat p1 schůzku p2",
+    "expected": { "name": "Naplánovat schůzku p2", "priority": 1 },
+    "why": "§1 cut: work.replace nahrazuje JEN první výskyt. Regex /\\bp([1-4])\\b/i najde první p1 → priority=1, vyřízne pouze 'p1'. Druhý 'p2' zůstává (parser už ho nevidí). Po vyříznutí 'p1' a sloučení mezer → 'Naplánovat schůzku p2'."
+  },
+  {
+    "input": "Zaplatit fakturu !15. 7.",
+    "expected": { "name": "Zaplatit fakturu", "deadline": "2026-07-15" },
+    "why": "§2 /!\\s*(\\d{1,2})\\.\\s*(\\d{1,2})\\.\\s*(\\d{4})?/: da=15,mo=7,bez roku→default aktuální rok 2026 (today=2026-06-25). mo 1-12 ok, da 1-31 ok → deadline=2026-07-15. Token '!15. 7.' vyříznut."
+  },
+  {
+    "input": "Poslat nabídku !5.7.",
+    "expected": { "name": "Poslat nabídku", "deadline": "2026-07-05" },
+    "why": "§2: bez mezer '!5.7.' regex toleruje (\\s* je volitelné). da=5,mo=7 → deadline=2026-07-05, pad na dvojčíslí."
+  },
+  {
+    "input": "Revize do !1. 12. 2027",
+    "expected": { "name": "Revize do", "deadline": "2027-12-01" },
+    "why": "§2: explicitní rok 2027 v textu (dl[3]) → použít rok zadaný v textu = 2027. da=1,mo=12 → deadline=2027-12-01."
+  },
+  {
+    "input": "Odevzdat daňové přiznání !31. 3. 2026",
+    "expected": { "name": "Odevzdat daňové přiznání", "deadline": "2026-03-31" },
+    "why": "§2: da=31,mo=3 (březen má 31 dní), rok 2026 explicitně → deadline=2026-03-31. Validní i při produkční kontrole délky měsíce."
+  },
+  {
+    "input": "Uzávěrka !30. 6.",
+    "expected": { "name": "Uzávěrka", "deadline": "2026-06-30" },
+    "why": "§2: da=30,mo=6 (červen má 30 dní) → deadline=2026-06-30. Default rok 2026."
+  },
+  {
+    "input": "Konec roku !31. 12.",
+    "expected": { "name": "Konec roku", "deadline": "2026-12-31" },
+    "why": "§2: da=31,mo=12 (prosinec 31 dní) → deadline=2026-12-31, validní i produkčně."
+  },
+  {
+    "input": "Termín !31. 2. nahlásit",
+    "expected": { "name": "Termín !31. 2. nahlásit" },
+    "why": "§2 PRODUKCE: 31. únor neexistuje (new Date(2026,2,0).getDate()=28). Produkce validuje reálnou délku měsíce → nevalidní → deadline se NEnastaví a token se NEvyřezává z názvu (zůstává '!31. 2.'). [POZOR: prototyp by zde naopak nastavil deadline=2026-02-31 a token vyřízl — viz nejasnosti.]"
+  },
+  {
+    "input": "Schůze !31. 4. 2026",
+    "expected": { "name": "Schůze !31. 4. 2026" },
+    "why": "§2 PRODUKCE: duben má 30 dní → 31.4. nevalidní → bez deadline, token zůstává. [Prototyp by nastavil 2026-04-31.]"
+  },
+  {
+    "input": "Audit !31. 6.",
+    "expected": { "name": "Audit !31. 6." },
+    "why": "§2 PRODUKCE: červen má 30 dní → 31.6. nevalidní → bez deadline, token zůstává. [Prototyp by nastavil 2026-06-31.]"
+  },
+  {
+    "input": "Chyba !13. 13. test",
+    "expected": { "name": "Chyba !13. 13. test" },
+    "why": "§2: měsíc 13 mimo 1-12 → nevalidní → deadline se nenastaví. PRODUKCE navíc token NEvyřezává (zůstává '!13. 13.'). [POZOR: prototyp by token přesto vyřízl (cut je mimo if) → 'Chyba test'. Viz nejasnosti.]"
+  },
+  {
+    "input": "Test !0. 5.",
+    "expected": { "name": "Test !0. 5." },
+    "why": "§2: den 0 mimo 1-31 → nevalidní → bez deadline. PRODUKCE token nevyřezává. [Prototyp by token vyřízl na 'Test'.]"
+  },
+  {
+    "input": "Odeslat report p1 !30. 6.",
+    "expected": { "name": "Odeslat report", "priority": 1, "deadline": "2026-06-30" },
+    "why": "Kombinace §2+§3: pořadí v parseru deadline PŘED prioritou. da=30,mo=6→deadline=2026-06-30; p1→priority=1. Oba tokeny vyříznuty, název 'Odeslat report'."
+  },
+  {
+    "input": "!1. 7. připravit fakturaci p3",
+    "expected": { "name": "připravit fakturaci", "priority": 3, "deadline": "2026-07-01" },
+    "why": "Pořadí tokenů na začátku: deadline 1.7.→2026-07-01, p3→priority=3. Oba pryč z názvu."
+  },
+  {
+    "input": "Reklamace P4 vyřídit !10. 8. 2026",
+    "expected": { "name": "Reklamace vyřídit", "priority": 4, "deadline": "2026-08-10" },
+    "why": "§2+§3: velké P4 (case-insensitive)→priority=4; da=10,mo=8,rok 2026→deadline=2026-08-10. Token uprostřed věty se vyřízne, sousední slova se spojí mezerou."
+  },
+  {
+    "input": "Poslat smlouvu p2 deadline !28. 2. 2026",
+    "expected": { "name": "Poslat smlouvu deadline", "priority": 2, "deadline": "2026-02-28" },
+    "why": "§2: da=28,mo=2 (2026 NENÍ přestupný → únor 28 dní) → validní → deadline=2026-02-28. p2→priority=2. Slovo 'deadline' v textu zůstává (není token)."
+  },
+  {
+    "input": "Poslat smlouvu !29. 2. 2026",
+    "expected": { "name": "Poslat smlouvu !29. 2. 2026" },
+    "why": "§2 PRODUKCE: 2026 není přestupný rok (new Date(2026,2,0).getDate()=28) → 29.2. nevalidní → bez deadline, token zůstává. [Prototyp by nastavil 2026-02-29.]"
+  },
+  {
+    "input": "Odevzdat !29. 2. 2028",
+    "expected": { "name": "Odevzdat", "deadline": "2028-02-29" },
+    "why": "§2 PRODUKCE: 2028 JE přestupný (new Date(2028,2,0).getDate()=29) → 29.2.2028 validní → deadline=2028-02-29. Rok 2028 zadaný v textu."
+  },
+  {
+    "input": "Drobnost !1. 1.",
+    "expected": { "name": "Drobnost", "deadline": "2026-01-01" },
+    "why": "§2 hraniční minimum: da=1,mo=1 → deadline=2026-01-01, validní."
+  },
+  {
+    "input": "p1",
+    "expected": { "name": "", "priority": 1 },
+    "why": "§3 + §12: čistě token p1, po vyříznutí prázdný název. priority=1. (guard prázdného názvu řeší UI, parser vrací name='')."
+  },
+  {
+    "input": "!5. 7.",
+    "expected": { "name": "", "deadline": "2026-07-05" },
+    "why": "§2 + §12: čistě deadline token → name='', deadline=2026-07-05."
+  },
+  {
+    "input": "Připravit P1 i P2 verze",
+    "expected": { "priority": 1, "name": "Připravit i P2 verze" },
+    "why": "§3 + §1 cut (jen první výskyt): regex najde první 'P1'→priority=1, vyřízne pouze 'P1'. 'P2' zůstává v názvu. Po vyříznutí a sloučení mezer → 'Připravit i P2 verze'."
+  },
+  {
+    "input": "Splatnost faktury !15. 11. 2026 p3",
+    "expected": { "name": "Splatnost faktury", "priority": 3, "deadline": "2026-11-15" },
+    "why": "§2+§3: da=15,mo=11 (listopad 30 dní, 15 ok)→deadline=2026-11-15; p3→priority=3. Oba tokeny pryč."
+  },
+  {
+    "input": "Kontrola p3 a oprava chyb",
+    "expected": { "name": "Kontrola a oprava chyb", "priority": 3 },
+    "why": "§3 token uprostřed: p3→priority=3, vyříznut, okolní slova se spojí jednou mezerou (§12 slučování mezer)."
+  }
+]
