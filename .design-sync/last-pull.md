@@ -31,12 +31,12 @@ něco změní, snapshot se sem znovu „pullne" a commitne — git pak drží hi
 - `uploads/*.png` (screenshoty, draw-*.png) — vstupní reference, binární.
 - `uploads/TODOIST_KOMPLETNI_ANALYZA.md.txt` — referenční analýza, zůstává v Claude Design.
 
-## ⚠️ Truncation: `WatsonApp.dc.html`
-`get_file` vrací max 256 KiB; tenhle prototyp je větší, takže lokální kopie končí
-uprostřed JS dat (ne `</html>`). **Markup a styly (= celá struktura obrazovek) jsou ale
-v prvních 256 KiB**, takže pro pochopení/plánování je úplná; chybí jen konec mock dat
-a zavírací boilerplate. **Pro byte-perfect kopii** exportovat prototyp přímo z UI
-Claude Designu a nahradit tento soubor. Kanonická verze je vždy v Claude Design.
+## ✅ Truncation `WatsonApp.dc.html` — VYŘEŠENO (2026-06-29)
+API `get_file` uřízl soubor na 256 KiB. Uživatel mezitím vyexportoval **kompletní design
+handoff** (`Watson.zip`) → plný soubor (445 KB, končí `</html>`) je teď v repu na dvou místech:
+`ds-bundle/templates/watson-app/WatsonApp.dc.html` (přepsán na plnou verzi) a autoritativně
+v **`design/handoff_watson/`** (vč. `README.md`, `CLAUDE.md`, 20 screenshotů). Handoff README
+je faktický „design-truth" — viz srovnání `files/RECONCILIACE_design_vs_kod.md`.
 
 ## App shell (z aktuálního pullu)
 Boční navigace `WatsonApp` už obsahuje: **Hledat · Schránka (s počítadlem) · Dnes ·
