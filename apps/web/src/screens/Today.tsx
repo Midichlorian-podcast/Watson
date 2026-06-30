@@ -1,54 +1,47 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
-import { Icon, TaskCard } from "@watson/ui";
+import { TaskCard } from "@watson/ui";
 import { QuickAdd } from "../components/QuickAdd";
 import { useSession } from "../lib/auth-client";
-import type { TaskRow } from "../lib/powersync/AppSchema";
+import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
+import { dueLabel } from "../lib/tasks";
 
 type Pri = 1 | 2 | 3 | 4;
-
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const dayOf = (x: TaskRow) => (x.due_date ? x.due_date.slice(0, 10) : null);
 
-function dueInfo(due: string | null) {
-  if (!due) return null;
-  const d = due.slice(0, 10);
-  const tdy = todayISO();
-  return { day: d, overdue: d < tdy, isToday: d === tdy };
-}
-
 /**
- * Dnes (dashboard) dle Claude Design: Watson pruh + quick-add + ODDĚLENÁ sekce
- * „Zpožděné" (MASTER §11, nemíchat s dnešními) + dnešní úkoly + hotovo.
+ * Dnes — 1:1 dle Cloud Design: Watson strip (brass-soft) + workspace kontext + skupiny
+ * „Zpožděné" (s akcí Přeplánovat) a „{datum} · Dnes · {den}". Karty = sdílený TaskCard řádek.
  */
 export function Today() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data: session } = useSession();
   const { open } = useTaskDetail();
-  const [openOverdue, setOpenOverdue] = useState(true);
   const [openDone, setOpenDone] = useState(false);
 
   const projects = useProjects();
+  const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
   const inboxId = projects[0]?.id;
 
   const { data: tasks } = usePsQuery<TaskRow>(
-    "SELECT * FROM tasks ORDER BY due_date IS NULL, due_date, created_at DESC",
+    "SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date, created_at DESC",
   );
 
   const g = useMemo(() => {
     const tdy = todayISO();
     const all = tasks ?? [];
-    const open = all.filter((x) => !x.completed_at);
+    const opn = all.filter((x) => !x.completed_at);
     return {
-      overdue: open.filter((x) => {
+      overdue: opn.filter((x) => {
         const d = dayOf(x);
         return d !== null && d < tdy;
       }),
-      today: open.filter((x) => {
+      today: opn.filter((x) => {
         const d = dayOf(x);
         return d === null || d === tdy;
       }),
@@ -63,30 +56,38 @@ export function Today() {
     ]);
   }
 
+  async function rescheduleOverdue() {
+    const now = new Date().toISOString();
+    for (const tk of g.overdue) {
+      await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [now, tk.id]);
+    }
+  }
+
   const hour = new Date().getHours();
   const greeting =
     hour < 11 ? t("today.morning") : hour < 18 ? t("today.afternoon") : t("today.evening");
   const firstName = session?.user?.name?.split(" ")[0] ?? "";
+  const greet = `${greeting}${firstName ? `, ${firstName}` : ""}. ${t("today.summaryToday", {
+    count: g.today.length,
+  })}${g.overdue.length > 0 ? ` · ${t("today.summaryOverdue", { count: g.overdue.length })}` : ""}`;
+
+  const dateLabel = `${new Intl.DateTimeFormat(i18n.language, {
+    day: "numeric",
+    month: "long",
+  }).format(
+    new Date(),
+  )} · ${t("nav.today")} · ${new Intl.DateTimeFormat(i18n.language, { weekday: "long" }).format(new Date())}`;
 
   const card = (task: TaskRow) => {
-    const di = dueInfo(task.due_date);
-    const due = di
-      ? {
-          label: di.overdue
-            ? `${t("today.duePast")} · ${di.day}`
-            : di.isToday
-              ? t("nav.today")
-              : di.day,
-          overdue: di.overdue,
-        }
-      : undefined;
+    const p = task.project_id ? projMap.get(task.project_id) : undefined;
     return (
       <li key={task.id}>
         <TaskCard
           name={task.name ?? ""}
           priority={(task.priority ?? 4) as Pri}
-          color={task.color ?? undefined}
-          due={due}
+          projectName={p?.name ?? undefined}
+          projectColor={p?.color ?? undefined}
+          due={task.due_date ? dueLabel(task.due_date, t) : undefined}
           done={Boolean(task.completed_at)}
           onToggle={() => toggle(task)}
           onOpen={() => open(task.id)}
@@ -96,89 +97,125 @@ export function Today() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-5 py-7">
-      {/* Watson pruh */}
+    <>
+      {/* WATSON strip */}
       <div
-        className="flex items-center gap-3 rounded-2xl border border-line bg-card px-4 py-3"
-        style={{ boxShadow: "var(--w-shadow-sm)" }}
+        className="flex items-center gap-2.5 border-line border-b"
+        style={{ padding: "10px 20px", background: "var(--w-brass-soft)" }}
       >
         <span
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl"
-          style={{ background: "var(--w-brass)", color: "var(--w-navy)" }}
+          className="shrink-0 rounded-full"
+          style={{ width: 6, height: 6, background: "var(--w-brass)" }}
+        />
+        <span
+          className="shrink-0 font-display font-bold text-brass-text"
+          style={{ fontSize: 11.5, letterSpacing: ".04em" }}
         >
-          <Icon name="dnes" size={20} />
+          WATSON
         </span>
-        <div className="min-w-0">
-          <p className="font-display text-sm font-semibold text-navy">
-            {greeting}
-            {firstName ? `, ${firstName}` : ""}.
-          </p>
-          <p className="text-xs text-ink-2">
-            {t("today.summaryToday", { count: g.today.length })}
-            {g.overdue.length > 0
-              ? ` · ${t("today.summaryOverdue", { count: g.overdue.length })}`
-              : ""}
-          </p>
-        </div>
+        <span className="min-w-0 flex-1 truncate font-body text-ink-2" style={{ fontSize: 13 }}>
+          {greet}
+        </span>
+        {g.overdue.length > 0 && (
+          <button
+            type="button"
+            onClick={() => void rescheduleOverdue()}
+            className="shrink-0 font-display font-semibold text-brass-text hover:underline"
+            style={{ fontSize: 12 }}
+          >
+            {t("today.rescheduleOverdue")}
+          </button>
+        )}
+        <span className="shrink-0 font-display font-semibold text-ink-3" style={{ fontSize: 12 }}>
+          {t("today.watsonMore")}
+        </span>
       </div>
 
-      {/* Chytré přidání úkolu — parser přirozené češtiny (#7) */}
-      <div className="mt-5">
+      <div className="mx-auto max-w-[1080px]" style={{ padding: "12px 22px 90px" }}>
+        {/* Chytré přidání úkolu (parser, #7) */}
         <QuickAdd
-          projects={projects.map((p) => ({ id: p.id, name: p.name ?? "" }))}
+          projects={projects.map((p: ProjectRow) => ({ id: p.id, name: p.name ?? "" }))}
           inboxId={inboxId}
         />
-      </div>
 
-      {/* Zpožděné — VLASTNÍ oddělená sekce (MASTER §11) */}
-      {g.overdue.length > 0 && (
-        <section className="mt-7">
-          <button
-            type="button"
-            onClick={() => setOpenOverdue((s) => !s)}
-            className="flex w-full items-center gap-2"
-          >
-            <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-overdue">
-              {t("today.overdue")}
-            </span>
-            <span className="font-mono text-xs text-ink-3">{g.overdue.length}</span>
-            <span className="ml-auto text-ink-3">{openOverdue ? "▾" : "▸"}</span>
-          </button>
-          {openOverdue && <ul className="mt-3 flex flex-col gap-2">{g.overdue.map(card)}</ul>}
-        </section>
-      )}
+        {/* Zpožděné */}
+        {g.overdue.length > 0 && (
+          <section>
+            <SectionHead
+              label={t("today.overdue")}
+              count={g.overdue.length}
+              action={t("today.reschedule")}
+              onAction={() => void rescheduleOverdue()}
+            />
+            <ul>{g.overdue.map(card)}</ul>
+          </section>
+        )}
 
-      {/* Dnešní úkoly */}
-      <section className="mt-7">
-        <h2 className="font-display text-xs font-bold uppercase tracking-[0.18em] text-brass-text">
-          {t("today.heading")}
-        </h2>
-        <ul className="mt-3 flex flex-col gap-2">
-          {g.today.map(card)}
-          {g.today.length === 0 && (
-            <li className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-ink-3">
+        {/* Dnes / datum */}
+        <section>
+          <SectionHead label={dateLabel} count={g.today.length} />
+          {g.today.length === 0 ? (
+            <p className="rounded-xl border border-line border-dashed px-4 py-8 text-center text-ink-3 text-sm">
               {t("today.empty")}
-            </li>
+            </p>
+          ) : (
+            <ul>{g.today.map(card)}</ul>
           )}
-        </ul>
-      </section>
-
-      {/* Hotovo */}
-      {g.done.length > 0 && (
-        <section className="mt-7">
-          <button
-            type="button"
-            onClick={() => setOpenDone((s) => !s)}
-            className="flex w-full items-center gap-2"
-          >
-            <span className="font-display text-xs font-bold uppercase tracking-[0.18em] text-ink-3">
-              {t("today.doneSection")}
-            </span>
-            <span className="font-mono text-xs text-ink-3">{g.done.length}</span>
-            <span className="ml-auto text-ink-3">{openDone ? "▾" : "▸"}</span>
-          </button>
-          {openDone && <ul className="mt-3 flex flex-col gap-2">{g.done.map(card)}</ul>}
         </section>
+
+        {/* Hotovo */}
+        {g.done.length > 0 && (
+          <section className="mt-4">
+            <button
+              type="button"
+              onClick={() => setOpenDone((s) => !s)}
+              className="flex w-full items-center gap-2.5"
+              style={{ padding: "0 4px" }}
+            >
+              <span className="font-display font-bold text-ink-3" style={{ fontSize: 13 }}>
+                {t("today.doneSection")}
+              </span>
+              <span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
+                {g.done.length}
+              </span>
+              <span className="ml-auto text-ink-3">{openDone ? "▾" : "▸"}</span>
+            </button>
+            {openDone && <ul className="mt-1">{g.done.map(card)}</ul>}
+          </section>
+        )}
+      </div>
+    </>
+  );
+}
+
+function SectionHead({
+  label,
+  count,
+  action,
+  onAction,
+}: {
+  label: string;
+  count: number;
+  action?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2.5" style={{ margin: "18px 0 2px", padding: "0 4px" }}>
+      <span className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
+        {label}
+      </span>
+      <span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
+        {count}
+      </span>
+      {action && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="ml-auto font-display font-semibold text-brass-text hover:underline"
+          style={{ fontSize: 12 }}
+        >
+          {action}
+        </button>
       )}
     </div>
   );

@@ -43,8 +43,9 @@ export function Ukoly() {
     return [...m.entries()];
   }, [openTasks]);
 
-  const projName = (id: string) => projects.find((p) => p.id === id)?.name ?? "—";
-  const activeProject = projektId ? projects.find((p) => p.id === projektId) : undefined;
+  const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  const projName = (id: string) => projMap.get(id)?.name ?? "—";
+  const activeProject = projektId ? projMap.get(projektId) : undefined;
 
   return (
     <div className={`mx-auto px-5 py-7 ${view === "calendar" ? "max-w-5xl" : "max-w-3xl"}`}>
@@ -90,18 +91,26 @@ export function Ukoly() {
           {projektId ? (
             <ul className="flex flex-col gap-2">
               {openTasks.map((tk) => (
-                <TaskItem key={tk.id} task={tk} />
+                <TaskItem key={tk.id} task={tk} project={projMap.get(tk.project_id ?? "")} />
               ))}
             </ul>
           ) : (
             groups.map(([pid, list]) => (
-              <section key={pid} className="mb-6">
-                <h2 className="font-display font-bold text-navy text-xs uppercase tracking-[0.18em]">
-                  {projName(pid)} <span className="ml-1 font-mono text-ink-3">{list.length}</span>
-                </h2>
-                <ul className="mt-3 flex flex-col gap-2">
+              <section key={pid}>
+                <div
+                  className="flex items-center gap-2.5"
+                  style={{ margin: "18px 0 2px", padding: "0 4px" }}
+                >
+                  <span className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
+                    {projName(pid)}
+                  </span>
+                  <span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
+                    {list.length}
+                  </span>
+                </div>
+                <ul>
                   {list.map((tk) => (
-                    <TaskItem key={tk.id} task={tk} />
+                    <TaskItem key={tk.id} task={tk} project={projMap.get(tk.project_id ?? "")} />
                   ))}
                 </ul>
               </section>

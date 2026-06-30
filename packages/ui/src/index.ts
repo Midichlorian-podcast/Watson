@@ -6,4 +6,4 @@ export { Avatar, AvatarGroup } from "./Avatar";
 export { Chip, StatusChip } from "./Chip";
 export { Button } from "./Button";
 export { TaskCard } from "./TaskCard";
-export type { TaskCardProps, TaskCardAssignment, AssignmentMode } from "./TaskCard";
+export type { TaskCardProps, AssignmentMode } from "./TaskCard";

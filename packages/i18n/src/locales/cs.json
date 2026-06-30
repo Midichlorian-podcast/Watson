@@ -93,7 +93,13 @@
     "addPlaceholder": "Přidat úkol…",
     "add": "Přidat",
     "doneSection": "Hotovo",
-    "duePast": "Po termínu"
+    "duePast": "Po termínu",
+    "duePastLower": "po termínu",
+    "todayLower": "dnes",
+    "tomorrowLower": "zítra",
+    "reschedule": "Přeplánovat",
+    "rescheduleOverdue": "Přeplánovat zpožděné",
+    "watsonMore": "Více →"
   },
   "settings": {
     "appearance": "Vzhled",

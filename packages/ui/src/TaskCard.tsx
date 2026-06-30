@@ -1,57 +1,58 @@
 import type { Priority } from "@watson/shared";
-import { AvatarGroup } from "./Avatar";
-import { Chip, StatusChip } from "./Chip";
 import { cn } from "./cn";
-import { PriorityBadge } from "./PriorityBadge";
 
 export type AssignmentMode = "single" | "shared_any" | "shared_all";
 
-export interface TaskCardAssignment {
-  mode: AssignmentMode;
-  /** Iniciály řešitelů. */
-  people: string[];
-  /** shared_all: kolik osob hotovo (per-osoba progres „done/total"). */
-  done?: number;
-  total?: number;
-}
-
 export interface TaskCardProps {
   name: string;
+  /** Priorita 1–4 — POUZE levý okraj (inset box-shadow), ne odznak. */
   priority: Priority;
-  /** Barva těla karty: dle projektu nebo per-uživatel. NE priorita (ta je levý okraj). */
-  color?: string;
+  /** Tečka + podřádek projektu. */
+  projectName?: string;
+  projectColor?: string;
   due?: { label: string; overdue?: boolean };
+  /** Volitelný status label (Probíhá / Ke kontrole / Hotovo). */
   status?: string;
-  assignment?: TaskCardAssignment;
   done?: boolean;
   onToggle?: () => void;
   onOpen?: () => void;
 }
 
+const PRI: Record<Priority, string> = {
+  1: "var(--w-p1)",
+  2: "var(--w-p2)",
+  3: "var(--w-p3)",
+  4: "var(--w-p4)",
+};
+
 /**
- * Karta úkolu — vlajková komponenta seznamů / „Dnes" / boardu.
- * Barevný model (Claude Design, revize R6): LEVÝ OKRAJ = priorita (p1–p4);
- * tečka/tělo = barva projektu nebo per-uživatelská barva úkolu.
- * R2: shared_any = avatary + 1 checkbox; shared_all = per-osoba progres „3/5".
+ * Řádek úkolu — 1:1 dle Cloud Design: plochý řádek s `border-bottom`, levý okraj = priorita
+ * (inset box-shadow 3px), tečka + název projektu v podřádku, termín jako mono text (po termínu =
+ * červená), NEUTRÁLNÍ prioritní odznak P1–P4. Hotový = opacity .5 + přeškrtnutý název, bez okraje.
  */
 export function TaskCard({
   name,
   priority,
-  color,
+  projectName,
+  projectColor,
   due,
   status,
-  assignment,
   done,
   onToggle,
   onOpen,
 }: TaskCardProps) {
-  const isAll = assignment?.mode === "shared_all";
   return (
     <div
-      className="flex items-center gap-3 rounded-xl border border-line bg-card py-3 pl-3 pr-4"
-      style={{ boxShadow: "var(--w-shadow-sm)", borderLeft: `4px solid var(--w-p${priority})` }}
       onClick={onOpen}
+      className="flex cursor-pointer items-center gap-3 border-line border-b hover:bg-panel-2"
+      style={{
+        padding: "10px 4px 10px 11px",
+        borderRadius: "0 6px 6px 0",
+        boxShadow: done ? undefined : `inset 3px 0 0 ${PRI[priority]}`,
+        opacity: done ? 0.5 : 1,
+      }}
     >
+      {/* zaškrtávátko */}
       <button
         type="button"
         onClick={(e) => {
@@ -59,46 +60,97 @@ export function TaskCard({
           onToggle?.();
         }}
         aria-label={done ? "Označit jako nehotové" : "Dokončit"}
-        className="grid h-5 w-5 shrink-0 place-items-center rounded-full border text-xs text-white"
+        className="grid shrink-0 place-items-center rounded-full"
         style={{
-          borderColor: done ? "var(--w-success)" : "var(--w-line)",
-          background: done ? "var(--w-success)" : "transparent",
+          width: 18,
+          height: 18,
+          background: done ? "var(--w-brass)" : "transparent",
+          border: done ? "none" : "2px solid var(--w-line)",
         }}
       >
-        {done ? "✓" : ""}
+        {done && (
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden>
+            <path
+              d="M2 5.7 L4.3 8 L9 2.7"
+              stroke="#fff"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
       </button>
 
-      {color && (
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
-      )}
-
+      {/* tečka projektu */}
       <span
-        className={cn(
-          "min-w-0 flex-1 truncate font-display text-sm font-semibold",
-          done ? "text-ink-3 line-through" : "text-ink",
-        )}
-      >
-        {name}
-      </span>
+        className="shrink-0 rounded-full"
+        style={{ width: 8, height: 8, background: projectColor ?? "var(--w-ink-3)" }}
+      />
 
-      {due && (
-        <Chip tone={due.overdue ? "overdue" : "default"} className="font-mono">
-          {due.label}
-        </Chip>
-      )}
-      {status && <StatusChip status={status} />}
-      <PriorityBadge priority={priority} />
-
-      {assignment && assignment.people.length > 0 && (
-        <span className="flex shrink-0 items-center gap-1.5">
-          {isAll && (
-            <span className="font-mono text-xs text-ink-2">
-              {assignment.done ?? 0}/{assignment.total ?? assignment.people.length}
-            </span>
+      {/* název + podřádek */}
+      <div className="min-w-0 flex-1">
+        <div
+          className={cn(
+            "truncate font-display font-semibold",
+            done ? "text-ink-3 line-through" : "text-ink",
           )}
-          <AvatarGroup people={assignment.people} />
+          style={{ fontSize: 13.5 }}
+        >
+          {name}
+        </div>
+        {projectName && (
+          <div className="mt-0.5 font-body text-ink-3" style={{ fontSize: 11.5 }}>
+            {projectName}
+          </div>
+        )}
+      </div>
+
+      {/* termín */}
+      {due && (
+        <span
+          className="shrink-0 font-mono"
+          style={{ fontSize: 12, color: due.overdue ? "var(--w-overdue)" : "var(--w-ink-2)" }}
+        >
+          {due.label}
         </span>
       )}
+
+      {/* prioritní odznak — NEUTRÁLNÍ pill (barva priority je jen levý okraj) */}
+      <span
+        className="shrink-0 font-display font-semibold"
+        style={{
+          fontSize: 11,
+          padding: "2px 8px",
+          borderRadius: 999,
+          background: "var(--w-card)",
+          border: `1px solid ${priority === 1 ? "var(--w-ink-3)" : "var(--w-line)"}`,
+          color:
+            priority === 1 ? "var(--w-ink)" : priority === 4 ? "var(--w-ink-3)" : "var(--w-ink-2)",
+        }}
+      >
+        P{priority}
+      </span>
+
+      {/* status (volitelný) */}
+      {status && <StatusPill status={status} />}
     </div>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const success = status === "Hotovo" || status === "Probíhá";
+  return (
+    <span
+      className="shrink-0 font-display font-semibold"
+      style={{
+        fontSize: 11,
+        padding: "3px 9px",
+        borderRadius: 999,
+        background: success ? "var(--w-success-soft)" : "var(--w-panel-2)",
+        color: success ? "var(--w-success-ink)" : "var(--w-ink-2)",
+      }}
+    >
+      {status}
+    </span>
   );
 }

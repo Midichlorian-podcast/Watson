@@ -93,7 +93,13 @@
     "addPlaceholder": "Add task…",
     "add": "Add",
     "doneSection": "Done",
-    "duePast": "Overdue"
+    "duePast": "Overdue",
+    "duePastLower": "overdue",
+    "todayLower": "today",
+    "tomorrowLower": "tomorrow",
+    "reschedule": "Reschedule",
+    "rescheduleOverdue": "Reschedule overdue",
+    "watsonMore": "More →"
   },
   "settings": {
     "appearance": "Appearance",
