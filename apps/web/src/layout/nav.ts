@@ -8,13 +8,13 @@ export interface NavItem {
   count?: boolean;
 }
 
-/** Hlavní navigace (dle Claude Design handoffu). */
+/** Hlavní navigace (dle Claude Design handoffu). Počty (badge): Schránka/Dnes/Nadcházející/Úkoly. */
 export const MAIN_NAV: NavItem[] = [
   { to: "/hledat", icon: "hledat", labelKey: "nav.search" },
   { to: "/schranka", icon: "schranka", labelKey: "nav.inbox", count: true },
-  { to: "/", icon: "dnes", labelKey: "nav.today" },
-  { to: "/nadchazejici", icon: "nadchazejici", labelKey: "nav.upcoming" },
-  { to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks" },
+  { to: "/", icon: "dnes", labelKey: "nav.today", count: true },
+  { to: "/nadchazejici", icon: "nadchazejici", labelKey: "nav.upcoming", count: true },
+  { to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks", count: true },
   { to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
   { to: "/cile", icon: "cile", labelKey: "nav.goals" },
   { to: "/reporty", icon: "reporty", labelKey: "nav.reports" },

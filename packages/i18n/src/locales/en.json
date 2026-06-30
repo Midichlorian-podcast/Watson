@@ -23,6 +23,8 @@
   },
   "shell": {
     "newTask": "Task",
+    "addTask": "Add task",
+    "taskCount": "{{count}} tasks",
     "search": "Search",
     "notifications": "Notifications",
     "theme": "Toggle theme",

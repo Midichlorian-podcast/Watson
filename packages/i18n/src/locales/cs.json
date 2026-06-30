@@ -23,6 +23,8 @@
   },
   "shell": {
     "newTask": "Úkol",
+    "addTask": "Přidat úkol",
+    "taskCount": "{{count}} úkolů",
     "search": "Hledat",
     "notifications": "Oznámení",
     "theme": "Přepnout motiv",
