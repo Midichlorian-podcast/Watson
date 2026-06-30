@@ -81,8 +81,8 @@ interface TableDef {
   hasUpdatedAt: boolean;
   /** Sloupec autora — na PUT se vyplní serverovým userId (atribuce, R10). */
   creatorCol?: string;
-  /** Jak zjistit project_id pro membership kontrolu (R5). */
-  projectVia: { kind: "column"; col: string } | { kind: "task"; col: string };
+  /** Jak zjistit project_id pro membership kontrolu (R5). `self` = řádek JE projekt (id). */
+  projectVia: { kind: "column"; col: string } | { kind: "task"; col: string } | { kind: "self" };
   /** FK sloupce na řádek (se sloupcem project_id), jehož projekt musí být útočníkův —
    *  brání cross-project referenci (parent_id/section_id/status_id). */
   refProjectCols?: { col: string; table: string }[];
@@ -121,6 +121,33 @@ const TABLES: Record<string, TableDef> = {
   },
   sections: {
     columns: { project_id: "text", name: "text", position: "int" },
+    hasUpdatedAt: false,
+    projectVia: { kind: "column", col: "project_id" },
+  },
+  // Editace projektu (název/barva/ikona/layout/viditelnost/archivace). `self` = členství
+  // se ověřuje vůči SAMOTNÉMU projektu → editovat/archivovat smí jen člen; vytvoření nového
+  // projektu přes write-path tím pádem NEjde (člen ještě neexistuje) — to řeší server/API.
+  // Záměrně bez `workspace_id` (přesun mezi prostory není klientská operace).
+  projects: {
+    columns: {
+      name: "text",
+      color: "text",
+      icon: "text",
+      default_layout: "text",
+      visibility: "text",
+      archived_at: "ts",
+    },
+    hasUpdatedAt: true,
+    projectVia: { kind: "self" },
+  },
+  statuses: {
+    columns: {
+      project_id: "text",
+      name: "text",
+      color: "text",
+      position: "int",
+      is_done: "bool",
+    },
     hasUpdatedAt: false,
     projectVia: { kind: "column", col: "project_id" },
   },
@@ -168,7 +195,9 @@ async function projectFromData(
   db: Db,
   def: TableDef,
   data: Record<string, unknown>,
+  id: string,
 ): Promise<string | null> {
+  if (def.projectVia.kind === "self") return id;
   const v = (data[def.projectVia.col] as string) ?? null;
   return def.projectVia.kind === "column" ? v : projectViaTask(db, v);
 }
@@ -180,6 +209,12 @@ async function projectFromDb(
   def: TableDef,
   id: string,
 ): Promise<string | null> {
+  if (def.projectVia.kind === "self") {
+    const rows = (await db.execute(
+      sql`SELECT id AS v FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
+    )) as Rows;
+    return (rows[0]?.v as string) ?? null;
+  }
   const rows = (await db.execute(
     sql`SELECT ${sql.raw(def.projectVia.col)} AS v FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
   )) as Rows;
@@ -273,7 +308,7 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
   // cílový (z dat), současný (z DB — i u PUT kvůli upsert ON CONFLICT) a projekty FK referencí.
   const need = new Set<string>();
   if (body.op === "PUT" || body.op === "PATCH") {
-    const t = await projectFromData(db, def, data);
+    const t = await projectFromData(db, def, data, body.id);
     if (t) need.add(t);
   }
   if (body.op === "PUT" || body.op === "PATCH" || body.op === "DELETE") {

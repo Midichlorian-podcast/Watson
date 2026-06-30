@@ -49,6 +49,27 @@
     "maxDepth": "Max. 3 úrovně zanoření (R1).",
     "delete": "Smazat"
   },
+  "projects": {
+    "heading": "Projekty",
+    "new": "Nový projekt",
+    "newSoon": "Připravujeme",
+    "empty": "V tomto prostoru zatím nejsou žádné projekty.",
+    "archived": "Archiv",
+    "openOfTotal": "otevřených · {{total}} celkem",
+    "pctDone": "{{pct}} % hotovo",
+    "members": "{{count}} členů",
+    "detailTitle": "Projekt",
+    "color": "Barva",
+    "colorDefault": "Výchozí",
+    "status": "Stav",
+    "statusActive": "Aktivní",
+    "statusArchived": "Archiv",
+    "statOpen": "otevřených",
+    "statDone": "hotovo",
+    "statTotal": "celkem",
+    "viewTasks": "Zobrazit úkoly projektu",
+    "allTasks": "← Všechny úkoly"
+  },
   "today": {
     "heading": "Co dnes řešit",
     "overdue": "Zpožděné",

@@ -13,3 +13,17 @@ bucket_definitions:
                assignment_mode, status_id, completed_at, created_by, created_at
         FROM tasks
         WHERE project_id = bucket.project_id
+      # Projekt sám (barva projektu = tělo karet úkolů, R6) + jeho struktura.
+      - SELECT id, workspace_id, name, color, icon, default_layout, visibility,
+               archived_at, created_at
+        FROM projects
+        WHERE id = bucket.project_id
+      - SELECT id, project_id, name, position, created_at
+        FROM sections
+        WHERE project_id = bucket.project_id
+      - SELECT id, scope, project_id, workspace_id, name, color, position, is_done, created_at
+        FROM statuses
+        WHERE project_id = bucket.project_id
+      - SELECT id, project_id, user_id, role, created_at
+        FROM project_members
+        WHERE project_id = bucket.project_id

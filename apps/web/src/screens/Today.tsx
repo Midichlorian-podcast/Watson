@@ -1,16 +1,14 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon, TaskCard } from "@watson/ui";
 import { QuickAdd } from "../components/QuickAdd";
-import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
+import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 
-type Project = { id: string; name: string };
 type Pri = 1 | 2 | 3 | 4;
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -34,15 +32,8 @@ export function Today() {
   const [openOverdue, setOpenOverdue] = useState(true);
   const [openDone, setOpenDone] = useState(false);
 
-  const { data: projects } = useQuery({
-    queryKey: ["projects"],
-    queryFn: async () => {
-      const res = await fetch(`${API_URL}/api/projects`, { credentials: "include" });
-      if (!res.ok) throw new Error("projects");
-      return (await res.json()).projects as Project[];
-    },
-  });
-  const inboxId = projects?.[0]?.id;
+  const projects = useProjects();
+  const inboxId = projects[0]?.id;
 
   const { data: tasks } = usePsQuery<TaskRow>(
     "SELECT * FROM tasks ORDER BY due_date IS NULL, due_date, created_at DESC",
@@ -133,7 +124,10 @@ export function Today() {
 
       {/* Chytré přidání úkolu — parser přirozené češtiny (#7) */}
       <div className="mt-5">
-        <QuickAdd projects={projects ?? []} inboxId={inboxId} />
+        <QuickAdd
+          projects={projects.map((p) => ({ id: p.id, name: p.name ?? "" }))}
+          inboxId={inboxId}
+        />
       </div>
 
       {/* Zpožděné — VLASTNÍ oddělená sekce (MASTER §11) */}

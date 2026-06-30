@@ -1,6 +1,6 @@
 # RECONCILIACE — Claude Design ⟷ kód ⟷ zamčená pravidla
 
-> **Proč:** v Claude Design vznikla spousta *logických a strukturálních* rozhodnutí (ne jen vzhled).
+> **Proč:** v Claude Design vznikla spousta _logických a strukturálních_ rozhodnutí (ne jen vzhled).
 > Aby se appka nerozjela do dvou směrů, tady je **delta**: co design tvrdí, jak to sedí s kódem a
 > zamčenými pravidly (R1–R9, MASTER §11/§12), a **co se musí rozhodnout.**
 >
@@ -8,13 +8,14 @@
 > kód-pravda = `packages/db/src/schema/*` + `packages/shared`. zamčená pravda = `files/CLAUDE.md`,
 > `MASTER §11/§12`.
 >
-> **Princip (anti-fork):** *Design vládne vzhledu/IA/interakcím. Spec (`files/`) vládne logice/datům/
-> invariantům. Kód staví ze specu.* Každé logické rozhodnutí z prototypu se **portne sem do specu** —
+> **Princip (anti-fork):** _Design vládne vzhledu/IA/interakcím. Spec (`files/`) vládne logice/datům/
+> invariantům. Kód staví ze specu._ Každé logické rozhodnutí z prototypu se **portne sem do specu** —
 > nezůstává jen v prototypu. A staví se **po fázích** (MVP→v2→v3), i když design ukazuje celou vizi.
 
 ---
 
 ## ✅ ROZHODNUTO (2026-06-29)
+
 - **Governance:** **Claude Design handoff je zdroj pravdy.** Kde se liší od starších rozhodnutí
   (spec/invarianty), **vyhrává handoff** a propisuje se do kódu i specu. → appka má jednu hlavu.
 - **K1 (barva vs priorita): design vyhrává.** Levý okraj karty = priorita (P1 červená / P2 žlutá /
@@ -31,6 +32,7 @@
   shell/stav/zkratky — 95/97 metod, implementační detail + odhalené produkční opravy). Závazná spec.
 
 ## 0. TL;DR — co z toho plyne
+
 1. **Design je z velké části hotová MVP+v2 vize** — ale 3 velké bloky (Postupy, Cíle, Reporty) jsou
    **v2**. Nesmí spadnout do MVP (riziko S4). Mapování fází viz §2.
 2. **Jeden tvrdý konflikt k rozhodnutí (K1): R6 „barva ≠ priorita" vs. design „barva = priorita".**
@@ -44,7 +46,9 @@
 ---
 
 ## 1. Co design přidal/upřesnil oproti dosavadnímu specu (logika, ne vzhled)
-Design je *konkrétnější* než spec v těchto modulech — **portujeme je do specu jako závazné chování:**
+
+Design je _konkrétnější_ než spec v těchto modulech — **portujeme je do specu jako závazné chování:**
+
 - **Quick-add parser (čeština)** — plná pravidla (priorita/čas/trvání/datum/opakování/`#projekt`/
   `@osoba`), zvýraznění tokenů v textu, našeptávač. (handoff README §„Chytré zadávání".)
 - **Model opakování & výskytů** — base úkol + `exceptions` mapa, virtuální výskyt `id@YYYY-MM-DD`,
@@ -60,22 +64,23 @@ Design je *konkrétnější* než spec v těchto modulech — **portujeme je do 
 ---
 
 ## 2. Inventář obrazovek × fáze (aby v2 nespadlo do MVP)
-| Obrazovka (design) | Screenshot | Kód dnes | Fáze | Pozn. |
-|---|---|---|---|---|
-| Dnes (dashboard) | 01 | ⬜ | **MVP** (Krok 5–6) | „Watson pruh", zpožděné odděleně (R: §11) |
-| Úkoly (seznam dle projektů) | 03 | schéma ano | **MVP** (5–6) | grouping per projekt |
-| Nadcházející | 02 | ⬜ | **MVP** (6) | agregace + výskyty opakování |
-| Kalendář den/týden/měsíc | 04–06 | schéma částečně | **MVP** základ (8) | drag-create/resize → **v2** |
-| Projekty + detail | 07–08 | `projects` ano | **MVP** (5) | „Typ projektu" (flow/goal/cycle) = nové, §4 |
-| Detail úkolu / Výskyt | 15–16 | `tasks` ano | **MVP** (5) | výskyt-banner = occurrences model |
-| Přidat úkol + parser | 17–18 | ⬜ | **MVP** (7) | lokální parser (offline) + AI online |
-| Nastavení / Tým a role | 19 | `memberships` ano | **MVP** (3) | role — viz K2 |
-| Schránka (inbox úkolů) | — | `isPersonal` (R8) | **MVP** | ⚠️ název koliduje s mailem — K4 |
-| Hledat | — | ⬜ | **MVP** (6) | permission-aware fulltext |
-| **Postupy** + detail + builder | 12–14 | `fazovane_ukoly_PLAN` | **v2** | aditivní, server-authored advance |
-| **Cíle** | 09 | ⬜ | **v2** | = OKR (MASTER §11 → v2) |
-| **Reporty** přehled/lidé | 10–11 | ⬜ | **v2** | = dashboardy (MASTER §11 → v2) |
-| Tmavý režim | 20 | tokeny | **MVP**-ready | tokeny v handoffu hotové |
+
+| Obrazovka (design)             | Screenshot | Kód dnes              | Fáze               | Pozn.                                       |
+| ------------------------------ | ---------- | --------------------- | ------------------ | ------------------------------------------- |
+| Dnes (dashboard)               | 01         | ⬜                    | **MVP** (Krok 5–6) | „Watson pruh", zpožděné odděleně (R: §11)   |
+| Úkoly (seznam dle projektů)    | 03         | schéma ano            | **MVP** (5–6)      | grouping per projekt                        |
+| Nadcházející                   | 02         | ⬜                    | **MVP** (6)        | agregace + výskyty opakování                |
+| Kalendář den/týden/měsíc       | 04–06      | schéma částečně       | **MVP** základ (8) | drag-create/resize → **v2**                 |
+| Projekty + detail              | 07–08      | `projects` ano        | **MVP** (5)        | „Typ projektu" (flow/goal/cycle) = nové, §4 |
+| Detail úkolu / Výskyt          | 15–16      | `tasks` ano           | **MVP** (5)        | výskyt-banner = occurrences model           |
+| Přidat úkol + parser           | 17–18      | ⬜                    | **MVP** (7)        | lokální parser (offline) + AI online        |
+| Nastavení / Tým a role         | 19         | `memberships` ano     | **MVP** (3)        | role — viz K2                               |
+| Schránka (inbox úkolů)         | —          | `isPersonal` (R8)     | **MVP**            | ⚠️ název koliduje s mailem — K4             |
+| Hledat                         | —          | ⬜                    | **MVP** (6)        | permission-aware fulltext                   |
+| **Postupy** + detail + builder | 12–14      | `fazovane_ukoly_PLAN` | **v2**             | aditivní, server-authored advance           |
+| **Cíle**                       | 09         | ⬜                    | **v2**             | = OKR (MASTER §11 → v2)                     |
+| **Reporty** přehled/lidé       | 10–11      | ⬜                    | **v2**             | = dashboardy (MASTER §11 → v2)              |
+| Tmavý režim                    | 20         | tokeny                | **MVP**-ready      | tokeny v handoffu hotové                    |
 
 **Pravidlo:** MVP staví jen MVP řádky. Postupy/Cíle/Reporty se **navrhly dopředu** (dobře — vize je
 konzistentní), ale **kódí se až po MVP.** Design jejich obrazovek je hotový → až přijde v2, jede se
@@ -86,23 +91,26 @@ rovnou podle screenshotů.
 ## 3. KONFLIKTY & ROZHODNUTÍ
 
 ### 🔴 K1 — Barva vs. priorita (TVRDÝ konflikt, rozhodni)
+
 - **Zamčeno (R6, `files/CLAUDE.md`):** „**Barva ≠ priorita**; priorita = **nebarevný odznak P1–P4**."
   Důvod: barvu si vlastní uživatel (projekty/štítky), priorita ji nesmí přebíjet; přístupnost.
 - **Design (handoff `CLAUDE.md` ř. 21, jako „NEdriftovat"):** „**Barva = priorita** na kartách
   (P1 červená, P2 žlutá, P3 modrá, P4 šedá) — **levý okraj karty**." + tokeny `--p1..--p4`.
 - **To jsou přímo protichůdná pravidla.** Rozhodnutí je produktové a je **tvoje** — viz dotaz níže.
-- Pozn.: design barvu *nesdružuje* nesmyslně — priorita = levý okraj, projekt = tečka, uživatelská
+- Pozn.: design barvu _nesdružuje_ nesmyslně — priorita = levý okraj, projekt = tečka, uživatelská
   barva = zvlášť. Takže „hybrid" je reálný (nebarevný odznak kvůli přístupnosti + jemný prioritní
   akcent; silná barva zůstává uživateli/projektu).
 
 ### 🟠 K2 — Taxonomie rolí (sjednotit)
+
 - **Design:** Vlastník / Admin / Člen / Host. **Kód:** `memberships.role` = admin/manager/**member**/guest
   (+ `workspaces.ownerId` = vlastník). **Mail plán** navíc přidává **super-admin** (app-level).
 - **Doporučení:** jedna definice — `owner`(=ownerId) · `admin` · `member` · `guest` (design 4 tiers)
-  + app-level `super-admin` (mail/admin vrstva). **Roli `manager` z kódu sjednotit s `admin`** (ať
-  nejsou dvě skoro stejné). Vše **přednastavené role** (R5, žádné vlastní).
+  - app-level `super-admin` (mail/admin vrstva). **Roli `manager` z kódu sjednotit s `admin`** (ať
+    nejsou dvě skoro stejné). Vše **přednastavené role** (R5, žádné vlastní).
 
 ### 🟡 K3 — localStorage vs. „bez localStorage pro doménová data"
+
 - **Design:** pozice/obrazovka + per-uživatel výchozí zobrazení v `localStorage`.
 - **Zamčeno:** „bez `localStorage` pro **doménová** data (vše přes sync engine)."
 - **Řešení (ne konflikt):** efemérní UI stav (aktuální obrazovka, scroll) v `localStorage` = OK;
@@ -110,6 +118,7 @@ rovnou podle screenshotů.
   nastavení), ne localStorage. Zapsat do specu jako pravidlo.
 
 ### 🟡 K4 — Název „Schránka"
+
 - **Design:** „Schránka" = inbox **nezařazených úkolů** (triage). **Mail spec:** chce sekci pro mail.
 - **Doporučení:** „Schránka" zůstává **úkolový inbox** (R8); mailová sekce dostane jiný název
   (**„Mail" / „Pošta"**), až se bude stavět. Zapsat do `BRIEF_mail.md` / mail plánu.
@@ -117,12 +126,14 @@ rovnou podle screenshotů.
 ---
 
 ## 4. Datový model — delta (design ↔ `tasks`/`projects`)
+
 Kód `tasks` už má: `parentId, projectId, priority, color, due/start/deadline, durationMin,
 recurrence, recurrenceBasis, assignmentMode, statusId, completedAt`, `assignments`, `checklist_items`.
 
 **Doplnit (MVP, aditivní migrace):**
+
 - **Opakování/výskyty:** model `exceptions` (per-výskyt done/skip/override) + konec opakování
-  (`until`/`count`) + projekce výskytů. *Produkčně:* výskyty = odvozené z definice řady + tabulka
+  (`until`/`count`) + projekce výskytů. _Produkčně:_ výskyty = odvozené z definice řady + tabulka
   výjimek klíčovaná datem (handoff README to přímo doporučuje). Sladit s **R4**.
 - **Vícedenní úkol:** `isoEnd`/`endDate`. **Čas:** `start/end` (min. od půlnoci) — kód má start/due,
   ověřit pokrytí.
@@ -130,6 +141,7 @@ recurrence, recurrenceBasis, assignmentMode, statusId, completedAt`, `assignment
   sloupce na `projects`.
 
 **Až v2 (vlastní tabulky, ne sloupce na tasks):**
+
 - **Postupy:** `chains/chain_steps/...` dle `fazovane_ukoly_PLAN.md` (flowId/stepIndex/gate jsou v
   prototypu na úkolu jen pro demo; produkčně do chain tabulek).
 - **Cíle:** `goals` (metrika dokončení/včasnost/počet/stav, scope tým/projekt/osoba).
@@ -138,8 +150,10 @@ recurrence, recurrenceBasis, assignmentMode, statusId, completedAt`, `assignment
 ---
 
 ## 5. Design lock — TEĎ
+
 Handoff README má **finální tokeny** (světlý+tmavý režim, brass, success/overdue, **barvy projektů**,
 **uživatelské barvy úkolů**, hustota, stíny). Akce:
+
 1. Nahradit placeholder `packages/ui/src/tokens.css` těmito hodnotami + přemapovat Tailwind `@theme`
    v `apps/web/src/index.css` (a `ds-bundle/tokens/tokens.css`). = **„design lock" z `CLAUDE.md`.**
 2. **Tmavý režim** přes `[data-w-theme="dark"]` — tokeny hotové.
@@ -149,7 +163,9 @@ Handoff README má **finální tokeny** (světlý+tmavý režim, brass, success/
 ---
 
 ## 6. Jak to propsat do kódu (sjednocený postup)
+
 Navazuje na pořadí stavby z `CLAUDE.md` (Krok 5–10) + screen-order z handoffu:
+
 1. **Rozhodni K1–K4** (níže) → zapiš výsledky do `files/` (spec = jedna pravda).
 2. **Design lock** (§5) — tokeny + tmavý režim. Od teď UI jen z tokenů.
 3. **MVP obrazovky** v pořadí: design system primitiva → Dnes → Úkoly/Nadcházející → Detail úkolu →
@@ -162,6 +178,7 @@ Navazuje na pořadí stavby z `CLAUDE.md` (Krok 5–10) + screen-order z handoff
 ---
 
 ## 7. Anti-fork disciplína (od teď)
+
 - **Logické rozhodnutí z Claude Design → vždy portnout do `files/`** (ne nechat jen v prototypu).
 - **`design-sync` pull + tahle reconciliace** při každém větším designovém milníku.
 - **„Design pass" po každé fázi** (už v `CLAUDE.md`): screenshoty reálné appky → Design → zpět přes tokeny.
@@ -169,5 +186,56 @@ Navazuje na pořadí stavby z `CLAUDE.md` (Krok 5–10) + screen-order z handoff
 - Fázová kázeň: design smí ukázat v2/v3, kód staví po fázích.
 
 ---
-*Otevřené rozhodnutí blokující design lock i UI: **K1** (barva vs priorita). K2–K4 mají doporučení
-k potvrzení. Po rozhodnutí: zapsat do specu, provést design lock, začít MVP obrazovky.*
+
+## 8. PROJEKTY + detail — reconciliace & co postaveno (#11, 2026-06-30)
+
+Vytěženo workflow z prototypu (`WatsonApp.dc.html`, README, `files/logika/03`). **Design vyhrává.**
+
+**Klíčové delty design ↔ kód (rozhodnuto dle handoffu):**
+
+- **🔴 SEKCE v prototypu NEEXISTUJÍ.** Úkol → projekt **přímo** (`task.project`), žádné Todoist-like
+  uživatelské sekce. Seskupení je kontextové: filtrovaný projekt = **jedna plochá skupina**; bez
+  filtru = skupiny po projektech; Nadcházející = po dnech. **Kód/DB ale `sections` tabulku má**
+  (+ write-path registry ji zná) — to je _odchylka kódu napřed_. **Rozhodnutí:** detail projektu i
+  `/ukoly?projekt=$id` jsou **ploché** (BEZ sekcí). Uživatelské sekce = pozdější funkce nad rámec
+  prototypu, NE v MVP. (`sections` tabulka zůstává nevyužitá — neodstraňovat, je levná rezerva.)
+- **Detail projektu = pravý slide-in panel** (NE plná stránka). `/projekty` = plochý grid karet
+  (auto-fill minmax 290px). Panel má vlastní stav (context), ne route-stránku.
+- **🟠 Role jsou per-WORKSPACE** (Vlastník/Admin/Člen/Host) — v projektu **jen toggle členství**,
+  žádné per-projekt role typu viewer/commenter/editor. DB `project_members.role` (projectRoleEnum)
+  je tedy **technický scoping**, ne produktová role. → **koriguje úkol #14** (read-only NEpatří
+  per-projekt; je to workspace-role záležitost: Host = read-only). Sjednoceno s K2.
+- **Board = STAVY úkolu** (K udělání/Probíhá/Ke kontrole/Hotovo) a je to **globální view mode v
+  Úkolech** (přepínač Seznam/Nástěnka/Kalendář + per-uživatel výchozí), **NE** uvnitř detailu projektu.
+  R9: drop do/ze „Hotovo" musí překlopit `is_done` (produkce enforcuje — prototyp ne).
+- **Typ projektu** (Průběžný/Cílový/Periodický) + **stav** (Aktivní/Pozastavený/Archiv/Hotovo) +
+  vlastník + termín dodání + „Definice hotového" → vyžadují sloupce, které DB **nemá** (jen
+  `archivedAt`, `visibility`, `defaultLayout`). → **fáze 1+** (aditivní migrace `projects.kind/status/
+owner/due/dod`). MVP řeší jen **Aktivní ↔ Archiv** přes `archived_at`.
+- **Počty** (otevřených/hotovo/celkem) = **reálně z `tasks`** (ne prototypový pseudo-hash `doneEff`).
+
+**Co postaveno v MVP #11 (ověřeno živě):**
+
+- **Sync vrstva:** `projects, sections, statuses, project_members` přidány do `sync-config.yaml`
+  (stejný bucket, scoping dle členství) + klient `AppSchema` + restart PowerSync. ⚠️ `is_done`/bool →
+  `column.integer` (SQLite nemá bool).
+- **Jednotný zdroj projektů:** `lib/projects.ts` (`useProjects/useProject/useSections/useStatuses`)
+  z PowerSync. **Migrováno z API fetchu** (`/api/projects`) → Today, Úkoly, QuickAdd, TaskDetail.
+  `/api/projects` zůstává (nepoužíván klientem) — odstranění odloženo. Tím odpadl API↔sync rozkol +
+  projektová tečka (barva) je teď reálná všude.
+- **Write-path:** `projects` (`projectVia: self` — editovat/archivovat smí jen člen; **vytvoření
+  projektu přes write-path NEJDE** kvůli member-bootstrapu → potřebuje server endpoint, odloženo) +
+  `statuses`. „Nový projekt" zatím **disabled**.
+- **Obrazovky:** `/projekty` grid (ProjectCard: barva, název, počty, progres, členové) + detail panel
+  (název/barva/stav/statistiky/členové/„Zobrazit úkoly") + `/ukoly?projekt=$id` filtr + banner.
+- **R6:** barva projektu = tělo karet úkolů (sdílená); paleta sjednocena v `lib/colors.ts`.
+
+**Odloženo (follow-up úkoly):** server endpoint pro vytvoření projektu; metadata projektu
+(typ/stav/vlastník/DoD) + migrace schématu; board view mode (statusy + drag + R9 enforce); avataři
+členů (vyžaduje jména uživatelů — sync users nebo endpoint); přepínač zobrazení + per-uživatel
+výchozí; aktivní-workspace filtr + přepínač prostorů; (Todoist-like sekce — jen pokud se rozhodne).
+
+---
+
+_Otevřené rozhodnutí blokující design lock i UI: **K1** (barva vs priorita) — VYŘEŠENO (design).
+K2–K4 potvrzeno. #11 Projekty MVP hotovo; viz §8 pro odložené fáze a korekci #14._

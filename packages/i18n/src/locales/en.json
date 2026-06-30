@@ -49,6 +49,27 @@
     "maxDepth": "Max 3 levels of nesting (R1).",
     "delete": "Delete"
   },
+  "projects": {
+    "heading": "Projects",
+    "new": "New project",
+    "newSoon": "Coming soon",
+    "empty": "No projects in this space yet.",
+    "archived": "Archived",
+    "openOfTotal": "open · {{total}} total",
+    "pctDone": "{{pct}} % done",
+    "members": "{{count}} members",
+    "detailTitle": "Project",
+    "color": "Color",
+    "colorDefault": "Default",
+    "status": "Status",
+    "statusActive": "Active",
+    "statusArchived": "Archived",
+    "statOpen": "open",
+    "statDone": "done",
+    "statTotal": "total",
+    "viewTasks": "Show project tasks",
+    "allTasks": "← All tasks"
+  },
   "today": {
     "heading": "What to handle today",
     "overdue": "Overdue",

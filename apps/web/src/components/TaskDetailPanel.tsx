@@ -1,20 +1,14 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { API_URL } from "../lib/api";
+import { USER_COLORS } from "../lib/colors";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
+import { useProject } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 
-type Project = { id: string; name: string; color?: string };
 type Pri = 1 | 2 | 3 | 4;
-
-const USER_COLORS = [
-  "#d8473d", "#e0a32e", "#7aa32e", "#2e9c6e", "#1f9a9a",
-  "#2aa3db", "#2a6fdb", "#7c5cfc", "#b8487e", "#6b7280",
-];
 
 /** Patch sloupců úkolu lokálně (PowerSync upload → generický write-path). */
 async function patch(id: string, data: Record<string, unknown>) {
@@ -59,14 +53,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
   );
   const depth = depthRows?.[0]?.depth ?? 1;
 
-  const { data: projects } = useQuery({
-    queryKey: ["projects"],
-    queryFn: async () => {
-      const r = await fetch(`${API_URL}/api/projects`, { credentials: "include" });
-      if (!r.ok) throw new Error("projects");
-      return (await r.json()).projects as Project[];
-    },
-  });
+  const project = useProject(task?.project_id ?? undefined);
 
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
@@ -80,10 +67,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 
   if (!task) return null;
   const done = Boolean(task.completed_at);
-  const project = projects?.find((p) => p.id === task.project_id);
 
-  const toggleDone = () =>
-    void patch(id, { completed_at: done ? null : new Date().toISOString() });
+  const toggleDone = () => void patch(id, { completed_at: done ? null : new Date().toISOString() });
 
   const addSub = async () => {
     if (!subText.trim() || depth >= 3) return;
@@ -114,7 +99,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
       />
       <aside
         className="fixed top-0 right-0 z-40 flex h-full w-full max-w-md flex-col overflow-y-auto bg-card"
-        style={{ boxShadow: "var(--w-shadow)", borderLeft: `4px solid var(--w-p${task.priority ?? 4})` }}
+        style={{
+          boxShadow: "var(--w-shadow)",
+          borderLeft: `4px solid var(--w-p${task.priority ?? 4})`,
+        }}
       >
         {/* header */}
         <div className="flex items-center gap-2 border-line border-b px-4 py-3">
@@ -164,7 +152,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onBlur={() => name.trim() && name !== task.name && void patch(id, { name: name.trim() })}
+            onBlur={() =>
+              name.trim() && name !== task.name && void patch(id, { name: name.trim() })
+            }
             className={`w-full bg-transparent font-display text-lg font-bold outline-none ${done ? "text-ink-3 line-through" : "text-navy"}`}
           />
 
@@ -215,7 +205,11 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
                     type="button"
                     onClick={() => void patch(id, { color: c })}
                     className="h-5 w-5 rounded-full"
-                    style={{ background: c, outline: task.color === c ? "2px solid var(--w-navy)" : "none", outlineOffset: "1px" }}
+                    style={{
+                      background: c,
+                      outline: task.color === c ? "2px solid var(--w-navy)" : "none",
+                      outlineOffset: "1px",
+                    }}
                     aria-label={c}
                   />
                 ))}
@@ -225,11 +219,15 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 
           {/* popis */}
           <div className="mt-3 border-line border-t pt-2">
-            <span className="font-display text-xs font-semibold text-ink-3">{t("detail.description")}</span>
+            <span className="font-display text-xs font-semibold text-ink-3">
+              {t("detail.description")}
+            </span>
             <textarea
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
-              onBlur={() => desc !== (task.description ?? "") && void patch(id, { description: desc || null })}
+              onBlur={() =>
+                desc !== (task.description ?? "") && void patch(id, { description: desc || null })
+              }
               rows={3}
               placeholder={t("detail.descPlaceholder")}
               className="mt-1 w-full resize-none rounded-lg border border-line bg-panel-2 px-3 py-2 text-ink text-sm outline-none focus:border-brass"
