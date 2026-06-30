@@ -237,5 +237,35 @@ výchozí; aktivní-workspace filtr + přepínač prostorů; (Todoist-like sekce
 
 ---
 
+## 9. KALENDÁŘ — reconciliace & co postaveno (#10, 2026-06-30)
+
+Vytěženo z `files/logika/02-opakovani-kalendar.md` (exhaustivní) + handoff. **Design vyhrává.**
+
+**Klíčové delty design ↔ kód:**
+
+- **Kalendář NENÍ samostatná položka sidebaru.** `MAIN_NAV` (z handoffu) ho nemá; v prototypu je
+  kalendář **view mode** v seznamu úkolů (přepínač **Seznam / Nástěnka / Kalendář**). → implementováno
+  jako přepínač v obrazovce **Úkoly**, ne nová route/nav. (Splývá s #17 view modes.)
+- **Data jsou date-only + ŽÁDNÉ opakované úkoly** (QuickAdd recurrence neukládá, seed nemá). →
+  **měsíční pohled je datově nejvhodnější MVP**; occurrence engine je zatím bezpředmětný.
+- **Model výskytů** (`_recOccur`, `makeOcc`, virtuální id `seriesId@ISO`, výjimky) je v prototypu
+  bohatý, ale s vědomými zjednodušeními (repeatRule se v projekci ignoruje → „uplave"; DnD na legacy
+  červnové číslo dne). Produkce: RRULE-like rule + materializer s plnou podporou byWeekday/nthWeekday/
+  dayOfMonth/parity + tabulka výjimek (viz `files/logika/02` §3.2, §13). **Vše odloženo** (R4 vertikála).
+
+**Co postaveno v MVP #10 (ověřeno živě):**
+
+- `CalendarMonth` — měsíční mřížka pondělí-first (Intl popisky cs/en), dnešek zvýrazněn (brass),
+  dny mimo měsíc ztlumené, úkoly dle `due_date`/`start_date`, **max 3 + „+N další"**, levý okraj
+  chipu = priorita (R6), klik → detail panel. Navigace ‹ Dnes ›. Bez drag/resize/create.
+- Přepínač **Seznam | Kalendář** v Úkolech (Nástěnka/Board = #17). Respektuje filtr `?projekt`.
+
+**Odloženo (follow-up):** týden/den (časový grid — `layoutDay` lanes, all-day pás, now-linka,
+hustota PPM); drag/resize/drag-create + DnD (na ISO, ne legacy číslo dne); **occurrence engine**
+(expandování opakování do kalendáře/Nadcházejících + QuickAdd ukládá recurrence + tabulka výjimek,
+R4); multi-day pruhy; per-user výchozí pohled. Detaily: `files/logika/02-opakovani-kalendar.md`.
+
+---
+
 _Otevřené rozhodnutí blokující design lock i UI: **K1** (barva vs priorita) — VYŘEŠENO (design).
-K2–K4 potvrzeno. #11 Projekty MVP hotovo; viz §8 pro odložené fáze a korekci #14._
+K2–K4 potvrzeno. #11 Projekty + #10 Kalendář (měsíc) MVP hotovo; viz §8/§9 pro odložené fáze._

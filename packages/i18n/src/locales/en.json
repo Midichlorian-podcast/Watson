@@ -70,6 +70,14 @@
     "viewTasks": "Show project tasks",
     "allTasks": "← All tasks"
   },
+  "calendar": {
+    "prev": "Previous",
+    "next": "Next",
+    "today": "Today",
+    "more": "+{{more}} more",
+    "viewList": "List",
+    "viewCalendar": "Calendar"
+  },
   "today": {
     "heading": "What to handle today",
     "overdue": "Overdue",

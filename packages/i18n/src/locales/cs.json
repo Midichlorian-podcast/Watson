@@ -70,6 +70,14 @@
     "viewTasks": "Zobrazit úkoly projektu",
     "allTasks": "← Všechny úkoly"
   },
+  "calendar": {
+    "prev": "Předchozí",
+    "next": "Další",
+    "today": "Dnes",
+    "more": "+{{more}} další",
+    "viewList": "Seznam",
+    "viewCalendar": "Kalendář"
+  },
   "today": {
     "heading": "Co dnes řešit",
     "overdue": "Zpožděné",
