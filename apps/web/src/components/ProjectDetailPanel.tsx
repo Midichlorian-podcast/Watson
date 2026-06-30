@@ -158,7 +158,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
               onClose();
               void navigate({ to: "/ukoly", search: { projekt: id } });
             }}
-            className="flex-1 rounded-lg bg-navy px-4 py-2 font-display font-semibold text-sm text-white hover:bg-navy-2"
+            className="flex-1 rounded-lg px-4 py-2 font-display font-semibold text-sm text-white hover:brightness-105"
+            style={{ background: "var(--w-brass)" }}
           >
             {t("projects.viewTasks")}
           </button>

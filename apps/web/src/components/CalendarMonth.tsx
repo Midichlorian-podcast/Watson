@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
-import { Icon } from "@watson/ui";
 import type { TaskRow } from "../lib/powersync/AppSchema";
+import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
+import { toggleTask } from "../lib/tasks";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -17,6 +18,9 @@ const taskDay = (t: TaskRow) => (t.due_date ?? t.start_date)?.slice(0, 10) ?? nu
 export function CalendarMonth({ tasks }: { tasks: TaskRow[] }) {
   const { t, i18n } = useTranslation();
   const { open } = useTaskDetail();
+  const projects = useProjects();
+  const projColor = (id: string | null) =>
+    (id ? projects.find((p) => p.id === id)?.color : null) ?? "var(--w-ink-3)";
   const [offset, setOffset] = useState(0);
 
   const today = new Date();
@@ -113,7 +117,7 @@ export function CalendarMonth({ tasks }: { tasks: TaskRow[] }) {
           return (
             <div
               key={iso}
-              className="flex min-h-[104px] flex-col rounded-lg border p-1.5"
+              className="flex min-h-[126px] flex-col gap-[3px] overflow-hidden rounded-[10px] border p-1.5"
               style={{
                 borderColor: isToday ? "var(--w-brass)" : "var(--w-line)",
                 background: isToday
@@ -125,34 +129,72 @@ export function CalendarMonth({ tasks }: { tasks: TaskRow[] }) {
               }}
             >
               <span
-                className={`mb-1 font-mono text-xs ${isToday ? "font-bold text-brass-text" : "text-ink-3"}`}
+                className="font-mono"
+                style={{
+                  fontSize: 12,
+                  fontWeight: isToday ? 700 : 400,
+                  color: isToday ? "var(--w-brass-text)" : "var(--w-ink-2)",
+                }}
               >
                 {d.getDate()}
               </span>
-              <div className="flex flex-col gap-0.5">
-                {shown.map((tk) => {
-                  const done = Boolean(tk.completed_at);
-                  return (
+              {shown.map((tk) => {
+                const done = Boolean(tk.completed_at);
+                return (
+                  <div
+                    key={tk.id}
+                    onClick={() => open(tk.id)}
+                    title={tk.name ?? ""}
+                    className="flex cursor-pointer items-center gap-1 rounded-[4px]"
+                    style={{
+                      background: "var(--w-panel-2)",
+                      borderLeft: `2px solid ${done ? "var(--w-line)" : `var(--w-p${tk.priority ?? 4})`}`,
+                      padding: "2px 4px",
+                      opacity: done ? 0.55 : 1,
+                    }}
+                  >
                     <button
-                      key={tk.id}
                       type="button"
-                      onClick={() => open(tk.id)}
-                      title={tk.name ?? ""}
-                      className="flex items-center gap-1 truncate rounded-[4px] bg-panel-2 py-0.5 pr-1 pl-1.5 text-left text-[11px]"
-                      style={{ borderLeft: `2px solid var(--w-p${tk.priority ?? 4})` }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void toggleTask(tk);
+                      }}
+                      aria-label={done ? "Označit jako nehotové" : "Dokončit"}
+                      className="grid shrink-0 place-items-center rounded-full"
+                      style={{
+                        width: 11,
+                        height: 11,
+                        border: `1.6px solid ${done ? "var(--w-success-ink)" : "var(--w-ink-3)"}`,
+                        background: done ? "var(--w-success-ink)" : "transparent",
+                      }}
                     >
-                      <span className={`truncate ${done ? "text-ink-3 line-through" : "text-ink"}`}>
-                        {tk.name}
-                      </span>
+                      {done && <span style={{ color: "#fff", fontSize: 7, lineHeight: 1 }}>✓</span>}
                     </button>
-                  );
-                })}
-                {more > 0 && (
-                  <span className="pl-1 text-[10px] text-ink-3">
-                    {t("calendar.more", { more })}
-                  </span>
-                )}
-              </div>
+                    <span
+                      className="shrink-0 rounded-full"
+                      style={{ width: 5, height: 5, background: projColor(tk.project_id) }}
+                    />
+                    <span
+                      className="truncate"
+                      style={{
+                        fontSize: 10.5,
+                        color: done ? "var(--w-ink-3)" : "var(--w-ink)",
+                        textDecoration: done ? "line-through" : "none",
+                      }}
+                    >
+                      {tk.name}
+                    </span>
+                  </div>
+                );
+              })}
+              {more > 0 && (
+                <span
+                  className="font-display font-bold"
+                  style={{ fontSize: 10, color: "var(--w-brass-text)", padding: "2px 5px" }}
+                >
+                  {t("calendar.more", { more })}
+                </span>
+              )}
             </div>
           );
         })}

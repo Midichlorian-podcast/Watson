@@ -1,7 +1,9 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useTranslation } from "@watson/i18n";
-import { Button, Chip, Icon } from "@watson/ui";
+import { Chip, Icon } from "@watson/ui";
+import { API_URL } from "../lib/api";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
@@ -18,6 +20,16 @@ export function Projekty() {
   const { t } = useTranslation();
   const projects = useProjects();
   const { open } = useProjectDetail();
+
+  const { data: workspaces } = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: async () => {
+      const r = await fetch(`${API_URL}/api/workspaces`, { credentials: "include" });
+      if (!r.ok) throw new Error("workspaces");
+      return (await r.json()).workspaces as { id: string; name: string; isPersonal: boolean }[];
+    },
+  });
+  const wsName = workspaces?.find((w) => !w.isPersonal)?.name ?? workspaces?.[0]?.name ?? "";
 
   const { data: taskRows } = usePsQuery<{ project_id: string | null; completed_at: string | null }>(
     "SELECT project_id, completed_at FROM tasks",
@@ -50,14 +62,28 @@ export function Projekty() {
 
   return (
     <div className="mx-auto max-w-[1080px] px-[22px] pt-6 pb-24">
-      <header className="flex items-center gap-3">
-        <h1 className="font-display text-[17px] font-extrabold text-ink">
+      <header className="flex items-center gap-2.5">
+        <h1 className="font-display font-extrabold text-ink" style={{ fontSize: 17 }}>
           {t("projects.heading")}
         </h1>
-        <Button variant="primary" className="ml-auto" disabled title={t("projects.newSoon")}>
-          <Icon name="pridat" size={16} />
+        {wsName && (
+          <>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--w-brass)" }} />
+            <span className="font-display font-semibold text-ink-3" style={{ fontSize: 13 }}>
+              {wsName}
+            </span>
+          </>
+        )}
+        <button
+          type="button"
+          disabled
+          title={t("projects.newSoon")}
+          className="ml-auto flex items-center gap-1.5 rounded-[9px] border border-brass font-display font-bold text-brass-text disabled:opacity-60"
+          style={{ background: "var(--w-brass-soft)", padding: "7px 13px", fontSize: 12.5 }}
+        >
+          <Icon name="pridat" size={14} />
           {t("projects.new")}
-        </Button>
+        </button>
       </header>
 
       {projects.length === 0 ? (
