@@ -93,6 +93,27 @@
     "doneSection": "Done",
     "duePast": "Overdue"
   },
+  "settings": {
+    "appearance": "Appearance",
+    "darkMode": "Dark mode",
+    "darkModeDesc": "Switches the whole interface to dark.",
+    "density": "Density and color",
+    "densityDesc": "Airy ↔ compact and project accent are tuned in the Tweaks panel.",
+    "tweaks": "Tweaks",
+    "account": "Account",
+    "team": "Team and roles",
+    "invite": "Invite a member by email",
+    "teamNote": "Permissions apply to this space — click a role to change it. Click a member to open their card with workload and tasks.",
+    "notifications": "Notifications and Watson",
+    "morningSummary": "Morning summary from Watson",
+    "morningSummaryDesc": "Every morning at 8:00 a day overview.",
+    "deadlineReminders": "Deadline reminders",
+    "deadlineRemindersDesc": "Alert 15 minutes ahead.",
+    "roleOwner": "Owner",
+    "roleAdmin": "Admin",
+    "roleMember": "Member",
+    "roleGuest": "Guest"
+  },
   "priority": {
     "acute": "Acute",
     "soon": "As soon as possible",

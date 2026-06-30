@@ -93,6 +93,27 @@
     "doneSection": "Hotovo",
     "duePast": "Po termínu"
   },
+  "settings": {
+    "appearance": "Vzhled",
+    "darkMode": "Tmavý režim",
+    "darkModeDesc": "Přepne celé rozhraní na tmavé.",
+    "density": "Hustota a barevnost",
+    "densityDesc": "Vzdušné ↔ kompaktní a akcent projektů ladíš v panelu Tweaks.",
+    "tweaks": "Tweaks",
+    "account": "Účet",
+    "team": "Tým a role",
+    "invite": "Pozvat člena e-mailem",
+    "teamNote": "Oprávnění platí pro tento prostor — klikni na roli a změň ji. Klik na člena otevře jeho kartu s vytížením a úkoly.",
+    "notifications": "Oznámení a Watson",
+    "morningSummary": "Ranní souhrn od Watsona",
+    "morningSummaryDesc": "Každé ráno v 8:00 přehled dne.",
+    "deadlineReminders": "Připomenutí termínů",
+    "deadlineRemindersDesc": "Upozornění 15 minut předem.",
+    "roleOwner": "Vlastník",
+    "roleAdmin": "Admin",
+    "roleMember": "Člen",
+    "roleGuest": "Host"
+  },
   "priority": {
     "acute": "Akutní",
     "soon": "Co nejdřív",

@@ -267,5 +267,36 @@ R4); multi-day pruhy; per-user výchozí pohled. Detaily: `files/logika/02-opako
 
 ---
 
+## 10. NASTAVENÍ + Tým a role — co postaveno (#12, 2026-06-30) + FIDELITY
+
+**⚑ Zpětná vazba uživatele (2026-06-30):** appka dosud **nevypadá dost jako Cloud Design** — i moduly
+stavěné „dle modulů" se liší. Nově: **každá obrazovka 1:1 dle prototypu** (screenshot + EXACT markup/
+CSS z `WatsonApp.dc.html`, ne jen logika). Zaznamenáno v paměti `design-fidelity-cloud-design`.
+
+**#12 postaveno PŘESNĚ dle extrahovaného markupu prototypu** (ř. 889–957 + CSS):
+
+- Kontejner `max-width:680px`, sekce **Vzhled / Účet / Tým a role / Oznámení a Watson**; karty
+  `radius:13px`, řádky s děliči `border-bottom 1px line`; přesné px/fonty/barvy (mapováno
+  `--panel→--w-card`, `--avatar-navy→--w-navy`, atd.).
+- **Vzhled**: Tmavý režim switch (funkční přes `useTheme`, zrcadlí téma), „Tweaks" pilulka (panel odložen).
+- **Účet**: reálný uživatel (session) + brass avatar + `Odhlásit` (funkční).
+- **Tým a role**: členové z nového `GET /api/workspaces/:id/members`; **role pilulka** — Vlastník
+  brass, ostatní neutrální (přesně dle `[data-permrole]` CSS); funkční dropdown (Admin/Člen/Host)
+  přes `PATCH /api/workspaces/:id/members/:userId/role` (guard: owner/admin, vlastníkův řádek nelze).
+  **Mapování role**: owner→Vlastník, admin/manager→Admin, member→Člen, guest→Host (K2).
+- **Oznámení a Watson**: 2 dekorativně zapnuté switche (dle prototypu).
+- Seed: workspace „Kancelář Praha" (demo=Vlastník + Tomáš/Jana/Martin/Petra) pro demonstraci všech rolí.
+
+**Zjištěné fidelity rozpory shellu** (kandidáti na fidelity-pass): **sidebar** nemá brass tlačítko
+**„+ Přidat úkol"** ani počty u položek (Schránka 2, Dnes 16…) ani avatar+gear dole; **header** nemá
+„Watson" pill a „+ Úkol" má být **brass plné** (ne navy). Dosud postavené obrazovky (Dnes/Úkoly/
+Projekty/Kalendář) podle uživatele neodpovídají dost → fidelity-pass úkoly.
+
+**Odloženo:** „Tweaks" panel (hustota/barevnost); pozvání člena e-mailem (flow); pracovní pozice
+člena (`m.job` — users nemají sloupec, zobrazen jen e-mail); ownership transfer (Vlastník v dropdownu).
+
+---
+
 _Otevřené rozhodnutí blokující design lock i UI: **K1** (barva vs priorita) — VYŘEŠENO (design).
-K2–K4 potvrzeno. #11 Projekty + #10 Kalendář (měsíc) MVP hotovo; viz §8/§9 pro odložené fáze._
+K2–K4 potvrzeno. #10–#12 MVP hotovo. **Nová priorita: 1:1 fidelity k Cloud Design** (§10) — fidelity-pass
+shellu + dříve postavených obrazovek; viz §8/§9 pro odložené funkční fáze._

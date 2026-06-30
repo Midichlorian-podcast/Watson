@@ -2,6 +2,7 @@ import { createRootRoute, createRoute, createRouter } from "@tanstack/react-rout
 import type { IconName } from "@watson/ui";
 import { AppLayout } from "./layout/AppLayout";
 import { Nadchazejici } from "./screens/Nadchazejici";
+import { Nastaveni } from "./screens/Nastaveni";
 import { Placeholder } from "./screens/Placeholder";
 import { Projekty } from "./screens/Projekty";
 import { Today } from "./screens/Today";
@@ -22,6 +23,11 @@ const projektyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projekty",
   component: Projekty,
+});
+const nastaveniRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/nastaveni",
+  component: Nastaveni,
 });
 const nadchRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -45,7 +51,6 @@ const stubRoutes = [
   stub("/postupy", "nav.flows", "postup"),
   stub("/oblibene/p1", "nav.priority1", "priorita"),
   stub("/oblibene/me", "nav.assignedToMe", "prirazeni"),
-  stub("/nastaveni", "nav.settings", "nastaveni"),
 ];
 
 const routeTree = rootRoute.addChildren([
@@ -53,6 +58,7 @@ const routeTree = rootRoute.addChildren([
   ukolyRoute,
   nadchRoute,
   projektyRoute,
+  nastaveniRoute,
   ...stubRoutes,
 ]);
 
