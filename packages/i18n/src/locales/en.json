@@ -36,6 +36,19 @@
   "sync": {
     "writeRejected": "Change not saved — you didn't have permission. Reverted."
   },
+  "detail": {
+    "priority": "Priority",
+    "due": "Due",
+    "start": "Start",
+    "deadline": "Deadline",
+    "color": "Color",
+    "description": "Description",
+    "descPlaceholder": "Add a note…",
+    "subtasks": "Subtasks",
+    "addSubtask": "Add subtask…",
+    "maxDepth": "Max 3 levels of nesting (R1).",
+    "delete": "Delete"
+  },
   "today": {
     "heading": "What to handle today",
     "overdue": "Overdue",

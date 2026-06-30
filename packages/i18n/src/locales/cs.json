@@ -36,6 +36,19 @@
   "sync": {
     "writeRejected": "Změna se neuložila — neměl(a) jsi oprávnění. Vrácena zpět."
   },
+  "detail": {
+    "priority": "Priorita",
+    "due": "Termín",
+    "start": "Začátek",
+    "deadline": "Deadline",
+    "color": "Barva",
+    "description": "Popis",
+    "descPlaceholder": "Přidej poznámku…",
+    "subtasks": "Podúkoly",
+    "addSubtask": "Přidat podúkol…",
+    "maxDepth": "Max. 3 úrovně zanoření (R1).",
+    "delete": "Smazat"
+  },
   "today": {
     "heading": "Co dnes řešit",
     "overdue": "Zpožděné",

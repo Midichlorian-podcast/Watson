@@ -8,6 +8,7 @@ import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
+import { useTaskDetail } from "../lib/taskDetail";
 
 type Project = { id: string; name: string };
 type Pri = 1 | 2 | 3 | 4;
@@ -29,6 +30,7 @@ function dueInfo(due: string | null) {
 export function Today() {
   const { t } = useTranslation();
   const { data: session } = useSession();
+  const { open } = useTaskDetail();
   const [openOverdue, setOpenOverdue] = useState(true);
   const [openDone, setOpenDone] = useState(false);
 
@@ -96,6 +98,7 @@ export function Today() {
           due={due}
           done={Boolean(task.completed_at)}
           onToggle={() => toggle(task)}
+          onOpen={() => open(task.id)}
         />
       </li>
     );
