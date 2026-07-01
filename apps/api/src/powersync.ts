@@ -106,6 +106,7 @@ const TABLES: Record<string, TableDef> = {
       start_date: "ts",
       deadline: "ts",
       duration_min: "int",
+      days: "int",
       recurrence: "text",
       recurrence_rule: "text",
       recurrence_basis: "text",

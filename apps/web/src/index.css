@@ -54,3 +54,6 @@ body {
 [data-w-density="vyvazene"] { --w-row-py: 11px; --w-row-font: 14px; }
 [data-w-density="kompaktni"] { --w-row-py: 8px; --w-row-font: 13.5px; }
 [data-w-accent="brass"] .w-projdot { background: var(--w-brass) !important; }
+
+/* Pop-in animace modalů/popoverů (VERBATIM prototyp ř. 44). */
+@keyframes wPop { from { transform: scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }

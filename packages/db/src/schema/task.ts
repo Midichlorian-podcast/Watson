@@ -47,6 +47,8 @@ export const tasks = pgTable(
     deadline: timestamp("deadline", { withTimezone: true }),
     /** B3 — odhad délky pro time-blocking (NE time tracking). */
     durationMin: integer("duration_min"),
+    /** Vícedenní úkol — počet dní od due_date (1 = jednodenní); kalendář kreslí pruh. */
+    days: integer("days"),
     /** R4 — lidský label opakování (zobrazení); null = neopakuje se. */
     recurrence: text("recurrence"),
     /** R4 — strukturované pravidlo (JSON RecurrenceRule) pro occurrence engine. */
