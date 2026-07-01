@@ -94,7 +94,12 @@
     "statDone": "hotovo",
     "statTotal": "celkem",
     "viewTasks": "Zobrazit úkoly projektu",
-    "allTasks": "← Všechny úkoly"
+    "allTasks": "← Všechny úkoly",
+    "newName": "Název projektu…",
+    "newColor": "Barva",
+    "newKind": "Typ projektu",
+    "newCreate": "Vytvořit projekt",
+    "newCancel": "Zrušit"
   },
   "calendar": {
     "prev": "Předchozí",

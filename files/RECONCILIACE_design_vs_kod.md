@@ -736,3 +736,25 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
   timestamptz v UTC docker prostředí, klient čte HH:MM ze stringu). Konzistentní v rámci dev; správné TZ
   chování = produkční follow-up (zapsáno; test s explicitním +02 se posunul — data opravena na naivní).
 - CalendarMonth interní offset stav zůstává pro standalone použití (Calendar ho řídí přes controlledBase).
+
+---
+
+## §26 — Projekt create + avataři členů (#15 + #18) — uzavírá P3
+
+**Datum:** 2026-07-01 · autonomní smyčka (konec fáze P3).
+
+### #15 — Nový projekt
+- **POST /api/projects**: guard člen prostoru (guest → 403 read-only-host), INSERT projects (name/color/kind,
+  owner=zakladatel) + project_members (zakladatel manager) + **seed 3 výchozích statusů** (K udělání/Probíhá/
+  Hotovo is_done — Board sloupce R9 fungují hned).
+- Web: „Nový projekt" btn (dřív disabled atrapa) → modal (název + barva USER_COLORS + typ flow/goal/cycle,
+  Esc-close) → POST. **Projekt se přisyncuje přes PowerSync bez reloadu** (bucket param re-eval) — ověřeno:
+  karta i sidebar řádek se objevily; Postgres: projekt + manager membership + 3 statusy. Test smazán (cascade).
+
+### #18 — Avataři členů na kartách projektů
+- Zdroj: synced `project_members` (user_id) + jména z members API aktivního prostoru (1 dotaz, mapa) —
+  žádné N+1. Avataři max 4 + „+N", **vlastník s brass ringem** (box-shadow 0 0 0 2px var(--brass), verbatim
+  ř. 727). Ověřeno: AD s ringem na Doručené/Obchod.
+
+**Tím je FÁZE P3 KOMPLETNÍ** — všechny obrazovkové moduly z baseline auditu stojí (zbývá jen /oblibene/*
+stub → #40). Následuje AUDIT_v2 + P4 (fidelity/mobil/Tweaks).

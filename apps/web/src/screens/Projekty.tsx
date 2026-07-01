@@ -1,11 +1,25 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
+import { API_URL } from "../lib/api";
+import { USER_COLORS } from "../lib/colors";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
+
+type Member = { id: string; name: string; email: string };
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0] ?? "")
+    .join("")
+    .toUpperCase() || "?";
 
 type Counts = { open: number; done: number; total: number };
 const ZERO: Counts = { open: 0, done: 0, total: 0 };
@@ -31,9 +45,31 @@ export function Projekty() {
   const { data: taskRows } = usePsQuery<{ project_id: string | null; completed_at: string | null }>(
     "SELECT project_id, completed_at FROM tasks",
   );
-  const { data: memberRows } = usePsQuery<{ project_id: string | null }>(
-    "SELECT project_id FROM project_members",
+  const { data: memberRows } = usePsQuery<{ project_id: string | null; user_id: string | null }>(
+    "SELECT project_id, user_id FROM project_members",
   );
+  // jména členů aktivního prostoru (avataři karet, #18)
+  const { data: team } = useQuery({
+    queryKey: ["wsMembers", activeWs],
+    enabled: !!activeWs,
+    queryFn: async () => {
+      const r = await fetch(`${API_URL}/api/workspaces/${activeWs}/members`, {
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("members");
+      return (await r.json()).members as Member[];
+    },
+  });
+  const nameById = useMemo(() => new Map((team ?? []).map((m) => [m.id, m.name])), [team]);
+  const membersByProject = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const r of memberRows ?? []) {
+      if (!r.project_id || !r.user_id) continue;
+      m.set(r.project_id, [...(m.get(r.project_id) ?? []), r.user_id]);
+    }
+    return m;
+  }, [memberRows]);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const counts = useMemo(() => {
     const m = new Map<string, Counts>();
@@ -73,9 +109,8 @@ export function Projekty() {
         )}
         <button
           type="button"
-          disabled
-          title={t("projects.newSoon")}
-          className="ml-auto flex items-center gap-1.5 rounded-[9px] border border-brass font-display font-bold text-brass-text disabled:opacity-60"
+          onClick={() => setModalOpen(true)}
+          className="ml-auto flex items-center gap-1.5 rounded-[9px] border border-brass font-display font-bold text-brass-text hover:bg-brass hover:text-white"
           style={{ background: "var(--w-brass-soft)", padding: "7px 13px", fontSize: 12.5 }}
         >
           <Icon name="pridat" size={14} />
@@ -98,12 +133,160 @@ export function Projekty() {
               project={p}
               counts={counts.get(p.id) ?? ZERO}
               members={memberCounts.get(p.id) ?? 0}
+              avatars={(membersByProject.get(p.id) ?? []).map((uid) => ({
+                name: nameById.get(uid) ?? "?",
+                isOwner: uid === p.owner_id,
+              }))}
               onOpen={() => open(p.id)}
             />
           ))}
         </div>
       )}
+
+      {modalOpen && activeWs && (
+        <NewProjectModal workspaceId={activeWs} onClose={() => setModalOpen(false)} />
+      )}
     </div>
+  );
+}
+
+/** Modal „Nový projekt" — název + barva + typ → POST /api/projects (projekt se přisyncuje). */
+function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const { t } = useTranslation();
+  const [name, setName] = useState("");
+  const [color, setColor] = useState<string | null>(null);
+  const [kind, setKind] = useState("flow");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
+
+  const create = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    const r = await fetch(`${API_URL}/api/projects`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim(), workspaceId, color, kind }),
+    });
+    setBusy(false);
+    if (r.ok) onClose();
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={t("projects.newCancel")}
+        onClick={onClose}
+        className="fixed inset-0"
+        style={{ background: "rgba(10,14,20,.42)", zIndex: 50 }}
+      />
+      <div className="pointer-events-none fixed inset-0 flex items-start justify-center" style={{ zIndex: 51, paddingTop: "14vh" }}>
+        <div
+          className="pointer-events-auto rounded-2xl border border-line bg-card"
+          style={{ width: 440, maxWidth: "94vw", boxShadow: "var(--w-shadow)", padding: "18px 20px" }}
+        >
+          <div className="mb-3 flex items-center gap-2.5">
+            <span className="flex-1 font-display font-bold text-ink" style={{ fontSize: 16 }}>
+              {t("projects.new")}
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t("projects.newCancel")}
+              className="grid h-7 w-7 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
+            >
+              <Icon name="zavrit" size={15} />
+            </button>
+          </div>
+          <input
+            // biome-ignore lint/a11y/noAutofocus: create modal
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void create()}
+            placeholder={t("projects.newName")}
+            className="w-full rounded-[10px] border border-line bg-panel-2 font-display font-semibold text-ink outline-none focus:border-brass"
+            style={{ padding: "11px 13px", fontSize: 15 }}
+          />
+          <div className="mt-3.5 mb-1.5 font-display font-bold text-ink-3 uppercase" style={{ fontSize: 10.5, letterSpacing: ".05em" }}>
+            {t("projects.newColor")}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setColor(null)}
+              aria-label="—"
+              className="h-6 w-6 rounded-full border border-line"
+              style={{ outline: color === null ? "2px solid var(--w-navy)" : "none", outlineOffset: 1 }}
+            />
+            {USER_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setColor(c)}
+                aria-label={c}
+                className="h-6 w-6 rounded-full"
+                style={{ background: c, outline: color === c ? "2px solid var(--w-navy)" : "none", outlineOffset: 1 }}
+              />
+            ))}
+          </div>
+          <div className="mt-3.5 mb-1.5 font-display font-bold text-ink-3 uppercase" style={{ fontSize: 10.5, letterSpacing: ".05em" }}>
+            {t("projects.newKind")}
+          </div>
+          <div className="inline-flex rounded-[10px] border border-line bg-panel-2" style={{ padding: 3 }}>
+            {(
+              [
+                ["flow", t("projects.kindFlow")],
+                ["goal", t("projects.kindGoal")],
+                ["cycle", t("projects.kindCycle")],
+              ] as const
+            ).map(([k, l]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setKind(k)}
+                className="rounded-lg font-display font-semibold"
+                style={{
+                  fontSize: 12.5,
+                  padding: "6px 13px",
+                  background: kind === k ? "var(--w-card)" : "transparent",
+                  color: kind === k ? "var(--w-ink)" : "var(--w-ink-3)",
+                }}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 flex justify-end gap-2.5 border-line border-t pt-3.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-[9px] border border-line font-display font-semibold text-ink-2 hover:border-ink-3"
+              style={{ padding: "9px 15px", fontSize: 13 }}
+            >
+              {t("projects.newCancel")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void create()}
+              disabled={!name.trim() || busy}
+              className="rounded-[9px] font-display font-bold text-white hover:brightness-105 disabled:opacity-50"
+              style={{ background: "var(--w-brass)", padding: "9px 17px", fontSize: 13 }}
+            >
+              {t("projects.newCreate")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -111,11 +294,13 @@ function ProjectCard({
   project,
   counts,
   members,
+  avatars,
   onOpen,
 }: {
   project: ProjectRow;
   counts: Counts;
   members: number;
+  avatars: { name: string; isOwner: boolean }[];
   onOpen: () => void;
 }) {
   const { t } = useTranslation();
@@ -179,6 +364,35 @@ function ProjectCard({
             <span>{t("projects.pctDone", { pct })}</span>
             {members > 0 && <span>{t("projects.members", { count: members })}</span>}
           </div>
+        </div>
+      )}
+
+      {/* avataři členů (#18) — vlastník s brass ringem (prototyp ř. 727) */}
+      {avatars.length > 0 && (
+        <div className="mt-3 flex items-center">
+          {avatars.slice(0, 4).map((a, i) => (
+            <span
+              key={`${a.name}-${i}`}
+              title={a.name}
+              className="flex items-center justify-center rounded-full font-display font-semibold text-white"
+              style={{
+                width: 24,
+                height: 24,
+                background: "var(--w-navy)",
+                fontSize: 10,
+                marginLeft: i > 0 ? -6 : 0,
+                boxShadow: a.isOwner ? "0 0 0 2px var(--w-brass)" : "0 0 0 2px var(--w-card)",
+                zIndex: a.isOwner ? 2 : 1,
+              }}
+            >
+              {initials(a.name)}
+            </span>
+          ))}
+          {avatars.length > 4 && (
+            <span className="ml-1.5 font-mono text-ink-3" style={{ fontSize: 10.5 }}>
+              +{avatars.length - 4}
+            </span>
+          )}
         </div>
       )}
     </button>

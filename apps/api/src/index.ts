@@ -9,6 +9,7 @@ import {
   memberships,
   projectMembers,
   projects,
+  statuses,
   users,
   workspaces,
 } from "@watson/db";
@@ -91,6 +92,59 @@ app.get("/api/projects", async (c) => {
     .where(eq(projectMembers.userId, session.user.id));
 
   return c.json({ projects: rows });
+});
+
+/** Založení projektu (#15): projekt + členství zakladatele (manager) + výchozí statusy. */
+app.post("/api/projects", async (c) => {
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session) return c.json({ error: "unauthorized" }, 401);
+
+  const body = (await c.req.json().catch(() => ({}))) as {
+    name?: string;
+    workspaceId?: string;
+    color?: string;
+    kind?: string;
+  };
+  const name = (body.name ?? "").trim();
+  if (!name || !body.workspaceId) return c.json({ error: "name and workspaceId required" }, 400);
+
+  const db = getDb();
+  // zakladatel musí být členem prostoru (a ne Host)
+  const mine = (
+    await db
+      .select({ role: memberships.role })
+      .from(memberships)
+      .where(
+        and(eq(memberships.workspaceId, body.workspaceId), eq(memberships.userId, session.user.id)),
+      )
+  )[0];
+  if (!mine) return c.json({ error: "forbidden" }, 403);
+  if (mine.role === "guest") return c.json({ error: "read-only-host" }, 403);
+
+  const kind = body.kind === "goal" || body.kind === "cycle" ? body.kind : "flow";
+  const [project] = await db
+    .insert(projects)
+    .values({
+      name,
+      workspaceId: body.workspaceId,
+      color: body.color ?? null,
+      kind,
+      ownerId: session.user.id,
+    })
+    .returning();
+  if (!project) return c.json({ error: "insert failed" }, 500);
+
+  await db
+    .insert(projectMembers)
+    .values({ projectId: project.id, userId: session.user.id, role: "manager" });
+  // výchozí statusy (Board sloupce, R9)
+  await db.insert(statuses).values([
+    { scope: "project", projectId: project.id, name: "K udělání", position: 0, isDone: false },
+    { scope: "project", projectId: project.id, name: "Probíhá", position: 1, isDone: false },
+    { scope: "project", projectId: project.id, name: "Hotovo", position: 2, isDone: true },
+  ]);
+
+  return c.json({ project });
 });
 
 /** Členové workspace (jen pro člena) — Nastavení → Tým a role. */

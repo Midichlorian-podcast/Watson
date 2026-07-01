@@ -94,7 +94,12 @@
     "statDone": "done",
     "statTotal": "total",
     "viewTasks": "Show project tasks",
-    "allTasks": "← All tasks"
+    "allTasks": "← All tasks",
+    "newName": "Project name…",
+    "newColor": "Color",
+    "newKind": "Project type",
+    "newCreate": "Create project",
+    "newCancel": "Cancel"
   },
   "calendar": {
     "prev": "Previous",
