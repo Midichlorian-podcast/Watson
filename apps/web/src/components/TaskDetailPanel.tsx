@@ -54,10 +54,24 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
   const depth = depthRows?.[0]?.depth ?? 1;
 
   const project = useProject(task?.project_id ?? undefined);
+  const { data: checklist } = usePsQuery<{
+    id: string;
+    text: string | null;
+    checked: number | null;
+  }>(
+    "SELECT id, text, checked FROM checklist_items WHERE task_id = ? ORDER BY position, created_at",
+    [id],
+  );
+  const { data: comments } = usePsQuery<{ id: string; body: string | null }>(
+    "SELECT id, body FROM comments WHERE task_id = ? ORDER BY created_at",
+    [id],
+  );
 
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [subText, setSubText] = useState("");
+  const [chkText, setChkText] = useState("");
+  const [cmtText, setCmtText] = useState("");
   useEffect(() => {
     if (task) {
       setName(task.name ?? "");
@@ -67,6 +81,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 
   if (!task) return null;
   const done = Boolean(task.completed_at);
+  const chk = checklist ?? [];
+  const cmts = comments ?? [];
 
   const toggleDone = () => void patch(id, { completed_at: done ? null : new Date().toISOString() });
 
@@ -77,6 +93,28 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
       [task.project_id, id, subText.trim(), new Date().toISOString()],
     );
     setSubText("");
+  };
+
+  const addChk = async () => {
+    if (!chkText.trim()) return;
+    await powerSync.execute(
+      "INSERT INTO checklist_items (id, task_id, project_id, text, checked, position) VALUES (uuid(), ?, ?, ?, 0, ?)",
+      [id, task.project_id, chkText.trim(), chk.length],
+    );
+    setChkText("");
+  };
+  const toggleChk = (cid: string, checked: number | null) =>
+    void powerSync.execute("UPDATE checklist_items SET checked = ? WHERE id = ?", [
+      checked ? 0 : 1,
+      cid,
+    ]);
+  const addCmt = async () => {
+    if (!cmtText.trim()) return;
+    await powerSync.execute(
+      "INSERT INTO comments (id, task_id, project_id, body) VALUES (uuid(), ?, ?, ?)",
+      [id, task.project_id, cmtText.trim()],
+    );
+    setCmtText("");
   };
 
   const dateInput = (col: "due_date" | "start_date" | "deadline", val: string | null) => (
@@ -275,6 +313,69 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
             ) : (
               <p className="mt-2 text-ink-3 text-xs">{t("detail.maxDepth")}</p>
             )}
+          </div>
+
+          {/* checklist */}
+          <div className="mt-3 border-line border-t pt-2">
+            <span className="font-display font-semibold text-ink-3 text-xs">
+              {t("detail.checklist")}
+              {chk.length > 0 && ` · ${chk.filter((c) => c.checked).length}/${chk.length}`}
+            </span>
+            <ul className="mt-2 flex flex-col gap-1">
+              {chk.map((c) => {
+                const ck = Boolean(c.checked);
+                return (
+                  <li key={c.id} className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleChk(c.id, c.checked)}
+                      className="grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border text-[9px] text-white"
+                      style={{
+                        borderColor: ck ? "var(--w-success)" : "var(--w-line)",
+                        background: ck ? "var(--w-success)" : "transparent",
+                      }}
+                    >
+                      {ck ? "✓" : ""}
+                    </button>
+                    <span className={`text-sm ${ck ? "text-ink-3 line-through" : "text-ink"}`}>
+                      {c.text}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <input
+              value={chkText}
+              onChange={(e) => setChkText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void addChk()}
+              placeholder={t("detail.addChecklist")}
+              className="mt-2 w-full rounded-lg border border-line border-dashed bg-transparent px-3 py-1.5 text-sm outline-none focus:border-brass"
+            />
+          </div>
+
+          {/* komentáře */}
+          <div className="mt-3 border-line border-t pt-2">
+            <span className="font-display font-semibold text-ink-3 text-xs">
+              {t("detail.comments")}
+              {cmts.length > 0 && ` · ${cmts.length}`}
+            </span>
+            <ul className="mt-2 flex flex-col gap-2">
+              {cmts.map((cm) => (
+                <li key={cm.id} className="rounded-lg bg-panel-2 px-3 py-2 text-ink text-sm">
+                  {cm.body}
+                </li>
+              ))}
+            </ul>
+            <textarea
+              value={cmtText}
+              onChange={(e) => setCmtText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void addCmt();
+              }}
+              rows={2}
+              placeholder={t("detail.addComment")}
+              className="mt-2 w-full resize-none rounded-lg border border-line bg-panel-2 px-3 py-2 text-ink text-sm outline-none focus:border-brass"
+            />
           </div>
         </div>
       </aside>

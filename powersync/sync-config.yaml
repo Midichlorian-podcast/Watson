@@ -28,3 +28,16 @@ bucket_definitions:
       - SELECT id, project_id, user_id, role, created_at
         FROM project_members
         WHERE project_id = bucket.project_id
+      # Detail úkolu (task-children, denormalizovaný project_id pro scoping).
+      - SELECT id, task_id, project_id, user_id, completed_at, created_at
+        FROM assignments
+        WHERE project_id = bucket.project_id
+      - SELECT id, task_id, project_id, text, checked, position, created_at
+        FROM checklist_items
+        WHERE project_id = bucket.project_id
+      - SELECT id, task_id, project_id, author_id, body, created_at
+        FROM comments
+        WHERE project_id = bucket.project_id
+      - SELECT id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at
+        FROM reminders
+        WHERE project_id = bucket.project_id

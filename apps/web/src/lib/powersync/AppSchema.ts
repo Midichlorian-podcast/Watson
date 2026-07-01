@@ -81,7 +81,66 @@ const project_members = new Table(
   { indexes: { by_project: ["project_id"], by_user: ["user_id"] } },
 );
 
-export const AppSchema = new Schema({ tasks, projects, sections, statuses, project_members });
+/** Detail úkolu (task-children, denormalizovaný project_id pro scoping). */
+const assignments = new Table(
+  {
+    task_id: column.text,
+    project_id: column.text,
+    user_id: column.text,
+    completed_at: column.text,
+    created_at: column.text,
+  },
+  { indexes: { by_task: ["task_id"], by_project: ["project_id"] } },
+);
+
+const checklist_items = new Table(
+  {
+    task_id: column.text,
+    project_id: column.text,
+    text: column.text,
+    checked: column.integer,
+    position: column.integer,
+    created_at: column.text,
+  },
+  { indexes: { by_task: ["task_id"] } },
+);
+
+const comments = new Table(
+  {
+    task_id: column.text,
+    project_id: column.text,
+    author_id: column.text,
+    body: column.text,
+    created_at: column.text,
+  },
+  { indexes: { by_task: ["task_id"] } },
+);
+
+const reminders = new Table(
+  {
+    task_id: column.text,
+    project_id: column.text,
+    user_id: column.text,
+    type: column.text,
+    remind_at: column.text,
+    offset_min: column.integer,
+    channel: column.text,
+    created_at: column.text,
+  },
+  { indexes: { by_task: ["task_id"] } },
+);
+
+export const AppSchema = new Schema({
+  tasks,
+  projects,
+  sections,
+  statuses,
+  project_members,
+  assignments,
+  checklist_items,
+  comments,
+  reminders,
+});
 
 export type Database = (typeof AppSchema)["types"];
 export type TaskRow = Database["tasks"];
@@ -89,3 +148,7 @@ export type ProjectRow = Database["projects"];
 export type SectionRow = Database["sections"];
 export type StatusRow = Database["statuses"];
 export type ProjectMemberRow = Database["project_members"];
+export type AssignmentRow = Database["assignments"];
+export type ChecklistItemRow = Database["checklist_items"];
+export type CommentRow = Database["comments"];
+export type ReminderRow = Database["reminders"];

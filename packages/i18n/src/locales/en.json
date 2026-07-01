@@ -49,6 +49,10 @@
     "subtasks": "Subtasks",
     "addSubtask": "Add subtask…",
     "maxDepth": "Max 3 levels of nesting (R1).",
+    "checklist": "Checklist",
+    "addChecklist": "Add item…",
+    "comments": "Comments",
+    "addComment": "Write a comment… (⌘/Ctrl+Enter to send)",
     "delete": "Delete"
   },
   "projects": {

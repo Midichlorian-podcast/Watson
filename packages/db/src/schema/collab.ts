@@ -17,6 +17,7 @@ import { createdAt, pk, updatedAt } from "./_helpers";
 import { notificationChannelEnum, reminderTypeEnum } from "./enums";
 import { users } from "./auth";
 import { tasks } from "./task";
+import { projects } from "./workspace";
 
 export const comments = pgTable(
   "comments",
@@ -25,6 +26,10 @@ export const comments = pgTable(
     taskId: uuid("task_id")
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
+    /** Denormalizace pro PowerSync scoping. */
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
     authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
     /** Markdown přes PowerSync (LWW). */
     body: text("body").notNull(),
@@ -67,6 +72,10 @@ export const reminders = pgTable("reminders", {
   taskId: uuid("task_id")
     .notNull()
     .references(() => tasks.id, { onDelete: "cascade" }),
+  /** Denormalizace pro PowerSync scoping. */
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
   userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),

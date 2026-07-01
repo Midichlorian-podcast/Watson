@@ -157,20 +157,39 @@ const TABLES: Record<string, TableDef> = {
     projectVia: { kind: "column", col: "project_id" },
   },
   assignments: {
-    columns: { task_id: "text", user_id: "text", completed_at: "ts" },
+    columns: { task_id: "text", project_id: "text", user_id: "text", completed_at: "ts" },
     hasUpdatedAt: false,
     projectVia: { kind: "task", col: "task_id" },
     memberCols: ["user_id"],
   },
   checklist_items: {
-    columns: { task_id: "text", text: "text", checked: "bool", position: "int" },
+    columns: {
+      task_id: "text",
+      project_id: "text",
+      text: "text",
+      checked: "bool",
+      position: "int",
+    },
     hasUpdatedAt: false,
     projectVia: { kind: "task", col: "task_id" },
   },
   comments: {
-    columns: { task_id: "text", body: "text" },
+    columns: { task_id: "text", project_id: "text", body: "text" },
     hasUpdatedAt: true,
     creatorCol: "author_id",
+    projectVia: { kind: "task", col: "task_id" },
+  },
+  reminders: {
+    columns: {
+      task_id: "text",
+      project_id: "text",
+      user_id: "text",
+      type: "text",
+      remind_at: "ts",
+      offset_min: "int",
+      channel: "text",
+    },
+    hasUpdatedAt: false,
     projectVia: { kind: "task", col: "task_id" },
   },
 };

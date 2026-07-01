@@ -49,6 +49,10 @@
     "subtasks": "Podúkoly",
     "addSubtask": "Přidat podúkol…",
     "maxDepth": "Max. 3 úrovně zanoření (R1).",
+    "checklist": "Checklist",
+    "addChecklist": "Přidat položku…",
+    "comments": "Komentáře",
+    "addComment": "Napiš komentář… (⌘/Ctrl+Enter odeslat)",
     "delete": "Smazat"
   },
   "projects": {

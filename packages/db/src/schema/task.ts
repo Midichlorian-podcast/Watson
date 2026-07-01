@@ -80,6 +80,10 @@ export const assignments = pgTable(
     taskId: uuid("task_id")
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
+    /** Denormalizace pro PowerSync scoping (bucket = project). */
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -95,6 +99,10 @@ export const checklistItems = pgTable("checklist_items", {
   taskId: uuid("task_id")
     .notNull()
     .references(() => tasks.id, { onDelete: "cascade" }),
+  /** Denormalizace pro PowerSync scoping. */
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
   text: varchar("text", { length: 500 }).notNull(),
   checked: boolean("checked").notNull().default(false),
   position: integer("position").notNull().default(0),
