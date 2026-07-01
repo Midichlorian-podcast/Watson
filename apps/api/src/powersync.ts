@@ -192,6 +192,37 @@ const TABLES: Record<string, TableDef> = {
     hasUpdatedAt: false,
     projectVia: { kind: "task", col: "task_id" },
   },
+  // Postupy (štafeta). Pozn.: server-authored advance (překlopení step_state) přijde s #27;
+  // zde je generický zápis pro založení/úpravu řetězce členem projektu.
+  chains: {
+    columns: {
+      project_id: "text",
+      workspace_id: "text",
+      template_id: "text",
+      name: "text",
+      description: "text",
+      anchor_date: "ts",
+      state: "text",
+      completed_at: "ts",
+    },
+    hasUpdatedAt: true,
+    creatorCol: "created_by",
+    projectVia: { kind: "column", col: "project_id" },
+  },
+  chain_steps: {
+    columns: {
+      chain_id: "text",
+      task_id: "text",
+      project_id: "text",
+      position: "int",
+      gate: "text",
+      step_state: "text",
+      activated_at: "ts",
+    },
+    hasUpdatedAt: false,
+    projectVia: { kind: "column", col: "project_id" },
+    refProjectCols: [{ col: "task_id", table: "tasks" }],
+  },
 };
 
 type Op = "PUT" | "PATCH" | "DELETE";

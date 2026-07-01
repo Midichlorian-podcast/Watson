@@ -8,6 +8,10 @@ import {
   AI_SUGGESTION_STATUS,
   ASSIGNMENT_MODES,
   CALENDAR_PROVIDERS,
+  CHAIN_DUE_BASIS,
+  CHAIN_GATES,
+  CHAIN_STATES,
+  CHAIN_STEP_STATES,
   NOTIFICATION_CHANNELS,
   OWNER_SCOPES,
   PROJECT_KINDS,
@@ -42,3 +46,7 @@ export const aiSuggestionStatusEnum = pgEnum("ai_suggestion_status", tuple(AI_SU
 export const actorTypeEnum = pgEnum("actor_type", tuple(ACTOR_TYPES));
 export const ownerScopeEnum = pgEnum("owner_scope", tuple(OWNER_SCOPES));
 export const calendarProviderEnum = pgEnum("calendar_provider", tuple(CALENDAR_PROVIDERS));
+export const chainStateEnum = pgEnum("chain_state", tuple(CHAIN_STATES));
+export const chainStepStateEnum = pgEnum("chain_step_state", tuple(CHAIN_STEP_STATES));
+export const chainGateEnum = pgEnum("chain_gate", tuple(CHAIN_GATES));
+export const chainDueBasisEnum = pgEnum("chain_due_basis", tuple(CHAIN_DUE_BASIS));

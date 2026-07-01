@@ -130,6 +130,37 @@ const reminders = new Table(
   { indexes: { by_task: ["task_id"] } },
 );
 
+/** Postupy (štafeta) — chains + chain_steps (project-scoped). */
+const chains = new Table(
+  {
+    project_id: column.text,
+    workspace_id: column.text,
+    template_id: column.text,
+    name: column.text,
+    description: column.text,
+    anchor_date: column.text,
+    state: column.text,
+    created_by: column.text,
+    completed_at: column.text,
+    created_at: column.text,
+  },
+  { indexes: { by_project: ["project_id"] } },
+);
+
+const chain_steps = new Table(
+  {
+    chain_id: column.text,
+    task_id: column.text,
+    project_id: column.text,
+    position: column.integer,
+    gate: column.text,
+    step_state: column.text,
+    activated_at: column.text,
+    created_at: column.text,
+  },
+  { indexes: { by_chain: ["chain_id"], by_project: ["project_id"] } },
+);
+
 export const AppSchema = new Schema({
   tasks,
   projects,
@@ -140,6 +171,8 @@ export const AppSchema = new Schema({
   checklist_items,
   comments,
   reminders,
+  chains,
+  chain_steps,
 });
 
 export type Database = (typeof AppSchema)["types"];

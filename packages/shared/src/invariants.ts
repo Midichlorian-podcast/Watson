@@ -75,6 +75,22 @@ export type ProjectKind = (typeof PROJECT_KINDS)[number];
 export const PROJECT_STATUSES = ["active", "paused", "archive", "done"] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
+/** Postupy (štafeta) — stav běžící instance řetězce. */
+export const CHAIN_STATES = ["active", "done", "canceled", "on_hold"] as const;
+export type ChainState = (typeof CHAIN_STATES)[number];
+
+/** Stav kroku řetězce (ZDROJ PRAVDY o gatingu). waiting↔dormant, now↔active. */
+export const CHAIN_STEP_STATES = ["dormant", "active", "done", "skipped"] as const;
+export type ChainStepState = (typeof CHAIN_STEP_STATES)[number];
+
+/** Jak se krok aktivuje. */
+export const CHAIN_GATES = ["after_previous", "with_previous", "manual"] as const;
+export type ChainGate = (typeof CHAIN_GATES)[number];
+
+/** Základna auto-datování termínu kroku. */
+export const CHAIN_DUE_BASIS = ["from_anchor", "from_activation", "from_prev_done"] as const;
+export type ChainDueBasis = (typeof CHAIN_DUE_BASIS)[number];
+
 /** Rozsah statusu — jednoduché per projekt (default), volitelně per workspace. */
 export const STATUS_SCOPES = ["project", "workspace"] as const;
 export type StatusScope = (typeof STATUS_SCOPES)[number];
