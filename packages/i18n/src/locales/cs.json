@@ -176,5 +176,31 @@
     "goalTarget": "cíl {{target}}",
     "insightPlan": "Naplánuj si den — projdi nadcházející úkoly.",
     "insightPlanAction": "Otevřít nadcházející"
+  },
+  "cheat": {
+    "title": "Klávesové zkratky",
+    "global": "Globální",
+    "list": "Seznam úkolů",
+    "calendar": "Kalendář",
+    "form": "Našeptávač & formulář",
+    "search": "Hledat",
+    "newTask": "Nový úkol",
+    "jump": "Skok kamkoli",
+    "goto": "Přejít na…",
+    "undo": "Zpět / Vpřed",
+    "close": "Zavřít / zrušit",
+    "help": "Tato nápověda",
+    "move": "Pohyb nahoru/dolů",
+    "openDetail": "Otevřít detail",
+    "detailNav": "V detailu: další/předchozí",
+    "check": "Odškrtnout",
+    "priority": "Priorita",
+    "delete": "Smazat (s undo)",
+    "prevNext": "Předchozí / další",
+    "today": "Dnes",
+    "dwm": "Den / týden / měsíc",
+    "menuSelect": "Výběr v nabídce",
+    "confirm": "Potvrdit",
+    "saveTask": "Uložit úkol"
   }
 }

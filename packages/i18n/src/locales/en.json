@@ -176,5 +176,31 @@
     "goalTarget": "target {{target}}",
     "insightPlan": "Plan your day — review upcoming tasks.",
     "insightPlanAction": "Open upcoming"
+  },
+  "cheat": {
+    "title": "Keyboard shortcuts",
+    "global": "Global",
+    "list": "Task list",
+    "calendar": "Calendar",
+    "form": "Autocomplete & form",
+    "search": "Search",
+    "newTask": "New task",
+    "jump": "Jump to anything",
+    "goto": "Go to…",
+    "undo": "Undo / Redo",
+    "close": "Close / cancel",
+    "help": "This help",
+    "move": "Move up/down",
+    "openDetail": "Open detail",
+    "detailNav": "In detail: next/prev",
+    "check": "Toggle done",
+    "priority": "Priority",
+    "delete": "Delete (with undo)",
+    "prevNext": "Previous / next",
+    "today": "Today",
+    "dwm": "Day / week / month",
+    "menuSelect": "Menu selection",
+    "confirm": "Confirm",
+    "saveTask": "Save task"
   }
 }

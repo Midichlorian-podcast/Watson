@@ -396,3 +396,25 @@ Parser `personQueries` funguje, ale QuickAdd dostává `people=[]` (suggest je i
 nezakládá `assignments`. **Rozhodnutí:** plné zapojení (suggest lidí + resolve na submit → assignments)
 závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo za #19; není to viditelná „atrapa"
 (napsaný `@X` se jen tiše neuplatní), řeší se s workspace kontextem.
+
+---
+
+## §14 — Globální klávesové zkratky + „?" tahák (#31)
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P2).
+
+### Postaveno + ověřeno živě
+- `KeyboardProvider` (globální keydown, uvnitř AddTaskProvider): `?`=tahák toggle, `g`+písmeno=navigace,
+  `q`=nový úkol (přesunuto sem z AddTaskProvider — jeden zdroj pravdy), Esc=zavře tahák.
+- `Cheatsheet` overlay 1:1 dle Cloud Design (4 sekce: Globální / Seznam úkolů / Kalendář / Našeptávač).
+- **g-navigace** jen na existující routes: d→/, u→/ukoly, n→/nadcházející, p→/projekty. Cíle
+  k(alendář)/c(íle)/r(eporty)/s(postupy)/i(schránka)/h(ledat) zatím bez route → no-op; doplní se s obrazovkami P3.
+- Ověřeno: `?`→tahák (screenshot), Esc→zavře, `g p`→/projekty, `q`→add modal (autofocus).
+
+### Odloženo (dokumentované)
+- **Seznamová navigace `j/k`/`Enter`/`x`/`e`/`Space`/`1–4`/`⌫`** a **kalendářové `←/→`/`d`/`1-3`** vyžadují
+  per-seznam/kalendář selection state (`kbSel`) sdílený s obrazovkami. Odloženo za **#36** (Úkoly toolbar) /
+  **#17** (view modes) / **#20** (kalendář grid). Tahák je **zobrazuje** (1:1 reference dle designu), ale
+  fungují zatím jen globální (`g`/`?`/`q`/Esc) + ⌘K (přibude #32).
+- `/`=Hledat a `⌘K`=palette: `/` řeší #33 (header search), `⌘K` řeší #32. `⌘Z`/`⌘⇧Z` undo/redo: bez undo
+  systému (prototyp má undo stack) — odloženo (není v aktuálním scope; příp. samostatný task).

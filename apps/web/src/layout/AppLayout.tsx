@@ -4,6 +4,7 @@ import { ProjectDetailPanel } from "../components/ProjectDetailPanel";
 import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WriteRejectedToast } from "../components/WriteRejectedToast";
 import { AddTaskProvider } from "../lib/addTask";
+import { KeyboardProvider } from "../lib/keyboard";
 import { ProjectDetailProvider } from "../lib/projectDetail";
 import { TaskDetailProvider } from "../lib/taskDetail";
 import { WatsonProvider } from "../lib/watson";
@@ -15,6 +16,7 @@ export function AppLayout() {
   return (
     <WatsonProvider>
       <AddTaskProvider>
+        <KeyboardProvider>
         <TaskDetailProvider>
           <ProjectDetailProvider>
         <div className="flex h-full min-h-full" style={{ background: "var(--w-paper)" }}>
@@ -31,6 +33,7 @@ export function AppLayout() {
         </div>
           </ProjectDetailProvider>
         </TaskDetailProvider>
+        </KeyboardProvider>
       </AddTaskProvider>
     </WatsonProvider>
   );
