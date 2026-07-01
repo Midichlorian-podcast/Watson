@@ -49,7 +49,7 @@ export function TaskCard({
       onClick={onOpen}
       className="flex cursor-pointer items-center gap-3 border-line border-b hover:bg-panel-2"
       style={{
-        padding: "10px 4px 10px 11px",
+        padding: "var(--w-row-py, 10px) 4px var(--w-row-py, 10px) 11px",
         borderRadius: "0 6px 6px 0",
         boxShadow: done ? undefined : `inset 3px 0 0 ${PRI[priority]}`,
         opacity: done ? 0.5 : 1,
@@ -86,7 +86,7 @@ export function TaskCard({
 
       {/* tečka projektu */}
       <span
-        className="shrink-0 rounded-full"
+        className="w-projdot shrink-0 rounded-full"
         style={{ width: 8, height: 8, background: projectColor ?? "var(--w-ink-3)" }}
       />
 
@@ -97,7 +97,7 @@ export function TaskCard({
             "truncate font-display font-semibold",
             done ? "text-ink-3 line-through" : "text-ink",
           )}
-          style={{ fontSize: 13.5 }}
+          style={{ fontSize: "var(--w-row-font, 13.5px)" }}
         >
           {name}
         </div>

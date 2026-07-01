@@ -155,7 +155,19 @@
     "roleOwner": "Owner",
     "roleAdmin": "Admin",
     "roleMember": "Member",
-    "roleGuest": "Guest"
+    "roleGuest": "Guest",
+    "densityAiry": "Airy",
+    "densityBalanced": "Balanced",
+    "densityCompact": "Compact",
+    "accentLabel": "Project accent",
+    "accentMulti": "Multi-color",
+    "accentBrass": "Brass only",
+    "inviteTitle": "Invite member",
+    "inviteName": "Name",
+    "inviteEmail": "E-mail",
+    "inviteSend": "Send invite",
+    "inviteSent": "Invite sent",
+    "inviteCancel": "Cancel"
   },
   "priority": {
     "acute": "Acute",

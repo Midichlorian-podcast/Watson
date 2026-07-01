@@ -780,3 +780,29 @@ stub → #40). Následuje AUDIT_v2 + P4 (fidelity/mobil/Tweaks).
    filtr+řazení aplikované na jejich skupiny. Ověřeno na Dnes.
 6. **⌫/Delete v seznamové navigaci Úkolů** — smaže vybraný úkol, výběr přejde na souseda (stejný handler
    jako živě ověřené j/k/Enter/Space; bez undo — viz baseline audit poznámka o undo systému).
+
+---
+
+## §28 — Mobil + Tweaks + invite (#38 + #39) — uzavírá P4
+
+**Datum:** 2026-07-01 · autonomní smyčka (konec fáze P4).
+
+### #38 — Mobil (< 880)
+- `useIsMobile` (matchMedia max-width 879px + resize fallback — emulovaný resize v CDP nespouští MQ change
+  spolehlivě; reálné prohlížeče ano). AppLayout: mobil → **Sidebar skrytý**, main full-width s padding-bottom,
+  **MobileTabBar** fixed bottom — **VERBATIM prototyp ř. 961-975: Dnes / Úkoly / Nadcházející / Projekty /
+  Watson** (žádný FAB — zadání ho hádalo, prototyp ho nemá; + Úkol zůstává v headeru). Aktivní tab brass.
+- Ověřeno: resize 375×812 → lišta + bez sidebaru, tab Úkoly naviguje (full-width screenshot), resize 1280 →
+  sidebar zpět; round-trip bez reloadu přes resize listener.
+
+### #39 — Tweaks + invite
+- **Hustota** (VERBATIM ř. 40-42): data-w-density na `<html>` → `--w-row-py` 15/11/8px + `--w-row-font`
+  15/14/13.5px; TaskCard padding/font přes CSS vars. Default **Kompaktní** (dle prototypu; dřívější implicit
+  10px byl mezi vyvážené/kompaktní). **Akcent** (VERBATIM ř. 77): `[data-w-accent="brass"] .w-projdot →
+  brass` — třída zatím na tečkách TaskCard (hlavní seznamy); ostatní tečky (sidebar/board/kalendář) mají
+  inline barvy — rozšíření třídy = kosmetický follow-up. Persist localStorage, apply při startu (AppLayout).
+- Nastavení: segmenty Vzdušné/Vyvážené/Kompaktní + Více barev/Jen brass (nahradily dekorativní „Tweaks" chip).
+- **Invite modal** (Pozvat člena — dřív atrapa bez onClick): jméno+e-mail → toast „Pozvánka odeslána".
+  **Bez mailové infrastruktury** — reálné odeslání pozvánky = Mail #8.
+- Ověřeno: segmenty → data atributy + localStorage + vizuálně (dot rgb(198,138,62), padding 15px),
+  vráceno na výchozí; invite modal → submit → toast.

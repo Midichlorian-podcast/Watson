@@ -1,10 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { type CSSProperties, type ReactNode, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "@watson/i18n";
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
 import { signOut, useSession } from "../lib/auth-client";
 import { disconnectPowerSync } from "../lib/powersync/db";
+import {
+  type Accent,
+  type Density,
+  getAccent,
+  getDensity,
+  setAccent as persistAccent,
+  setDensity as persistDensity,
+} from "../lib/tweaks";
 
 type Workspace = { id: string; name: string; isPersonal: boolean; role: string };
 type Member = {
@@ -54,6 +62,23 @@ export function Nastaveni() {
   const { theme, toggle } = useTheme();
   const { data: session } = useSession();
   const [openRoleId, setOpenRoleId] = useState<string | null>(null);
+  const [density, setDensityState] = useState<Density>(getDensity);
+  const [accent, setAccentState] = useState<Accent>(getAccent);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const setDensity = (d: Density) => {
+    setDensityState(d);
+    persistDensity(d);
+  };
+  const setAccent = (a: Accent) => {
+    setAccentState(a);
+    persistAccent(a);
+  };
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(id);
+  }, [toast]);
 
   const { data: workspaces } = useQuery({
     queryKey: ["workspaces"],
@@ -142,19 +167,28 @@ export function Nastaveni() {
             <RowTitle>{t("settings.density")}</RowTitle>
             <RowDesc>{t("settings.densityDesc")}</RowDesc>
           </div>
-          <span
-            className="font-display"
-            style={{
-              fontWeight: 600,
-              fontSize: 11,
-              padding: "5px 11px",
-              borderRadius: 999,
-              background: "var(--w-brass-soft)",
-              color: "var(--w-brass-text)",
-            }}
-          >
-            {t("settings.tweaks")}
-          </span>
+          <Segments
+            value={density}
+            onChange={(v) => setDensity(v as Density)}
+            options={[
+              ["vzdusne", t("settings.densityAiry")],
+              ["vyvazene", t("settings.densityBalanced")],
+              ["kompaktni", t("settings.densityCompact")],
+            ]}
+          />
+        </div>
+        <div style={{ ...ROW, borderTop: "1px solid var(--w-line)" }}>
+          <div style={{ flex: 1 }}>
+            <RowTitle>{t("settings.accentLabel")}</RowTitle>
+          </div>
+          <Segments
+            value={accent}
+            onChange={(v) => setAccent(v as Accent)}
+            options={[
+              ["multi", t("settings.accentMulti")],
+              ["brass", t("settings.accentBrass")],
+            ]}
+          />
         </div>
       </div>
 
@@ -362,7 +396,9 @@ export function Nastaveni() {
               );
             })}
             {/* Pozvat člena */}
+            {/* biome-ignore lint/a11y/useKeyWithClickEvents: řádkové tlačítko */}
             <div
+              onClick={() => setInviteOpen(true)}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -442,7 +478,133 @@ export function Nastaveni() {
           desc={t("settings.deadlineRemindersDesc")}
         />
       </div>
+
+      {inviteOpen && (
+        <InviteModal
+          onClose={() => setInviteOpen(false)}
+          onSent={() => {
+            setInviteOpen(false);
+            setToast(t("settings.inviteSent"));
+          }}
+        />
+      )}
+      {toast && (
+        <div
+          className="fixed bottom-6 left-1/2 flex items-center gap-2.5 rounded-full bg-navy px-4 py-2.5 font-display font-semibold text-white"
+          style={{ transform: "translateX(-50%)", boxShadow: "var(--w-shadow)", zIndex: 60, fontSize: 13.5 }}
+        >
+          <span className="rounded-full" style={{ width: 8, height: 8, background: "var(--w-brass)" }} />
+          {toast}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Segmentový přepínač (Tweaks). */
+function Segments({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: [string, string][];
+}) {
+  return (
+    <div
+      className="inline-flex rounded-[9px] border border-line bg-panel-2"
+      style={{ padding: 3 }}
+    >
+      {options.map(([k, l]) => (
+        <button
+          key={k}
+          type="button"
+          onClick={() => onChange(k)}
+          className="rounded-[7px] font-display font-semibold"
+          style={{
+            fontSize: 11.5,
+            padding: "5px 10px",
+            background: value === k ? "var(--w-card)" : "transparent",
+            color: value === k ? "var(--w-ink)" : "var(--w-ink-3)",
+          }}
+        >
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Pozvat člena — UI modal (mailová infrastruktura = Mail #8; zatím jen potvrzení). */
+function InviteModal({ onClose, onSent }: { onClose: () => void; onSent: () => void }) {
+  const { t } = useTranslation();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={t("settings.inviteCancel")}
+        onClick={onClose}
+        className="fixed inset-0"
+        style={{ background: "rgba(10,14,20,.42)", zIndex: 50 }}
+      />
+      <div className="pointer-events-none fixed inset-0 flex items-start justify-center" style={{ zIndex: 51, paddingTop: "16vh" }}>
+        <div
+          className="pointer-events-auto rounded-2xl border border-line bg-card"
+          style={{ width: 400, maxWidth: "94vw", boxShadow: "var(--w-shadow)", padding: "18px 20px" }}
+        >
+          <div className="mb-3 font-display font-bold text-ink" style={{ fontSize: 16 }}>
+            {t("settings.inviteTitle")}
+          </div>
+          <input
+            // biome-ignore lint/a11y/noAutofocus: invite modal
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t("settings.inviteName")}
+            className="mb-2 w-full rounded-[10px] border border-line bg-panel-2 font-body text-ink outline-none focus:border-brass"
+            style={{ padding: "10px 12px", fontSize: 14 }}
+          />
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && email.trim() && onSent()}
+            placeholder={t("settings.inviteEmail")}
+            type="email"
+            className="w-full rounded-[10px] border border-line bg-panel-2 font-mono text-ink outline-none focus:border-brass"
+            style={{ padding: "10px 12px", fontSize: 13 }}
+          />
+          <div className="mt-4 flex justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-[9px] border border-line font-display font-semibold text-ink-2 hover:border-ink-3"
+              style={{ padding: "9px 15px", fontSize: 13 }}
+            >
+              {t("settings.inviteCancel")}
+            </button>
+            <button
+              type="button"
+              onClick={onSent}
+              disabled={!email.trim()}
+              className="rounded-[9px] font-display font-bold text-white hover:brightness-105 disabled:opacity-50"
+              style={{ background: "var(--w-brass)", padding: "9px 17px", fontSize: 13 }}
+            >
+              {t("settings.inviteSend")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 

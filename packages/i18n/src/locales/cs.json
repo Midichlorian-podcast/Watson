@@ -155,7 +155,19 @@
     "roleOwner": "Vlastník",
     "roleAdmin": "Admin",
     "roleMember": "Člen",
-    "roleGuest": "Host"
+    "roleGuest": "Host",
+    "densityAiry": "Vzdušné",
+    "densityBalanced": "Vyvážené",
+    "densityCompact": "Kompaktní",
+    "accentLabel": "Akcent projektů",
+    "accentMulti": "Více barev",
+    "accentBrass": "Jen brass",
+    "inviteTitle": "Pozvat člena",
+    "inviteName": "Jméno",
+    "inviteEmail": "E-mail",
+    "inviteSend": "Odeslat pozvánku",
+    "inviteSent": "Pozvánka odeslána",
+    "inviteCancel": "Zrušit"
   },
   "priority": {
     "acute": "Akutní",
