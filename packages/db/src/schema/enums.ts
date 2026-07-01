@@ -10,8 +10,10 @@ import {
   CALENDAR_PROVIDERS,
   NOTIFICATION_CHANNELS,
   OWNER_SCOPES,
+  PROJECT_KINDS,
   PROJECT_LAYOUTS,
   PROJECT_ROLES,
+  PROJECT_STATUSES,
   PROJECT_VISIBILITY,
   RECURRENCE_BASIS,
   REMINDER_TYPES,
@@ -28,6 +30,8 @@ export const workspaceRoleEnum = pgEnum("workspace_role", tuple(WORKSPACE_ROLES)
 export const projectRoleEnum = pgEnum("project_role", tuple(PROJECT_ROLES));
 export const projectVisibilityEnum = pgEnum("project_visibility", tuple(PROJECT_VISIBILITY));
 export const projectLayoutEnum = pgEnum("project_layout", tuple(PROJECT_LAYOUTS));
+export const projectKindEnum = pgEnum("project_kind", tuple(PROJECT_KINDS));
+export const projectStatusEnum = pgEnum("project_status", tuple(PROJECT_STATUSES));
 export const statusScopeEnum = pgEnum("status_scope", tuple(STATUS_SCOPES));
 export const assignmentModeEnum = pgEnum("assignment_mode", tuple(ASSIGNMENT_MODES));
 export const recurrenceBasisEnum = pgEnum("recurrence_basis", tuple(RECURRENCE_BASIS));

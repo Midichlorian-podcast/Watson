@@ -29,7 +29,7 @@ const tasks = new Table(
   { indexes: { by_project: ["project_id"] } },
 );
 
-/** Projekt (barva = tělo karet úkolů, R6); default_layout = list|board. */
+/** Projekt (barva = tělo karet úkolů, R6); kind=flow|goal|cycle, status 4-stavový. */
 const projects = new Table({
   workspace_id: column.text,
   name: column.text,
@@ -37,6 +37,11 @@ const projects = new Table({
   icon: column.text,
   default_layout: column.text,
   visibility: column.text,
+  kind: column.text,
+  owner_id: column.text,
+  status: column.text,
+  delivery_date: column.text,
+  definition_of_done: column.text,
   archived_at: column.text,
   created_at: column.text,
 });

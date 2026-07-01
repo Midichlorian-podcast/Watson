@@ -7,7 +7,7 @@ import type { ProjectRow, SectionRow, StatusRow } from "./powersync/AppSchema";
  */
 export function useProjects() {
   const { data } = usePsQuery<ProjectRow>(
-    "SELECT * FROM projects WHERE archived_at IS NULL ORDER BY name",
+    "SELECT * FROM projects WHERE status != 'archive' OR status IS NULL ORDER BY name",
   );
   return data ?? [];
 }

@@ -67,6 +67,14 @@ export const DEFAULT_TIMEZONE = "Europe/Prague";
 export const PROJECT_LAYOUTS = ["list", "board", "calendar"] as const;
 export type ProjectLayout = (typeof PROJECT_LAYOUTS)[number];
 
+/** Typ projektu (Cloud Design): Průběžný / Cílový / Periodický. */
+export const PROJECT_KINDS = ["flow", "goal", "cycle"] as const;
+export type ProjectKind = (typeof PROJECT_KINDS)[number];
+
+/** Stav projektu (Cloud Design): Aktivní / Pozastavený / Archiv / Hotovo. */
+export const PROJECT_STATUSES = ["active", "paused", "archive", "done"] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
 /** Rozsah statusu — jednoduché per projekt (default), volitelně per workspace. */
 export const STATUS_SCOPES = ["project", "workspace"] as const;
 export type StatusScope = (typeof STATUS_SCOPES)[number];

@@ -1,12 +1,36 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
+import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjectDetail } from "../lib/projectDetail";
+
+type Member = { id: string; name: string; email: string; image: string | null };
+const KINDS = [
+  ["flow", "kindFlow"],
+  ["goal", "kindGoal"],
+  ["cycle", "kindCycle"],
+] as const;
+const STATUSES = [
+  ["active", "statusActive"],
+  ["paused", "statusPaused"],
+  ["archive", "statusArchived"],
+  ["done", "statusDone"],
+] as const;
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0] ?? "")
+    .join("")
+    .toUpperCase() || "?";
 
 /** Patch sloupců projektu (write-path: tabulka `projects`, self-členství). */
 async function patchProject(id: string, data: Record<string, unknown>) {
@@ -36,23 +60,34 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
     "SELECT count(*) AS total, count(completed_at) AS done FROM tasks WHERE project_id = ?",
     [id],
   );
-  const { data: memberRows } = usePsQuery<{ c: number }>(
-    "SELECT count(*) AS c FROM project_members WHERE project_id = ?",
-    [id],
-  );
+  const { data: team } = useQuery({
+    queryKey: ["projMembers", id],
+    queryFn: async () => {
+      const r = await fetch(`${API_URL}/api/projects/${id}/members`, { credentials: "include" });
+      if (!r.ok) throw new Error("members");
+      return (await r.json()).members as Member[];
+    },
+  });
 
   const [name, setName] = useState("");
+  const [dod, setDod] = useState("");
   useEffect(() => {
-    if (project) setName(project.name ?? "");
+    if (project) {
+      setName(project.name ?? "");
+      setDod(project.definition_of_done ?? "");
+    }
   }, [project]);
 
   if (!project) return null;
   const total = stats?.[0]?.total ?? 0;
   const done = stats?.[0]?.done ?? 0;
   const openCount = total - done;
-  const members = memberRows?.[0]?.c ?? 0;
-  const archived = Boolean(project.archived_at);
+  const members = team ?? [];
   const dot = project.color ?? "var(--w-ink-3)";
+  const kind = project.kind ?? "flow";
+  const status = project.status ?? "active";
+  const showGoal = kind === "goal" || kind === "cycle";
+  const owner = members.find((m) => m.id === project.owner_id);
 
   return (
     <>
@@ -66,7 +101,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
         className="fixed top-0 right-0 z-40 flex h-full w-full max-w-md flex-col bg-card"
         style={{ boxShadow: "var(--w-shadow)", borderLeft: `4px solid ${dot}` }}
       >
-        {/* header */}
         <div className="flex items-center gap-2 border-line border-b px-4 py-3">
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: dot }} />
           <span className="font-display font-semibold text-ink-3 text-sm">
@@ -121,18 +155,102 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
             </div>
           </Section>
 
+          {/* TYP PROJEKTU */}
+          <Section label={t("projects.type")}>
+            <div className="inline-flex flex-wrap gap-1 rounded-lg border border-line bg-panel-2 p-[3px]">
+              {KINDS.map(([k, lbl]) => (
+                <Seg key={k} active={kind === k} onClick={() => void patchProject(id, { kind: k })}>
+                  {t(`projects.${lbl}`)}
+                </Seg>
+              ))}
+            </div>
+          </Section>
+
+          {/* VLASTNÍK */}
+          <Section label={`${t("projects.owner")}${owner ? ` · ${owner.name}` : ""}`}>
+            <div className="flex flex-wrap gap-2">
+              {members.map((m) => {
+                const on = m.id === project.owner_id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    title={m.name}
+                    onClick={() => void patchProject(id, { owner_id: m.id })}
+                    className="grid h-[30px] w-[30px] place-items-center rounded-full font-display font-semibold text-[11px] text-white"
+                    style={{
+                      background: "var(--w-navy)",
+                      opacity: on ? 1 : 0.5,
+                      outline: on ? "2px solid var(--w-brass)" : "none",
+                      outlineOffset: "2px",
+                    }}
+                  >
+                    {initials(m.name)}
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+
           {/* STAV */}
           <Section label={t("projects.status")}>
-            <div className="flex gap-1.5">
-              <Seg active={!archived} onClick={() => void patchProject(id, { archived_at: null })}>
-                {t("projects.statusActive")}
-              </Seg>
-              <Seg
-                active={archived}
-                onClick={() => void patchProject(id, { archived_at: new Date().toISOString() })}
-              >
-                {t("projects.statusArchived")}
-              </Seg>
+            <div className="inline-flex flex-wrap gap-1 rounded-lg border border-line bg-panel-2 p-[3px]">
+              {STATUSES.map(([s, lbl]) => (
+                <Seg
+                  key={s}
+                  active={status === s}
+                  onClick={() =>
+                    void patchProject(id, {
+                      status: s,
+                      archived_at: s === "archive" ? new Date().toISOString() : null,
+                    })
+                  }
+                >
+                  {t(`projects.${lbl}`)}
+                </Seg>
+              ))}
+            </div>
+          </Section>
+
+          {/* TERMÍN DODÁNÍ + DEFINICE HOTOVÉHO (goal/cycle) */}
+          {showGoal && (
+            <>
+              <Section label={t("projects.delivery")}>
+                <input
+                  type="date"
+                  value={project.delivery_date ? project.delivery_date.slice(0, 10) : ""}
+                  onChange={(e) => void patchProject(id, { delivery_date: e.target.value || null })}
+                  className="rounded-lg border border-line bg-panel-2 px-2.5 py-2 font-mono text-ink text-xs outline-none focus:border-brass"
+                />
+              </Section>
+              <Section label={t("projects.dod")}>
+                <input
+                  value={dod}
+                  onChange={(e) => setDod(e.target.value)}
+                  onBlur={() =>
+                    dod !== (project.definition_of_done ?? "") &&
+                    void patchProject(id, { definition_of_done: dod || null })
+                  }
+                  placeholder={t("projects.dodPlaceholder")}
+                  className="w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-ink text-sm outline-none focus:border-brass"
+                />
+              </Section>
+            </>
+          )}
+
+          {/* ČLENOVÉ */}
+          <Section label={`${t("projects.membersLabel")} · ${members.length}`}>
+            <div className="flex flex-wrap gap-2">
+              {members.map((m) => (
+                <span
+                  key={m.id}
+                  title={m.name}
+                  className="grid h-[30px] w-[30px] place-items-center rounded-full font-display font-semibold text-[11px] text-white"
+                  style={{ background: "var(--w-navy)" }}
+                >
+                  {initials(m.name)}
+                </span>
+              ))}
             </div>
           </Section>
 
@@ -141,12 +259,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
             <Stat value={openCount} label={t("projects.statOpen")} />
             <Stat value={done} label={t("projects.statDone")} tone="success" />
             <Stat value={total} label={t("projects.statTotal")} />
-          </div>
-
-          {/* ČLENOVÉ */}
-          <div className="mt-4 flex items-center gap-2 border-line border-t pt-4 text-ink-2 text-sm">
-            <Icon name="prirazeni" size={15} />
-            {t("projects.members", { count: members })}
           </div>
         </div>
 
@@ -200,9 +312,9 @@ function Seg({
     <button
       type="button"
       onClick={onClick}
-      className="rounded-md border px-3 py-1.5 font-display font-semibold text-xs"
+      className="rounded-md px-3 py-1.5 font-display font-semibold text-xs"
       style={{
-        borderColor: active ? "var(--w-brass)" : "var(--w-line)",
+        border: active ? "1px solid var(--w-brass)" : "1px solid transparent",
         background: active ? "var(--w-brass-soft)" : "transparent",
         color: active ? "var(--w-brass-text)" : "var(--w-ink-3)",
       }}

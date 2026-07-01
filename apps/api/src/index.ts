@@ -162,6 +162,25 @@ app.patch("/api/workspaces/:id/members/:userId/role", async (c) => {
   return c.json({ ok: true });
 });
 
+/** Členové projektu (jen pro člena) — Projekty detail (vlastník + avatary). */
+app.get("/api/projects/:id/members", async (c) => {
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session) return c.json({ error: "unauthorized" }, 401);
+  const pid = c.req.param("id");
+  const db = getDb();
+  const mine = await db
+    .select({ r: projectMembers.role })
+    .from(projectMembers)
+    .where(and(eq(projectMembers.projectId, pid), eq(projectMembers.userId, session.user.id)));
+  if (mine.length === 0) return c.json({ error: "forbidden" }, 403);
+  const rows = await db
+    .select({ id: users.id, name: users.name, email: users.email, image: users.image })
+    .from(projectMembers)
+    .innerJoin(users, eq(projectMembers.userId, users.id))
+    .where(eq(projectMembers.projectId, pid));
+  return c.json({ members: rows });
+});
+
 serve({ fetch: app.fetch, port: env.apiPort }, (info) => {
   console.log(`[watson-api] běží na http://localhost:${info.port}`);
   console.log(`[watson-api] Google login: ${googleEnabled ? "zapnut" : "vypnut (chybí klíče)"}`);

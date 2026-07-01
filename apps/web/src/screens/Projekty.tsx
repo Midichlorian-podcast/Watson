@@ -2,7 +2,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useTranslation } from "@watson/i18n";
-import { Chip, Icon } from "@watson/ui";
+import { Icon } from "@watson/ui";
 import { API_URL } from "../lib/api";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
@@ -123,6 +123,15 @@ function ProjectCard({
 }) {
   const { t } = useTranslation();
   const pct = counts.total > 0 ? Math.round((counts.done / counts.total) * 100) : 0;
+  const kind = project.kind ?? "flow";
+  const kindLabel = t(
+    `projects.kind${kind === "goal" ? "Goal" : kind === "cycle" ? "Cycle" : "Flow"}`,
+  );
+  const status = project.status ?? "active";
+  const dd = project.delivery_date;
+  const dueDate =
+    (kind === "goal" || kind === "cycle") && dd ? new Date(`${dd.slice(0, 10)}T00:00:00`) : null;
+  const dueDays = dueDate ? Math.round((dueDate.getTime() - Date.now()) / 86_400_000) : 0;
   return (
     <button
       type="button"
@@ -137,7 +146,21 @@ function ProjectCard({
         <span className="min-w-0 flex-1 truncate font-display font-bold text-[15px] text-ink">
           {project.name}
         </span>
-        {project.archived_at && <Chip>{t("projects.archived")}</Chip>}
+        <StatusBadge status={status} t={t} />
+      </div>
+
+      <div className="mt-1.5 flex items-center gap-2">
+        <span className="font-display font-bold text-[10px] text-ink-3 uppercase tracking-[0.07em]">
+          {kindLabel}
+        </span>
+        {dueDate && (
+          <span
+            className="font-mono text-[11.5px]"
+            style={{ color: dueDays < 0 ? "var(--w-overdue)" : "var(--w-ink-3)" }}
+          >
+            do {dueDate.getDate()}. {dueDate.getMonth() + 1}. · zbývá {dueDays} dní
+          </span>
+        )}
       </div>
 
       <div className="mt-3 flex items-end gap-1.5">
@@ -162,5 +185,23 @@ function ProjectCard({
         </div>
       )}
     </button>
+  );
+}
+
+function StatusBadge({ status, t }: { status: string; t: (k: string) => string }) {
+  const map: Record<string, [string, string, string]> = {
+    paused: [t("projects.statusPaused"), "var(--w-panel-2)", "var(--w-ink-2)"],
+    archive: [t("projects.statusArchived"), "var(--w-panel-2)", "var(--w-ink-3)"],
+    done: [t("projects.statusDone"), "var(--w-success-soft)", "var(--w-success-ink)"],
+  };
+  const s = map[status];
+  if (!s) return null;
+  return (
+    <span
+      className="shrink-0 font-display font-semibold text-[10.5px]"
+      style={{ padding: "2px 8px", borderRadius: 999, background: s[1], color: s[2] }}
+    >
+      {s[0]}
+    </span>
   );
 }

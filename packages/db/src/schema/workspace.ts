@@ -7,6 +7,7 @@ import {
   boolean,
   integer,
   pgTable,
+  text,
   timestamp,
   uniqueIndex,
   uuid,
@@ -14,8 +15,10 @@ import {
 } from "drizzle-orm/pg-core";
 import { createdAt, pk, updatedAt } from "./_helpers";
 import {
+  projectKindEnum,
   projectLayoutEnum,
   projectRoleEnum,
+  projectStatusEnum,
   projectVisibilityEnum,
   statusScopeEnum,
   workspaceRoleEnum,
@@ -63,9 +66,19 @@ export const projects = pgTable("projects", {
   color: varchar("color", { length: 9 }),
   icon: varchar("icon", { length: 64 }),
   defaultLayout: projectLayoutEnum("default_layout").notNull().default("list"),
+  /** Typ projektu (Cloud Design): flow=Průběžný / goal=Cílový / cycle=Periodický. */
+  kind: projectKindEnum("kind").notNull().default("flow"),
+  /** Vlastník projektu (Cloud Design „VLASTNÍK"). */
+  ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+  /** Stav projektu (Cloud Design): active/paused/archive/done. */
+  status: projectStatusEnum("status").notNull().default("active"),
+  /** Termín dodání (jen goal/cycle). */
+  deliveryDate: timestamp("delivery_date", { withTimezone: true }),
+  /** Definice hotového (jen goal/cycle). */
+  definitionOfDone: text("definition_of_done"),
   /** R5 — restricted projekt je neviditelný nečlenům. */
   visibility: projectVisibilityEnum("visibility").notNull().default("team"),
-  /** null = nearchivováno. */
+  /** null = nearchivováno (legacy; nově řídí `status`). */
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
