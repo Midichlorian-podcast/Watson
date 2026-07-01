@@ -6,6 +6,7 @@ import { Hledat } from "./screens/Hledat";
 import { Nadchazejici } from "./screens/Nadchazejici";
 import { Nastaveni } from "./screens/Nastaveni";
 import { Placeholder } from "./screens/Placeholder";
+import { Postupy } from "./screens/Postupy";
 import { Projekty } from "./screens/Projekty";
 import { Reporty } from "./screens/Reporty";
 import { Schranka } from "./screens/Schranka";
@@ -53,6 +54,14 @@ const cileRoute = createRoute({
   path: "/cile",
   component: Cile,
 });
+const postupyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/postupy",
+  component: Postupy,
+  validateSearch: (s: Record<string, unknown>): { postup?: string } => ({
+    postup: typeof s.postup === "string" ? s.postup : undefined,
+  }),
+});
 const reportyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/reporty",
@@ -71,7 +80,6 @@ const stub = <P extends string>(path: P, labelKey: string, icon: IconName) =>
     component: () => <Placeholder labelKey={labelKey} icon={icon} />,
   });
 
-const postupyStub = stub("/postupy", "nav.flows", "postup");
 const oblP1Stub = stub("/oblibene/p1", "nav.priority1", "priorita");
 const oblMeStub = stub("/oblibene/me", "nav.assignedToMe", "prirazeni");
 
@@ -83,9 +91,9 @@ const routeTree = rootRoute.addChildren([
   hledatRoute,
   cileRoute,
   reportyRoute,
+  postupyRoute,
   projektyRoute,
   nastaveniRoute,
-  postupyStub,
   oblP1Stub,
   oblMeStub,
 ]);

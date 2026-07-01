@@ -635,3 +635,45 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
   staty 0 (správně; reálná data, žádný mock seed jako prototyp).
 - Prototypí mock „doneCount" seed (hash z id) záměrně NEreplikován — reálné počty.
 - role `manager` mapována na segment Admin (enum má admin/manager/member/guest, segmenty jen 3 dle designu).
+
+---
+
+## §23 — Postupy: obrazovky + jádro advance (#27)
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P3). Poslední velký stub modul (baseline 1/44).
+
+### Jádro advance (lib/chainAdvance.ts) — port `_advance`/`rewindStep`
+- **`advanceChainForTask(taskId, nowDone)`** volané ze VŠECH toggle míst (lib/tasks.toggleTask — Today i
+  Schránka přesměrovány na něj; TaskDetailPanel.toggleDone; Postupy „Dokončit krok"): done → krok `done` +
+  první neuzavřený krok se všemi předchozími uzavřenými se aktivuje (gate `after_previous`); `with_previous`
+  se aktivuje souvislým během spolu s předchozím; `manual` zůstává dormant (čeká na ruční aktivaci).
+  Un-done → **rewind** (cílový krok active, pozdější dormant + úkoly od-dokončeny — verbatim ř. 2555).
+  Chain state se synchronizuje (všechny kroky uzavřené → done + completed_at).
+- **ROZHODNUTÍ: advance běží KLIENTSKY** (PowerSync UPDATE, LWW) — původní plán byl server-authored;
+  klientský stačí pro single-writer tok, server-authored až při řešení konfliktů více klientů (budoucí task).
+
+### Obrazovky (route /postupy + ?postup=<id> deep-link; nahrazen poslední velký stub)
+- **Přehled**: karty 1:1 (proj tečka, název, done/total, bar — červený když stuck, „Teď: {krok} · {kdo}",
+  ⚠ stuck chip), filtr „Jen kde jsem na řadě" (aktivní krok přiřazen mně přes assignments), empty stav + CTA.
+- **Builder** (Esc-close): název, projekt select, kotva (reálný date input), Plánovat Od začátku/Do termínu
+  (deadline → effAnchor = kotva − maxOffset, verbatim), **šablony** (3 z FLOW_TEMPLATES verbatim, bez mock
+  osob), kroky (název, osoba = project members API → assignment, gate cycle Auto→Souběh→Ruční, kotva+offset
+  s živým datem, priorita), + Přidat krok → INSERT chain + per krok task (due=kotva+offset) + chain_step
+  (první active) + assignment.
+- **Detail** (470px): hlavička (progress, bar, Teď na řadě, ETA=max due, kotva hint), **časová osa** —
+  číslované tečky dle stavu, relay avataři mezi kroky („předá →"), karty kroků (kdo+P#+termín+stav chip,
+  gate label, **Dokončit krok** na aktivním, **Aktivovat krok** na dormant manual s uzavřenými předchůdci,
+  **↩ Vrátit sem** s dvoukrokovým potvrzením na hotových).
+- Hledat: klik na postup → detail deep-link.
+- Ověřeno živě: šablona Plakát → Postgres (chain + 5 kroků, kotva 07-08 + offsety, první active) → karta
+  „0/5 · Teď: Udělat návrh plakátu" → Dokončit krok → 0 done/1 active (DB) → Dokončit → **manual krok 2
+  zůstal dormant** + Aktivovat → active → **rewind na krok 0** → vše dormant + úkoly od-dokončeny + chain
+  active (DB). Screenshot osy.
+
+### Odloženo (dokumentované)
+- **Reflow/kaskáda** (Řetězec vs Kotva režim, ±1 den shift, Bez víkendů, přelévání zpoždění `_reflow`) —
+  postupy zatím jedou v režimu **Kotva** (pevné termíny z kotvy; hint v detailu). Kaskáda = samostatný task.
+- **Uložit jako šablonu** (potřebuje persistenci šablon — `templates` tabulka neexistuje; chains.template_id
+  připraven), **Připomenout** na kroku (reminders per krok), **flow chip na kartách úkolů** + „Tvůj další
+  krok" panel na Dnes — doplní #40 fidelity batch.
+- Role placeholders (FLOW_ROLES „dosadí se při založení") — prototypový koncept bez schématu, vypuštěno.

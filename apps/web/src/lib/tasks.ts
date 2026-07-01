@@ -1,4 +1,5 @@
 import i18n from "@watson/i18n";
+import { advanceChainForTask } from "./chainAdvance";
 import type { TaskRow } from "./powersync/AppSchema";
 import { powerSync } from "./powersync/db";
 
@@ -11,12 +12,14 @@ export const todayISO = () => {
 /** Den termínu úkolu (YYYY-MM-DD) nebo null. */
 export const dayOf = (x: TaskRow) => (x.due_date ? x.due_date.slice(0, 10) : null);
 
-/** Provázané zaškrtnutí ↔ stav „Hotovo" (R9), offline-first zápis. */
+/** Provázané zaškrtnutí ↔ stav „Hotovo" (R9), offline-first zápis. Kroky postupů → advance. */
 export async function toggleTask(task: TaskRow) {
+  const nowDone = !task.completed_at;
   await powerSync.execute("UPDATE tasks SET completed_at = ? WHERE id = ?", [
-    task.completed_at ? null : new Date().toISOString(),
+    nowDone ? new Date().toISOString() : null,
     task.id,
   ]);
+  await advanceChainForTask(task.id, nowDone);
 }
 
 const fromISO = (d: string) => {

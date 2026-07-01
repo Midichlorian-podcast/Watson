@@ -139,7 +139,7 @@ export function Hledat() {
           id: ch.id,
           name: ch.name ?? "",
           sub: `${c.done}/${c.total} ${t("search.steps")}`,
-          run: () => void navigate({ to: "/postupy" }),
+          run: () => void navigate({ to: "/postupy", search: { postup: ch.id } }),
         };
       });
 

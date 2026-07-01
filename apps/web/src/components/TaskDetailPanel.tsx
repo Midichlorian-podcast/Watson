@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { API_URL } from "../lib/api";
+import { advanceChainForTask } from "../lib/chainAdvance";
 import { USER_COLORS } from "../lib/colors";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
@@ -123,7 +124,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
   const assignedDone = asg.filter((a) => a.completed_at).length;
   const hasReminder = (reminders?.length ?? 0) > 0;
 
-  const toggleDone = () => void patch(id, { completed_at: done ? null : new Date().toISOString() });
+  const toggleDone = () => {
+    void patch(id, { completed_at: done ? null : new Date().toISOString() });
+    void advanceChainForTask(id, !done); // krok postupu → advance/rewind
+  };
 
   const toggleAssign = async (uid: string) => {
     const existing = asg.find((a) => a.user_id === uid);

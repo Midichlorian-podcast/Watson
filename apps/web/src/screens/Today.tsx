@@ -8,7 +8,7 @@ import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
-import { dueLabel } from "../lib/tasks";
+import { dueLabel, toggleTask } from "../lib/tasks";
 import { useWatson } from "../lib/watson";
 
 type Pri = 1 | 2 | 3 | 4;
@@ -52,10 +52,7 @@ export function Today() {
   }, [tasks]);
 
   async function toggle(task: TaskRow) {
-    await powerSync.execute("UPDATE tasks SET completed_at = ? WHERE id = ?", [
-      task.completed_at ? null : new Date().toISOString(),
-      task.id,
-    ]);
+    await toggleTask(task);
   }
 
   async function rescheduleOverdue() {

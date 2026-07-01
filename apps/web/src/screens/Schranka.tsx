@@ -4,6 +4,7 @@ import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
+import { toggleTask } from "../lib/tasks";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 
@@ -47,11 +48,7 @@ export function Schranka() {
     [tasks, inboxIds],
   );
 
-  const toggle = (tk: TaskRow) =>
-    void powerSync.execute("UPDATE tasks SET completed_at = ? WHERE id = ?", [
-      new Date().toISOString(),
-      tk.id,
-    ]);
+  const toggle = (tk: TaskRow) => void toggleTask(tk);
 
   const schedule = async (tk: TaskRow, kind: "today" | "tomorrow" | "nextWeek") => {
     await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [triageDate(kind), tk.id]);
