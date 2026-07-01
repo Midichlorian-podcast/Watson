@@ -1,3 +1,8 @@
+# ⚠️ PŘEKONÁNO (2026-07-02) — závěr „~95 %" byl chybný
+
+> Self-audit z kódu bez porovnání prvek-po-prvku s prototypem; uživatel odmítl. Skutečný stav
+> ~46 % — viz **AUDIT_GAPS_v2.md** (210 mezer po modulech). Tento soubor zůstává jen jako záznam.
+
 # AUDIT FINAL — závěr autonomního 1:1 běhu
 
 **Datum:** 2026-07-01. Navazuje na baseline audit (18 %) → AUDIT_v1 (~52 %, po P0–P2) → AUDIT_v2 (~82 %,
