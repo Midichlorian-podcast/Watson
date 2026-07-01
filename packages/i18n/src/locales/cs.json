@@ -365,5 +365,20 @@
     "cancel": "Zrušit",
     "create": "Vytvořit postup",
     "who": "— kdokoli —"
+  },
+  "toolbar": {
+    "filter": "Filtr",
+    "sort": "Řazení",
+    "sortSmart": "Chytré",
+    "sortDue": "Termín",
+    "sortPriority": "Priorita",
+    "sortName": "Abeceda",
+    "dirAsc": "Vzestupně",
+    "dirDesc": "Sestupně",
+    "showDone": "Dokončené",
+    "priority": "Priorita",
+    "clear": "Zrušit filtr",
+    "board": "Nástěnka",
+    "addCard": "Přidat"
   }
 }

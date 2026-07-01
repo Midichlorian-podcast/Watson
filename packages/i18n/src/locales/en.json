@@ -365,5 +365,20 @@
     "cancel": "Cancel",
     "create": "Create flow",
     "who": "— anyone —"
+  },
+  "toolbar": {
+    "filter": "Filter",
+    "sort": "Sort",
+    "sortSmart": "Smart",
+    "sortDue": "Due",
+    "sortPriority": "Priority",
+    "sortName": "A–Z",
+    "dirAsc": "Ascending",
+    "dirDesc": "Descending",
+    "showDone": "Completed",
+    "priority": "Priority",
+    "clear": "Clear filter",
+    "board": "Board",
+    "addCard": "Add"
   }
 }

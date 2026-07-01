@@ -677,3 +677,33 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
   připraven), **Připomenout** na kroku (reminders per krok), **flow chip na kartách úkolů** + „Tvůj další
   krok" panel na Dnes — doplní #40 fidelity batch.
 - Role placeholders (FLOW_ROLES „dosadí se při založení") — prototypový koncept bez schématu, vypuštěno.
+
+---
+
+## §24 — Úkoly: Board R9 + toolbar + seznamová nav (#17 + #36)
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P3).
+
+### Postaveno + ověřeno živě
+- **View switcher** Seznam | Nástěnka | Kalendář (Kalendář existoval) + **per-user výchozí** v localStorage
+  (`watson.viewMode`). Ověřeno: přepnutí persistuje.
+- **Nástěnka (Board)**: sloupce = `statuses` dle position (seed K udělání/Probíhá/Hotovo), umístění karty =
+  `status_id` → fallback completed_at→is_done sloupec → první sloupec. Karty 1:1 (proj tečka, název, P pill,
+  termín, ↻). HTML5 DnD (bez knihovny) s **dataTransfer text/plain** (id tasku — robustní i pro syntetické
+  eventy). **R9**: drop do sloupce s `is_done` → `completed_at=now` + status_id (a zpět → NULL); napojeno i na
+  `advanceChainForTask` (krok postupu dokončený z boardu → advance). Ověřeno v Postgresu: drag → Probíhá
+  (status_id, completed_at NULL) → Hotovo (completed_at 21:47) → reverted.
+- **TasksToolbar** (sdílená komponenta): Filtr (priorita chips v popoveru), Řazení (Chytré=priorita→termín /
+  Termín / Priorita / Abeceda) + směr ↑↓, Dokončené toggle, aktivní chips s ×. Ověřeno: filtr P1 20→5 karet.
+- **Seznamová klávesová nav** (port kbSel ř. 2263–2276): j/k/↑↓ pohyb (brass ring), Enter=detail,
+  Space=toggle done, 1–4=priorita, Esc=zrušit výběr. Guard: jen list view, ne při psaní/otevřeném detailu.
+  Ověřeno: j j → ring, Enter → detail panel.
+
+### Rozhodnutí / odloženo
+- Toolbar dimenze **status + lidé** (prototyp filtr chips) — odloženy do #40 (status filtr má smysl až s více
+  statusy per projekt; lidé potřebují assignments výčet v toolbaru). Sort „Projekt/Stav" dtto.
+- **Sdílení toolbaru na Dnes/Nadcházející** (#36 „sdílený") — komponenta je sdílená (export filterTasks/
+  sortTasks); zapojení do Dnes/Nadcházející doplní #40 batch (obrazovky mají vlastní grupování).
+- Board drag-reorder V RÁMCI sloupce (bOrder/gapBefore v prototypu) — vypuštěno (žádný position sloupec na
+  tasks; přesun mezi sloupci je jádro). ⌫ mazání s undo v list nav — vypuštěno (delete je v detail panelu).
+- Zjištění pro #40: TaskDetailPanel nemá Esc-close (prototyp Esc zavírá selectedId) — doplnit.
