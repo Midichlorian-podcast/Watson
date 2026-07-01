@@ -12,6 +12,9 @@ import {
   CHAIN_GATES,
   CHAIN_STATES,
   CHAIN_STEP_STATES,
+  GOAL_METRICS,
+  GOAL_PERIODIC,
+  GOAL_SCOPES,
   NOTIFICATION_CHANNELS,
   OWNER_SCOPES,
   PROJECT_KINDS,
@@ -50,3 +53,6 @@ export const chainStateEnum = pgEnum("chain_state", tuple(CHAIN_STATES));
 export const chainStepStateEnum = pgEnum("chain_step_state", tuple(CHAIN_STEP_STATES));
 export const chainGateEnum = pgEnum("chain_gate", tuple(CHAIN_GATES));
 export const chainDueBasisEnum = pgEnum("chain_due_basis", tuple(CHAIN_DUE_BASIS));
+export const goalScopeEnum = pgEnum("goal_scope", tuple(GOAL_SCOPES));
+export const goalMetricEnum = pgEnum("goal_metric", tuple(GOAL_METRICS));
+export const goalPeriodicEnum = pgEnum("goal_periodic", tuple(GOAL_PERIODIC));

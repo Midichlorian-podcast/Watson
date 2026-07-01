@@ -161,6 +161,38 @@ const chain_steps = new Table(
   { indexes: { by_chain: ["chain_id"], by_project: ["project_id"] } },
 );
 
+/** Cíle (workspace-scoped). */
+const goals = new Table(
+  {
+    workspace_id: column.text,
+    name: column.text,
+    scope: column.text,
+    metric: column.text,
+    target: column.integer,
+    due_date: column.text,
+    periodic: column.text,
+    owner_id: column.text,
+    created_by: column.text,
+    created_at: column.text,
+  },
+  { indexes: { by_workspace: ["workspace_id"] } },
+);
+const goal_projects = new Table(
+  { goal_id: column.text, project_id: column.text, workspace_id: column.text },
+  { indexes: { by_goal: ["goal_id"] } },
+);
+const goal_milestones = new Table(
+  {
+    goal_id: column.text,
+    workspace_id: column.text,
+    label: column.text,
+    done: column.integer,
+    position: column.integer,
+    created_at: column.text,
+  },
+  { indexes: { by_goal: ["goal_id"] } },
+);
+
 export const AppSchema = new Schema({
   tasks,
   projects,
@@ -173,6 +205,9 @@ export const AppSchema = new Schema({
   reminders,
   chains,
   chain_steps,
+  goals,
+  goal_projects,
+  goal_milestones,
 });
 
 export type Database = (typeof AppSchema)["types"];
@@ -185,3 +220,8 @@ export type AssignmentRow = Database["assignments"];
 export type ChecklistItemRow = Database["checklist_items"];
 export type CommentRow = Database["comments"];
 export type ReminderRow = Database["reminders"];
+export type ChainRow = Database["chains"];
+export type ChainStepRow = Database["chain_steps"];
+export type GoalRow = Database["goals"];
+export type GoalProjectRow = Database["goal_projects"];
+export type GoalMilestoneRow = Database["goal_milestones"];

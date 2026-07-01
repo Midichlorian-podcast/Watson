@@ -91,6 +91,18 @@ export type ChainGate = (typeof CHAIN_GATES)[number];
 export const CHAIN_DUE_BASIS = ["from_anchor", "from_activation", "from_prev_done"] as const;
 export type ChainDueBasis = (typeof CHAIN_DUE_BASIS)[number];
 
+/** Cíle — rozsah (tým/projekt/osoba v týmu/osobní prostor). */
+export const GOAL_SCOPES = ["team", "project", "person", "personal"] as const;
+export type GoalScope = (typeof GOAL_SCOPES)[number];
+
+/** Cíle — metrika měření (dokončení % / včasnost % / počet / stav projektu). */
+export const GOAL_METRICS = ["completion", "ontime", "count", "project"] as const;
+export type GoalMetric = (typeof GOAL_METRICS)[number];
+
+/** Cíle — periodicita/resetovatelnost. */
+export const GOAL_PERIODIC = ["none", "week", "month", "quarter", "year"] as const;
+export type GoalPeriodic = (typeof GOAL_PERIODIC)[number];
+
 /** Rozsah statusu — jednoduché per projekt (default), volitelně per workspace. */
 export const STATUS_SCOPES = ["project", "workspace"] as const;
 export type StatusScope = (typeof STATUS_SCOPES)[number];

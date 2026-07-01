@@ -49,3 +49,18 @@ bucket_definitions:
       - SELECT id, chain_id, task_id, project_id, position, gate, step_state, activated_at, created_at
         FROM chain_steps
         WHERE project_id = bucket.project_id
+
+  # Workspace-scoped entity (cíle) — jeden bucket na každý prostor, kde je uživatel členem.
+  user_workspaces:
+    parameters: SELECT workspace_id FROM memberships WHERE user_id = request.user_id()
+    data:
+      - SELECT id, workspace_id, name, scope, metric, target, due_date, periodic,
+               owner_id, created_by, created_at
+        FROM goals
+        WHERE workspace_id = bucket.workspace_id
+      - SELECT id, goal_id, project_id, workspace_id
+        FROM goal_projects
+        WHERE workspace_id = bucket.workspace_id
+      - SELECT id, goal_id, workspace_id, label, done, position, created_at
+        FROM goal_milestones
+        WHERE workspace_id = bucket.workspace_id
