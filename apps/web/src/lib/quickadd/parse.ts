@@ -6,7 +6,6 @@
 import { addDays, weekdayDate } from "./dates";
 import { computeHighlights } from "./highlight";
 import { czNum } from "./lexicon/czNum";
-import { recVocab } from "./lexicon/recVocab";
 import { WD_BARE } from "./lexicon/weekdays";
 import { parseRecurrence } from "./recurrence";
 import type { ParseCtx, ParsedDraft, Priority } from "./types";
@@ -24,10 +23,16 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
   const year = +today.slice(0, 4);
   let work = ` ${raw} `;
   const hits: { t: string; kind: string }[] = [];
-  const cut = (s: string, kind = "date") => {
-    const t = s.trim();
+  /** Vyřízne rozsah [start,end) — nahradí stejně dlouhou mezerou, takže indexy zůstávají stabilní. */
+  const blank = (start: number, end: number, kind = "date") => {
+    const t = work.slice(start, end).trim();
     if (t) hits.push({ t, kind });
-    work = work.replace(s, " ");
+    work = work.slice(0, start) + " ".repeat(end - start) + work.slice(end);
+  };
+  /** Vyřízne match podle jeho INDEXU (ne první shody stringu → žádný over-match u opakovaných tokenů). */
+  const cut = (m: RegExpMatchArray, kind = "date") => {
+    const start = m.index ?? work.indexOf(m[0]);
+    blank(start, start + m[0].length, kind);
   };
 
   const draft: Partial<ParsedDraft> = {};
@@ -41,7 +46,7 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
     const y = dl[3] ? +dl[3] : year;
     if (validDate(y, mo, da)) {
       draft.deadline = `${y}-${pad(mo)}-${pad(da)}`;
-      cut(dl[0], "deadline");
+      cut(dl, "deadline");
     }
   }
 
@@ -49,7 +54,7 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
   const pr = work.match(/\bp([1-4])\b/i);
   if (pr) {
     draft.priority = +pr[1]! as Priority;
-    cut(pr[0], "priority");
+    cut(pr, "priority");
   }
 
   // 3) Čas (4 varianty, else-if řetěz)
@@ -58,23 +63,23 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
   if ((m = work.match(/\b(?:v|ve|od)\s*([01]?\d|2[0-3])[:.]([0-5]\d)\b/i))) {
     tH = +m[1]!;
     tM = +m[2]!;
-    cut(m[0], "time");
+    cut(m, "time");
   } else if ((m = work.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/))) {
     tH = +m[1]!;
     tM = +m[2]!;
-    cut(m[0], "time");
+    cut(m, "time");
   } else if ((m = work.match(/\b(?:v|ve|od)\s+(\d{1,2})\s*hodin\p{L}*/iu))) {
     if (+m[1]! <= 23) {
       tH = +m[1]!;
       tM = 0;
-      cut(m[0], "time");
+      cut(m, "time");
     }
   } else if ((m = work.match(/\b(?:v|ve|od)\s+(\p{L}+(?:\s+\p{L}+)?)\s+hodin\p{L}*/iu))) {
     const v = czNum(m[1]!);
     if (v != null && v <= 23) {
       tH = v;
       tM = 0;
-      cut(m[0], "time");
+      cut(m, "time");
     }
   }
   if (tH != null) draft.startMin = tH * 60 + tM;
@@ -83,30 +88,30 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
   let dur: number | null = null;
   if ((m = work.match(/(?:po dobu\s+)?(\d+)\s*min\p{L}*/iu))) {
     dur = +m[1]!;
-    cut(m[0], "duration");
+    cut(m, "duration");
   } else if ((m = work.match(/po dobu\s+(\p{L}+(?:\s+\p{L}+)?)\s*minut\p{L}*/iu))) {
     const v = czNum(m[1]!);
     if (v != null) {
       dur = v;
-      cut(m[0], "duration");
+      cut(m, "duration");
     }
   } else if ((m = work.match(/(?<![\p{L}])(\p{L}+(?:\s+\p{L}+)?)\s+minut\p{L}*/iu))) {
     const v = czNum(m[1]!);
     if (v != null) {
       dur = v;
-      cut(m[0], "duration");
+      cut(m, "duration");
     }
   } else if ((m = work.match(/(?:po dobu\s+)?p[ůu]l\s+hodin\p{L}*/iu))) {
     dur = 30;
-    cut(m[0], "duration");
+    cut(m, "duration");
   } else if ((m = work.match(/(?:po dobu\s+)?(\d+(?:[.,]\d+)?)\s*(?:hodin\p{L}*|hod\p{L}*|h)(?![\p{L}])/iu))) {
     dur = Math.round(Number.parseFloat(m[1]!.replace(",", ".")) * 60);
-    cut(m[0], "duration");
+    cut(m, "duration");
   } else if ((m = work.match(/po dobu\s+(\p{L}+)\s+hodin\p{L}*/iu))) {
     const v = czNum(m[1]!);
     if (v != null) {
       dur = v * 60;
-      cut(m[0], "duration");
+      cut(m, "duration");
     }
   }
   if (dur != null) draft.durationMin = dur;
@@ -115,7 +120,7 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
   const dd = work.match(/(\d+)\s*dn[íiy](?![\p{L}])/iu);
   if (dd) {
     draft.days = Math.max(1, Math.min(60, Number.parseInt(dd[1]!, 10)));
-    cut(dd[0]);
+    cut(dd);
   }
 
   // 6) Datum (explicit → pozítří → zítra → dnes)
@@ -128,23 +133,25 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
     if (validDate(y, mo, da)) {
       dateKind = "custom";
       customDate = `${y}-${pad(mo)}-${pad(da)}`;
-      cut(m[0]);
+      cut(m);
     }
   } else if ((m = work.match(/poz[íi]t[řr][íi]|po\s+z[íi]t[řr][íi]/i))) {
     dateKind = "custom";
     customDate = addDays(today, 2);
-    cut(m[0]);
+    cut(m);
   } else if ((m = work.match(/z[íi]tra/i))) {
     dateKind = "zitra";
-    cut(m[0]);
+    cut(m);
   } else if ((m = work.match(/\bdnes\b/i))) {
     dateKind = "dnes";
-    cut(m[0]);
+    cut(m);
   }
 
   // 7) Opakování (na work po vyříznutí výše)
   const rec = parseRecurrence(work, today);
   if (rec) {
+    // Vyřízni jen tokeny, které opakování skutečně spotřebovalo (žádný RECVOCAB over-match).
+    for (const sp of rec.consumed) blank(sp.start, sp.end, "repeat");
     draft.recurrence = rec.rule;
     if (rec.startISO && dateKind === undefined) {
       dateKind = "custom";
@@ -154,14 +161,17 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
   }
 
   // 8) Holý den v týdnu (jen když nebylo opakování ani datum)
-  let bareWd = false;
   if (!rec && dateKind === undefined) {
     for (const w of WD_BARE) {
-      if (new RegExp(`(?:^|\\s)(?:${w.st})[\\p{L}]*(?=\\s|$)`, "iu").test(work)) {
-        const ahead = /p[řr][íi]št/i.test(work) ? 1 : 0;
+      const bm = new RegExp(`(?:^|\\s)((?:${w.st})[\\p{L}]*)(?=\\s|$)`, "iu").exec(work);
+      if (bm) {
+        const aheadM = /(?<![\p{L}])p[řr][íi]št\p{L}*/iu.exec(work);
         dateKind = "custom";
-        customDate = weekdayDate(w.d, ahead, today);
-        bareWd = true;
+        customDate = weekdayDate(w.d, aheadM ? 1 : 0, today);
+        // Vyřízni jen den (a případné „příští") — index-based, ne globální RECVOCAB.
+        const tokStart = bm.index + bm[0].indexOf(bm[1]!);
+        blank(tokStart, tokStart + bm[1]!.length, "repeat");
+        if (aheadM) blank(aheadM.index, aheadM.index + aheadM[0].length, "repeat");
         break;
       }
     }
@@ -173,24 +183,11 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
     const q = hash[1]!;
     const exact = ctx.projects.find((p) => p.name.toLowerCase() === q.toLowerCase());
     if (exact) draft.projectId = exact.id;
-    cut(hash[0], "proj");
+    cut(hash, "proj");
   }
 
-  // 10) Sestavení názvu (§12)
-  let base = work.replace(/\b(?:ve?)\s+m[ěe]s[íi]ci\b/giu, (mm) => {
-    const t = mm.trim();
-    if (t) hits.push({ t, kind: "repeat" });
-    return " ";
-  });
-  if (rec || bareWd) {
-    const re = recVocab();
-    let rm: RegExpExecArray | null;
-    while ((rm = re.exec(base))) {
-      const t = rm[0].trim();
-      if (t) hits.push({ t, kind: "repeat" });
-    }
-    base = base.replace(recVocab(), " ");
-  }
+  // 10) Sestavení názvu (§12) — opakovací / holé-den tokeny jsou už vyříznuté podle indexu (rule 7/8).
+  let base = work;
   const personQueries: string[] = [];
   // hranice před @/+ → nechytat e-mailovou adresu (adam@firma.cz)
   const are = /(?<![\p{L}\d])[@+](\p{L}+)/gu;
