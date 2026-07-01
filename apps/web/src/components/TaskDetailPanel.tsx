@@ -1,7 +1,9 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useState } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
+import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
@@ -9,6 +11,17 @@ import { useProject } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 
 type Pri = 1 | 2 | 3 | 4;
+type Member = { id: string; name: string; email: string; image: string | null };
+type AssignMode = "single" | "shared_any" | "shared_all";
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0] ?? "")
+    .join("")
+    .toUpperCase() || "?";
 
 /** Patch sloupců úkolu lokálně (PowerSync upload → generický write-path). */
 async function patch(id: string, data: Record<string, unknown>) {
@@ -66,6 +79,27 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
     "SELECT id, body FROM comments WHERE task_id = ? ORDER BY created_at",
     [id],
   );
+  const { data: assignRows } = usePsQuery<{
+    id: string;
+    user_id: string | null;
+    completed_at: string | null;
+  }>("SELECT id, user_id, completed_at FROM assignments WHERE task_id = ?", [id]);
+  const { data: reminders } = usePsQuery<{ id: string }>(
+    "SELECT id FROM reminders WHERE task_id = ?",
+    [id],
+  );
+  const projectId = task?.project_id ?? undefined;
+  const { data: team } = useQuery({
+    queryKey: ["projMembers", projectId],
+    enabled: !!projectId,
+    queryFn: async () => {
+      const r = await fetch(`${API_URL}/api/projects/${projectId}/members`, {
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("members");
+      return (await r.json()).members as Member[];
+    },
+  });
 
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
@@ -83,8 +117,28 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
   const done = Boolean(task.completed_at);
   const chk = checklist ?? [];
   const cmts = comments ?? [];
+  const asg = assignRows ?? [];
+  const members = team ?? [];
+  const mode = (task.assignment_mode ?? "single") as AssignMode;
+  const assignedDone = asg.filter((a) => a.completed_at).length;
+  const hasReminder = (reminders?.length ?? 0) > 0;
 
   const toggleDone = () => void patch(id, { completed_at: done ? null : new Date().toISOString() });
+
+  const toggleAssign = async (uid: string) => {
+    const existing = asg.find((a) => a.user_id === uid);
+    if (existing) await powerSync.execute("DELETE FROM assignments WHERE id = ?", [existing.id]);
+    else
+      await powerSync.execute(
+        "INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
+        [id, task.project_id, uid, new Date().toISOString()],
+      );
+  };
+  const togglePersonDone = (a: { id: string; completed_at: string | null }) =>
+    void powerSync.execute("UPDATE assignments SET completed_at = ? WHERE id = ?", [
+      a.completed_at ? null : new Date().toISOString(),
+      a.id,
+    ]);
 
   const addSub = async () => {
     if (!subText.trim() || depth >= 3) return;
@@ -201,6 +255,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
               <Icon name="opakovani" size={13} />
               {task.recurrence}
             </div>
+          )}
+
+          {hasReminder && (
+            <span className="mt-1 ml-2 inline-flex items-center rounded-full bg-panel-2 px-2 py-0.5 font-display font-semibold text-ink-2 text-xs">
+              {t("detail.reminder")}
+            </span>
           )}
 
           <div className="mt-3 border-line border-t pt-2">
@@ -351,6 +411,85 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
               placeholder={t("detail.addChecklist")}
               className="mt-2 w-full rounded-lg border border-line border-dashed bg-transparent px-3 py-1.5 text-sm outline-none focus:border-brass"
             />
+          </div>
+
+          {/* přiřazení (R2) */}
+          <div className="mt-3 border-line border-t pt-2">
+            <span className="font-display font-semibold text-ink-3 text-xs">
+              {t("detail.assignment")}
+            </span>
+            <div className="mt-2 flex gap-1.5">
+              {(
+                [
+                  ["single", "assignSingle"],
+                  ["shared_any", "assignAny"],
+                  ["shared_all", "assignAll"],
+                ] as const
+              ).map(([m, key]) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => void patch(id, { assignment_mode: m })}
+                  className="rounded-md border px-2 py-1 font-display font-semibold text-xs"
+                  style={{
+                    borderColor: mode === m ? "var(--w-brass)" : "var(--w-line)",
+                    background: mode === m ? "var(--w-brass-soft)" : "transparent",
+                    color: mode === m ? "var(--w-brass-text)" : "var(--w-ink-2)",
+                  }}
+                >
+                  {t(`detail.${key}`)}
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 text-ink-3 text-xs">
+              {mode === "shared_all"
+                ? t("detail.assignAllHint", { done: assignedDone, total: asg.length })
+                : t("detail.assignAnyHint")}
+            </div>
+            {members.length === 0 ? (
+              <p className="mt-2 text-ink-3 text-xs">{t("detail.noMembers")}</p>
+            ) : (
+              <ul className="mt-2 flex flex-col gap-1">
+                {members.map((m) => {
+                  const a = asg.find((x) => x.user_id === m.id);
+                  const assigned = Boolean(a);
+                  const pdone = Boolean(a?.completed_at);
+                  return (
+                    <li key={m.id} className="flex items-center gap-2.5 py-1">
+                      {mode === "shared_all" && assigned && a && (
+                        <button
+                          type="button"
+                          onClick={() => togglePersonDone(a)}
+                          aria-label={t("common.done")}
+                          className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full border text-[9px] text-white"
+                          style={{
+                            borderColor: pdone ? "var(--w-success)" : "var(--w-line)",
+                            background: pdone ? "var(--w-success)" : "transparent",
+                          }}
+                        >
+                          {pdone ? "✓" : ""}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void toggleAssign(m.id)}
+                        title={m.name}
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-display font-semibold text-[10px] text-white"
+                        style={{
+                          background: assigned ? "var(--w-navy)" : "var(--w-line)",
+                          opacity: assigned ? 1 : 0.5,
+                        }}
+                      >
+                        {initials(m.name)}
+                      </button>
+                      <span className={`text-sm ${assigned ? "text-ink" : "text-ink-3"}`}>
+                        {m.name}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
 
           {/* komentáře */}

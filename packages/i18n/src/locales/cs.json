@@ -53,7 +53,15 @@
     "addChecklist": "Přidat položku…",
     "comments": "Komentáře",
     "addComment": "Napiš komentář… (⌘/Ctrl+Enter odeslat)",
-    "delete": "Smazat"
+    "delete": "Smazat",
+    "assignment": "Přiřazení",
+    "assignSingle": "Jeden",
+    "assignAny": "Stačí kdokoli",
+    "assignAll": "Každý zvlášť",
+    "assignAnyHint": "Stačí kdokoli — jeden checkbox pro celý úkol",
+    "assignAllHint": "Každý zvlášť — {{done}}/{{total}} hotovo",
+    "reminder": "Připomenutí",
+    "noMembers": "Projekt nemá členy"
   },
   "projects": {
     "heading": "Projekty",

@@ -53,7 +53,15 @@
     "addChecklist": "Add item…",
     "comments": "Comments",
     "addComment": "Write a comment… (⌘/Ctrl+Enter to send)",
-    "delete": "Delete"
+    "delete": "Delete",
+    "assignment": "Assignment",
+    "assignSingle": "One",
+    "assignAny": "Anyone",
+    "assignAll": "Each separately",
+    "assignAnyHint": "Anyone — one checkbox for the whole task",
+    "assignAllHint": "Each separately — {{done}}/{{total}} done",
+    "reminder": "Reminder",
+    "noMembers": "Project has no members"
   },
   "projects": {
     "heading": "Projects",
