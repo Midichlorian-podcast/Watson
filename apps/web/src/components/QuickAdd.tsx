@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Button, Chip, Icon, type IconName } from "@watson/ui";
 import { parseQuick } from "../lib/quickadd";
@@ -34,15 +34,23 @@ export function QuickAdd({
   projects,
   people = [],
   inboxId,
+  onDone,
+  autoFocus,
 }: {
   projects: Project[];
   people?: Person[];
   inboxId?: string;
+  /** Zavolá se po přidání (např. zavření modalu). */
+  onDone?: () => void;
+  autoFocus?: boolean;
 }) {
   const { t } = useTranslation();
   const [raw, setRaw] = useState("");
   const [sugIdx, setSugIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+  }, [autoFocus]);
 
   const ctx = useMemo(() => ({ today: todayISO(), projects, people }), [projects, people]);
   const parsed = useMemo(() => parseQuick(raw, ctx), [raw, ctx]);
@@ -81,12 +89,32 @@ export function QuickAdd({
   async function submit() {
     const name = parsed.name.trim() || raw.trim();
     if (!name || !inboxId) return;
+    // start_date = termín (nebo dnes) + čas dne, pokud parser rozpoznal čas.
+    let startDate: string | null = null;
+    if (parsed.startMin != null) {
+      const base = parsed.due ?? todayISO();
+      const hh = String(Math.floor(parsed.startMin / 60)).padStart(2, "0");
+      const mm = String(parsed.startMin % 60).padStart(2, "0");
+      startDate = `${base}T${hh}:${mm}:00`;
+    }
     await powerSync.execute(
-      "INSERT INTO tasks (id, project_id, name, priority, due_date, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
-      [parsed.projectId ?? inboxId, name, parsed.priority ?? 2, parsed.due ?? null, new Date().toISOString()],
+      "INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, deadline, duration_min, recurrence, recurrence_basis, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        parsed.projectId ?? inboxId,
+        name,
+        parsed.priority ?? 2,
+        parsed.due ?? null,
+        startDate,
+        parsed.deadline ?? null,
+        parsed.durationMin ?? null,
+        parsed.recurrence?.label ?? null,
+        parsed.recurrence ? "due_date" : null,
+        new Date().toISOString(),
+      ],
     );
     setRaw("");
     setSugIdx(0);
+    onDone?.();
   }
 
   function onKey(e: KeyboardEvent<HTMLInputElement>) {

@@ -4,6 +4,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { type CSSProperties, useMemo } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
+import { useAddTask } from "../lib/addTask";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useProjects } from "../lib/projects";
@@ -84,6 +85,7 @@ function NavRow({
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { openAdd } = useAddTask();
   const { data: session } = useSession();
   const status = useStatus();
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -199,7 +201,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       {/* + Přidat úkol */}
       <button
         type="button"
-        onClick={() => navigate({ to: "/" })}
+        onClick={openAdd}
         title={t("shell.newTask")}
         className="font-display hover:brightness-105"
         style={{

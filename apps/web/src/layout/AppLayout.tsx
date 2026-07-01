@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ProjectDetailPanel } from "../components/ProjectDetailPanel";
 import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WriteRejectedToast } from "../components/WriteRejectedToast";
+import { AddTaskProvider } from "../lib/addTask";
 import { ProjectDetailProvider } from "../lib/projectDetail";
 import { TaskDetailProvider } from "../lib/taskDetail";
 import { Header } from "./Header";
@@ -11,8 +12,9 @@ import { Sidebar } from "./Sidebar";
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   return (
-    <TaskDetailProvider>
-      <ProjectDetailProvider>
+    <AddTaskProvider>
+      <TaskDetailProvider>
+        <ProjectDetailProvider>
         <div className="flex h-full min-h-full" style={{ background: "var(--w-paper)" }}>
           <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
           <div className="flex min-w-0 flex-1 flex-col">
@@ -27,5 +29,6 @@ export function AppLayout() {
         </div>
       </ProjectDetailProvider>
     </TaskDetailProvider>
+    </AddTaskProvider>
   );
 }

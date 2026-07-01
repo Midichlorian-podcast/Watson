@@ -1,6 +1,7 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useRouterState } from "@tanstack/react-router";
 import i18n, { useTranslation } from "@watson/i18n";
+import { useAddTask } from "../lib/addTask";
 import { ALL_NAV } from "./nav";
 import { useTheme } from "./useTheme";
 
@@ -10,7 +11,7 @@ const ICON_BTN =
 /** Horní header — 1:1 dle Cloud Design (square ikon-buttony, Watson pill, brass „+ Úkol"). */
 export function Header() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const { openAdd } = useAddTask();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const active = ALL_NAV.find((n) => (n.to === "/" ? path === "/" : path.startsWith(n.to)));
   const title = active ? t(active.labelKey) : t("app.name");
@@ -161,7 +162,7 @@ export function Header() {
 
         <button
           type="button"
-          onClick={() => navigate({ to: "/" })}
+          onClick={openAdd}
           className="flex h-[34px] items-center rounded-[9px] font-display font-bold text-white hover:brightness-105"
           style={{ gap: 6, background: "var(--w-brass)", padding: "0 13px", fontSize: 12.5 }}
         >
