@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Cheatsheet } from "../components/Cheatsheet";
+import { CommandPalette } from "../components/CommandPalette";
 import { useAddTask } from "./addTask";
 
 /** g + písmeno → route. Jen existující routes; ostatní cíle (kalendář/cíle/…) přibudou s obrazovkami. */
@@ -20,14 +21,22 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { openAdd } = useAddTask();
   const [cheatOpen, setCheatOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const gPending = useRef(false);
   const gTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      // Esc zavře tahák (ostatní vrstvy mají vlastní Esc handlery)
+      // Esc zavře tahák / paletu (ostatní vrstvy mají vlastní Esc handlery)
       if (e.key === "Escape") {
         if (cheatOpen) setCheatOpen(false);
+        else if (paletteOpen) setPaletteOpen(false);
+        return;
+      }
+      // ⌘K / Ctrl+K → command palette (před typing guardem, funguje i z inputu)
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
         return;
       }
       const el = document.activeElement as HTMLElement | null;
@@ -68,12 +77,13 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [cheatOpen, navigate, openAdd]);
+  }, [cheatOpen, paletteOpen, navigate, openAdd]);
 
   return (
     <>
       {children}
       {cheatOpen && <Cheatsheet onClose={() => setCheatOpen(false)} />}
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
     </>
   );
 }

@@ -202,5 +202,11 @@
     "menuSelect": "Menu selection",
     "confirm": "Confirm",
     "saveTask": "Save task"
+  },
+  "palette": {
+    "placeholder": "Jump to a screen, project, person, flow…",
+    "empty": "Nothing found",
+    "kindGoto": "Go to",
+    "kindProject": "Project"
   }
 }

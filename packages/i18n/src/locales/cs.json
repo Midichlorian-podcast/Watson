@@ -202,5 +202,11 @@
     "menuSelect": "Výběr v nabídce",
     "confirm": "Potvrdit",
     "saveTask": "Uložit úkol"
+  },
+  "palette": {
+    "placeholder": "Skoč na obrazovku, projekt, člověka, postup…",
+    "empty": "Nic nenalezeno",
+    "kindGoto": "Přejít",
+    "kindProject": "Projekt"
   }
 }

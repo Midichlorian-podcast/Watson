@@ -418,3 +418,24 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
   fungují zatím jen globální (`g`/`?`/`q`/Esc) + ⌘K (přibude #32).
 - `/`=Hledat a `⌘K`=palette: `/` řeší #33 (header search), `⌘K` řeší #32. `⌘Z`/`⌘⇧Z` undo/redo: bez undo
   systému (prototyp má undo stack) — odloženo (není v aktuálním scope; příp. samostatný task).
+
+---
+
+## §15 — Command palette ⌘K (#32)
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P2).
+
+### Postaveno + ověřeno živě
+- ⌘K/Ctrl+K handler v `KeyboardProvider` (před typing guardem — funguje i z inputu) → toggle palety.
+- `CommandPalette` overlay 1:1 dle Cloud Design: search input + fuzzy (substring) seznam, ArrowUp/Down +
+  Enter spustí, Esc/klik mimo zavře, řádky s kind (PŘEJÍT/PROJEKT) + barevná tečka projektu.
+- **Zdroje položek:** obrazovky (Dnes/Nadcházející/Úkoly/Projekty/Nastavení — jen existující routes) +
+  projekty (`useProjects`, klik → `projectDetail.open`).
+- **Oprava nesting bugu:** `KeyboardProvider` přesunut dovnitř `ProjectDetailProvider` (byl vně → `useProjectDetail`
+  vracel default no-op a Enter na projektu nic nedělal). Teď nejvnitřnější provider.
+- Ověřeno: ⌘K→paleta (screenshot), „obch"→Obchod→Enter→projekt detail, „nadch"→Enter→/nadchazejici.
+
+### Odloženo (dokumentované)
+- **Lidé** (kind Člověk) a **Postupy** (kind Postup) jako zdroje: lidé potřebují workspace/členy (#19),
+  postupy potřebují chains data v UI (#27). Přibudou s těmi tasky. Ostatní obrazovky (Cíle/Reporty/Postupy/
+  Schránka/Hledat) do palety přibudou, až budou mít routes (P3) — teď by vedly na 404.
