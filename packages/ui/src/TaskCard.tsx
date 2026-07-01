@@ -13,6 +13,8 @@ export interface TaskCardProps {
   due?: { label: string; overdue?: boolean };
   /** Volitelný status label (Probíhá / Ke kontrole / Hotovo). */
   status?: string;
+  /** Krok postupu — chip „⛓ X/Y", klik otevře postup. */
+  flow?: { label: string; onClick?: () => void };
   done?: boolean;
   onToggle?: () => void;
   onOpen?: () => void;
@@ -37,6 +39,7 @@ export function TaskCard({
   projectColor,
   due,
   status,
+  flow,
   done,
   onToggle,
   onOpen,
@@ -104,6 +107,26 @@ export function TaskCard({
           </div>
         )}
       </div>
+
+      {/* krok postupu (⛓ X/Y) */}
+      {flow && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            flow.onClick?.();
+          }}
+          className="shrink-0 rounded-full font-mono"
+          style={{
+            fontSize: 10.5,
+            padding: "2px 8px",
+            background: "var(--w-brass-soft)",
+            color: "var(--w-brass-text)",
+          }}
+        >
+          ⛓ {flow.label}
+        </button>
+      )}
 
       {/* termín */}
       {due && (

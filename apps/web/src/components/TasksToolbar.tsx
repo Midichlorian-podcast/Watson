@@ -56,9 +56,12 @@ export function filterTasks<T extends { priority: number | null; completed_at: s
 export function TasksToolbar({
   state,
   onChange,
+  hideDone,
 }: {
   state: ToolbarState;
   onChange: (next: ToolbarState) => void;
+  /** Skryje „Dokončené" toggle (Dnes/Nadcházející mají vlastní sekce hotových). */
+  hideDone?: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<"filter" | "sort" | null>(null);
@@ -182,14 +185,16 @@ export function TasksToolbar({
       </button>
 
       {/* Dokončené */}
-      <button
-        type="button"
-        onClick={() => onChange({ ...state, showDone: !state.showDone })}
-        className="font-display font-semibold"
-        style={chip(state.showDone)}
-      >
-        {t("toolbar.showDone")}
-      </button>
+      {!hideDone && (
+        <button
+          type="button"
+          onClick={() => onChange({ ...state, showDone: !state.showDone })}
+          className="font-display font-semibold"
+          style={chip(state.showDone)}
+        >
+          {t("toolbar.showDone")}
+        </button>
+      )}
 
       {/* aktivní filter chips */}
       {state.priorities.map((p) => (

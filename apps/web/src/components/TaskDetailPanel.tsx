@@ -52,6 +52,14 @@ export function TaskDetailPanel() {
 
 function Panel({ id, onClose }: { id: string; onClose: () => void }) {
   const { t } = useTranslation();
+  // Esc zavře detail (prototyp: Esc zavírá selectedId)
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
   const { data: rows } = usePsQuery<TaskRow>("SELECT * FROM tasks WHERE id = ? LIMIT 1", [id]);
   const task = rows?.[0];
   const { data: subs } = usePsQuery<TaskRow>(

@@ -1,10 +1,19 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
-import { TaskCard } from "@watson/ui";
+import { Icon, TaskCard } from "@watson/ui";
 import { QuickAdd } from "../components/QuickAdd";
+import {
+  DEFAULT_TOOLBAR,
+  TasksToolbar,
+  type ToolbarState,
+  filterTasks,
+  sortTasks,
+} from "../components/TasksToolbar";
 import { useSession } from "../lib/auth-client";
-import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
+import { useFlowSteps } from "../lib/flowSteps";
+import type { ChainRow, ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
@@ -33,11 +42,20 @@ export function Today() {
   const { data: tasks } = usePsQuery<TaskRow>(
     "SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date, created_at DESC",
   );
+  const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
+  const flowSteps = useFlowSteps();
+  const navigate = useNavigate();
+  const userId = session?.user?.id;
+  const { data: myAssignments } = usePsQuery<{ task_id: string | null }>(
+    "SELECT task_id FROM assignments WHERE user_id = ?",
+    [userId ?? ""],
+  );
+  const { data: chains } = usePsQuery<ChainRow>("SELECT id, name FROM chains");
 
   const g = useMemo(() => {
     const tdy = todayISO();
     const all = tasks ?? [];
-    const opn = all.filter((x) => !x.completed_at);
+    const opn = sortTasks(filterTasks(all.filter((x) => !x.completed_at), tb), tb);
     return {
       overdue: opn.filter((x) => {
         const d = dayOf(x);
@@ -49,7 +67,21 @@ export function Today() {
       }),
       done: all.filter((x) => x.completed_at),
     };
-  }, [tasks]);
+  }, [tasks, tb]);
+
+  /** „Tvůj další krok" — aktivní krok postupu přiřazený mně (prototyp myFlowSteps, ř. 3156). */
+  const myNextStep = useMemo(() => {
+    const mine = new Set((myAssignments ?? []).map((a) => a.task_id).filter(Boolean));
+    for (const tk of tasks ?? []) {
+      if (tk.completed_at || !mine.has(tk.id)) continue;
+      const fs = flowSteps.get(tk.id);
+      if (fs?.state === "active") {
+        const chain = (chains ?? []).find((c) => c.id === fs.chainId);
+        return { task: tk, fs, chainName: chain?.name ?? "" };
+      }
+    }
+    return null;
+  }, [tasks, myAssignments, flowSteps, chains]);
 
   async function toggle(task: TaskRow) {
     await toggleTask(task);
@@ -87,6 +119,16 @@ export function Today() {
           projectName={p?.name ?? undefined}
           projectColor={p?.color ?? undefined}
           due={task.due_date ? dueLabel(task.due_date, t) : undefined}
+          flow={(() => {
+            const fs = flowSteps.get(task.id);
+            return fs
+              ? {
+                  label: `${fs.pos}/${fs.total}`,
+                  onClick: () =>
+                    void navigate({ to: "/postupy", search: { postup: fs.chainId } }),
+                }
+              : undefined;
+          })()}
           done={Boolean(task.completed_at)}
           onToggle={() => toggle(task)}
           onOpen={() => open(task.id)}
@@ -141,6 +183,41 @@ export function Today() {
           projects={projects.map((p: ProjectRow) => ({ id: p.id, name: p.name ?? "" }))}
           inboxId={inboxId}
         />
+
+        {/* Tvůj další krok v postupu (prototyp myFlowSteps) */}
+        {myNextStep && (
+          <button
+            type="button"
+            onClick={() =>
+              void navigate({ to: "/postupy", search: { postup: myNextStep.fs.chainId } })
+            }
+            className="mt-3 flex w-full items-center gap-2.5 rounded-[13px] border border-brass bg-card text-left hover:shadow-md"
+            style={{ padding: "12px 15px", boxShadow: "var(--w-shadow-sm)" }}
+          >
+            <span
+              className="flex shrink-0 items-center justify-center rounded-lg"
+              style={{ width: 26, height: 26, background: "var(--w-brass-soft)", color: "var(--w-brass-text)" }}
+            >
+              <Icon name="postup" size={14} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-display font-bold text-ink" style={{ fontSize: 13.5 }}>
+                {myNextStep.task.name}
+              </div>
+              <div className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
+                {myNextStep.chainName} · krok {myNextStep.fs.pos}/{myNextStep.fs.total}
+              </div>
+            </div>
+            <span className="shrink-0 font-display font-semibold text-brass-text" style={{ fontSize: 12 }}>
+              →
+            </span>
+          </button>
+        )}
+
+        {/* toolbar (filtr+řazení; Dokončené sekce má vlastní toggle) */}
+        <div className="mt-4">
+          <TasksToolbar state={tb} onChange={setTb} hideDone />
+        </div>
 
         {/* Zpožděné */}
         {g.overdue.length > 0 && (

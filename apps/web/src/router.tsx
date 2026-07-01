@@ -1,11 +1,10 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
-import type { IconName } from "@watson/ui";
 import { AppLayout } from "./layout/AppLayout";
 import { Cile } from "./screens/Cile";
 import { Hledat } from "./screens/Hledat";
 import { Nadchazejici } from "./screens/Nadchazejici";
 import { Nastaveni } from "./screens/Nastaveni";
-import { Placeholder } from "./screens/Placeholder";
+import { Oblibene } from "./screens/Oblibene";
 import { Postupy } from "./screens/Postupy";
 import { Projekty } from "./screens/Projekty";
 import { Reporty } from "./screens/Reporty";
@@ -73,15 +72,16 @@ const reportyRoute = createRoute({
 });
 
 /** Dočasné routy pro nav cíle (nahradí je reálné obrazovky v dalších úkolech). */
-const stub = <P extends string>(path: P, labelKey: string, icon: IconName) =>
-  createRoute({
-    getParentRoute: () => rootRoute,
-    path,
-    component: () => <Placeholder labelKey={labelKey} icon={icon} />,
-  });
-
-const oblP1Stub = stub("/oblibene/p1", "nav.priority1", "priorita");
-const oblMeStub = stub("/oblibene/me", "nav.assignedToMe", "prirazeni");
+const oblP1Route = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/oblibene/p1",
+  component: () => <Oblibene mode="p1" />,
+});
+const oblMeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/oblibene/me",
+  component: () => <Oblibene mode="me" />,
+});
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -94,8 +94,8 @@ const routeTree = rootRoute.addChildren([
   postupyRoute,
   projektyRoute,
   nastaveniRoute,
-  oblP1Stub,
-  oblMeStub,
+  oblP1Route,
+  oblMeRoute,
 ]);
 
 export const router = createRouter({ routeTree });

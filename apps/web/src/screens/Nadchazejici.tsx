@@ -1,8 +1,16 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import i18n, { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { TaskItem } from "../components/TaskItem";
+import {
+  DEFAULT_TOOLBAR,
+  TasksToolbar,
+  type ToolbarState,
+  filterTasks,
+  sortTasks,
+} from "../components/TasksToolbar";
+import { useFlowSteps } from "../lib/flowSteps";
 import { expandOccurrences, occId, recurrenceKind } from "../lib/occurrences";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
@@ -32,8 +40,14 @@ export function Nadchazejici() {
   const { t } = useTranslation();
   const projects = useProjects();
   const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
-  const { data: tasks } = usePsQuery<TaskRow>(
+  const { data: allTasks } = usePsQuery<TaskRow>(
     "SELECT * FROM tasks WHERE completed_at IS NULL AND due_date IS NOT NULL ORDER BY due_date",
+  );
+  const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
+  const flowSteps = useFlowSteps();
+  const tasks = useMemo(
+    () => sortTasks(filterTasks(allTasks ?? [], tb), tb),
+    [allTasks, tb],
   );
 
   const view = useMemo(() => {
@@ -89,6 +103,7 @@ export function Nadchazejici() {
 
   return (
     <div className="mx-auto max-w-3xl px-5 py-7">
+      <TasksToolbar state={tb} onChange={setTb} hideDone />
       {empty && (
         <p className="rounded-xl border border-dashed border-line px-4 py-10 text-center text-sm text-ink-3">
           {t("today.empty")}
@@ -103,7 +118,7 @@ export function Nadchazejici() {
           </h2>
           <ul className="mt-3 flex flex-col gap-2">
             {view.overdue.map((tk) => (
-              <TaskItem key={tk.id} task={tk} />
+              <TaskItem key={tk.id} task={tk} flow={flowSteps.get(tk.id)} />
             ))}
           </ul>
         </section>
@@ -117,7 +132,7 @@ export function Nadchazejici() {
           </h2>
           <ul className="mt-3 flex flex-col gap-2">
             {list.map((tk) => (
-              <TaskItem key={tk.id} task={tk} />
+              <TaskItem key={tk.id} task={tk} flow={flowSteps.get(tk.id)} />
             ))}
             {projs.map((o) => (
               <li

@@ -758,3 +758,25 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
 
 **Tím je FÁZE P3 KOMPLETNÍ** — všechny obrazovkové moduly z baseline auditu stojí (zbývá jen /oblibene/*
 stub → #40). Následuje AUDIT_v2 + P4 (fidelity/mobil/Tweaks).
+
+---
+
+## §27 — Fidelity cleanup batch (#40) — fáze P4
+
+**Datum:** 2026-07-01 · autonomní smyčka.
+
+### Postaveno + ověřeno živě
+1. **/oblibene/p1 + /oblibene/me** — reálné obrazovky (poslední stuby pryč; `Placeholder` už nemá žádnou
+   routu). „Mně" = assignments ∪ created_by; **sidebar badge sjednocen** na stejnou logiku. Ověřeno:
+   P1 → 5 úkolů jen P1; mně → 20 (souhlasí s badge).
+2. **Esc-close TaskDetailPanel + ProjectDetailPanel** (prototyp Esc zavírá selected*). Ověřeno: Enter
+   otevře detail → Esc zavře.
+3. **⛓ flow chip na kartách úkolů** — `useFlowSteps()` (1 dotaz, mapa task→krok), TaskCard `flow` prop
+   (brass-soft chip „⛓ X/Y"), klik → /postupy?postup= (deep-link). Zapojeno: Ukoly/Nadcházející/Dnes/
+   Oblíbené. Ověřeno: 5 chipů na krocích Plakátu, klik → flow detail.
+4. **„Tvůj další krok" na Dnes** (prototyp myFlowSteps) — aktivní krok přiřazený mně, brass karta nad
+   seznamem s {úkol} + {postup} · krok X/Y → klik na postup. Ověřeno (test assignment, pak vráceno).
+5. **Toolbar na Dnes + Nadcházející** — TasksToolbar s `hideDone` (mají vlastní sekce hotových);
+   filtr+řazení aplikované na jejich skupiny. Ověřeno na Dnes.
+6. **⌫/Delete v seznamové navigaci Úkolů** — smaže vybraný úkol, výběr přejde na souseda (stejný handler
+   jako živě ověřené j/k/Enter/Space; bez undo — viz baseline audit poznámka o undo systému).

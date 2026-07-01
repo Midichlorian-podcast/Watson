@@ -52,6 +52,14 @@ export function ProjectDetailPanel() {
 function Panel({ id, onClose }: { id: string; onClose: () => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Esc zavře panel (prototyp: Esc zavírá selectedProject)
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]);
   const { data: rows } = usePsQuery<ProjectRow>("SELECT * FROM projects WHERE id = ? LIMIT 1", [
     id,
   ]);

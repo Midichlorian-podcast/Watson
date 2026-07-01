@@ -93,13 +93,18 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const userId = session?.user?.id;
 
   const { data: openTasks } = usePsQuery<{
+    id: string;
     project_id: string | null;
     due_date: string | null;
     priority: number | null;
     created_by: string | null;
     parent_id: string | null;
   }>(
-    "SELECT project_id, due_date, priority, created_by, parent_id FROM tasks WHERE completed_at IS NULL",
+    "SELECT id, project_id, due_date, priority, created_by, parent_id FROM tasks WHERE completed_at IS NULL",
+  );
+  const { data: myAssignments } = usePsQuery<{ task_id: string | null }>(
+    "SELECT task_id FROM assignments WHERE user_id = ?",
+    [userId ?? ""],
   );
 
   const { data: workspaces } = useWorkspaces();
@@ -117,6 +122,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
   const counts = useMemo<Record<string, number>>(() => {
     const tasks = openTasks ?? [];
+    const assigned = new Set((myAssignments ?? []).map((a) => a.task_id).filter(Boolean));
     const today = todayIso();
     const inbox = new Set(
       projects.filter((p) => p.name === "Doručené" || p.name === "Inbox").map((p) => p.id),
@@ -136,9 +142,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       }).length,
       "/ukoly": tasks.length,
       "/oblibene/p1": tasks.filter((t) => t.priority === 1).length,
-      "/oblibene/me": tasks.filter((t) => t.created_by === userId).length,
+      "/oblibene/me": tasks.filter((t) => t.created_by === userId || assigned.has(t.id)).length,
     };
-  }, [openTasks, projects, userId]);
+  }, [openTasks, myAssignments, projects, userId]);
 
   const isActive = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
   const userName = session?.user?.name ?? "";

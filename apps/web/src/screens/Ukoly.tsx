@@ -12,6 +12,7 @@ import {
   sortTasks,
 } from "../components/TasksToolbar";
 import { advanceChainForTask } from "../lib/chainAdvance";
+import { useFlowSteps } from "../lib/flowSteps";
 import type { StatusRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
@@ -41,6 +42,7 @@ export function Ukoly() {
     localStorage.setItem(VIEW_LS, v);
   };
   const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
+  const flowSteps = useFlowSteps();
   const [kbSel, setKbSel] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
@@ -115,6 +117,13 @@ export function Ukoly() {
       if (["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault();
         void powerSync.execute("UPDATE tasks SET priority = ? WHERE id = ?", [+e.key, cur]);
+        return;
+      }
+      if (e.key === "Backspace" || e.key === "Delete") {
+        e.preventDefault();
+        const ni = ids[i + 1] ?? ids[i - 1] ?? null;
+        void powerSync.execute("DELETE FROM tasks WHERE id = ?", [cur]);
+        setKbSel(ni);
         return;
       }
       if (e.key === "Escape") setKbSel(null);
@@ -305,7 +314,7 @@ export function Ukoly() {
             <ul className="flex flex-col gap-2">
               {shown.map((tk) => (
                 <KbRow key={tk.id} selected={kbSel === tk.id}>
-                  <TaskItem task={tk} project={projMap.get(tk.project_id ?? "")} />
+                  <TaskItem task={tk} project={projMap.get(tk.project_id ?? "")} flow={flowSteps.get(tk.id)} />
                 </KbRow>
               ))}
             </ul>
@@ -326,7 +335,7 @@ export function Ukoly() {
                 <ul>
                   {list.map((tk) => (
                     <KbRow key={tk.id} selected={kbSel === tk.id}>
-                      <TaskItem task={tk} project={projMap.get(tk.project_id ?? "")} />
+                      <TaskItem task={tk} project={projMap.get(tk.project_id ?? "")} flow={flowSteps.get(tk.id)} />
                     </KbRow>
                   ))}
                 </ul>
