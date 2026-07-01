@@ -208,5 +208,16 @@
     "empty": "Nic nenalezeno",
     "kindGoto": "Přejít",
     "kindProject": "Projekt"
+  },
+  "inbox": {
+    "heading": "Schránka",
+    "subtitle": "Sem padají rychlé nápady a nezařazené úkoly. Přiřaď projekt a termín — úkol pak poletí dál do Dnes nebo Nadcházejících.",
+    "empty": "Schránka je prázdná",
+    "emptyHint": "Všechno máš zařazené. Nové nápady přidáš tlačítkem + Úkol.",
+    "today": "Dnes",
+    "tomorrow": "Zítra",
+    "nextWeek": "Příští týden",
+    "undo": "Zpět",
+    "scheduled": "Naplánováno"
   }
 }

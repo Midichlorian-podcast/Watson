@@ -97,7 +97,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     due_date: string | null;
     priority: number | null;
     created_by: string | null;
-  }>("SELECT project_id, due_date, priority, created_by FROM tasks WHERE completed_at IS NULL");
+    parent_id: string | null;
+  }>(
+    "SELECT project_id, due_date, priority, created_by, parent_id FROM tasks WHERE completed_at IS NULL",
+  );
 
   const { data: workspaces } = useWorkspaces();
   const { activeWs, setActiveWs, isCollapsed, toggleCollapse } = useWorkspace();
@@ -120,7 +123,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     );
     const day = (d: string | null) => d?.slice(0, 10) ?? null;
     return {
-      "/schranka": tasks.filter((t) => t.project_id && inbox.has(t.project_id)).length,
+      "/schranka": tasks.filter(
+        (t) => t.project_id && inbox.has(t.project_id) && !t.due_date && !t.parent_id,
+      ).length,
       "/": tasks.filter((t) => {
         const dd = day(t.due_date);
         return !dd || dd <= today;

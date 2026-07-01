@@ -5,6 +5,7 @@ import { Nadchazejici } from "./screens/Nadchazejici";
 import { Nastaveni } from "./screens/Nastaveni";
 import { Placeholder } from "./screens/Placeholder";
 import { Projekty } from "./screens/Projekty";
+import { Schranka } from "./screens/Schranka";
 import { Today } from "./screens/Today";
 import { Ukoly } from "./screens/Ukoly";
 
@@ -34,6 +35,11 @@ const nadchRoute = createRoute({
   path: "/nadchazejici",
   component: Nadchazejici,
 });
+const schrankaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/schranka",
+  component: Schranka,
+});
 
 /** Dočasné routy pro nav cíle (nahradí je reálné obrazovky v dalších úkolech). */
 const stub = (path: string, labelKey: string, icon: IconName) =>
@@ -45,7 +51,6 @@ const stub = (path: string, labelKey: string, icon: IconName) =>
 
 const stubRoutes = [
   stub("/hledat", "nav.search", "hledat"),
-  stub("/schranka", "nav.inbox", "schranka"),
   stub("/cile", "nav.goals", "cile"),
   stub("/reporty", "nav.reports", "reporty"),
   stub("/postupy", "nav.flows", "postup"),
@@ -57,6 +62,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   ukolyRoute,
   nadchRoute,
+  schrankaRoute,
   projektyRoute,
   nastaveniRoute,
   ...stubRoutes,

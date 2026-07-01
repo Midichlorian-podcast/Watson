@@ -5,11 +5,15 @@ import { CommandPalette } from "../components/CommandPalette";
 import { useAddTask } from "./addTask";
 
 /** g + písmeno → route. Jen existující routes; ostatní cíle (kalendář/cíle/…) přibudou s obrazovkami. */
-const G_ROUTES: Record<string, "/" | "/ukoly" | "/nadchazejici" | "/projekty" | "/nastaveni"> = {
+const G_ROUTES: Record<
+  string,
+  "/" | "/ukoly" | "/nadchazejici" | "/projekty" | "/nastaveni" | "/schranka"
+> = {
   d: "/",
   u: "/ukoly",
   n: "/nadchazejici",
   p: "/projekty",
+  i: "/schranka",
 };
 
 /**

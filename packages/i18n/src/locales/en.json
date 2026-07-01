@@ -208,5 +208,16 @@
     "empty": "Nothing found",
     "kindGoto": "Go to",
     "kindProject": "Project"
+  },
+  "inbox": {
+    "heading": "Inbox",
+    "subtitle": "Quick ideas and unsorted tasks land here. Assign a project and date — the task then flies on to Today or Upcoming.",
+    "empty": "Inbox is empty",
+    "emptyHint": "Everything is sorted. Add new ideas with the + Task button.",
+    "today": "Today",
+    "tomorrow": "Tomorrow",
+    "nextWeek": "Next week",
+    "undo": "Undo",
+    "scheduled": "Scheduled"
   }
 }

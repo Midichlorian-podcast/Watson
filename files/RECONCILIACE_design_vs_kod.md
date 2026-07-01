@@ -513,3 +513,28 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
   read-only-host**; role vrácena na admin.
 - Pozn.: project_role `commenter` (jen komentáře) neřešeno — #14 = workspace Host read-only; jemnější
   project-level práva případně samostatně.
+
+---
+
+## §19 — Schránka: inbox triage (#34) — start P3
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P3).
+
+### Model inboxu
+- **Žádný `is_inbox` flag** — inbox = úkoly v projektu jménem „Doručené"/„Inbox" (kind=flow). Sidebar už
+  tak počítá badge. Schránka = **otevřené + undated + top-level** (`parent_id IS NULL`) úkoly v inbox projektech
+  (undated = nezařazené; triage jim dá termín → opustí schránku).
+
+### Postaveno + ověřeno živě
+- `Schranka.tsx` (route `/schranka`, nahrazen stub) 1:1 dle Cloud Design: header+count, subtitle, karty
+  (checkbox dokončit + název→detail + **project select** (přeřadit mimo inbox) + **triage** Dnes/Zítra/Příští
+  týden (set due_date) + kebab→detail), prázdný stav „Schránka je prázdná".
+- Triage Příští týden = nejbližší pondělí. **Undo bar** (navy pill dole) po naplánování → vrátí `due_date=NULL`.
+- Sidebar badge sjednocen s obrazovkou (`!due_date && !parent_id`). `g i` → Schránka (route existuje).
+- i18n `inbox` namespace (cs/en).
+- Ověřeno: obrazovka renderuje (1 karta „Sepsat zápis z porady", 3 triage; screenshot), „Zítra" → due=2026-07-02
+  v Postgresu + karta zmizí + undo bar, „Zpět" → due=NULL + karta zpět.
+
+### Pozn.
+- Přeřazení projektu (select) je implementováno (stejný UPDATE pattern), explicitně netestováno živě.
+- Triage nemění projekt (úkol zůstane v inbox projektu, jen dostane termín) — dle prototypu (inbox=undated bucket).
