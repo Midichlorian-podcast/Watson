@@ -102,7 +102,13 @@
     "today": "Today",
     "more": "+{{more}} more",
     "viewList": "List",
-    "viewCalendar": "Calendar"
+    "viewCalendar": "Calendar",
+    "viewDay": "Day",
+    "viewWeek": "Week",
+    "viewMonth": "Month",
+    "weekCols": "Columns",
+    "weekGrid": "Grid",
+    "allDay": "All day"
   },
   "today": {
     "heading": "What to handle today",

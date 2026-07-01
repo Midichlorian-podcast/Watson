@@ -707,3 +707,32 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
 - Board drag-reorder V RÁMCI sloupce (bOrder/gapBefore v prototypu) — vypuštěno (žádný position sloupec na
   tasks; přesun mezi sloupci je jádro). ⌫ mazání s undo v list nav — vypuštěno (delete je v detail panelu).
 - Zjištění pro #40: TaskDetailPanel nemá Esc-close (prototyp Esc zavírá selectedId) — doplnit.
+
+---
+
+## §25 — Kalendář: den/týden časový grid + zkratky (#20)
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P3).
+
+### Postaveno + ověřeno živě
+- **`components/Calendar.tsx`** — režimy Den / Týden (Sloupce|Mřížka) / Měsíc (měsíc = stávající CalendarMonth
+  s novým `controlledBase` propem, vlastní hlavička skryta). Per-user režim v localStorage (`watson.calMode`).
+- **Toolbar 1:1**: ‹ Dnes › + range label (verbatim formáty ř. 3108-3115: den „1. července · středa", týden
+  „29. června – 5. července 2026" vč. cross-month varianty, měsíc Intl) + Den/Týden/Měsíc segmenty +
+  týdenní Sloupce/Mřížka toggle.
+- **Časová mřížka (PPM 0,62 verbatim)**: hodinová osa 0–24, výchozí scroll na 7:00, celodenní pás nahoře
+  (úkoly bez času), bloky dle času startu (top=min×PPM, výška=trvání×PPM, min 20px), now-line (červená)
+  na dnešku, klik blok → task detail. Týden Sloupce = 7 seznamových sloupců.
+- **Zkratky (tahák)**: ←/→ = navigace období, d = Dnes, 1/2/3 = den/týden/měsíc.
+- Ověřeno: Den — blok „Ozvat se…" 10:00 na top **372px přesně** (600 min × 0,62), klik → detail;
+  ← → „30. června · úterý", d → dnes, 2 → týden „29. června – 5. července 2026" + 7 sloupců (screenshot).
+
+### Rozhodnutí / odloženo
+- **Drag-create / move / resize** (calCreateDown/_calMove/_calUp, ghost, snap 15 min) — odloženo (velká
+  pointer mašinérie); grid je read + klik→detail. Editace času přes detail panel (Začátek/trvání).
+- **Hustota Vyvážené/Vzdušné + barevný okraj karty + Plánování side panel** (gear menu) — část jde do #39
+  Tweaks, zbytek #40.
+- **Timezone konvence**: pipeline ukládá naivní „wall time" (QuickAdd posílá `T15:00:00` bez TZ, Postgres
+  timestamptz v UTC docker prostředí, klient čte HH:MM ze stringu). Konzistentní v rámci dev; správné TZ
+  chování = produkční follow-up (zapsáno; test s explicitním +02 se posunul — data opravena na naivní).
+- CalendarMonth interní offset stav zůstává pro standalone použití (Calendar ho řídí přes controlledBase).

@@ -15,7 +15,14 @@ const taskDay = (t: TaskRow) => (t.due_date ?? t.start_date)?.slice(0, 10) ?? nu
  * max 3 úkoly/den + „+N další", klik na úkol → detail panel. Bez drag/resize (v2).
  * Výskyty opakování zatím neexpandujeme (žádné opakované úkoly v datech) — fáze occurrences.
  */
-export function CalendarMonth({ tasks }: { tasks: TaskRow[] }) {
+export function CalendarMonth({
+  tasks,
+  controlledBase,
+}: {
+  tasks: TaskRow[];
+  /** Řízený měsíc (z Calendar toolbaru) — skryje vlastní hlavičku. */
+  controlledBase?: Date;
+}) {
   const { t, i18n } = useTranslation();
   const { open } = useTaskDetail();
   const projects = useProjects();
@@ -25,7 +32,8 @@ export function CalendarMonth({ tasks }: { tasks: TaskRow[] }) {
 
   const today = new Date();
   const todayIso = isoOf(today);
-  const base = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+  const base =
+    controlledBase ?? new Date(today.getFullYear(), today.getMonth() + offset, 1);
   const year = base.getFullYear();
   const month = base.getMonth();
 
@@ -63,8 +71,8 @@ export function CalendarMonth({ tasks }: { tasks: TaskRow[] }) {
 
   return (
     <div>
-      {/* hlavička: období + navigace */}
-      <div className="mb-3 flex items-center gap-2">
+      {/* hlavička: období + navigace (skrytá při řízeném režimu z Calendar) */}
+      <div className="mb-3 flex items-center gap-2" style={controlledBase ? { display: "none" } : undefined}>
         <h2 className="font-display font-extrabold text-navy text-lg capitalize">{title}</h2>
         <div className="ml-auto flex items-center gap-1">
           <button

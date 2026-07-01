@@ -102,7 +102,13 @@
     "today": "Dnes",
     "more": "+{{more}} další",
     "viewList": "Seznam",
-    "viewCalendar": "Kalendář"
+    "viewCalendar": "Kalendář",
+    "viewDay": "Den",
+    "viewWeek": "Týden",
+    "viewMonth": "Měsíc",
+    "weekCols": "Sloupce",
+    "weekGrid": "Mřížka",
+    "allDay": "Celý den"
   },
   "today": {
     "heading": "Co dnes řešit",

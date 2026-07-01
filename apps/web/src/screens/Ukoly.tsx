@@ -2,7 +2,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { Link, useSearch } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "@watson/i18n";
-import { CalendarMonth } from "../components/CalendarMonth";
+import { Calendar } from "../components/Calendar";
 import { TaskItem } from "../components/TaskItem";
 import {
   DEFAULT_TOOLBAR,
@@ -192,7 +192,7 @@ export function Ukoly() {
       {view !== "calendar" && <TasksToolbar state={tb} onChange={setTb} />}
 
       {view === "calendar" ? (
-        <CalendarMonth tasks={scoped} />
+        <Calendar tasks={scoped} />
       ) : view === "board" ? (
         columns.length === 0 ? (
           <p className="rounded-xl border border-line border-dashed px-4 py-10 text-center text-ink-3 text-sm">
