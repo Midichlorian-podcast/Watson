@@ -1,5 +1,5 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import i18n, { useTranslation } from "@watson/i18n";
 import { useAddTask } from "../lib/addTask";
 import { useWatson } from "../lib/watson";
@@ -12,6 +12,7 @@ const ICON_BTN =
 /** Horní header — 1:1 dle Cloud Design (square ikon-buttony, Watson pill, brass „+ Úkol"). */
 export function Header() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { openAdd } = useAddTask();
   const { toggleWatson } = useWatson();
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -49,6 +50,7 @@ export function Header() {
       <div className="ml-auto flex items-center" style={{ gap: 9 }}>
         <button
           type="button"
+          onClick={() => void navigate({ to: "/hledat" })}
           title={t("shell.search")}
           aria-label={t("shell.search")}
           className={ICON_BTN}

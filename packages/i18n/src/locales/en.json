@@ -219,5 +219,25 @@
     "nextWeek": "Next week",
     "undo": "Undo",
     "scheduled": "Scheduled"
+  },
+  "search": {
+    "placeholder": "Search tasks, projects, people, flows, goals…",
+    "prompt": "Start typing — Watson searches tasks, projects, people, flows and goals across all workspaces.",
+    "empty": "Nothing found",
+    "emptyHint": "Try a different term or check for typos.",
+    "tasks": "Tasks",
+    "projects": "Projects",
+    "people": "People",
+    "flows": "Flows",
+    "goals": "Goals",
+    "member": "Member",
+    "kindFlow": "Ongoing project",
+    "kindGoal": "Goal project",
+    "kindCycle": "Periodic project",
+    "steps": "steps",
+    "goalTeam": "Team goal",
+    "goalProject": "Project goal",
+    "goalPerson": "Personal goal",
+    "goalGeneric": "Goal"
   }
 }

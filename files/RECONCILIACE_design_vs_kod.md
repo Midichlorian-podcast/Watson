@@ -538,3 +538,30 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
 ### Pozn.
 - Přeřazení projektu (select) je implementováno (stejný UPDATE pattern), explicitně netestováno živě.
 - Triage nemění projekt (úkol zůstane v inbox projektu, jen dostane termín) — dle prototypu (inbox=undated bucket).
+
+---
+
+## §20 — Hledat: 5 entit + header lupa (#33)
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P3).
+
+### Postaveno + ověřeno živě
+- `Hledat.tsx` (route `/hledat`, nahrazen stub) 1:1 dle Cloud Design: search box (autofocus) + počítadlo
+  s **českou pluralizací** (1 výsledek / 2–4 výsledky / 5+ výsledků — verbatim z prototypu ř. 3080),
+  prompt stav („Začni psát…"), empty stav, 5 sekcí: **Úkoly** (limit 8, tečka projektu + sub=projekt,
+  klik→task detail), **Projekty** (6, kind label Průběžný/Cílový/Periodický, klik→projekt detail),
+  **Lidé** (6, avatar+iniciály, přes members API všech prostorů s dedup), **Postupy** (6, done/total kroků
+  z chain_steps), **Cíle** (6, scope label).
+- **Header lupa → /hledat** (poslední atrapa z #29 dokončena). Zkratky: `/` → /hledat, `g h` → /hledat.
+- ⌘K paleta rozšířena o Schránku + Hledat (routes existují).
+- Router: `stub()` helper zgeneričtěn (`<P extends string>`) → stub routy jsou typované navigate cíle.
+- Ověřeno: „fakt"→3 výsledky (ÚKOLY+sub projekty), „adam"→1 výsledek (LIDÉ), „obch"→1 výsledek (PROJEKTY,
+  screenshot), klik projekt→detail panel, lupa z Dnes→/hledat, `/`→/hledat+fokus.
+
+### Rozhodnutí
+- **Úkoly vylučují schránkové položky** (undated top-level v inbox projektech) — prototyp vylučuje `t.inbox`;
+  náš ekvivalent dle §19 modelu. Naplánované úkoly v „Doručené" zůstávají hledatelné.
+- **Klik na osobu → /nastaveni** (Tým a role) — member detail panel přijde s #35; do té doby je Nastavení
+  smysluplný cíl (ne atrapa). Klik na postup → /postupy, cíl → /cile (stub routy — stejné cíle jako nav;
+  nahradí je #27/#25b).
+- Lidé přes REST (members API, ne sync) — konzistentní s #18/#30 přístupem.

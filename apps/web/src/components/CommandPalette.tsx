@@ -4,7 +4,7 @@ import { useTranslation } from "@watson/i18n";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
 
-type Route = "/" | "/ukoly" | "/nadchazejici" | "/projekty" | "/nastaveni";
+type Route = "/" | "/ukoly" | "/nadchazejici" | "/projekty" | "/nastaveni" | "/schranka" | "/hledat";
 interface PalItem {
   key: string;
   kind: string;
@@ -32,9 +32,11 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     const screens: PalItem[] = (
       [
         [t("nav.today"), "/"],
+        [t("nav.inbox"), "/schranka"],
         [t("nav.upcoming"), "/nadchazejici"],
         [t("nav.tasks"), "/ukoly"],
         [t("nav.projects"), "/projekty"],
+        [t("nav.search"), "/hledat"],
         [t("nav.settings"), "/nastaveni"],
       ] as [string, Route][]
     ).map(([label, to]) => ({

@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import type { IconName } from "@watson/ui";
 import { AppLayout } from "./layout/AppLayout";
+import { Hledat } from "./screens/Hledat";
 import { Nadchazejici } from "./screens/Nadchazejici";
 import { Nastaveni } from "./screens/Nastaveni";
 import { Placeholder } from "./screens/Placeholder";
@@ -40,32 +41,39 @@ const schrankaRoute = createRoute({
   path: "/schranka",
   component: Schranka,
 });
+const hledatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hledat",
+  component: Hledat,
+});
 
 /** Dočasné routy pro nav cíle (nahradí je reálné obrazovky v dalších úkolech). */
-const stub = (path: string, labelKey: string, icon: IconName) =>
+const stub = <P extends string>(path: P, labelKey: string, icon: IconName) =>
   createRoute({
     getParentRoute: () => rootRoute,
     path,
     component: () => <Placeholder labelKey={labelKey} icon={icon} />,
   });
 
-const stubRoutes = [
-  stub("/hledat", "nav.search", "hledat"),
-  stub("/cile", "nav.goals", "cile"),
-  stub("/reporty", "nav.reports", "reporty"),
-  stub("/postupy", "nav.flows", "postup"),
-  stub("/oblibene/p1", "nav.priority1", "priorita"),
-  stub("/oblibene/me", "nav.assignedToMe", "prirazeni"),
-];
+const cileStub = stub("/cile", "nav.goals", "cile");
+const reportyStub = stub("/reporty", "nav.reports", "reporty");
+const postupyStub = stub("/postupy", "nav.flows", "postup");
+const oblP1Stub = stub("/oblibene/p1", "nav.priority1", "priorita");
+const oblMeStub = stub("/oblibene/me", "nav.assignedToMe", "prirazeni");
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
   ukolyRoute,
   nadchRoute,
   schrankaRoute,
+  hledatRoute,
   projektyRoute,
   nastaveniRoute,
-  ...stubRoutes,
+  cileStub,
+  reportyStub,
+  postupyStub,
+  oblP1Stub,
+  oblMeStub,
 ]);
 
 export const router = createRouter({ routeTree });

@@ -219,5 +219,25 @@
     "nextWeek": "Příští týden",
     "undo": "Zpět",
     "scheduled": "Naplánováno"
+  },
+  "search": {
+    "placeholder": "Hledat úkoly, projekty, lidi, postupy, cíle…",
+    "prompt": "Začni psát — Watson prohledá úkoly, projekty, lidi, postupy i cíle napříč všemi prostory.",
+    "empty": "Nic nenalezeno",
+    "emptyHint": "Zkus jiný výraz nebo zkontroluj překlepy.",
+    "tasks": "Úkoly",
+    "projects": "Projekty",
+    "people": "Lidé",
+    "flows": "Postupy",
+    "goals": "Cíle",
+    "member": "Člen",
+    "kindFlow": "Průběžný projekt",
+    "kindGoal": "Cílový projekt",
+    "kindCycle": "Periodický projekt",
+    "steps": "kroků",
+    "goalTeam": "Týmový cíl",
+    "goalProject": "Projektový cíl",
+    "goalPerson": "Osobní cíl",
+    "goalGeneric": "Cíl"
   }
 }

@@ -7,13 +7,14 @@ import { useAddTask } from "./addTask";
 /** g + písmeno → route. Jen existující routes; ostatní cíle (kalendář/cíle/…) přibudou s obrazovkami. */
 const G_ROUTES: Record<
   string,
-  "/" | "/ukoly" | "/nadchazejici" | "/projekty" | "/nastaveni" | "/schranka"
+  "/" | "/ukoly" | "/nadchazejici" | "/projekty" | "/nastaveni" | "/schranka" | "/hledat"
 > = {
   d: "/",
   u: "/ukoly",
   n: "/nadchazejici",
   p: "/projekty",
   i: "/schranka",
+  h: "/hledat",
 };
 
 /**
@@ -71,6 +72,12 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
       if (e.key === "?") {
         e.preventDefault();
         setCheatOpen((o) => !o);
+        return;
+      }
+      // `/` → Hledat (fokus na search input obrazovky)
+      if (e.key === "/") {
+        e.preventDefault();
+        void navigate({ to: "/hledat" });
         return;
       }
       if (e.key === "q" || e.key === "Q") {
