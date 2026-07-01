@@ -468,3 +468,32 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
   zakládají/upravují. (YAGNI — negeneralizuji write-path bez volajícího.)
 - **Zbývající workspace-aware UI** (Tým a role dle aktivního prostoru, Reporty dle prostoru, Cíle tabs
   personal/team) přijdou s příslušnými obrazovkami (#12 už má členy per-workspace; #35/#25b doplní).
+
+---
+
+## §17 — Opakování: occurrence engine R4 (#21)
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P2).
+
+### Postaveno + ověřeno živě
+- **`recurrence_rule` sloupec** (aditivní migrace 0005) = JSON strukturovaného `RecurrenceRule`
+  ({kind,weekday,nth,day,parity,label}). QuickAdd nově ukládá `JSON.stringify(rule)` (dřív jen label do
+  `recurrence`). AppSchema + sync-config (tasks SELECT) + write-path (tasks whitelist) rozšířeny; powersync restart.
+- **`lib/occurrences.ts`** — occurrence engine: `expandOccurrences({baseISO,kind,fromISO,toISO,cap})` →
+  ISO data výskytů, krok kalendářní od base (daily=+1d/weekly=+7d/biweekly=+14d/monthly=+1měs/yearly=+1rok),
+  guard 800. Virtuální identita `occId(taskId,iso)=taskId@iso` + `parseOccId`/`isOccId` (id má `@` na indexu>0,
+  ne jen indexOf). `recurrenceKind(json)` vytáhne kind.
+- **Projekce do Nadcházející**: recurring úkol se promítne jako base úkol (reálný, na due dni) + budoucí
+  výskyty jako **read-only ↻ řádky** (dashed, muted) v horizontu 16 dní.
+- Ověřeno: engine (weekly/daily/monthly/biweekly + occId/kind přes dynamický import), „Zálivka květin každou
+  středu" → recurrence_rule JSON v Postgresu (kind weekly, weekday 3), Nadcházející STŘEDA 8.7 = reálný úkol +
+  STŘEDA 15.7 = ↻ výskyt (screenshot).
+
+### Zjednodušení / odloženo (dle files/logika/02 §3.1)
+- **Projekce ignoruje přesné nth/parity/monthly-day** — krok je prostý kalendářní od base (1:1 s prototypem
+  `_recOccur`). „Každé první úterý v měsíci" se po pár měsících rozejde s realitou. Pro přesnost by chtěl
+  RRULE-like materializer (§3.2) — odloženo (produkční upgrade).
+- **Per-occurrence dokončení/přeskočení** (výjimky řady) — výskyty jsou zatím **read-only projekce** (ne
+  interaktivní checkbox → žádná atrapa). Per-occurrence stav by chtěl `recurrence_exceptions` JSON sloupec /
+  tabulku výjimek. Odloženo za dořešení řad (kalendář den/týden #20 + série editace). Base úkol je plně interaktivní.
+- Projekce zatím jen do **Nadcházející**; Dnes ukazuje jen base den (dle prototypu §2.4), Kalendář měsíc řeší #20.

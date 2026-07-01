@@ -47,8 +47,10 @@ export const tasks = pgTable(
     deadline: timestamp("deadline", { withTimezone: true }),
     /** B3 — odhad délky pro time-blocking (NE time tracking). */
     durationMin: integer("duration_min"),
-    /** R4 — pravidlo opakování (RRULE-like text); null = neopakuje se. */
+    /** R4 — lidský label opakování (zobrazení); null = neopakuje se. */
     recurrence: text("recurrence"),
+    /** R4 — strukturované pravidlo (JSON RecurrenceRule) pro occurrence engine. */
+    recurrenceRule: text("recurrence_rule"),
     recurrenceBasis: recurrenceBasisEnum("recurrence_basis").notNull().default("due_date"),
     /** R2 — režim přiřazení. */
     assignmentMode: assignmentModeEnum("assignment_mode").notNull().default("single"),

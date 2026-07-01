@@ -9,7 +9,7 @@ bucket_definitions:
     parameters: SELECT project_id FROM project_members WHERE user_id = request.user_id()
     data:
       - SELECT id, project_id, section_id, parent_id, name, description, priority, color,
-        due_date, start_date, deadline, duration_min, recurrence, recurrence_basis,
+        due_date, start_date, deadline, duration_min, recurrence, recurrence_rule, recurrence_basis,
         assignment_mode, status_id, completed_at, created_by, created_at
         FROM tasks
         WHERE project_id = bucket.project_id

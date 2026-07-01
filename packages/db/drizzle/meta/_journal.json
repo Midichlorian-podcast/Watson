@@ -36,6 +36,13 @@
       "when": 1782931993452,
       "tag": "0004_brainy_blade",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782937338303,
+      "tag": "0005_awesome_sentinels",
+      "breakpoints": true
     }
   ]
 }

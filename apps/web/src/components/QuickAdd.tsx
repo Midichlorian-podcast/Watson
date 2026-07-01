@@ -98,7 +98,7 @@ export function QuickAdd({
       startDate = `${base}T${hh}:${mm}:00`;
     }
     await powerSync.execute(
-      "INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, deadline, duration_min, recurrence, recurrence_basis, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, deadline, duration_min, recurrence, recurrence_rule, recurrence_basis, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         parsed.projectId ?? inboxId,
         name,
@@ -108,6 +108,7 @@ export function QuickAdd({
         parsed.deadline ?? null,
         parsed.durationMin ?? null,
         parsed.recurrence?.label ?? null,
+        parsed.recurrence ? JSON.stringify(parsed.recurrence) : null,
         parsed.recurrence ? "due_date" : null,
         new Date().toISOString(),
       ],
