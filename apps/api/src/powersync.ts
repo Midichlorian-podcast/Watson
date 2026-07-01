@@ -293,6 +293,19 @@ async function isProjectMember(db: Db, projectId: string, userId: string): Promi
   return rows.length > 0;
 }
 
+/**
+ * R-oprávnění (#14): „Host" (workspace_role = guest) je jen pro čtení. True, pokud je uživatel
+ * v prostoru daného projektu členem s rolí guest → jakýkoli zápis se odmítne.
+ */
+async function isWorkspaceGuest(db: Db, projectId: string, userId: string): Promise<boolean> {
+  const rows = (await db.execute(
+    sql`SELECT m.role AS role FROM projects p
+        JOIN memberships m ON m.workspace_id = p.workspace_id AND m.user_id = ${userId}
+        WHERE p.id = ${projectId} LIMIT 1`,
+  )) as Rows;
+  return (rows[0]?.role as string) === "guest";
+}
+
 /** Generický zápis dle registru (INSERT … ON CONFLICT / UPDATE / DELETE). */
 async function applyWrite(
   db: Db,
@@ -384,6 +397,8 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
     if (need.size === 0) return c.json({ error: "forbidden" }, 403);
     for (const p of need) {
       if (!(await isProjectMember(db, p, userId))) return c.json({ error: "forbidden" }, 403);
+      // Host (workspace guest) = read-only → odmítni jakýkoli zápis.
+      if (await isWorkspaceGuest(db, p, userId)) return c.json({ error: "read-only-host" }, 403);
     }
   }
   // member sloupce (assignments.user_id) musí být člen projektu řádku.

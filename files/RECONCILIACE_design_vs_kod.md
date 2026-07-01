@@ -497,3 +497,19 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
   interaktivní checkbox → žádná atrapa). Per-occurrence stav by chtěl `recurrence_exceptions` JSON sloupec /
   tabulku výjimek. Odloženo za dořešení řad (kalendář den/týden #20 + série editace). Base úkol je plně interaktivní.
 - Projekce zatím jen do **Nadcházející**; Dnes ukazuje jen base den (dle prototypu §2.4), Kalendář měsíc řeší #20.
+
+---
+
+## §18 — Workspace-role-aware oprávnění: Host read-only (#14)
+
+**Datum:** 2026-07-01 · autonomní smyčka (poslední P2).
+
+- Role systém: **workspace_role** = admin/manager/member/**guest** (=„Host"); project_role = manager/editor/
+  commenter. Host = guest = jen čtení (dle prototypu ROLE_PERMS „Vlastník/Admin/Člen/Host").
+- Write-path (`apps/api/src/powersync.ts` → `/api/sync/write`): přidán `isWorkspaceGuest(projectId,userId)` +
+  guard v R5 smyčce — pro každý dotčený projekt: pokud je uživatel v jeho prostoru `guest` → **403 read-only-host**.
+  (Klientský `WriteRejectedToast` už existuje, takže se odmítnutí propíše do UI.)
+- Ověřeno živě: admin PATCH tasku → 200 ok; po `update memberships set role='guest'` stejný PATCH → **403
+  read-only-host**; role vrácena na admin.
+- Pozn.: project_role `commenter` (jen komentáře) neřešeno — #14 = workspace Host read-only; jemnější
+  project-level práva případně samostatně.
