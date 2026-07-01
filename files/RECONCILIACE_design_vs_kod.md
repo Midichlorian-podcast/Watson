@@ -605,3 +605,33 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
   a zapsal špatný scope/owner. Přidán Esc handler + owner default po načtení členů. (Demo řádek srovnán.)
 - „period" textové pole prototypu (Q3 2026) → nahrazeno reálným date inputem (due_date v DB), karta ukazuje
   „do D. M." — období bez sloupce nezavádím.
+
+---
+
+## §22 — Reporty: Přehled + Lidé + member detail (#35)
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P3). Modul byl v baseline auditu 0/29.
+
+### Postaveno + ověřeno živě
+- `Reporty.tsx` (route `/reporty` + search parametry `?tab=lide&clen=<id>` → deep-link na member detail;
+  nahrazen stub). Header s ws tečkou + názvem; taby **Přehled/Lidé jen pro týmový prostor** (wsTeam z prototypu).
+- **Přehled**: 3 KPI (hotovo tento týden / po termínu / průměr/den s českou čárkou) — **reálné** z completed_at/
+  due_date (prototyp měl mock čísla); týdenní graf Po–Ne z completed_at aktuálního týdne (prototyp mock
+  [[Po,6]…]); „Podle projektu" (done počty, bar dle max, barva projektu); karta Cíle (wsP→mé cíle dle
+  owner_id=me, jinak scope=team — verbatim ř. 3187) s kompaktními goal řádky (label+pct+bar, GSTAT barvy)
+  + „Všechny cíle →" → /cile.
+- **Lidé**: roster (avatar/jméno/email, overdue chip, load bar `min(100, open*13)%` verbatim, počet otevřených);
+  „Přidat člena" → /nastaveni (invite modal přijde s #39 — ne atrapa).
+- **Member detail panel** (440px): avatar+jméno+email, efektivita `done/(done+open)` s barem, staty
+  otevřených/po termínu/hotovo, **role segmenty Admin/Člen/Host** → PATCH /api/workspaces/:id/members/:userId/role
+  (owner → chip Vlastník, segmenty skryté — endpoint ownera odmítá), úkoly člena top 10 (klik→task detail),
+  „Podle projektu" rozpad (bar `min(100,count*22)%`), cíle člena, footer „Zobrazit úkoly" → /ukoly.
+- **Hledat** klik na osobu přesměrován z /nastaveni na `/reporty?tab=lide&clen=<id>` (member detail deep-link).
+- Ověřeno: Přehled reálná data (1 hotovo/5 po termínu/0,1 průměr; Obchod 1; Tvé cíle 1/10·10 %); Kancelář →
+  taby → Lidé roster 5; klik Tomáš → detail (?clen= v URL, screenshot); role Admin→Host→Admin ověřeno v DB.
+
+### Rozhodnutí
+- Atribuce úkolů členovi = přes `assignments` (user_id) — prototyp `t.people`. Kancelář nemá projekty/úkoly →
+  staty 0 (správně; reálná data, žádný mock seed jako prototyp).
+- Prototypí mock „doneCount" seed (hash z id) záměrně NEreplikován — reálné počty.
+- role `manager` mapována na segment Admin (enum má admin/manager/member/guest, segmenty jen 3 dle designu).

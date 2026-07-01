@@ -119,7 +119,7 @@ export function Hledat() {
         id: p.id,
         name: p.name,
         sub: t("search.member"),
-        run: () => void navigate({ to: "/nastaveni" }),
+        run: () => void navigate({ to: "/reporty", search: { tab: "lide", clen: p.id } }),
       }));
 
     const doneBy = new Map<string, { done: number; total: number }>();

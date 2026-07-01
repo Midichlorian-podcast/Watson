@@ -7,6 +7,7 @@ import { Nadchazejici } from "./screens/Nadchazejici";
 import { Nastaveni } from "./screens/Nastaveni";
 import { Placeholder } from "./screens/Placeholder";
 import { Projekty } from "./screens/Projekty";
+import { Reporty } from "./screens/Reporty";
 import { Schranka } from "./screens/Schranka";
 import { Today } from "./screens/Today";
 import { Ukoly } from "./screens/Ukoly";
@@ -52,6 +53,15 @@ const cileRoute = createRoute({
   path: "/cile",
   component: Cile,
 });
+const reportyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/reporty",
+  component: Reporty,
+  validateSearch: (s: Record<string, unknown>): { tab?: string; clen?: string } => ({
+    tab: typeof s.tab === "string" ? s.tab : undefined,
+    clen: typeof s.clen === "string" ? s.clen : undefined,
+  }),
+});
 
 /** Dočasné routy pro nav cíle (nahradí je reálné obrazovky v dalších úkolech). */
 const stub = <P extends string>(path: P, labelKey: string, icon: IconName) =>
@@ -61,7 +71,6 @@ const stub = <P extends string>(path: P, labelKey: string, icon: IconName) =>
     component: () => <Placeholder labelKey={labelKey} icon={icon} />,
   });
 
-const reportyStub = stub("/reporty", "nav.reports", "reporty");
 const postupyStub = stub("/postupy", "nav.flows", "postup");
 const oblP1Stub = stub("/oblibene/p1", "nav.priority1", "priorita");
 const oblMeStub = stub("/oblibene/me", "nav.assignedToMe", "prirazeni");
@@ -73,9 +82,9 @@ const routeTree = rootRoute.addChildren([
   schrankaRoute,
   hledatRoute,
   cileRoute,
+  reportyRoute,
   projektyRoute,
   nastaveniRoute,
-  reportyStub,
   postupyStub,
   oblP1Stub,
   oblMeStub,
