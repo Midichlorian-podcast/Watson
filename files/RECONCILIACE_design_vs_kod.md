@@ -300,3 +300,40 @@ Projekty/Kalendář) podle uživatele neodpovídají dost → fidelity-pass úko
 _Otevřené rozhodnutí blokující design lock i UI: **K1** (barva vs priorita) — VYŘEŠENO (design).
 K2–K4 potvrzeno. #10–#12 MVP hotovo. **Nová priorita: 1:1 fidelity k Cloud Design** (§10) — fidelity-pass
 shellu + dříve postavených obrazovek; viz §8/§9 pro odložené funkční fáze._
+
+---
+
+## §11 — Autonomní 1:1 běh (P1): Add-task modal (#28) + atrapy/Watson (#29/#37)
+
+**Datum:** 2026-07-01 · autonomní smyčka (rozhoduji sám dle ducha designu, zapisuji sem).
+
+### #28 — Add-task modal + QuickAdd ukládá všechna pole
+- **Globální modal** `AddTaskModal` (kontext `AddTaskProvider`, zkratka `q`, Esc/klik mimo zavře) obaluje
+  existující `QuickAdd` parser. Sidebar „+ Přidat úkol" a Header „+ Úkol" přepnuty z `navigate('/')` na `openAdd`.
+- **`QuickAdd.submit`** nově persistuje `start_date` (= termín + čas dne z `startMin`), `deadline`,
+  `duration_min`, `recurrence` (label), `recurrence_basis` (dřív jen name/priority/due_date).
+- **Odloženo (rozhodnutí):**
+  - `personQueries` (`@X`/`+X`) → přiřazení nejsou v `submit` (potřebují resolve osob → `assignments`);
+    řeší **#13** (našeptávač lidí) + **#30** (assignment_mode). `submit` je zapisuje: NE (zatím).
+  - `days` (vícedenní rozsah 1–60) → **žádný DB sloupec** na konci rozsahu (máme jen `deadline`).
+    Rozhodnutí: neukládat `days`; není v produkčním modelu tasku. Pokud se ukáže potřeba, přidat
+    `end_date` aditivní migrací. Zapsáno jako známý gap.
+- **`recurrence`**: ukládáme **label** (human text) do `tasks.recurrence`. Strukturované rozvití řeší
+  occurrence engine **#21** (re-parse labelu, příp. přidat `recurrence_rule` JSON sloupec). Tím je splněno
+  „parser nic nezahazuje" pro skalární pole. Ověřeno živě: q → modal → pills → submit → Postgres má vše.
+
+### #29 — atrapy + #37 Watson panel (postaveno společně)
+- **Zjištění z prototypu:** atrapy nemají samostatný cíl — Watson pill, zvonek (Oznámení) i „Více →"
+  (Dnes strip) volají všechny `toggleWatson` → **Watson drawer**. Lupa → header inline search (`searchOpen`).
+- **Rozhodnutí:** postavit **Watson drawer (#37)** hned jako nositele napojení → tím zapojeny **3 ze 4 atrap**
+  (pill + zvonek + „Více →"). **Lupa** (search) odložena na **#33 (Hledat)**, kde se staví header search input
+  i obrazovka. Tj. #29 se rozpouští do #37 (teď) + #33 (později); netvořím dead-navigace na neexistující cíle.
+- **Watson panel = reálná data** (prototyp měl greet/insights mockované):
+  - greet = stejná logika jako Dnes strip (pozdrav + jméno + „{n} na dnes · {m} po termínu").
+  - insights: (1) pokud jsou úkoly po termínu → „Máš {n} po termínu" + akce **Přeplánovat zpožděné**
+    (bulk `UPDATE due_date=now`); jinak „Nic po termínu"; (2) „Naplánuj si den" + **Otevřít nadcházející**.
+  - stat strip: hotovo (dnes dokončené) / po termínu / dnes — reálné počty.
+  - „Tvé cíle tento týden": `goals WHERE owner_id = me` (skryje se, když prázdné).
+- **Route pozn.:** insight #2 míří na `/nadchazejici`, ne `/kalendar` — **kalendář není samostatná route**
+  (je to view-mode seznamu, #17/#20). Registrované routes: `/ /ukoly /nadchazejici /projekty /nastaveni`.
+  Ostatní nav (Cíle/Reporty/Postupy/Hledat/Schránka) zatím bez route → řeší P3 tasky.

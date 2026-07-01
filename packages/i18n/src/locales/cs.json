@@ -154,5 +154,19 @@
     "cancel": "Zrušit",
     "done": "Hotovo",
     "signOut": "Odhlásit"
+  },
+  "watson": {
+    "title": "Watson",
+    "todayHeading": "Co dnes řešit",
+    "goalsHeading": "Tvé cíle tento týden",
+    "statDone": "hotovo",
+    "statOverdue": "po termínu",
+    "statToday": "dnes",
+    "insightOverdue": "Máš {{count}} úkolů po termínu — přehodit na dnes?",
+    "insightOverdueAction": "Přeplánovat zpožděné",
+    "insightAllClear": "Nic po termínu — máš čistý stůl.",
+    "goalTarget": "cíl {{target}}",
+    "insightPlan": "Naplánuj si den — projdi nadcházející úkoly.",
+    "insightPlanAction": "Otevřít nadcházející"
   }
 }

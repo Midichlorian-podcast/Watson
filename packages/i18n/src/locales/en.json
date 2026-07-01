@@ -154,5 +154,19 @@
     "cancel": "Cancel",
     "done": "Done",
     "signOut": "Sign out"
+  },
+  "watson": {
+    "title": "Watson",
+    "todayHeading": "What to tackle today",
+    "goalsHeading": "Your goals this week",
+    "statDone": "done",
+    "statOverdue": "overdue",
+    "statToday": "today",
+    "insightOverdue": "You have {{count}} overdue tasks — move them to today?",
+    "insightOverdueAction": "Reschedule overdue",
+    "insightAllClear": "Nothing overdue — clean slate.",
+    "goalTarget": "target {{target}}",
+    "insightPlan": "Plan your day — review upcoming tasks.",
+    "insightPlanAction": "Open upcoming"
   }
 }

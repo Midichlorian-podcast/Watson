@@ -9,6 +9,7 @@ import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { dueLabel } from "../lib/tasks";
+import { useWatson } from "../lib/watson";
 
 type Pri = 1 | 2 | 3 | 4;
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -22,6 +23,7 @@ export function Today() {
   const { t, i18n } = useTranslation();
   const { data: session } = useSession();
   const { open } = useTaskDetail();
+  const { toggleWatson } = useWatson();
   const [openDone, setOpenDone] = useState(false);
 
   const projects = useProjects();
@@ -126,9 +128,14 @@ export function Today() {
             {t("today.rescheduleOverdue")}
           </button>
         )}
-        <span className="shrink-0 font-display font-semibold text-ink-3" style={{ fontSize: 12 }}>
+        <button
+          type="button"
+          onClick={toggleWatson}
+          className="shrink-0 font-display font-semibold text-ink-3 hover:text-brass-text"
+          style={{ fontSize: 12 }}
+        >
           {t("today.watsonMore")}
-        </span>
+        </button>
       </div>
 
       <div className="mx-auto max-w-[1080px]" style={{ padding: "12px 22px 90px" }}>

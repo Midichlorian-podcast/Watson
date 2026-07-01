@@ -2,6 +2,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useRouterState } from "@tanstack/react-router";
 import i18n, { useTranslation } from "@watson/i18n";
 import { useAddTask } from "../lib/addTask";
+import { useWatson } from "../lib/watson";
 import { ALL_NAV } from "./nav";
 import { useTheme } from "./useTheme";
 
@@ -12,6 +13,7 @@ const ICON_BTN =
 export function Header() {
   const { t } = useTranslation();
   const { openAdd } = useAddTask();
+  const { toggleWatson } = useWatson();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const active = ALL_NAV.find((n) => (n.to === "/" ? path === "/" : path.startsWith(n.to)));
   const title = active ? t(active.labelKey) : t("app.name");
@@ -69,6 +71,7 @@ export function Header() {
 
         <button
           type="button"
+          onClick={toggleWatson}
           title={t("shell.notifications")}
           aria-label={t("shell.notifications")}
           className={`${ICON_BTN} relative`}
@@ -141,6 +144,7 @@ export function Header() {
 
         <button
           type="button"
+          onClick={toggleWatson}
           title={t("shell.assistant")}
           className="flex h-[34px] items-center rounded-[9px] border border-brass font-display font-bold text-brass-text hover:bg-brass hover:text-white"
           style={{ gap: 7, background: "var(--w-brass-soft)", padding: "0 11px", fontSize: 12.5 }}
