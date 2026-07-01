@@ -565,3 +565,43 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
   smysluplný cíl (ne atrapa). Klik na postup → /postupy, cíl → /cile (stub routy — stejné cíle jako nav;
   nahradí je #27/#25b).
 - Lidé přes REST (members API, ne sync) — konzistentní s #18/#30 přístupem.
+
+---
+
+## §21 — Cíle: obrazovka + workspaceVia write-path (#25b)
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P3). Uzavírá modul Cíle (#25 = #25a schema + #25b).
+
+### workspaceVia write-path (apps/api/src/powersync.ts)
+- `TableDef.projectVia` je nově volitelný + přidán `workspaceVia: {kind:'column', col}` pro workspace-scoped
+  tabulky. Handler větví: workspaceVia → membership kontrola přes `memberships` (cílový i současný workspace
+  řádku), `guest` → **403 read-only-host** (konzistentní s #14). TABLES += goals / goal_projects / goal_milestones.
+- Ověřeno: PUT goals jako člen → 200 + řádek s `created_by` atribucí; PUT do cizího prostoru → 403 forbidden.
+- Pozn.: goal_projects.project_id se nekontroluje proti workspace (klient by mohl odkázat cizí projekt id —
+  neleakuje data, jen odkaz; dotáhnout případně s refWorkspaceCols).
+
+### Obrazovka Cíle (route /cile, nahrazen stub)
+- `lib/goals.ts` — VERBATIM port `goalProgress` (completion/ontime/count/project) + `goalStatus`
+  (done/track/risk: pct < elapsed−12/over) + GSTAT barvy; `goalElapsed` = created→due (prototyp měl mock `elapsed`).
+- Taby dle GTABS: personal ws → **Moje**; jinak **Týmové/Projektové/Lidé** (filtr dle `scope`) + počty.
+- Karty 1:1: název + stav badge, valueLabel + pct %, progress bar (barva dle stavu), vlastník avatar,
+  chips propojených projektů, ↻ periodicita, „do D. M.". Progres z **reálných úkolů** (goalTasks =
+  prostor ∩ propojené projekty ∩ scope=person→přiřazené vlastníkovi přes assignments).
+- Builder „Nový cíl": název, scope segmenty, metrika segmenty + **METHELP verbatim**, projekt select
+  (→ goal_projects), cílová úroveň (úkolů/%), vlastník (členové prostoru), termín, opakování → INSERT přes
+  PowerSync (offline-first, ověřeno až do Postgresu).
+- Detail panel: badge + progres + sub („N úkolů v hledáčku · uplynulo E % času") + **pace text** (verbatim:
+  V tempu/Zaostává…/Po termínu/Cíl splněn) + meta (vlastník/projekt/termín/opakování) + **milníky**
+  (add/toggle → goal_milestones, ověřeno DB) + Smazat cíl (kaskáda milestones+links+goal).
+- Ověřeno živě: builder → cíl „Uzavřít 10 zakázek v Q3" (count 10, Obchod, 30.9.) → Postgres (všechna pole
+  + 1 goal_projects link) → karta „1 / 10 hotových · 10 % · Na cestě" z reálných úkolů → detail (screenshot)
+  → milník add+toggle → Postgres done=t.
+
+### Rozhodnutí / odchylky
+- **fKeyword/fPerson filtry z prototypu vypuštěny** — nejsou ve schématu #25a (extrakce je vyhodnotila jako
+  prototypový mock). Osoba u scope=person = `owner_id` (prototyp: fPerson fallback na owner). Keyword filtr
+  případně aditivně později.
+- **Builder bugfix z ověření:** GoalModal neměl Esc-close → starý mount z jiného prostoru přežil přepnutí
+  a zapsal špatný scope/owner. Přidán Esc handler + owner default po načtení členů. (Demo řádek srovnán.)
+- „period" textové pole prototypu (Q3 2026) → nahrazeno reálným date inputem (due_date v DB), karta ukazuje
+  „do D. M." — období bez sloupce nezavádím.

@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import type { IconName } from "@watson/ui";
 import { AppLayout } from "./layout/AppLayout";
+import { Cile } from "./screens/Cile";
 import { Hledat } from "./screens/Hledat";
 import { Nadchazejici } from "./screens/Nadchazejici";
 import { Nastaveni } from "./screens/Nastaveni";
@@ -46,6 +47,11 @@ const hledatRoute = createRoute({
   path: "/hledat",
   component: Hledat,
 });
+const cileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/cile",
+  component: Cile,
+});
 
 /** Dočasné routy pro nav cíle (nahradí je reálné obrazovky v dalších úkolech). */
 const stub = <P extends string>(path: P, labelKey: string, icon: IconName) =>
@@ -55,7 +61,6 @@ const stub = <P extends string>(path: P, labelKey: string, icon: IconName) =>
     component: () => <Placeholder labelKey={labelKey} icon={icon} />,
   });
 
-const cileStub = stub("/cile", "nav.goals", "cile");
 const reportyStub = stub("/reporty", "nav.reports", "reporty");
 const postupyStub = stub("/postupy", "nav.flows", "postup");
 const oblP1Stub = stub("/oblibene/p1", "nav.priority1", "priorita");
@@ -67,9 +72,9 @@ const routeTree = rootRoute.addChildren([
   nadchRoute,
   schrankaRoute,
   hledatRoute,
+  cileRoute,
   projektyRoute,
   nastaveniRoute,
-  cileStub,
   reportyStub,
   postupyStub,
   oblP1Stub,

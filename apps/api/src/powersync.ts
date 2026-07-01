@@ -82,7 +82,9 @@ interface TableDef {
   /** Sloupec autora — na PUT se vyplní serverovým userId (atribuce, R10). */
   creatorCol?: string;
   /** Jak zjistit project_id pro membership kontrolu (R5). `self` = řádek JE projekt (id). */
-  projectVia: { kind: "column"; col: string } | { kind: "task"; col: string } | { kind: "self" };
+  projectVia?: { kind: "column"; col: string } | { kind: "task"; col: string } | { kind: "self" };
+  /** Workspace-scoped tabulky (cíle): membership kontrola přes memberships.workspace_id. */
+  workspaceVia?: { kind: "column"; col: string };
   /** FK sloupce na řádek (se sloupcem project_id), jehož projekt musí být útočníkův —
    *  brání cross-project referenci (parent_id/section_id/status_id). */
   refProjectCols?: { col: string; table: string }[];
@@ -224,6 +226,38 @@ const TABLES: Record<string, TableDef> = {
     projectVia: { kind: "column", col: "project_id" },
     refProjectCols: [{ col: "task_id", table: "tasks" }],
   },
+  // Cíle — workspace-scoped (membership přes memberships, ne project_members).
+  goals: {
+    columns: {
+      workspace_id: "text",
+      name: "text",
+      scope: "text",
+      metric: "text",
+      target: "int",
+      due_date: "ts",
+      periodic: "text",
+      owner_id: "text",
+    },
+    hasUpdatedAt: true,
+    creatorCol: "created_by",
+    workspaceVia: { kind: "column", col: "workspace_id" },
+  },
+  goal_projects: {
+    columns: { goal_id: "text", project_id: "text", workspace_id: "text" },
+    hasUpdatedAt: false,
+    workspaceVia: { kind: "column", col: "workspace_id" },
+  },
+  goal_milestones: {
+    columns: {
+      goal_id: "text",
+      workspace_id: "text",
+      label: "text",
+      done: "bool",
+      position: "int",
+    },
+    hasUpdatedAt: false,
+    workspaceVia: { kind: "column", col: "workspace_id" },
+  },
 };
 
 type Op = "PUT" | "PATCH" | "DELETE";
@@ -253,9 +287,11 @@ async function projectFromData(
   data: Record<string, unknown>,
   id: string,
 ): Promise<string | null> {
-  if (def.projectVia.kind === "self") return id;
-  const v = (data[def.projectVia.col] as string) ?? null;
-  return def.projectVia.kind === "column" ? v : projectViaTask(db, v);
+  const via = def.projectVia;
+  if (!via) return null;
+  if (via.kind === "self") return id;
+  const v = (data[via.col] as string) ?? null;
+  return via.kind === "column" ? v : projectViaTask(db, v);
 }
 
 /** Současný projekt EXISTUJÍCÍHO řádku z DB. */
@@ -265,17 +301,19 @@ async function projectFromDb(
   def: TableDef,
   id: string,
 ): Promise<string | null> {
-  if (def.projectVia.kind === "self") {
+  const via = def.projectVia;
+  if (!via) return null;
+  if (via.kind === "self") {
     const rows = (await db.execute(
       sql`SELECT id AS v FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
     )) as Rows;
     return (rows[0]?.v as string) ?? null;
   }
   const rows = (await db.execute(
-    sql`SELECT ${sql.raw(def.projectVia.col)} AS v FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
+    sql`SELECT ${sql.raw(via.col)} AS v FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
   )) as Rows;
   const v = (rows[0]?.v as string) ?? null;
-  return def.projectVia.kind === "column" ? v : projectViaTask(db, v);
+  return via.kind === "column" ? v : projectViaTask(db, v);
 }
 
 /** Projekt řádku libovolné tabulky se sloupcem project_id (tasks/sections/statuses). */
@@ -291,6 +329,28 @@ async function isProjectMember(db: Db, projectId: string, userId: string): Promi
     sql`SELECT 1 AS ok FROM project_members WHERE project_id = ${projectId} AND user_id = ${userId} LIMIT 1`,
   )) as Rows;
   return rows.length > 0;
+}
+
+/** Role uživatele v prostoru (memberships) — null = není člen. */
+async function workspaceRole(db: Db, workspaceId: string, userId: string): Promise<string | null> {
+  const rows = (await db.execute(
+    sql`SELECT role FROM memberships WHERE workspace_id = ${workspaceId} AND user_id = ${userId} LIMIT 1`,
+  )) as Rows;
+  return (rows[0]?.role as string) ?? null;
+}
+
+/** Workspace_id existujícího řádku workspace-scoped tabulky (dle workspaceVia sloupce). */
+async function workspaceFromDb(
+  db: Db,
+  table: string,
+  def: TableDef,
+  id: string,
+): Promise<string | null> {
+  if (!def.workspaceVia) return null;
+  const rows = (await db.execute(
+    sql`SELECT ${sql.raw(def.workspaceVia.col)} AS v FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
+  )) as Rows;
+  return (rows[0]?.v as string) ?? null;
 }
 
 /**
@@ -372,6 +432,34 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 
   const data = body.data ?? {};
   const db = getDb();
+
+  // Workspace-scoped tabulky (cíle): membership + role kontrola přes memberships.
+  if (def.workspaceVia) {
+    const wsNeed = new Set<string>();
+    if (body.op === "PUT" || body.op === "PATCH") {
+      const w = (data[def.workspaceVia.col] as string) ?? null;
+      if (w) wsNeed.add(w);
+    }
+    const cur = await workspaceFromDb(db, body.table, def, body.id);
+    if (cur) wsNeed.add(cur);
+    if (!(body.op === "DELETE" && wsNeed.size === 0)) {
+      if (wsNeed.size === 0) return c.json({ error: "forbidden" }, 403);
+      for (const w of wsNeed) {
+        const role = await workspaceRole(db, w, userId);
+        if (!role) return c.json({ error: "forbidden" }, 403);
+        if (role === "guest") return c.json({ error: "read-only-host" }, 403);
+      }
+    }
+    try {
+      await applyWrite(db, body.table, def, body.op, body.id, data, userId);
+    } catch (err) {
+      console.error("[watson-api] write selhal:", err);
+      const code = (err as { code?: string }).code;
+      const deterministic = typeof code === "string" && /^(22|23)\d{3}$/.test(code);
+      return c.json({ error: String(err) }, deterministic ? 400 : 500);
+    }
+    return c.json({ ok: true });
+  }
 
   // R5 — uživatel musí být členem KAŽDÉHO projektu, kterého se řádek dotkne:
   // cílový (z dat), současný (z DB — i u PUT kvůli upsert ON CONFLICT) a projekty FK referencí.
