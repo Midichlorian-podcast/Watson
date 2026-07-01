@@ -1,13 +1,13 @@
 import { useQuery as usePsQuery, useStatus } from "@powersync/react";
-import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { type CSSProperties, useMemo } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { useAddTask } from "../lib/addTask";
-import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
+import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
+import { useWorkspace, useWorkspaces } from "../lib/workspace";
 import { MAIN_NAV, type NavItem } from "./nav";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -99,15 +99,18 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     created_by: string | null;
   }>("SELECT project_id, due_date, priority, created_by FROM tasks WHERE completed_at IS NULL");
 
-  const { data: workspaces } = useQuery({
-    queryKey: ["workspaces"],
-    queryFn: async () => {
-      const r = await fetch(`${API_URL}/api/workspaces`, { credentials: "include" });
-      if (!r.ok) throw new Error("workspaces");
-      return (await r.json()).workspaces as { id: string; name: string; isPersonal: boolean }[];
-    },
-  });
-  const wsName = workspaces?.find((w) => !w.isPersonal)?.name ?? workspaces?.[0]?.name ?? "";
+  const { data: workspaces } = useWorkspaces();
+  const { activeWs, setActiveWs, isCollapsed, toggleCollapse } = useWorkspace();
+  const projectDetail = useProjectDetail();
+  const activeWsName = workspaces?.find((w) => w.id === activeWs)?.name ?? "";
+  const wsName = activeWsName || workspaces?.[0]?.name || "";
+
+  // Otevřené úkoly per projekt (pro počty u projektů v sidebaru).
+  const projOpen = useMemo<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    for (const t of openTasks ?? []) if (t.project_id) map[t.project_id] = (map[t.project_id] ?? 0) + 1;
+    return map;
+  }, [openTasks]);
 
   const counts = useMemo<Record<string, number>>(() => {
     const tasks = openTasks ?? [];
@@ -265,6 +268,128 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
               count={counts["/oblibene/me"]}
               marker={{ borderRadius: "50%", background: "#2a6fdb" }}
             />
+
+            {/* Pracovní prostory — přepínač + projekty (1:1 dle Cloud Design) */}
+            <div
+              className="font-display"
+              style={{
+                fontWeight: 700,
+                fontSize: 10.5,
+                letterSpacing: ".07em",
+                textTransform: "uppercase",
+                color: "var(--w-sidebar-ink-2)",
+                padding: "16px 10px 6px",
+              }}
+            >
+              {t("nav.workspaces")}
+            </div>
+            {(workspaces ?? []).map((ws) => {
+              const wsProjects = projects.filter((p) => p.workspace_id === ws.id);
+              const wsCollapsed = isCollapsed(ws.id);
+              const wsActive = ws.id === activeWs;
+              return (
+                <div key={ws.id}>
+                  <div
+                    className="flex items-center"
+                    style={{
+                      gap: 7,
+                      padding: "7px 8px 6px",
+                      marginTop: 10,
+                      borderRadius: 8,
+                      background: wsActive ? "rgba(255,255,255,.05)" : "transparent",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleCollapse(ws.id)}
+                      aria-label={ws.name}
+                      className="flex"
+                      style={{ color: "var(--w-sidebar-ink-2)" }}
+                    >
+                      <svg
+                        width="9"
+                        height="9"
+                        viewBox="0 0 9 9"
+                        style={{ transform: wsCollapsed ? "none" : "rotate(90deg)", transition: "transform .15s" }}
+                        aria-hidden
+                      >
+                        <path
+                          d="M2 1.5 L6.5 4.5 L2 7.5"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          fill="none"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 3,
+                        flex: "none",
+                        background: ws.color ?? "var(--w-sidebar-ink-2)",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setActiveWs(ws.id)}
+                      className="truncate text-left font-display"
+                      style={{
+                        flex: 1,
+                        fontWeight: 700,
+                        fontSize: 10.5,
+                        letterSpacing: ".05em",
+                        textTransform: "uppercase",
+                        color: wsActive ? "var(--w-sidebar-ink)" : "var(--w-sidebar-ink-2)",
+                      }}
+                    >
+                      {ws.name}
+                    </button>
+                    <span
+                      className="font-mono"
+                      style={{ fontSize: 10.5, color: "var(--w-sidebar-ink-2)", opacity: 0.7 }}
+                    >
+                      {wsProjects.length}
+                    </span>
+                  </div>
+                  {!wsCollapsed &&
+                    wsProjects.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => projectDetail.open(p.id)}
+                        className="flex w-full items-center text-left font-display"
+                        style={{
+                          gap: 11,
+                          padding: "6px 10px 6px 27px",
+                          borderRadius: 9,
+                          color: "var(--w-sidebar-ink-2)",
+                          fontWeight: 600,
+                          fontSize: 13,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 9,
+                            height: 9,
+                            borderRadius: "50%",
+                            flex: "none",
+                            background: p.color ?? "var(--w-sidebar-ink-2)",
+                          }}
+                        />
+                        <span className="truncate" style={{ flex: 1 }}>
+                          {p.name}
+                        </span>
+                        <span className="font-mono" style={{ fontSize: 11, opacity: 0.7 }}>
+                          {projOpen[p.id] ?? 0}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              );
+            })}
           </>
         )}
       </div>

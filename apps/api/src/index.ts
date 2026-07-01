@@ -63,6 +63,7 @@ app.get("/api/workspaces", async (c) => {
       id: workspaces.id,
       name: workspaces.name,
       isPersonal: workspaces.isPersonal,
+      color: workspaces.color,
       role: memberships.role,
     })
     .from(memberships)

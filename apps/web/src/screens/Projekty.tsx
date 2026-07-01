@@ -1,12 +1,11 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { API_URL } from "../lib/api";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
+import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Counts = { open: number; done: number; total: number };
 const ZERO: Counts = { open: 0, done: 0, total: 0 };
@@ -21,15 +20,13 @@ export function Projekty() {
   const projects = useProjects();
   const { open } = useProjectDetail();
 
-  const { data: workspaces } = useQuery({
-    queryKey: ["workspaces"],
-    queryFn: async () => {
-      const r = await fetch(`${API_URL}/api/workspaces`, { credentials: "include" });
-      if (!r.ok) throw new Error("workspaces");
-      return (await r.json()).workspaces as { id: string; name: string; isPersonal: boolean }[];
-    },
-  });
-  const wsName = workspaces?.find((w) => !w.isPersonal)?.name ?? workspaces?.[0]?.name ?? "";
+  const { data: workspaces } = useWorkspaces();
+  const { activeWs } = useWorkspace();
+  const wsName = workspaces?.find((w) => w.id === activeWs)?.name ?? "";
+  const shown = useMemo(
+    () => projects.filter((p) => !activeWs || p.workspace_id === activeWs),
+    [projects, activeWs],
+  );
 
   const { data: taskRows } = usePsQuery<{ project_id: string | null; completed_at: string | null }>(
     "SELECT project_id, completed_at FROM tasks",
@@ -86,7 +83,7 @@ export function Projekty() {
         </button>
       </header>
 
-      {projects.length === 0 ? (
+      {shown.length === 0 ? (
         <p className="mt-6 rounded-xl border border-line border-dashed px-4 py-12 text-center text-ink-3 text-sm">
           {t("projects.empty")}
         </p>
@@ -95,7 +92,7 @@ export function Projekty() {
           className="mt-6 grid gap-4"
           style={{ gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))" }}
         >
-          {projects.map((p) => (
+          {shown.map((p) => (
             <ProjectCard
               key={p.id}
               project={p}

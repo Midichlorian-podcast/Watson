@@ -8,12 +8,14 @@ import { KeyboardProvider } from "../lib/keyboard";
 import { ProjectDetailProvider } from "../lib/projectDetail";
 import { TaskDetailProvider } from "../lib/taskDetail";
 import { WatsonProvider } from "../lib/watson";
+import { WorkspaceProvider } from "../lib/workspace";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   return (
+    <WorkspaceProvider>
     <WatsonProvider>
       <AddTaskProvider>
         <TaskDetailProvider>
@@ -36,5 +38,6 @@ export function AppLayout() {
         </TaskDetailProvider>
       </AddTaskProvider>
     </WatsonProvider>
+    </WorkspaceProvider>
   );
 }

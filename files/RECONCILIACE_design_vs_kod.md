@@ -439,3 +439,32 @@ závisí na **#19** (aktivní workspace → seznam členů prostoru). Odloženo 
 - **Lidé** (kind Člověk) a **Postupy** (kind Postup) jako zdroje: lidé potřebují workspace/členy (#19),
   postupy potřebují chains data v UI (#27). Přibudou s těmi tasky. Ostatní obrazovky (Cíle/Reporty/Postupy/
   Schránka/Hledat) do palety přibudou, až budou mít routes (P3) — teď by vedly na 404.
+
+---
+
+## §16 — Workspaces: aktivní prostor + přepínač + filtr (#19)
+
+**Datum:** 2026-07-01 · autonomní smyčka (fáze P2).
+
+### Postaveno + ověřeno živě
+- `WorkspaceProvider` (lib/workspace.tsx): aktivní prostor v **localStorage** (`watson.activeWs`, per-user/
+  per-browser), default = první neosobní / první; sbalování prostorů (neaktivní default sbalený).
+- `useWorkspaces()` sdílený react-query hook (dřív duplicitní inline fetch v Sidebar i Projekty — sjednoceno).
+- **Sidebar sekce „Pracovní prostory"** 1:1 dle Cloud Design: hlavičky prostorů (chevron toggle + barevná
+  tečka + název UPPERCASE + count), pod aktivním/rozbaleným prostorem projekty (tečka + název + počet
+  otevřených úkolů), klik na projekt → `projectDetail.open`. Aktivní prostor zvýrazněný.
+- **Projekty screen** filtruje karty dle aktivního prostoru (`workspace_id === activeWs`), heading ukazuje
+  název prostoru.
+- API `/api/workspaces` rozšířeno o `color`.
+- Ověřeno: sekce renderuje (Osobní/Můj prostor/Kancelář Praha + counts), klik „Můj prostor" → aktivace +
+  rozbalí Doručené(9)/Obchod(5) + footer „Můj prostor" (screenshot); /projekty ukazuje jen Doručené+Obchod.
+
+### Rozhodnutí / odloženo
+- **Workspaces přes API, ne PowerSync sync** — Sidebar už workspaces fetchoval z API; ponecháno (menší
+  scope, bez sync-config změny). Offline přepínání prostorů by chtělo sync `workspaces` tabulky → odloženo,
+  až bude potřeba (projekty samotné jsou synced s `workspace_id`, takže seznam funguje z cache po prvním fetchi).
+- **workspaceVia write-path** (apps/api/src/powersync.ts) pro workspace-scoped zápisy (goals) **NEIMPLEMENTOVÁN** —
+  žádný konzument zatím (goals obrazovka #25b je P3, bez zápisů). Implementuji s **#25b**, kde se goals reálně
+  zakládají/upravují. (YAGNI — negeneralizuji write-path bez volajícího.)
+- **Zbývající workspace-aware UI** (Tým a role dle aktivního prostoru, Reporty dle prostoru, Cíle tabs
+  personal/team) přijdou s příslušnými obrazovkami (#12 už má členy per-workspace; #35/#25b doplní).
