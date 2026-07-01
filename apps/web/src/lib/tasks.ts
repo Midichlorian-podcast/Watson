@@ -45,3 +45,53 @@ export function dueLabel(dueRaw: string, t: (k: string) => string) {
   const dt = fromISO(d);
   return { label: `${wdShort(d)} ${dt.getDate()}. ${dt.getMonth() + 1}.`, overdue: false };
 }
+
+const hhmm = (dt: Date) => `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+
+/** Deadline vlaječka „do pá 27. 6." (prototyp deadlineLabel, seed ř. 2158). */
+export function deadlineLabel(deadlineRaw: string | null) {
+  if (!deadlineRaw) return undefined;
+  const d = deadlineRaw.slice(0, 10);
+  const dt = fromISO(d);
+  return `do ${wdShort(d)} ${dt.getDate()}. ${dt.getMonth() + 1}.`;
+}
+
+/**
+ * Termín pro ŘÁDEK úkolu (prototyp timeLabel/dueLabel, ř. 2902–2903 + submitTask 2463–2466):
+ * dnes s časem = „09:00–10:30" (konec = start + trvání), jiné dny s časem = „zítra · 13:00",
+ * vícedenní = „N dní", datum v příštím týdnu = „{den} · příští týden".
+ */
+export function rowDue(task: TaskRow, t: (k: string) => string) {
+  const dueRaw = task.due_date;
+  if (!dueRaw) return undefined;
+  const d = dueRaw.slice(0, 10);
+  const tdy = todayISO();
+  const start = task.start_date ? new Date(task.start_date) : null;
+  const time = start ? hhmm(start) : null;
+  const days = task.days ?? 1;
+
+  if (d < tdy) return { label: `${t("today.duePastLower")} · ${wdShort(d)}`, overdue: true };
+  if (days > 1) return { label: `${time ? `${time} · ` : ""}${days} ${t("today.daysUnit")}`, overdue: false };
+  if (d === tdy) {
+    if (start) {
+      const end = new Date(start.getTime() + (task.duration_min ?? 30) * 60_000);
+      return { label: `${hhmm(start)}–${hhmm(end)}`, overdue: false };
+    }
+    return { label: t("today.todayLower"), overdue: false };
+  }
+  const base = dueLabel(dueRaw, t).label;
+  // Datum v příštím kalendářním týdnu → „{den} · příští týden" (prototyp ř. 2180).
+  const now = fromISO(tdy);
+  const nextMonday = new Date(now);
+  nextMonday.setDate(now.getDate() + (((1 - now.getDay() + 7) % 7) || 7));
+  const nextSunday = new Date(nextMonday);
+  nextSunday.setDate(nextMonday.getDate() + 6);
+  const dt = fromISO(d);
+  if (dt >= nextMonday && dt <= nextSunday && d !== todayISO()) {
+    return {
+      label: `${wdShort(d)} · ${t("today.nextWeekLower")}${time ? ` · ${time}` : ""}`,
+      overdue: false,
+    };
+  }
+  return { label: `${base}${time ? ` · ${time}` : ""}`, overdue: false };
+}

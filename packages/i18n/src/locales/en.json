@@ -134,7 +134,11 @@
     "tomorrowLower": "tomorrow",
     "reschedule": "Reschedule",
     "rescheduleOverdue": "Reschedule overdue",
-    "watsonMore": "More →"
+    "watsonMore": "More →",
+    "daysUnit": "days",
+    "nextWeekLower": "next week",
+    "handedOff": "→ Came to you",
+    "assignAllPill": "Each separately"
   },
   "settings": {
     "appearance": "Appearance",

@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Priority } from "@watson/shared";
 import { cn } from "./cn";
 
@@ -10,11 +11,34 @@ export interface TaskCardProps {
   /** Tečka + podřádek projektu. */
   projectName?: string;
   projectColor?: string;
+  /** Barva workspace — čtvereček 6×6 před názvem projektu (prototyp data-wsdot). */
+  wsColor?: string;
+  /** Per-uživatelská barva úkolu (hex) — podbarvení celého řádku (prototyp data-tc). */
+  color?: string;
   due?: { label: string; overdue?: boolean };
+  /** Deadline vlaječka „do pá 27. 6." (červená pilulka). */
+  deadline?: string;
   /** Volitelný status label (Probíhá / Ke kontrole / Hotovo). */
-  status?: string;
-  /** Krok postupu — chip „⛓ X/Y", klik otevře postup. */
-  flow?: { label: string; onClick?: () => void };
+  status?: { label: string; kind: "success" | "muted" };
+  /** Krok postupu — chip „→ {název} ·· 2/5" se stavovými barvami; klik otevře postup. */
+  flow?: { name: string; pos: number; total: number; state: string; onClick?: () => void };
+  /** Štafeta právě předána mně — chip „→ Přišlo na tebe". */
+  handedOff?: boolean;
+  handedOffLabel?: string;
+  /** Checklist ⚏ N/M v podřádku. */
+  checklist?: { done: number; total: number };
+  /** Opakovaný úkol — ↻ v podřádku. */
+  recurring?: boolean;
+  /** Připomínka — zvoneček v podřádku. */
+  reminder?: boolean;
+  /** Počet komentářů v podřádku. */
+  comments?: number;
+  /** Režim „každý zvlášť" — pilulka `{label} · N/M` (prototyp ř. 437). */
+  assignAll?: { done: number; total: number; label: string };
+  /** Avatary přiřazených (max 3; první brass při shared_all). */
+  avatars?: { initials: string; brass?: boolean }[];
+  /** Spící krok postupu — šrafovaný řádek (prototyp data-dormant). */
+  dormant?: boolean;
   done?: boolean;
   onToggle?: () => void;
   onOpen?: () => void;
@@ -27,32 +51,61 @@ const PRI: Record<Priority, string> = {
   4: "var(--w-p4)",
 };
 
+/** Světlý tint řádku z hex barvy (prototyp má fixní pastely; hex → 12% mix s kartou). */
+const tint = (hex: string) => `color-mix(in srgb, ${hex} 12%, var(--w-card))`;
+
 /**
- * Řádek úkolu — 1:1 dle Cloud Design: plochý řádek s `border-bottom`, levý okraj = priorita
- * (inset box-shadow 3px), tečka + název projektu v podřádku, termín jako mono text (po termínu =
- * červená), NEUTRÁLNÍ prioritní odznak P1–P4. Hotový = opacity .5 + přeškrtnutý název, bez okraje.
+ * Řádek úkolu — 1:1 dle prototypu ř. 415–443: checkbox (hover brass), tečka projektu
+ * (grayscale u done), název + podřádek (ws tečka·projekt, chip postupu, „Přišlo na tebe",
+ * checklist, ↻, zvoneček, komentáře), vpravo termín (mono) → deadline vlaječka → P-odznak
+ * → status pilulka → „Každý zvlášť · N/M"/avatary. Levý okraj = priorita (inset 3px).
  */
 export function TaskCard({
   name,
   priority,
   projectName,
   projectColor,
+  wsColor,
+  color,
   due,
+  deadline,
   status,
   flow,
+  handedOff,
+  handedOffLabel,
+  checklist,
+  recurring,
+  reminder,
+  comments,
+  assignAll,
+  avatars,
+  dormant,
   done,
   onToggle,
   onOpen,
 }: TaskCardProps) {
+  const rowBg: CSSProperties["background"] = dormant
+    ? "repeating-linear-gradient(135deg, transparent, transparent 7px, var(--w-panel-2) 7px, var(--w-panel-2) 8px)"
+    : !done && color
+      ? tint(color)
+      : undefined;
+  const hasSub =
+    !!projectName || !!flow || handedOff || !!checklist || recurring || reminder || !!comments;
+
   return (
     <div
       onClick={onOpen}
-      className="flex cursor-pointer items-center gap-3 border-line border-b hover:bg-panel-2"
+      className={cn(
+        "flex cursor-pointer items-center border-line border-b",
+        !rowBg && "hover:bg-panel-2",
+      )}
       style={{
+        gap: 12,
         padding: "var(--w-row-py, 10px) 4px var(--w-row-py, 10px) 11px",
         borderRadius: "0 6px 6px 0",
-        boxShadow: done ? undefined : `inset 3px 0 0 ${PRI[priority]}`,
-        opacity: done ? 0.5 : 1,
+        boxShadow: done || dormant ? undefined : `inset 3px 0 0 ${PRI[priority]}`,
+        opacity: done ? 0.5 : dormant ? 0.6 : 1,
+        background: rowBg,
       }}
     >
       {/* zaškrtávátko */}
@@ -63,7 +116,7 @@ export function TaskCard({
           onToggle?.();
         }}
         aria-label={done ? "Označit jako nehotové" : "Dokončit"}
-        className="grid shrink-0 place-items-center rounded-full"
+        className={cn("grid shrink-0 place-items-center rounded-full", !done && "hover:border-brass")}
         style={{
           width: 18,
           height: 18,
@@ -87,7 +140,13 @@ export function TaskCard({
       {/* tečka projektu */}
       <span
         className="w-projdot shrink-0 rounded-full"
-        style={{ width: 8, height: 8, background: projectColor ?? "var(--w-ink-3)" }}
+        style={{
+          width: 8,
+          height: 8,
+          background: projectColor ?? "var(--w-ink-3)",
+          filter: done ? "grayscale(1)" : undefined,
+          opacity: done ? 0.4 : 1,
+        }}
       />
 
       {/* název + podřádek */}
@@ -101,40 +160,142 @@ export function TaskCard({
         >
           {name}
         </div>
-        {projectName && (
-          <div className="mt-0.5 font-body text-ink-3" style={{ fontSize: 11.5 }}>
-            {projectName}
+        {hasSub && (
+          <div className="flex items-center" style={{ gap: 10, marginTop: 2 }}>
+            {projectName && (
+              <span className="inline-flex items-center" style={{ gap: 6 }}>
+                {wsColor && (
+                  <span
+                    className="shrink-0"
+                    style={{ width: 6, height: 6, borderRadius: 2, background: wsColor }}
+                  />
+                )}
+                <span className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
+                  {projectName}
+                </span>
+              </span>
+            )}
+            {flow && <FlowChip flow={flow} />}
+            {handedOff && (
+              <span
+                className="inline-flex shrink-0 items-center font-display font-semibold"
+                style={{
+                  gap: 4,
+                  fontSize: 10.5,
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  background: "var(--w-brass-soft)",
+                  color: "var(--w-brass-text)",
+                }}
+              >
+                {handedOffLabel ?? "→ Přišlo na tebe"}
+              </span>
+            )}
+            {checklist && (
+              <span
+                className="inline-flex items-center font-mono text-ink-3"
+                style={{ gap: 3, fontSize: 11 }}
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
+                  <path
+                    d="M2.5 3 H9.5 M2.5 6 H9.5 M2.5 9 H6.5"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                {checklist.done}/{checklist.total}
+              </span>
+            )}
+            {recurring && (
+              <span className="font-mono text-ink-3" style={{ fontSize: 12 }}>
+                ↻
+              </span>
+            )}
+            {reminder && (
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 12 12"
+                fill="none"
+                aria-hidden
+                style={{ color: "var(--w-ink-3)", flexShrink: 0 }}
+              >
+                <path d="M3 9 V5.6 a3 3 0 0 1 6 0 V9" stroke="currentColor" strokeWidth="1.2" />
+                <line
+                  x1="2.2"
+                  y1="9"
+                  x2="9.8"
+                  y2="9"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
+            {!!comments && (
+              <span
+                className="inline-flex items-center font-mono text-ink-3"
+                style={{ gap: 3, fontSize: 11 }}
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
+                  <rect
+                    x="1.3"
+                    y="2"
+                    width="9.4"
+                    height="6.4"
+                    rx="2"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                  />
+                  <path
+                    d="M4 8.4 L4 10 L6 8.4"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    fill="none"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                {comments}
+              </span>
+            )}
           </div>
         )}
       </div>
 
-      {/* krok postupu (⛓ X/Y) */}
-      {flow && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            flow.onClick?.();
-          }}
-          className="shrink-0 rounded-full font-mono"
-          style={{
-            fontSize: 10.5,
-            padding: "2px 8px",
-            background: "var(--w-brass-soft)",
-            color: "var(--w-brass-text)",
-          }}
-        >
-          ⛓ {flow.label}
-        </button>
-      )}
-
-      {/* termín */}
+      {/* termín (mono) */}
       {due && (
         <span
           className="shrink-0 font-mono"
           style={{ fontSize: 12, color: due.overdue ? "var(--w-overdue)" : "var(--w-ink-2)" }}
         >
           {due.label}
+        </span>
+      )}
+
+      {/* deadline vlaječka */}
+      {deadline && (
+        <span
+          className="inline-flex shrink-0 items-center font-mono"
+          style={{
+            gap: 3,
+            fontSize: 11,
+            color: "var(--w-overdue)",
+            background: "var(--w-overdue-soft)",
+            padding: "2px 7px",
+            borderRadius: 999,
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+            <path
+              d="M3 1.5 V10.5 M3 2 H9 L7.4 4 L9 6 H3"
+              stroke="currentColor"
+              strokeWidth="1.2"
+              fill="none"
+              strokeLinejoin="round"
+            />
+          </svg>
+          {deadline}
         </span>
       )}
 
@@ -155,25 +316,140 @@ export function TaskCard({
       </span>
 
       {/* status (volitelný) */}
-      {status && <StatusPill status={status} />}
+      {status && (
+        <span
+          className="shrink-0 font-display font-semibold"
+          style={{
+            fontSize: 11,
+            padding: "3px 9px",
+            borderRadius: 999,
+            background: status.kind === "success" ? "var(--w-success-soft)" : "var(--w-panel-2)",
+            color: status.kind === "success" ? "var(--w-success-ink)" : "var(--w-ink-2)",
+          }}
+        >
+          {status.label}
+        </span>
+      )}
+
+      {/* „Každý zvlášť · N/M" + avatary / jen avatary */}
+      {assignAll && (
+        <span
+          className="shrink-0 font-display font-semibold"
+          style={{
+            fontSize: 11,
+            padding: "3px 9px",
+            borderRadius: 999,
+            background: "var(--w-panel-2)",
+            color: "var(--w-ink-2)",
+          }}
+        >
+          {assignAll.label} · <span className="font-mono">{assignAll.done}/{assignAll.total}</span>
+        </span>
+      )}
+      {avatars && avatars.length > 0 && (
+        <span className="inline-flex shrink-0 items-center">
+          {avatars.map((a, i) => (
+            <span
+              key={`${a.initials}-${i}`}
+              className="flex items-center justify-center rounded-full font-display font-semibold"
+              style={{
+                width: 22,
+                height: 22,
+                color: "#fff",
+                fontSize: 10,
+                background: a.brass ? "var(--w-brass)" : "var(--w-navy)",
+                boxShadow: "0 0 0 2px var(--w-card)",
+                marginLeft: i > 0 ? -6 : 0,
+              }}
+            >
+              {a.initials}
+            </span>
+          ))}
+        </span>
+      )}
     </div>
   );
 }
 
-function StatusPill({ status }: { status: string }) {
-  const success = status === "Hotovo" || status === "Probíhá";
+/** Chip postupu — „→ {název} ·· 2/5" se stavovými barvami (prototyp ř. 423 + CSS 121–123). */
+function FlowChip({
+  flow,
+}: {
+  flow: NonNullable<TaskCardProps["flow"]>;
+}) {
+  const stateStyle: CSSProperties =
+    flow.state === "active"
+      ? {
+          background: "var(--w-brass-soft)",
+          border: "1px solid var(--w-brass)",
+          color: "var(--w-brass-text)",
+        }
+      : flow.state === "done"
+        ? {
+            background: "var(--w-success-soft)",
+            border: "1px solid transparent",
+            color: "var(--w-success-ink)",
+          }
+        : {
+            background: "var(--w-panel-2)",
+            border: "1px solid var(--w-line)",
+            color: "var(--w-ink-3)",
+            opacity: 0.85,
+          };
   return (
-    <span
-      className="shrink-0 font-display font-semibold"
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        flow.onClick?.();
+      }}
+      title={`${flow.name} · krok ${flow.pos}/${flow.total}`}
+      className="inline-flex max-w-56 shrink-0 items-center font-display font-semibold"
       style={{
-        fontSize: 11,
-        padding: "3px 9px",
+        gap: 5,
+        fontSize: 10.5,
+        padding: "2px 8px",
         borderRadius: 999,
-        background: success ? "var(--w-success-soft)" : "var(--w-panel-2)",
-        color: success ? "var(--w-success-ink)" : "var(--w-ink-2)",
+        cursor: "pointer",
+        ...stateStyle,
       }}
     >
-      {status}
-    </span>
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden style={{ flexShrink: 0 }}>
+        <path
+          d="M1.5 6 H8 M5.5 3 L8.5 6 L5.5 9"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className="truncate">{flow.name}</span>
+      <span className="inline-flex items-center" style={{ gap: 3 }}>
+        {Array.from({ length: Math.min(flow.total, 8) }, (_, i) => {
+          const idx = i + 1;
+          const fill =
+            idx < flow.pos
+              ? "var(--w-ink-3)"
+              : idx === flow.pos
+                ? flow.state === "done"
+                  ? "var(--w-ink-3)"
+                  : "var(--w-brass)"
+                : "transparent";
+          return (
+            <span
+              key={idx}
+              className="shrink-0 rounded-full"
+              style={{
+                width: 5,
+                height: 5,
+                background: fill,
+                boxShadow: idx > flow.pos ? "inset 0 0 0 1px var(--w-line)" : "none",
+              }}
+            />
+          );
+        })}
+      </span>
+      {flow.pos}/{flow.total}
+    </button>
   );
 }

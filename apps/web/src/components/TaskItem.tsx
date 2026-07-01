@@ -1,28 +1,44 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { TaskCard } from "@watson/ui";
+import { useSession } from "../lib/auth-client";
 import type { FlowStepInfo } from "../lib/flowSteps";
 import type { TaskRow } from "../lib/powersync/AppSchema";
+import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
-import { dueLabel, toggleTask } from "../lib/tasks";
+import { deadlineLabel, rowDue, toggleTask } from "../lib/tasks";
 
 type Pri = 1 | 2 | 3 | 4;
 export type TaskProject = { name: string | null; color: string | null };
 
-/** Sdílená položka seznamu úkolů (TaskCard z řádku PowerSync). Klik → detail panel. */
+/**
+ * Sdílená položka seznamu úkolů — plná anatomie řádku dle prototypu: meta ikony
+ * (checklist/komentáře/zvonek/↻), chip postupu, deadline vlaječka, status pilulka,
+ * avatary/„Každý zvlášť", barva řádku. Klik → detail panel.
+ */
 export function TaskItem({
   task,
   project,
+  wsColor,
   flow,
 }: {
   task: TaskRow;
   project?: TaskProject;
-  /** Krok postupu (⛓ chip, klik → postup). */
+  /** Barva workspace (čtvereček před názvem projektu). */
+  wsColor?: string;
+  /** Krok postupu (chip, klik → postup). */
   flow?: FlowStepInfo;
 }) {
   const { t } = useTranslation();
   const { open } = useTaskDetail();
+  const { metaOf } = useRowMeta();
+  const { data: session } = useSession();
   const navigate = useNavigate();
+  const meta = metaOf(task);
+  const myId = session?.user?.id;
+  // „→ Přišlo na tebe" — aktivní krok štafety přiřazený mně (prototyp handedOff).
+  const handedOff =
+    flow?.state === "active" && !!myId && meta.assigneeIds.includes(myId) && !task.completed_at;
   return (
     <li>
       <TaskCard
@@ -30,15 +46,33 @@ export function TaskItem({
         priority={(task.priority ?? 4) as Pri}
         projectName={project?.name ?? undefined}
         projectColor={project?.color ?? undefined}
-        due={task.due_date ? dueLabel(task.due_date, t) : undefined}
+        wsColor={wsColor}
+        color={task.color ?? undefined}
+        due={rowDue(task, t)}
+        deadline={deadlineLabel(task.deadline)}
+        status={meta.status}
         flow={
           flow
             ? {
-                label: `${flow.pos}/${flow.total}`,
+                name: flow.name,
+                pos: flow.pos,
+                total: flow.total,
+                state: flow.state,
                 onClick: () => void navigate({ to: "/postupy", search: { postup: flow.chainId } }),
               }
             : undefined
         }
+        handedOff={handedOff}
+        handedOffLabel={t("today.handedOff")}
+        checklist={meta.checklist}
+        recurring={Boolean(task.recurrence)}
+        reminder={meta.reminder}
+        comments={meta.comments}
+        assignAll={
+          meta.assignAll ? { ...meta.assignAll, label: t("today.assignAllPill") } : undefined
+        }
+        avatars={meta.avatars}
+        dormant={flow?.state === "dormant" || flow?.state === "waiting"}
         done={Boolean(task.completed_at)}
         onToggle={() => void toggleTask(task)}
         onOpen={() => open(task.id)}

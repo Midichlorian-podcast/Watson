@@ -2,8 +2,9 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
-import { Icon, TaskCard } from "@watson/ui";
+import { Icon } from "@watson/ui";
 import { QuickAdd } from "../components/QuickAdd";
+import { TaskItem } from "../components/TaskItem";
 import {
   DEFAULT_TOOLBAR,
   TasksToolbar,
@@ -16,11 +17,8 @@ import { useFlowSteps } from "../lib/flowSteps";
 import type { ChainRow, ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
-import { useTaskDetail } from "../lib/taskDetail";
-import { dueLabel, toggleTask } from "../lib/tasks";
 import { useWatson } from "../lib/watson";
 
-type Pri = 1 | 2 | 3 | 4;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const dayOf = (x: TaskRow) => (x.due_date ? x.due_date.slice(0, 10) : null);
 
@@ -31,7 +29,6 @@ const dayOf = (x: TaskRow) => (x.due_date ? x.due_date.slice(0, 10) : null);
 export function Today() {
   const { t, i18n } = useTranslation();
   const { data: session } = useSession();
-  const { open } = useTaskDetail();
   const { toggleWatson } = useWatson();
   const [openDone, setOpenDone] = useState(false);
 
@@ -55,7 +52,12 @@ export function Today() {
   const g = useMemo(() => {
     const tdy = todayISO();
     const all = tasks ?? [];
-    const opn = sortTasks(filterTasks(all.filter((x) => !x.completed_at), tb), tb);
+    // Spící kroky postupů se v Dnes nezobrazují (README ř. 73).
+    const awake = all.filter((x) => {
+      const fs = flowSteps.get(x.id);
+      return !(fs && (fs.state === "dormant" || fs.state === "waiting"));
+    });
+    const opn = sortTasks(filterTasks(awake.filter((x) => !x.completed_at), tb), tb);
     return {
       overdue: opn.filter((x) => {
         const d = dayOf(x);
@@ -67,7 +69,7 @@ export function Today() {
       }),
       done: all.filter((x) => x.completed_at),
     };
-  }, [tasks, tb]);
+  }, [tasks, tb, flowSteps]);
 
   /** „Tvůj další krok" — aktivní krok postupu přiřazený mně (prototyp myFlowSteps, ř. 3156). */
   const myNextStep = useMemo(() => {
@@ -82,10 +84,6 @@ export function Today() {
     }
     return null;
   }, [tasks, myAssignments, flowSteps, chains]);
-
-  async function toggle(task: TaskRow) {
-    await toggleTask(task);
-  }
 
   async function rescheduleOverdue() {
     const now = new Date().toISOString();
@@ -112,28 +110,12 @@ export function Today() {
   const card = (task: TaskRow) => {
     const p = task.project_id ? projMap.get(task.project_id) : undefined;
     return (
-      <li key={task.id}>
-        <TaskCard
-          name={task.name ?? ""}
-          priority={(task.priority ?? 4) as Pri}
-          projectName={p?.name ?? undefined}
-          projectColor={p?.color ?? undefined}
-          due={task.due_date ? dueLabel(task.due_date, t) : undefined}
-          flow={(() => {
-            const fs = flowSteps.get(task.id);
-            return fs
-              ? {
-                  label: `${fs.pos}/${fs.total}`,
-                  onClick: () =>
-                    void navigate({ to: "/postupy", search: { postup: fs.chainId } }),
-                }
-              : undefined;
-          })()}
-          done={Boolean(task.completed_at)}
-          onToggle={() => toggle(task)}
-          onOpen={() => open(task.id)}
-        />
-      </li>
+      <TaskItem
+        key={task.id}
+        task={task}
+        project={p ? { name: p.name, color: p.color } : undefined}
+        flow={flowSteps.get(task.id)}
+      />
     );
   };
 

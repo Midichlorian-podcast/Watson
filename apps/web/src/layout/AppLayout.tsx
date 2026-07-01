@@ -6,6 +6,7 @@ import { WriteRejectedToast } from "../components/WriteRejectedToast";
 import { AddTaskProvider } from "../lib/addTask";
 import { KeyboardProvider } from "../lib/keyboard";
 import { ProjectDetailProvider } from "../lib/projectDetail";
+import { RowMetaProvider } from "../lib/rowMeta";
 import { TaskDetailProvider } from "../lib/taskDetail";
 import { applyTweaks } from "../lib/tweaks";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -21,6 +22,7 @@ export function AppLayout() {
   useEffect(applyTweaks, []);
   return (
     <WorkspaceProvider>
+    <RowMetaProvider>
     <WatsonProvider>
       <AddTaskProvider>
         <TaskDetailProvider>
@@ -49,6 +51,7 @@ export function AppLayout() {
         </TaskDetailProvider>
       </AddTaskProvider>
     </WatsonProvider>
+    </RowMetaProvider>
     </WorkspaceProvider>
   );
 }

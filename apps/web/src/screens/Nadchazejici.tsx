@@ -35,6 +35,20 @@ function fmtDate(d: string) {
   });
 }
 
+/** Hlavička skupiny dle prototypu ř. 409–411: 13px bold ink + mono count (bez uppercase). */
+function GroupHead({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="flex items-center" style={{ gap: 10, margin: "18px 0 2px", padding: "0 4px" }}>
+      <span className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
+        {label}
+      </span>
+      <span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
+        {count}
+      </span>
+    </div>
+  );
+}
+
 /** Nadcházející — úkoly s termínem po dnech (horizont ~16 dní) + projekce výskytů opakování (R4). */
 export function Nadchazejici() {
   const { t } = useTranslation();
@@ -111,28 +125,32 @@ export function Nadchazejici() {
       )}
 
       {view.overdue.length > 0 && (
-        <section className="mb-6">
-          <h2 className="font-display text-xs font-bold uppercase tracking-[0.18em] text-overdue">
-            {t("today.overdue")}{" "}
-            <span className="ml-1 font-mono text-ink-3">{view.overdue.length}</span>
-          </h2>
-          <ul className="mt-3 flex flex-col gap-2">
+        <section>
+          <GroupHead label={t("today.overdue")} count={view.overdue.length} />
+          <ul>
             {view.overdue.map((tk) => (
-              <TaskItem key={tk.id} task={tk} flow={flowSteps.get(tk.id)} />
+              <TaskItem
+                key={tk.id}
+                task={tk}
+                project={tk.project_id ? projMap.get(tk.project_id) : undefined}
+                flow={flowSteps.get(tk.id)}
+              />
             ))}
           </ul>
         </section>
       )}
 
       {view.days.map(({ d, list, projs }) => (
-        <section key={d} className="mb-6">
-          <h2 className="font-display text-xs font-bold uppercase tracking-[0.18em] text-brass-text">
-            {view.label(d)}{" "}
-            <span className="ml-1 font-mono text-ink-3">{list.length + projs.length}</span>
-          </h2>
-          <ul className="mt-3 flex flex-col gap-2">
+        <section key={d}>
+          <GroupHead label={view.label(d)} count={list.length + projs.length} />
+          <ul>
             {list.map((tk) => (
-              <TaskItem key={tk.id} task={tk} flow={flowSteps.get(tk.id)} />
+              <TaskItem
+                key={tk.id}
+                task={tk}
+                project={tk.project_id ? projMap.get(tk.project_id) : undefined}
+                flow={flowSteps.get(tk.id)}
+              />
             ))}
             {projs.map((o) => (
               <li

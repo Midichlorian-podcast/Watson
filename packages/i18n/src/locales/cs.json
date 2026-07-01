@@ -134,7 +134,11 @@
     "tomorrowLower": "zítra",
     "reschedule": "Přeplánovat",
     "rescheduleOverdue": "Přeplánovat zpožděné",
-    "watsonMore": "Více →"
+    "watsonMore": "Více →",
+    "daysUnit": "dní",
+    "nextWeekLower": "příští týden",
+    "handedOff": "→ Přišlo na tebe",
+    "assignAllPill": "Každý zvlášť"
   },
   "settings": {
     "appearance": "Vzhled",
