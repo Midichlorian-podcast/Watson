@@ -57,3 +57,6 @@ body {
 
 /* Pop-in animace modalů/popoverů (VERBATIM prototyp ř. 44). */
 @keyframes wPop { from { transform: scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Slide-in detail panelu (VERBATIM prototyp ř. 43). */
+@keyframes wSlide { from { transform: translateX(26px); opacity: 0; } to { transform: none; opacity: 1; } }

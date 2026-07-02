@@ -183,6 +183,17 @@ const TABLES: Record<string, TableDef> = {
     creatorCol: "author_id",
     projectVia: { kind: "task", col: "task_id" },
   },
+  task_occurrence_overrides: {
+    columns: {
+      task_id: "text",
+      project_id: "text",
+      occ_date: "text",
+      done: "bool",
+      skipped: "bool",
+    },
+    hasUpdatedAt: false,
+    projectVia: { kind: "task", col: "task_id" },
+  },
   reminders: {
     columns: {
       task_id: "text",

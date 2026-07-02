@@ -744,6 +744,7 @@ export function AddTaskModal({
   return (
     <div
       onClick={onClose}
+      data-esc-layer
       className="fixed inset-0 z-50 flex justify-center"
       style={{ background: "rgba(10,14,20,.42)", alignItems: "flex-start", paddingTop: "12vh" }}
     >

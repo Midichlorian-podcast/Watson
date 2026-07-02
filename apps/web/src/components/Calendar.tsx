@@ -1,3 +1,4 @@
+import { useQuery as usePsQuery } from "@powersync/react";
 import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
@@ -239,6 +240,22 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
     return { days: [], rangeLabel: label, monthBase: base };
   }, [mode, cur]);
 
+  // Per-výskyt výjimky (R4): skipped výskyty se nekreslí, done se propíše.
+  const { data: ovr } = usePsQuery<{
+    task_id: string | null;
+    occ_date: string | null;
+    done: number | null;
+    skipped: number | null;
+  }>("SELECT task_id, occ_date, done, skipped FROM task_occurrence_overrides");
+  const ovrMap = useMemo(() => {
+    const m = new Map<string, { done: boolean; skipped: boolean }>();
+    for (const o of ovr ?? []) {
+      if (o.task_id && o.occ_date)
+        m.set(`${o.task_id}@${o.occ_date}`, { done: !!o.done, skipped: !!o.skipped });
+    }
+    return m;
+  }, [ovr]);
+
   /** Úkoly viditelného rozsahu + virtuální výskyty opakování (port calTasks, ř. 2633). */
   const calTasks = useMemo(() => {
     let fromI: string;
@@ -257,17 +274,20 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
       if (!kind || !base || tk.completed_at) continue;
       for (const od of expandOccurrences({ baseISO: base, kind, fromISO: fromI, toISO: toI, cap: 62 })) {
         if (od === base) continue;
+        const vid = occId(tk.id, od);
+        const ex = ovrMap.get(vid);
+        if (ex?.skipped) continue;
         out.push({
           ...tk,
-          id: occId(tk.id, od),
+          id: vid,
           due_date: od,
           start_date: tk.start_date ? `${od}T${tk.start_date.slice(11)}` : null,
-          completed_at: null,
+          completed_at: ex?.done ? new Date().toISOString() : null,
         });
       }
     }
     return out;
-  }, [tasks, mode, days, monthBase]);
+  }, [tasks, mode, days, monthBase, ovrMap]);
 
   // ── zkratky ←/→ / d / 1-3 (guard na otevřený detail — prototyp ř. 2228) ────
   const { openId } = useTaskDetail();

@@ -88,6 +88,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         style={{ background: "rgba(10,14,20,.5)", zIndex: 72 }}
       />
       <div
+        data-esc-layer
         className="pointer-events-none fixed inset-0 flex items-start justify-center"
         style={{ zIndex: 73, paddingTop: "11vh" }}
       >

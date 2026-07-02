@@ -64,6 +64,10 @@ export function Ukoly() {
 
   // ── Seznamová klávesová navigace (kbSel — port ř. 2263-2276) ────────────────
   const navIds = useMemo(() => shown.map((tk) => tk.id), [shown]);
+  const { setNavIds } = useTaskDetail();
+  useEffect(() => {
+    setNavIds(navIds);
+  }, [navIds, setNavIds]);
   const navRef = useRef({ navIds, kbSel, shown });
   navRef.current = { navIds, kbSel, shown };
   useEffect(() => {

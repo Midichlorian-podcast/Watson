@@ -57,6 +57,7 @@ export function Cheatsheet({ onClose }: { onClose: () => void }) {
         style={{ background: "rgba(10,14,20,.5)", zIndex: 70 }}
       />
       <div
+        data-esc-layer
         className="pointer-events-none fixed inset-0 flex items-center justify-center"
         style={{ zIndex: 71, padding: 24 }}
       >

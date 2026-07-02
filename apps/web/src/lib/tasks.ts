@@ -1,7 +1,9 @@
 import i18n from "@watson/i18n";
 import { advanceChainForTask } from "./chainAdvance";
+import { expandOccurrences, parseOccId, recurrenceKind } from "./occurrences";
 import type { TaskRow } from "./powersync/AppSchema";
 import { powerSync } from "./powersync/db";
+import { showToast } from "./toast";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 export const todayISO = () => {
@@ -12,15 +14,97 @@ export const todayISO = () => {
 /** Den termínu úkolu (YYYY-MM-DD) nebo null. */
 export const dayOf = (x: TaskRow) => (x.due_date ? x.due_date.slice(0, 10) : null);
 
-/** Provázané zaškrtnutí ↔ stav „Hotovo" (R9), offline-first zápis. Kroky postupů → advance. */
+/** Upsert per-výskyt výjimky (exceptions prototypu) — done/skip jednoho výskytu. */
+export async function setOccurrenceOverride(
+  taskId: string,
+  projectId: string | null,
+  iso: string,
+  patch: { done?: boolean; skipped?: boolean },
+) {
+  const rows = await powerSync.getAll<{ id: string; done: number | null; skipped: number | null }>(
+    "SELECT id, done, skipped FROM task_occurrence_overrides WHERE task_id = ? AND occ_date = ? LIMIT 1",
+    [taskId, iso],
+  );
+  const ex = rows[0];
+  if (ex) {
+    await powerSync.execute(
+      "UPDATE task_occurrence_overrides SET done = ?, skipped = ? WHERE id = ?",
+      [patch.done ?? !!ex.done ? 1 : 0, patch.skipped ?? !!ex.skipped ? 1 : 0, ex.id],
+    );
+  } else {
+    await powerSync.execute(
+      `INSERT INTO task_occurrence_overrides (id, task_id, project_id, occ_date, done, skipped, created_at)
+       VALUES (uuid(), ?, ?, ?, ?, ?, ?)`,
+      [taskId, projectId, iso, patch.done ? 1 : 0, patch.skipped ? 1 : 0, new Date().toISOString()],
+    );
+  }
+}
+
+/** Lidský label výskytu „čt 2. 7." (prototyp _occLabel). */
+export const occLabel = (iso: string) => {
+  const d = iso.slice(0, 10);
+  return `${wdShort(d)} ${+d.slice(8, 10)}. ${+d.slice(5, 7)}.`;
+};
+
+/**
+ * Provázané zaškrtnutí ↔ stav „Hotovo" (R9), offline-first zápis. Kroky postupů → advance.
+ * Virtuální výskyt (`id@ISO`) → jen per-výskyt výjimka. Opakovaný base úkol → posun řady
+ * na další výskyt (prototyp toggleDone, ř. 2482) s respektem ke konci opakování.
+ */
 export async function toggleTask(task: TaskRow) {
+  // Výskyt řady → přepnout done výjimky, řadu nechat být.
+  const occ = parseOccId(task.id);
+  if (occ) {
+    const nowDone = !task.completed_at;
+    await setOccurrenceOverride(occ.taskId, task.project_id, occ.iso, { done: nowDone });
+    return;
+  }
   const nowDone = !task.completed_at;
+  const kind = recurrenceKind(task.recurrence_rule);
+  const due = task.due_date?.slice(0, 10);
+  if (nowDone && kind && due && !task.parent_id) {
+    // Konec opakování z rule JSON (endKind/until/count + doneCount).
+    let rule: Record<string, unknown> = {};
+    try {
+      rule = JSON.parse(task.recurrence_rule ?? "{}") as Record<string, unknown>;
+    } catch {
+      /* ponech prázdné */
+    }
+    const doneCount = (typeof rule.doneCount === "number" ? rule.doneCount : 0) + 1;
+    const endKind = typeof rule.endKind === "string" ? rule.endKind : "never";
+    const reachedCount =
+      endKind === "count" && typeof rule.count === "number" && doneCount >= rule.count;
+    const [next] = expandOccurrences({
+      baseISO: due,
+      kind,
+      fromISO: isoPlus(due, 1),
+      toISO: isoPlus(due, 800),
+      cap: 1,
+    });
+    const pastUntil =
+      endKind === "until" && typeof rule.until === "string" && next && next > rule.until;
+    if (next && !reachedCount && !pastUntil) {
+      const nextStart = task.start_date ? `${next}T${task.start_date.slice(11)}` : null;
+      await powerSync.execute(
+        "UPDATE tasks SET due_date = ?, start_date = ?, recurrence_rule = ? WHERE id = ?",
+        [next, nextStart, JSON.stringify({ ...rule, doneCount }), task.id],
+      );
+      showToast(`${i18n.t("detail.movedTo")} ${occLabel(next)}`);
+      return;
+    }
+  }
   await powerSync.execute("UPDATE tasks SET completed_at = ? WHERE id = ?", [
     nowDone ? new Date().toISOString() : null,
     task.id,
   ]);
   await advanceChainForTask(task.id, nowDone);
 }
+
+const isoPlus = (iso: string, n: number) => {
+  const d = fromISO(iso);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
 
 const fromISO = (d: string) => {
   const [y, m, day] = d.split("-").map(Number);

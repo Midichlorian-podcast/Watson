@@ -1,7 +1,6 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import i18n, { useTranslation } from "@watson/i18n";
-import { Icon } from "@watson/ui";
 import { Board } from "../components/Board";
 import { Calendar } from "../components/Calendar";
 import { TaskItem } from "../components/TaskItem";
@@ -17,6 +16,7 @@ import { useFlowSteps } from "../lib/flowSteps";
 import { expandOccurrences, occId, recurrenceKind } from "../lib/occurrences";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
+import { useTaskDetail } from "../lib/taskDetail";
 import { dayOf, todayISO } from "../lib/tasks";
 import { useViewMode } from "../lib/viewMode";
 
@@ -26,12 +26,6 @@ const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 type Bucket = "dnes" | "zitra" | "vikend" | "pristi" | "pmonth" | "later";
 const BUCKET_ORDER: Bucket[] = ["dnes", "zitra", "vikend", "pristi", "pmonth", "later"];
-
-interface Occ {
-  id: string;
-  name: string;
-  color: string | null;
-}
 
 const wdLong = (d: string) =>
   new Intl.DateTimeFormat(i18n.language, { weekday: "long" }).format(new Date(`${d}T00:00:00`));
@@ -67,6 +61,22 @@ export function Nadchazejici() {
   const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
   const [wsFilter, setWsFilter] = useState<string | null>(null);
   const flowSteps = useFlowSteps();
+  const { setNavIds } = useTaskDetail();
+  // Per-výskyt výjimky (R4) — skip/done jednotlivých výskytů.
+  const { data: ovr } = usePsQuery<{
+    task_id: string | null;
+    occ_date: string | null;
+    done: number | null;
+    skipped: number | null;
+  }>("SELECT task_id, occ_date, done, skipped FROM task_occurrence_overrides");
+  const ovrMap = useMemo(() => {
+    const m = new Map<string, { done: boolean; skipped: boolean }>();
+    for (const o of ovr ?? []) {
+      if (o.task_id && o.occ_date)
+        m.set(`${o.task_id}@${o.occ_date}`, { done: !!o.done, skipped: !!o.skipped });
+    }
+    return m;
+  }, [ovr]);
 
   const tasks = useMemo(() => {
     const tdy = todayISO();
@@ -82,7 +92,6 @@ export function Nadchazejici() {
     const tdy = todayISO();
     const horizon = iso(Date.now() + HORIZON_DAYS * DAY);
     const byBucket = new Map<Bucket, TaskRow[]>();
-    const projByBucket = new Map<Bucket, Occ[]>();
 
     for (const tk of tasks) {
       const d = dayOf(tk);
@@ -91,19 +100,26 @@ export function Nadchazejici() {
       const arr = byBucket.get(b);
       if (arr) arr.push(tk);
       else byBucket.set(b, [tk]);
-      // Projekce výskytů opakování (kromě base dne = reálný úkol).
+      // Projekce výskytů opakování jako plnohodnotné klikací řádky (kromě base dne);
+      // per-výskyt výjimky: skipped se nezobrazí, done se propíše (README ř. 64).
       const kind = recurrenceKind(tk.recurrence_rule);
       if (kind) {
         for (const od of expandOccurrences({ baseISO: d, kind, fromISO: tdy, toISO: horizon, cap: 40 })) {
           if (od === d) continue;
+          const vid = occId(tk.id, od);
+          const ex = ovrMap.get(vid);
+          if (ex?.skipped) continue;
+          const virt: TaskRow = {
+            ...tk,
+            id: vid,
+            due_date: od,
+            start_date: tk.start_date ? `${od}T${tk.start_date.slice(11)}` : null,
+            completed_at: ex?.done ? new Date().toISOString() : null,
+          };
           const ob = dayBucket(od, tdy);
-          const oArr = projByBucket.get(ob) ?? [];
-          oArr.push({
-            id: occId(tk.id, od),
-            name: tk.name ?? "",
-            color: (tk.project_id && projMap.get(tk.project_id)?.color) || null,
-          });
-          projByBucket.set(ob, oArr);
+          const oArr = byBucket.get(ob) ?? [];
+          oArr.push(virt);
+          byBucket.set(ob, oArr);
         }
       }
     }
@@ -122,9 +138,13 @@ export function Nadchazejici() {
       b,
       label: labels[b],
       list: byBucket.get(b) ?? [],
-      projs: projByBucket.get(b) ?? [],
-    })).filter((g) => g.list.length > 0 || g.projs.length > 0);
-  }, [tasks, projMap, t]);
+    })).filter((g) => g.list.length > 0);
+  }, [tasks, ovrMap, t]);
+
+  // Pořadí pro ↑/↓ v detailu (prototyp _navIds).
+  useEffect(() => {
+    setNavIds(view2.flatMap((g) => g.list.map((tk) => tk.id)));
+  }, [view2, setNavIds]);
 
   const empty = view2.length === 0;
 
@@ -156,7 +176,7 @@ export function Nadchazejici() {
         </p>
       )}
 
-      {view2.map(({ b, label, list, projs }) => (
+      {view2.map(({ b, label, list }) => (
         <section key={b}>
           <div
             className="flex items-center"
@@ -166,7 +186,7 @@ export function Nadchazejici() {
               {label}
             </span>
             <span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
-              {list.length + projs.length}
+              {list.length}
             </span>
           </div>
           <ul>
@@ -177,28 +197,6 @@ export function Nadchazejici() {
                 project={tk.project_id ? projMap.get(tk.project_id) : undefined}
                 flow={flowSteps.get(tk.id)}
               />
-            ))}
-            {projs.map((o) => (
-              <li
-                key={o.id}
-                className="flex items-center gap-2.5 border-line border-b px-3 py-2"
-                style={{ opacity: 0.75 }}
-                title={t("cheat.calendar")}
-              >
-                <span
-                  className="shrink-0 rounded-full"
-                  style={{ width: 8, height: 8, background: o.color ?? "var(--w-line)" }}
-                />
-                <span className="flex items-center text-brass-text">
-                  <Icon name="opakovani" size={13} />
-                </span>
-                <span className="flex-1 truncate font-body text-ink-2" style={{ fontSize: 13.5 }}>
-                  {o.name}
-                </span>
-                <span className="font-mono text-ink-3" style={{ fontSize: 10.5 }}>
-                  ↻
-                </span>
-              </li>
             ))}
           </ul>
         </section>

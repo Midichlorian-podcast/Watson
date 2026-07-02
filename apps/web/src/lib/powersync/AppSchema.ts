@@ -118,6 +118,19 @@ const comments = new Table(
   { indexes: { by_task: ["task_id"] } },
 );
 
+/** R4 — per-výskyt výjimky opakování (done/skip jednoho výskytu). */
+const task_occurrence_overrides = new Table(
+  {
+    task_id: column.text,
+    project_id: column.text,
+    occ_date: column.text,
+    done: column.integer,
+    skipped: column.integer,
+    created_at: column.text,
+  },
+  { indexes: { by_task: ["task_id"], by_project: ["project_id"] } },
+);
+
 const reminders = new Table(
   {
     task_id: column.text,
@@ -204,6 +217,7 @@ export const AppSchema = new Schema({
   assignments,
   checklist_items,
   comments,
+  task_occurrence_overrides,
   reminders,
   chains,
   chain_steps,

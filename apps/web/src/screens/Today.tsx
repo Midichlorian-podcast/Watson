@@ -1,6 +1,6 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { QuickAdd } from "../components/QuickAdd";
@@ -18,6 +18,7 @@ import { useFlowSteps } from "../lib/flowSteps";
 import type { ChainRow, ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
+import { useTaskDetail } from "../lib/taskDetail";
 import { useWatson } from "../lib/watson";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -77,6 +78,12 @@ export function Today() {
       done: all.filter((x) => x.completed_at),
     };
   }, [tasks, tb, flowSteps, wsFilter, projMap]);
+
+  // Pořadí pro ↑/↓ v detailu (prototyp _navIds).
+  const { setNavIds } = useTaskDetail();
+  useEffect(() => {
+    setNavIds([...g.overdue, ...g.today].map((x) => x.id));
+  }, [g.overdue, g.today, setNavIds]);
 
   /** „Tvůj další krok" — aktivní krok postupu přiřazený mně (prototyp myFlowSteps, ř. 3156). */
   const myNextStep = useMemo(() => {

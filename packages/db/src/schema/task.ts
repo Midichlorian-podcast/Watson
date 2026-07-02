@@ -97,6 +97,29 @@ export const assignments = pgTable(
   (t) => [uniqueIndex("assignments_task_user_uq").on(t.taskId, t.userId)],
 );
 
+/**
+ * R4 — per-výskyt výjimky opakovaného úkolu (exceptions mapa prototypu, ř. 2477–2482):
+ * dokončení/přeskočení JEDNOHO výskytu bez dotčení řady. occ_date = ISO den výskytu.
+ */
+export const taskOccurrenceOverrides = pgTable(
+  "task_occurrence_overrides",
+  {
+    id: pk(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    /** Denormalizace pro PowerSync scoping. */
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    occDate: varchar("occ_date", { length: 10 }).notNull(),
+    done: boolean("done").notNull().default(false),
+    skipped: boolean("skipped").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("task_occ_overrides_uq").on(t.taskId, t.occDate)],
+);
+
 /** R1 — lehká položka (bez přiřazení/termínu), nezaměňovat s úkolem. */
 export const checklistItems = pgTable("checklist_items", {
   id: pk(),

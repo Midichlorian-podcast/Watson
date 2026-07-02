@@ -8,6 +8,7 @@ import { KeyboardProvider } from "../lib/keyboard";
 import { ProjectDetailProvider } from "../lib/projectDetail";
 import { RowMetaProvider } from "../lib/rowMeta";
 import { TaskDetailProvider } from "../lib/taskDetail";
+import { ActionToast } from "../lib/toast";
 import { applyTweaks } from "../lib/tweaks";
 import { useIsMobile } from "../lib/useIsMobile";
 import { ViewModeProvider } from "../lib/viewMode";
@@ -45,6 +46,7 @@ export function AppLayout() {
                 </div>
                 {isMobile && <MobileTabBar />}
                 <WriteRejectedToast />
+                <ActionToast />
                 <TaskDetailPanel />
                 <ProjectDetailPanel />
               </div>
