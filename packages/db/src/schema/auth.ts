@@ -15,6 +15,8 @@ export const users = pgTable("users", {
   id: pk(),
   name: varchar("name", { length: 200 }).notNull(),
   email: varchar("email", { length: 320 }).notNull().unique(),
+  /** Pracovní pozice (Nastavení/Tým: „Vedoucí provozu · email"). */
+  jobTitle: varchar("job_title", { length: 120 }),
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
   /** twoFactor plugin — zapnuté 2FA (dobrovolné, N7). */

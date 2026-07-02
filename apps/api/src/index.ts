@@ -173,6 +173,7 @@ app.get("/api/workspaces/:id/members", async (c) => {
       name: users.name,
       email: users.email,
       image: users.image,
+      job: users.jobTitle,
       role: memberships.role,
     })
     .from(memberships)

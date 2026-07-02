@@ -13,6 +13,7 @@ import {
   sortTasks,
 } from "../components/TasksToolbar";
 import { useFlowSteps } from "../lib/flowSteps";
+import { filterByQuery, useListSearch } from "../lib/listSearch";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
@@ -46,7 +47,11 @@ export function Ukoly() {
       projektId ? (allTasks ?? []).filter((x) => x.project_id === projektId) : (allTasks ?? []),
     [allTasks, projektId],
   );
-  const shown = useMemo(() => sortTasks(filterTasks(scoped, tb), tb), [scoped, tb]);
+  const { q: searchQ } = useListSearch();
+  const shown = useMemo(
+    () => filterByQuery(sortTasks(filterTasks(scoped, tb), tb), searchQ),
+    [scoped, tb, searchQ],
+  );
 
   const groups = useMemo(() => {
     const m = new Map<string, TaskRow[]>();

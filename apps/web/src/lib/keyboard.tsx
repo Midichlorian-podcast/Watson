@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Cheatsheet } from "../components/Cheatsheet";
 import { CommandPalette } from "../components/CommandPalette";
 import { useAddTask } from "./addTask";
+import { useListSearch } from "./listSearch";
 import { redo, undo } from "./undo";
 import { useViewMode } from "./viewMode";
 
@@ -32,6 +33,7 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { openAdd } = useAddTask();
   const { setView } = useViewMode();
+  const { setOpen: setSearchOpen } = useListSearch();
   const [cheatOpen, setCheatOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const gPending = useRef(false);
@@ -92,10 +94,10 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
         setCheatOpen((o) => !o);
         return;
       }
-      // `/` → Hledat (fokus na search input obrazovky)
+      // `/` → inline hledání v headeru (prototyp focusSearch, ř. 2261)
       if (e.key === "/") {
         e.preventDefault();
-        void navigate({ to: "/hledat" });
+        setSearchOpen(true);
         return;
       }
       if (e.key === "q" || e.key === "Q") {
@@ -106,7 +108,7 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [cheatOpen, paletteOpen, navigate, openAdd, setView]);
+  }, [cheatOpen, paletteOpen, navigate, openAdd, setView, setSearchOpen]);
 
   return (
     <>

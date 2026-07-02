@@ -847,3 +847,20 @@ vrstvené na sebe (checkbox, prioritní okraj, termín, ⚏ počty vlastních po
 detail, „↑ V úkolu" zpět na rodiče; hloubka max 3 dle R1). Existující checklist_items
 jednorázově převedeny na tasks s parent_id (7 položek) a tabulka se přestala používat
 (zůstává v DB — případný návrat k lehkým položkám bez migrace). RowMeta ⚏ čte z tasks.
+
+## §32 — dokončení zbytku auditu (2026-07-03, #48 + #49)
+
+- **Dark paleta kompletní** (tokens.css: soft barvy alpha, success-ink, avatar #33455f, stíny);
+  avatary přes --w-avatar; sdílený theme store (header ⇄ Nastavení).
+- **Jazyk CS/EN přesunut z headeru do Nastavení** (pixel reference header přepínač nemá).
+- **Seed** `packages/db/seed.sql` (pnpm --filter @watson/db db:seed): 7 lidí (+job_title,
+  migrace 0009), TJ Sokol Praha, 13 týmových projektů, ~25 úkolů, postup „Plakát na červnovou
+  show", 4 cíle. Idempotentní, relativní data od CURRENT_DATE.
+- **Board reorder**: tasks.sort_order (migrace 0010) + čárkovaný drop-indikátor; pořadí per
+  sloupec (boardOrder prototypu).
+- **`/` = inline hledání v headeru** (filtr aktuálního seznamu Dnes/Úkoly/Nadcházející);
+  lupa na workspace obrazovkách přepíná inline input, jinde vede na /hledat.
+- Projekty: sparkline aktivity + ✓/↑/⚠ týdenní statistiky u průběžných; Cíle: „Jak se měří"
+  (metrika, stepper cílové úrovně, reálná hodnota, Počítá se z N úkolů) + „Úkoly v hledáčku".
+- Vědomě mimo: transfer vlastnictví workspace (role menu bez „Vlastník"), reálné pozvánky
+  (mail #8), per-výskyt override názvu/priority (shodně s prototypem).

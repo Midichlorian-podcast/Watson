@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "docker exec -i watson-postgres psql -U watson -d watson -v ON_ERROR_STOP=1 < seed.sql"
   },
   "dependencies": {
     "@watson/shared": "workspace:*",

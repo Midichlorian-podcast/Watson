@@ -3,6 +3,7 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
 import i18n, { useTranslation } from "@watson/i18n";
 import { useAddTask } from "../lib/addTask";
+import { useListSearch } from "../lib/listSearch";
 import { type ViewMode, useViewMode } from "../lib/viewMode";
 import { useWatson } from "../lib/watson";
 import { ALL_NAV } from "./nav";
@@ -56,6 +57,8 @@ export function Header() {
       timeLabel: h > 0 ? `${String(h).replace(".", ",")} h` : null,
     };
   }, [openRows, path, isWorkspace]);
+
+  const { q, setQ, open: searchOpen, setOpen: setSearchOpen } = useListSearch();
 
   // Přepínač pohledů Seznam|Nástěnka|Kalendář v headeru (prototyp ř. 277–287; ne Dnes/Schránka).
   const { view, setView, locked, toggleLock } = useViewMode();
@@ -165,9 +168,36 @@ export function Header() {
       )}
 
       <div className="ml-auto flex items-center" style={{ gap: 9 }}>
+        {/* inline hledání aktuálního seznamu (prototyp searchOpen, ř. 290–296) */}
+        {searchOpen && (
+          <div
+            className="flex items-center border border-line bg-panel-2"
+            style={{ gap: 7, borderRadius: 9, padding: "6px 11px", width: 200, minWidth: 120 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 15 15" fill="none" className="shrink-0 text-ink-3" aria-hidden>
+              <circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4" />
+              <line x1="9.6" y1="9.6" x2="13" y2="13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            {/* biome-ignore lint/a11y/noAutofocus: `/` fokusuje inline hledání */}
+            <input
+              autoFocus
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setSearchOpen(false);
+                }
+              }}
+              placeholder={t("shell.searchInline")}
+              className="w-full border-none bg-transparent font-body text-ink outline-none"
+              style={{ fontSize: 13 }}
+            />
+          </div>
+        )}
         <button
           type="button"
-          onClick={() => void navigate({ to: "/hledat" })}
+          onClick={() => (isWorkspace ? setSearchOpen(!searchOpen) : void navigate({ to: "/hledat" }))}
           title={t("shell.search")}
           aria-label={t("shell.search")}
           className={ICON_BTN}

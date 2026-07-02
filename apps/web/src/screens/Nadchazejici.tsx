@@ -13,6 +13,7 @@ import {
 } from "../components/TasksToolbar";
 import { WorkspaceChips } from "../components/WorkspaceChips";
 import { useFlowSteps } from "../lib/flowSteps";
+import { filterByQuery, useListSearch } from "../lib/listSearch";
 import { expandOccurrences, occId, recurrenceKind } from "../lib/occurrences";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
@@ -62,6 +63,7 @@ export function Nadchazejici() {
   const [wsFilter, setWsFilter] = useState<string | null>(null);
   const flowSteps = useFlowSteps();
   const { setNavIds } = useTaskDetail();
+  const { q: searchQ } = useListSearch();
   // Per-výskyt výjimky (R4) — skip/done jednotlivých výskytů.
   const { data: ovr } = usePsQuery<{
     task_id: string | null;
@@ -85,8 +87,8 @@ export function Nadchazejici() {
       list = list.filter(
         (x) => x.project_id && projMap.get(x.project_id)?.workspace_id === wsFilter,
       );
-    return sortTasks(filterTasks(list, tb), tb);
-  }, [allTasks, tb, wsFilter, projMap]);
+    return filterByQuery(sortTasks(filterTasks(list, tb), tb), searchQ);
+  }, [allTasks, tb, wsFilter, projMap, searchQ]);
 
   const view2 = useMemo(() => {
     const tdy = todayISO();

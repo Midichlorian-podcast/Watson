@@ -22,6 +22,7 @@ type Member = {
   name: string;
   email: string;
   image: string | null;
+  job: string | null;
   role: string;
   isOwner: boolean;
 };
@@ -328,7 +329,7 @@ export function Nastaveni() {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {m.email}
+                      {m.job ? `${m.job} · ${m.email}` : m.email}
                     </div>
                   </div>
                   <div style={{ position: "relative", flex: "none" }}>

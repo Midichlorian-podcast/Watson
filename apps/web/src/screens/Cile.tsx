@@ -4,10 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { API_URL } from "../lib/api";
-import { GSTAT, type GoalStatusKind, goalElapsed, goalProgress, goalStatus } from "../lib/goals";
+import {
+  GSTAT,
+  type GoalStatusKind,
+  goalElapsed,
+  goalProgress,
+  goalStatus,
+  taskOnTime,
+} from "../lib/goals";
 import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
+import { useTaskDetail } from "../lib/taskDetail";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string; image: string | null };
@@ -328,6 +336,7 @@ export function Cile() {
           data={selected}
           milestones={(milestones ?? []).filter((m) => m.goal_id === selected.g.id)}
           ownerName={memberName(selected.g.owner_id)}
+          sampleTasks={goalTasks(selected.g)}
           onClose={() => setSelectedId(null)}
         />
       )}
@@ -623,6 +632,7 @@ function GoalDetail({
   data,
   milestones,
   ownerName,
+  sampleTasks,
   onClose,
 }: {
   data: {
@@ -634,11 +644,25 @@ function GoalDetail({
   };
   milestones: MilestoneRow[];
   ownerName: string;
+  /** Úkoly v hledáčku cíle (prototyp sampleTasks, ř. 3204). */
+  sampleTasks: TaskRow[];
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const taskDetail = useTaskDetail();
   const { g, pr, st, elapsed, links } = data;
   const [msText, setMsText] = useState("");
+  const metric = (g.metric ?? "completion") as "completion" | "ontime" | "count" | "project";
+  const metricLabel = t(`goals.metric${metric[0]?.toUpperCase()}${metric.slice(1)}`);
+  const metricHelp = t(`goals.help${metric[0]?.toUpperCase()}${metric.slice(1)}`);
+  const filterLabel =
+    links.length > 0 ? links.map((p) => p?.name ?? "").join(" · ") : t("goals.filterWhole");
+  const canTarget = metric !== "project";
+  const adjTarget = (d: number) =>
+    void powerSync.execute("UPDATE goals SET target = ? WHERE id = ?", [
+      Math.max(1, (g.target ?? 0) + d),
+      g.id,
+    ]);
 
   const pace =
     pr.pct >= 100
@@ -723,6 +747,122 @@ function GoalDetail({
           >
             {pace}
           </div>
+
+          {/* Jak se měří (prototyp ř. 1317–1328) */}
+          <div className="mt-4 border-line border-t pt-3">
+            <div
+              className="font-display font-bold text-ink-3 uppercase"
+              style={{ fontSize: 11, letterSpacing: ".06em", marginBottom: 7 }}
+            >
+              {t("goals.howMeasured")}
+            </div>
+            <div className="flex flex-wrap items-center" style={{ gap: 8 }}>
+              <span
+                className="border border-line bg-panel-2 font-display font-semibold"
+                style={{ fontSize: 11, color: "var(--w-ink-2)", borderRadius: 999, padding: "2px 10px" }}
+              >
+                {metricLabel}
+              </span>
+              {canTarget && (
+                <span className="inline-flex items-center" style={{ gap: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => adjTarget(metric === "count" ? -1 : -5)}
+                    className="grid cursor-pointer place-items-center rounded-[7px] border border-line font-display font-bold text-ink-2 hover:border-brass"
+                    style={{ width: 22, height: 22, fontSize: 13 }}
+                  >
+                    −
+                  </button>
+                  <span className="font-mono text-ink" style={{ fontSize: 12.5 }}>
+                    {g.target ?? 0}
+                    {metric === "count" ? "" : " %"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => adjTarget(metric === "count" ? 1 : 5)}
+                    className="grid cursor-pointer place-items-center rounded-[7px] border border-line font-display font-bold text-ink-2 hover:border-brass"
+                    style={{ width: 22, height: 22, fontSize: 13 }}
+                  >
+                    +
+                  </button>
+                </span>
+              )}
+            </div>
+            <p className="mt-1.5 font-body text-ink-3" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+              {metricHelp}
+            </p>
+            <div
+              className="mt-2 flex items-baseline rounded-[12px] bg-panel-2"
+              style={{ gap: 8, padding: "9px 12px" }}
+            >
+              <span className="font-mono text-ink" style={{ fontSize: 13 }}>
+                {pr.label}
+              </span>
+              <span className="font-body text-ink-3" style={{ fontSize: 12 }}>
+                {pr.sub}
+              </span>
+            </div>
+            <p className="mt-1.5 font-body text-ink-3" style={{ fontSize: 11.5 }}>
+              {t("goals.countedFrom", { n: pr.matchCount })} · {filterLabel}
+            </p>
+          </div>
+
+          {/* Úkoly v hledáčku (prototyp ř. 1340–1350) */}
+          {sampleTasks.length > 0 && (
+            <div className="mt-4 border-line border-t pt-3">
+              <div
+                className="font-display font-bold text-ink-3 uppercase"
+                style={{ fontSize: 11, letterSpacing: ".06em", marginBottom: 4 }}
+              >
+                {t("goals.tasksInScope")}
+              </div>
+              {sampleTasks.slice(0, 6).map((tk) => {
+                const isDone = !!tk.completed_at;
+                const state = isDone ? (taskOnTime(tk) ? "ontime" : "late") : "open";
+                return (
+                  <button
+                    key={tk.id}
+                    type="button"
+                    onClick={() => taskDetail.open(tk.id)}
+                    className="flex w-full items-center border-line border-b text-left"
+                    style={{ gap: 8, padding: "8px 2px" }}
+                  >
+                    <span
+                      className="shrink-0 rounded-full"
+                      style={{
+                        width: 7,
+                        height: 7,
+                        background:
+                          state === "ontime"
+                            ? "var(--w-success)"
+                            : state === "late"
+                              ? "var(--w-overdue)"
+                              : "var(--w-ink-3)",
+                      }}
+                    />
+                    <span
+                      className="min-w-0 flex-1 truncate font-body"
+                      style={{
+                        fontSize: 13,
+                        color: isDone ? "var(--w-ink-3)" : "var(--w-ink)",
+                        textDecoration: isDone ? "line-through" : "none",
+                      }}
+                    >
+                      {tk.name}
+                    </span>
+                    <span className="shrink-0 font-body text-ink-3" style={{ fontSize: 10.5 }}>
+                      {t(`goals.state${state[0]?.toUpperCase()}${state.slice(1)}`)}
+                    </span>
+                  </button>
+                );
+              })}
+              {sampleTasks.length > 6 && (
+                <p className="mt-1.5 font-body text-ink-3" style={{ fontSize: 11.5 }}>
+                  {t("goals.andMore", { n: sampleTasks.length - 6 })}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* meta */}
           <div className="mt-4 border-line border-t pt-3">

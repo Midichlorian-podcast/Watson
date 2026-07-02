@@ -49,6 +49,8 @@ export const tasks = pgTable(
     durationMin: integer("duration_min"),
     /** Vícedenní úkol — počet dní od due_date (1 = jednodenní); kalendář kreslí pruh. */
     days: integer("days"),
+    /** Pořadí na nástěnce v rámci sloupce (prototyp boardOrder). */
+    sortOrder: integer("sort_order"),
     /** R4 — lidský label opakování (zobrazení); null = neopakuje se. */
     recurrence: text("recurrence"),
     /** R4 — strukturované pravidlo (JSON RecurrenceRule) pro occurrence engine. */

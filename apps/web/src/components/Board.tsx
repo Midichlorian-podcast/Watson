@@ -11,6 +11,15 @@ import { useTaskDetail } from "../lib/taskDetail";
  * Nástěnka — sloupce dle `statuses` (R9: drop do sloupce s is_done ⇄ completed_at).
  * Sdílená pro Úkoly i Nadcházející (prototyp: board je společný workspace pohled).
  */
+/** Čárkovaný drop-indikátor pořadí (prototyp ř. 464). */
+function GapLine() {
+  return (
+    <div
+      style={{ height: 0, borderTop: "2px dashed var(--w-brass)", borderRadius: 2, margin: "0 2px" }}
+    />
+  );
+}
+
 export function Board({ tasks }: { tasks: TaskRow[] }) {
   const { t } = useTranslation();
   const { open } = useTaskDetail();
@@ -18,6 +27,8 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
   const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
+  // Pozice vkládání v rámci sloupce (prototyp boardOverCard, ř. 2566): id karty + before/after.
+  const [overCard, setOverCard] = useState<{ id: string; pos: "b" | "a" } | null>(null);
   const { data: statuses } = usePsQuery<StatusRow>("SELECT * FROM statuses ORDER BY position");
 
   const columns = useMemo(() => {
@@ -29,13 +40,21 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
       if (tk.completed_at) return cols.find((c) => c.is_done)?.id ?? firstCol?.id ?? "";
       return firstCol?.id ?? "";
     };
-    return cols.map((c) => ({ st: c, tasks: tasks.filter((tk) => colOf(tk) === c.id) }));
+    // Pořadí ve sloupci: sort_order (boardOrder prototypu), fallback vstupní pořadí.
+    return cols.map((c) => ({
+      st: c,
+      tasks: tasks
+        .filter((tk) => colOf(tk) === c.id)
+        .sort((a, b) => (a.sort_order ?? 1e9) - (b.sort_order ?? 1e9)),
+    }));
   }, [statuses, tasks]);
 
   const dropTo = async (statusId: string, isDone: boolean, taskId: string | null) => {
     const id = taskId || dragId;
+    const target = overCard;
     setDragId(null);
     setOverCol(null);
+    setOverCard(null);
     if (!id) return;
     const tk = tasks.find((x) => x.id === id);
     if (!tk) return;
@@ -46,6 +65,20 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
       isDone ? (tk.completed_at ?? new Date().toISOString()) : null,
       tk.id,
     ]);
+    // Reorder v rámci sloupce (prototyp boardOrder splice, ř. 2569–2573).
+    const col = columns.find((c) => c.st.id === statusId);
+    if (col) {
+      const ids = col.tasks.map((x) => x.id).filter((x) => x !== id);
+      let idx = ids.length;
+      if (target && target.id !== id) {
+        const ti = ids.indexOf(target.id);
+        if (ti >= 0) idx = target.pos === "b" ? ti : ti + 1;
+      }
+      ids.splice(idx, 0, id);
+      for (let i = 0; i < ids.length; i++) {
+        await powerSync.execute("UPDATE tasks SET sort_order = ? WHERE id = ?", [i * 10, ids[i]]);
+      }
+    }
     if (isDone !== wasDone) await advanceChainForTask(tk.id, isDone);
   };
 
@@ -90,10 +123,17 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
           </div>
           {colTasks.map((tk) => {
             const p = tk.project_id ? projMap.get(tk.project_id) : undefined;
+            const gapBefore = dragId && overCard?.id === tk.id && overCard.pos === "b";
+            const gapAfter = dragId && overCard?.id === tk.id && overCard.pos === "a";
             return (
               // biome-ignore lint/a11y/useKeyWithClickEvents: drag karta, klik = detail; klávesnice řeší list view
               <div
                 key={tk.id}
+                data-gap-wrap
+                style={{ display: "contents" }}
+              >
+              {gapBefore && <GapLine />}
+              <div
                 draggable
                 onDragStart={(e) => {
                   e.dataTransfer.setData("text/plain", tk.id);
@@ -102,6 +142,15 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
                 onDragEnd={() => {
                   setDragId(null);
                   setOverCol(null);
+                  setOverCard(null);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setOverCol(st.id);
+                  const r = e.currentTarget.getBoundingClientRect();
+                  const pos = e.clientY - r.top < r.height / 2 ? "b" : "a";
+                  setOverCard((c) => (c?.id === tk.id && c.pos === pos ? c : { id: tk.id, pos }));
                 }}
                 onClick={() => open(tk.id)}
                 className="cursor-grab rounded-[11px] border border-line bg-card transition-shadow hover:shadow-md"
@@ -146,6 +195,8 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
                     </span>
                   )}
                 </div>
+              </div>
+              {gapAfter && <GapLine />}
               </div>
             );
           })}

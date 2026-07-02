@@ -32,7 +32,8 @@
     "collapse": "Sbalit panel",
     "soon": "Připravujeme",
     "lockView": "Zamknout toto zobrazení jako výchozí pro všechny sekce",
-    "defaultView": "Výchozí"
+    "defaultView": "Výchozí",
+    "searchInline": "Hledat…"
   },
   "quickadd": {
     "placeholder": "Přidat úkol… (např. zavolat Petře zítra v 15 p1 #Obchod)"
@@ -120,7 +121,9 @@
     "newColor": "Barva",
     "newKind": "Typ projektu",
     "newCreate": "Vytvořit projekt",
-    "newCancel": "Zrušit"
+    "newCancel": "Zrušit",
+    "weekUnit": "týden",
+    "newUnit": "nové"
   },
   "calendar": {
     "prev": "Předchozí",
@@ -325,14 +328,14 @@
     "scopeTeam": "Týmový",
     "scopeProject": "Projektový",
     "scopePerson": "Osobní (člen)",
-    "metricCompletion": "Dokončení",
+    "metricCompletion": "Dokončení úkolů",
     "metricOntime": "Včasnost",
-    "metricCount": "Počet",
+    "metricCount": "Počet hotových",
     "metricProject": "Stav projektu",
-    "helpCompletion": "Podíl hotových úkolů ze všech, které cíli odpovídají. Plní se sám, jak úkoly odškrtáváte.",
-    "helpOntime": "Podíl úkolů dokončených včas (do termínu) z hotových. Počítá se z reálných úkolů.",
-    "helpCount": "Počet dokončených úkolů, které cíli odpovídají, proti cílovému počtu.",
-    "helpProject": "Postup napojeného projektu — průměr jeho úkolů. Ručně se nezadává.",
+    "helpCompletion": "Podíl dokončených úkolů v hledáčku cíle.",
+    "helpOntime": "Podíl úkolů dokončených do termínu.",
+    "helpCount": "Počet dokončených úkolů proti cílovému počtu.",
+    "helpProject": "Procento dokončení propojeného projektu.",
     "namePlaceholder": "Název cíle — např. Spustit nový web do Q3",
     "scope": "Rozsah",
     "metric": "Metrika",
@@ -359,7 +362,14 @@
     "paceRisk": "Zaostává — {{pct}} % hotovo, ale uplynulo {{elapsed}} % času.",
     "elapsedLabel": "uplynulo {{elapsed}} % času",
     "filterWhole": "celý prostor",
-    "goalCreated": "Cíl vytvořen"
+    "goalCreated": "Cíl vytvořen",
+    "howMeasured": "Jak se měří",
+    "tasksInScope": "Úkoly v hledáčku",
+    "countedFrom": "Počítá se z {{n}} úkolů",
+    "andMore": "… a dalších {{n}}",
+    "stateOntime": "včas",
+    "stateLate": "pozdě",
+    "stateOpen": "otevřený"
   },
   "reports": {
     "heading": "Reporty",

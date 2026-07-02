@@ -32,7 +32,8 @@
     "collapse": "Collapse panel",
     "soon": "Coming soon",
     "lockView": "Lock this view as default for all sections",
-    "defaultView": "Default"
+    "defaultView": "Default",
+    "searchInline": "Search…"
   },
   "quickadd": {
     "placeholder": "Add task… (e.g. call Petra tomorrow at 3pm p1 #Sales)"
@@ -120,7 +121,9 @@
     "newColor": "Color",
     "newKind": "Project type",
     "newCreate": "Create project",
-    "newCancel": "Cancel"
+    "newCancel": "Cancel",
+    "weekUnit": "this week",
+    "newUnit": "new"
   },
   "calendar": {
     "prev": "Previous",
@@ -325,14 +328,14 @@
     "scopeTeam": "Team",
     "scopeProject": "Project",
     "scopePerson": "Personal (member)",
-    "metricCompletion": "Completion",
-    "metricOntime": "On time",
-    "metricCount": "Count",
-    "metricProject": "Project state",
-    "helpCompletion": "Share of done tasks out of all matching. Fills itself as you check tasks off.",
-    "helpOntime": "Share of tasks completed on time out of done ones. Computed from real tasks.",
-    "helpCount": "Number of completed matching tasks against the target count.",
-    "helpProject": "Linked project progress — average of its tasks. Not entered manually.",
+    "metricCompletion": "Task completion",
+    "metricOntime": "Timeliness",
+    "metricCount": "Done count",
+    "metricProject": "Project status",
+    "helpCompletion": "Share of completed tasks in the goal's scope.",
+    "helpOntime": "Share of tasks completed by their due date.",
+    "helpCount": "Number of completed tasks against the target count.",
+    "helpProject": "Completion percentage of the linked project.",
     "namePlaceholder": "Goal name — e.g. Launch the new web by Q3",
     "scope": "Scope",
     "metric": "Metric",
@@ -359,7 +362,14 @@
     "paceRisk": "Falling behind — {{pct}} % done but {{elapsed}} % of time elapsed.",
     "elapsedLabel": "{{elapsed}} % of time elapsed",
     "filterWhole": "whole workspace",
-    "goalCreated": "Goal created"
+    "goalCreated": "Goal created",
+    "howMeasured": "How it's measured",
+    "tasksInScope": "Tasks in scope",
+    "countedFrom": "Counted from {{n}} tasks",
+    "andMore": "… and {{n}} more",
+    "stateOntime": "on time",
+    "stateLate": "late",
+    "stateOpen": "open"
   },
   "reports": {
     "heading": "Reports",

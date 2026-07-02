@@ -15,6 +15,7 @@ import {
 } from "../components/TasksToolbar";
 import { useSession } from "../lib/auth-client";
 import { useFlowSteps } from "../lib/flowSteps";
+import { filterByQuery, useListSearch } from "../lib/listSearch";
 import type { ChainRow, ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
@@ -43,6 +44,7 @@ export function Today() {
   );
   const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
   const [wsFilter, setWsFilter] = useState<string | null>(null);
+  const { q: searchQ } = useListSearch();
   const flowSteps = useFlowSteps();
   const navigate = useNavigate();
   const userId = session?.user?.id;
@@ -65,7 +67,7 @@ export function Today() {
       }
       return true;
     });
-    const opn = sortTasks(filterTasks(awake.filter((x) => !x.completed_at), tb), tb);
+    const opn = filterByQuery(sortTasks(filterTasks(awake.filter((x) => !x.completed_at), tb), tb), searchQ);
     return {
       overdue: opn.filter((x) => {
         const d = dayOf(x);
@@ -77,7 +79,7 @@ export function Today() {
       }),
       done: all.filter((x) => x.completed_at),
     };
-  }, [tasks, tb, flowSteps, wsFilter, projMap]);
+  }, [tasks, tb, flowSteps, wsFilter, projMap, searchQ]);
 
   // Pořadí pro ↑/↓ v detailu (prototyp _navIds).
   const { setNavIds } = useTaskDetail();

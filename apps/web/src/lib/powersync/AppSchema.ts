@@ -19,6 +19,7 @@ const tasks = new Table(
     deadline: column.text,
     duration_min: column.integer,
     days: column.integer,
+    sort_order: column.integer,
     recurrence: column.text,
     recurrence_rule: column.text,
     recurrence_basis: column.text,

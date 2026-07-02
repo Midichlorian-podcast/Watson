@@ -42,9 +42,12 @@ export function Projekty() {
     [projects, activeWs],
   );
 
-  const { data: taskRows } = usePsQuery<{ project_id: string | null; completed_at: string | null }>(
-    "SELECT project_id, completed_at FROM tasks",
-  );
+  const { data: taskRows } = usePsQuery<{
+    project_id: string | null;
+    completed_at: string | null;
+    created_at: string | null;
+    due_date: string | null;
+  }>("SELECT project_id, completed_at, created_at, due_date FROM tasks");
   const { data: memberRows } = usePsQuery<{ project_id: string | null; user_id: string | null }>(
     "SELECT project_id, user_id FROM project_members",
   );
@@ -93,6 +96,33 @@ export function Projekty() {
     return m;
   }, [memberRows]);
 
+  /** Týdenní aktivita per projekt (prototyp tepNode + weekDone/added/overdue, ř. 3181). */
+  const weekStats = useMemo(() => {
+    const now = Date.now();
+    const DAY = 86_400_000;
+    const tdy = new Date().toISOString().slice(0, 10);
+    const m = new Map<
+      string,
+      { weekDone: number; added: number; overdue: number; bars: number[] }
+    >();
+    for (const tk of taskRows ?? []) {
+      const k = tk.project_id ?? "";
+      const s = m.get(k) ?? { weekDone: 0, added: 0, overdue: 0, bars: Array(8).fill(0) };
+      const doneT = tk.completed_at ? new Date(tk.completed_at).getTime() : null;
+      const createdT = tk.created_at ? new Date(tk.created_at).getTime() : null;
+      if (doneT && now - doneT < 7 * DAY) s.weekDone++;
+      if (createdT && now - createdT < 7 * DAY) s.added++;
+      if (!tk.completed_at && tk.due_date && tk.due_date.slice(0, 10) < tdy) s.overdue++;
+      for (const ts of [doneT, createdT]) {
+        if (ts == null) continue;
+        const idx = 7 - Math.floor((now - ts) / DAY);
+        if (idx >= 0 && idx <= 7) s.bars[idx] = Math.min(10, (s.bars[idx] ?? 0) + 2);
+      }
+      m.set(k, s);
+    }
+    return m;
+  }, [taskRows]);
+
   return (
     <div className="mx-auto max-w-[1080px] px-[22px] pt-6 pb-24">
       <header className="flex items-center gap-2.5">
@@ -132,6 +162,7 @@ export function Projekty() {
               key={p.id}
               project={p}
               counts={counts.get(p.id) ?? ZERO}
+              week={weekStats.get(p.id)}
               members={memberCounts.get(p.id) ?? 0}
               avatars={(membersByProject.get(p.id) ?? []).map((uid) => ({
                 name: nameById.get(uid) ?? "?",
@@ -293,12 +324,15 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 function ProjectCard({
   project,
   counts,
+  week,
   members,
   avatars,
   onOpen,
 }: {
   project: ProjectRow;
   counts: Counts;
+  /** Týdenní aktivita (jen průběžné projekty — sparkline, prototyp ř. 717–723). */
+  week?: { weekDone: number; added: number; overdue: number; bars: number[] };
   members: number;
   avatars: { name: string; isOwner: boolean }[];
   onOpen: () => void;
@@ -352,19 +386,49 @@ function ProjectCard({
         </span>
       </div>
 
-      {counts.total > 0 && (
-        <div className="mt-3">
-          <div className="h-1.5 overflow-hidden rounded-full bg-panel-2">
-            <div
-              className="h-full rounded-full"
-              style={{ width: `${pct}%`, background: "var(--w-brass)" }}
-            />
+      {kind === "flow" && week ? (
+        <>
+          {/* aktivita-sparkline 8 dní (prototyp tepNode, ř. 3181) */}
+          <div className="flex items-end" style={{ gap: 3, height: 30, marginTop: 12 }}>
+            {week.bars.map((v, i) => (
+              <span
+                key={`b-${i}`}
+                style={{
+                  flex: 1,
+                  borderRadius: 2,
+                  height: Math.max(3, Math.round((v / 10) * 30)),
+                  background: i === 7 ? "var(--w-brass)" : "var(--w-panel-2)",
+                  border: "1px solid var(--w-line)",
+                }}
+              />
+            ))}
           </div>
-          <div className="mt-1 flex items-center justify-between text-[11px] text-ink-3">
-            <span>{t("projects.pctDone", { pct })}</span>
-            {members > 0 && <span>{t("projects.members", { count: members })}</span>}
+          <div
+            className="flex items-center font-mono"
+            style={{ gap: 13, marginTop: 9, fontSize: 11.5, color: "var(--w-ink-3)" }}
+          >
+            <span style={{ color: "var(--w-success-ink)" }}>
+              ✓ {week.weekDone} {t("projects.weekUnit")}
+            </span>
+            <span>↑ {week.added} {t("projects.newUnit")}</span>
+            {week.overdue > 0 && <span style={{ color: "var(--w-overdue)" }}>⚠ {week.overdue}</span>}
           </div>
-        </div>
+        </>
+      ) : (
+        counts.total > 0 && (
+          <div className="mt-3">
+            <div className="h-1.5 overflow-hidden rounded-full bg-panel-2">
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${pct}%`, background: "var(--w-brass)" }}
+              />
+            </div>
+            <div className="mt-1 flex items-center justify-between text-[11px] text-ink-3">
+              <span>{t("projects.pctDone", { pct })}</span>
+              {members > 0 && <span>{t("projects.members", { count: members })}</span>}
+            </div>
+          </div>
+        )
       )}
 
       {/* avataři členů (#18) — vlastník s brass ringem (prototyp ř. 727) */}

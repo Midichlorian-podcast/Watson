@@ -5,6 +5,7 @@ import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WriteRejectedToast } from "../components/WriteRejectedToast";
 import { AddTaskProvider } from "../lib/addTask";
 import { KeyboardProvider } from "../lib/keyboard";
+import { ListSearchProvider } from "../lib/listSearch";
 import { ProjectDetailProvider } from "../lib/projectDetail";
 import { RowMetaProvider } from "../lib/rowMeta";
 import { TaskDetailProvider } from "../lib/taskDetail";
@@ -30,6 +31,7 @@ export function AppLayout() {
     <WorkspaceProvider>
     <RowMetaProvider>
     <ViewModeProvider>
+    <ListSearchProvider>
     <WatsonProvider>
       <AddTaskProvider>
         <TaskDetailProvider>
@@ -59,6 +61,7 @@ export function AppLayout() {
         </TaskDetailProvider>
       </AddTaskProvider>
     </WatsonProvider>
+    </ListSearchProvider>
     </ViewModeProvider>
     </RowMetaProvider>
     </WorkspaceProvider>
