@@ -215,7 +215,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       {/* + Přidat úkol */}
       <button
         type="button"
-        onClick={openAdd}
+        onClick={() => openAdd()}
         title={t("shell.newTask")}
         className="font-display hover:brightness-105"
         style={{

@@ -267,7 +267,14 @@ function FieldPill({
 
 /* ── modal ────────────────────────────────────────────────────────────── */
 
-export function AddTaskModal({ onClose }: { onClose: () => void }) {
+export function AddTaskModal({
+  onClose,
+  initial,
+}: {
+  onClose: () => void;
+  /** Předvyplnění z kalendáře (openAddAt): datum/čas/trvání. */
+  initial?: { date?: string; time?: string; duration?: number };
+}) {
   const { t } = useTranslation();
   const today = todayISO();
   const allProjects = useProjects();
@@ -305,7 +312,19 @@ export function AddTaskModal({ onClose }: { onClose: () => void }) {
   );
   const flowOptions = chains ?? [];
 
-  const [draft, setDraft] = useState<Draft>(() => freshDraft(null));
+  const [draft, setDraft] = useState<Draft>(() => {
+    const d = freshDraft(null);
+    if (initial?.date) {
+      if (initial.date === today) d.dateKind = "dnes";
+      else {
+        d.dateKind = "custom";
+        d.customDate = initial.date;
+      }
+    }
+    if (initial?.time) d.time = initial.time;
+    if (initial?.duration) d.duration = initial.duration;
+    return d;
+  });
   // Výchozí projekt = inbox (R8), jakmile jsou projekty načtené.
   useEffect(() => {
     if (!draft.project && inbox) setDraft((d) => ({ ...d, project: d.project ?? inbox.id }));

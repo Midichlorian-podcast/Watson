@@ -286,7 +286,7 @@ export function Header() {
 
         <button
           type="button"
-          onClick={openAdd}
+          onClick={() => openAdd()}
           className="flex h-[34px] items-center rounded-[9px] font-display font-bold text-white hover:brightness-105"
           style={{ gap: 6, background: "var(--w-brass)", padding: "0 13px", fontSize: 12.5 }}
         >

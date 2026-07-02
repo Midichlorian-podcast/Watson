@@ -806,3 +806,22 @@ stub → #40). Následuje AUDIT_v2 + P4 (fidelity/mobil/Tweaks).
   **Bez mailové infrastruktury** — reálné odeslání pozvánky = Mail #8.
 - Ověřeno: segmenty → data atributy + localStorage + vizuálně (dot rgb(198,138,62), padding 15px),
   vráceno na výchozí; invite modal → submit → toast.
+
+## §29 — GAP audit v2 + P5 uzavírání mezer (2026-07-02)
+
+Uživatel odmítl AUDIT_FINAL (~95 %); poctivý audit (10 modulů + kritik) = **~46 %, 210 mezer**
+→ `AUDIT_GAPS_v2.md`. Uzavřeno v této fázi: **#42 AddTask modal** (kompletní port draftView:
+token-highlight overlay, chipy polí, 10 popoverů, footer validace; migrace `tasks.days`),
+**#43 anatomie řádku** (RowMetaProvider, avatary, deadline vlaječky, časové rozsahy, chip
+postupu s tečkami, dormant šrafy, tint barvy), **#44 struktura seznamů** (view switcher +
+zámek v headeru, podtitul hodiny, WorkspaceChips, buckety Nadcházejícího, sdílený Board),
+**#45 kalendář** (projekce výskytů, vícedenní pruhy z `days`, CELÝ DEN pás, drag move/create/
+resize, lanes+„+N", now-štítek, gear hustota/okraj, Plánování panel, měsíc fixní řádky).
+
+Rozhodnutí/odchylky:
+- **Tint barvy úkolu**: prototyp má 10 fixních pastelů per klíč; my `color-mix(12 % hex)` —
+  vizuálně ekvivalentní, funguje pro libovolný hex z USER_COLORS.
+- **Vícedenní úkoly**: nový sloupec `tasks.days` (migrace 0006) místo prototypího endDate.
+- **Drag výskytů (virtuální id `@`)**: zakázán — per-occurrence výjimky odloženy (§17).
+- **AddTask Enter**: potvrdí úkol i bez ⌘ (bez našeptávače); prototyp jen ⌘Enter.
+- **pmonth chip label**: ukazuje konkrétní datum („1. 8.") místo prototypího fallbacku „Termín".
