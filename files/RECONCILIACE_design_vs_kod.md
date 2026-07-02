@@ -837,3 +837,13 @@ localStorage `watson.flowTemplates` (ne DB — per-user, lehké; tabulka chain_t
 sdílení). Odchylka ponechána: tlačítko „Aktivovat krok" u manual gate (prototyp aktivuje jen
 checkboxem) — užitečné, vizuálně sladěno. Role kroku = text v description („Role: X") —
 strukturovaný sloupec až s rolemi workspace.
+
+## §31 — Detail úkolu: vycentrovaný modal + podúkoly = reálné úkoly (2026-07-02, #50)
+
+**Rozhodnutí uživatele NAD RÁMEC handoffu** (prototyp má detail jako plnovýškový pravý panel,
+ř. 976): detail = **vycentrovaná karta** (560 px, výška dle obsahu, overlay jako AddTask).
+**R1 revize:** koncept „checklist = lehká položka" zrušen — podúkoly jsou plnohodnotné úkoly
+vrstvené na sebe (checkbox, prioritní okraj, termín, ⚏ počty vlastních podúkolů, klik → vlastní
+detail, „↑ V úkolu" zpět na rodiče; hloubka max 3 dle R1). Existující checklist_items
+jednorázově převedeny na tasks s parent_id (7 položek) a tabulka se přestala používat
+(zůstává v DB — případný návrat k lehkým položkám bez migrace). RowMeta ⚏ čte z tasks.

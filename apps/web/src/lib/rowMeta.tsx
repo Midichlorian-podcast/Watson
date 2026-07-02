@@ -41,8 +41,11 @@ const Ctx = createContext<RowMetaCtx>({ metaOf: () => EMPTY });
 
 export function RowMetaProvider({ children }: { children: ReactNode }) {
   const { activeWs } = useWorkspace();
+  // ⚏ N/M = reálné podúkoly (tasks s parent_id) — checklist zrušen (rozhodnutí 2026-07-02).
   const { data: chk } = usePsQuery<{ task_id: string; total: number; done: number }>(
-    "SELECT task_id, COUNT(*) AS total, COALESCE(SUM(checked), 0) AS done FROM checklist_items GROUP BY task_id",
+    `SELECT parent_id AS task_id, COUNT(*) AS total,
+            SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS done
+     FROM tasks WHERE parent_id IS NOT NULL GROUP BY parent_id`,
   );
   const { data: cmt } = usePsQuery<{ task_id: string; n: number }>(
     "SELECT task_id, COUNT(*) AS n FROM comments GROUP BY task_id",

@@ -11,6 +11,7 @@ import { parseOccId } from "../lib/occurrences";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProject } from "../lib/projects";
+import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
 import { occLabel, rowDue, setOccurrenceOverride, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
@@ -115,6 +116,7 @@ export function TaskDetailPanel() {
 function Panel({ id, onClose }: { id: string; onClose: () => void }) {
   const { t } = useTranslation();
   const { open, navIds } = useTaskDetail();
+  const { metaOf } = useRowMeta();
   const { data: session } = useSession();
 
   // Výskyt řady: virtuální id `base@ISO` → base úkol + banner + per-výskyt akce.
@@ -157,6 +159,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
     "SELECT * FROM tasks WHERE parent_id = ? ORDER BY created_at",
     [realId],
   );
+  // Rodič (vrstvení podúkolů — odkaz „↑ V úkolu").
+  const { data: parentRows } = usePsQuery<TaskRow>(
+    "SELECT * FROM tasks WHERE id = ? LIMIT 1",
+    [task?.parent_id ?? ""],
+  );
+  const parent = task?.parent_id ? parentRows?.[0] : undefined;
   const { data: depthRows } = usePsQuery<{ depth: number }>(
     `WITH RECURSIVE anc(id, parent_id, lvl) AS (
        SELECT id, parent_id, 1 FROM tasks WHERE id = ?
@@ -167,10 +175,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
   const depth = depthRows?.[0]?.depth ?? 1;
 
   const project = useProject(task?.project_id ?? undefined);
-  const { data: checklist } = usePsQuery<{ id: string; text: string | null; checked: number | null }>(
-    "SELECT id, text, checked FROM checklist_items WHERE task_id = ? ORDER BY position, created_at",
-    [realId],
-  );
   const { data: comments } = usePsQuery<{
     id: string;
     body: string | null;
@@ -216,7 +220,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
   const [desc, setDesc] = useState("");
   const [descOpen, setDescOpen] = useState(false);
   const [subText, setSubText] = useState("");
-  const [chkText, setChkText] = useState("");
   const [cmtText, setCmtText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -231,7 +234,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 
   if (!task) return null;
   const done = occ ? Boolean(occOverride?.done) : Boolean(task.completed_at);
-  const chk = checklist ?? [];
   const cmts = comments ?? [];
   const asg = assignRows ?? [];
   const members = team ?? [];
@@ -280,19 +282,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
     );
     setSubText("");
   };
-  const addChk = async () => {
-    if (!chkText.trim()) return;
-    await powerSync.execute(
-      "INSERT INTO checklist_items (id, task_id, project_id, text, checked, position) VALUES (uuid(), ?, ?, ?, 0, ?)",
-      [realId, task.project_id, chkText.trim(), chk.length],
-    );
-    setChkText("");
-  };
-  const toggleChk = (cid: string, checked: number | null) =>
-    void powerSync.execute("UPDATE checklist_items SET checked = ? WHERE id = ?", [
-      checked ? 0 : 1,
-      cid,
-    ]);
   const addCmt = async () => {
     if (!cmtText.trim()) return;
     await powerSync.execute(
@@ -338,21 +327,26 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 
   return (
     <>
-      {/* backdrop */}
+      {/* backdrop + vycentrovaná karta (rozhodnutí uživatele 2026-07-02 — místo pravého panelu) */}
       <button
         type="button"
         aria-label={t("common.cancel")}
         onClick={onClose}
         className="fixed inset-0 z-30"
-        style={{ background: "rgba(10,14,20,.34)" }}
+        style={{ background: "rgba(10,14,20,.42)" }}
       />
-      <aside
-        className="fixed top-0 right-0 z-40 flex h-full flex-col border-line border-l bg-card"
+      <div
+        className="pointer-events-none fixed inset-0 z-40 flex items-start justify-center"
+        style={{ paddingTop: "6vh" }}
+      >
+      <div
+        className="pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-line bg-card"
         style={{
-          width: 444,
+          width: 560,
           maxWidth: "94vw",
+          maxHeight: "86vh",
           boxShadow: "var(--w-shadow)",
-          animation: "wSlide .22s ease",
+          animation: "wPop .18s ease",
         }}
       >
         {/* header: tečka + projekt + ⋯ + × (ř. 977–991) */}
@@ -448,6 +442,18 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
                 {t("detail.editSeries")}
               </button>
             </div>
+          )}
+
+          {/* vrstvení: odkaz na rodičovský úkol */}
+          {parent && (
+            <button
+              type="button"
+              onClick={() => open(parent.id)}
+              className="mt-3 inline-flex items-center font-display font-semibold text-ink-3 hover:text-brass-text"
+              style={{ gap: 6, fontSize: 12 }}
+            >
+              ↑ {t("detail.inTask")}: <span className="text-ink-2">{parent.name}</span>
+            </button>
           )}
 
           {/* checkbox + název (ř. 993–997) */}
@@ -716,28 +722,67 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
             </button>
           )}
 
-          {/* PODÚKOLY (R1) */}
+          {/* PODÚKOLY — reálné úkoly vrstvené na sebe (rozhodnutí 2026-07-02): plnohodnotný
+              řádek s prioritním okrajem, počty vlastních podúkolů a klikem do vlastního detailu. */}
           <SectionLabel>
             {t("detail.subtasks")}
-            {(subs?.length ?? 0) > 0 && ` · ${subs?.length}`}
+            {(subs?.length ?? 0) > 0 &&
+              ` · ${(subs ?? []).filter((s) => s.completed_at).length}/${subs?.length}`}
           </SectionLabel>
           <ul>
             {(subs ?? []).map((s) => {
               const sd = Boolean(s.completed_at);
+              const sMeta = metaOf(s);
+              const sDue = rowDue(s, t);
               return (
-                // biome-ignore lint/a11y/useKeyWithClickEvents: toggle na klik do řádku (prototyp ř. 1031)
+                // biome-ignore lint/a11y/useKeyWithClickEvents: klik = otevřít detail podúkolu
                 <li
                   key={s.id}
-                  onClick={() => void patch(s.id, { completed_at: sd ? null : new Date().toISOString() })}
-                  className="flex cursor-pointer items-center border-line border-b"
-                  style={{ gap: 10, padding: "7px 0" }}
+                  onClick={() => open(s.id)}
+                  className="flex cursor-pointer items-center border-line border-b hover:bg-panel-2"
+                  style={{
+                    gap: 10,
+                    padding: "8px 4px 8px 9px",
+                    borderRadius: "0 6px 6px 0",
+                    boxShadow: sd ? undefined : `inset 3px 0 0 var(--w-p${s.priority ?? 4})`,
+                    opacity: sd ? 0.55 : 1,
+                  }}
                 >
                   <BrassCheck
+                    round
+                    size={18}
                     done={sd}
-                    onClick={() => void patch(s.id, { completed_at: sd ? null : new Date().toISOString() })}
+                    onClick={() => {
+                      void patch(s.id, {
+                        completed_at: sd ? null : new Date().toISOString(),
+                      });
+                    }}
                   />
-                  <span style={{ fontSize: 13, color: sd ? "var(--w-ink-3)" : "var(--w-ink)", textDecoration: sd ? "line-through" : "none" }}>
+                  <span
+                    className="min-w-0 flex-1 truncate font-display font-semibold"
+                    style={{
+                      fontSize: 13.5,
+                      color: sd ? "var(--w-ink-3)" : "var(--w-ink)",
+                      textDecoration: sd ? "line-through" : "none",
+                    }}
+                  >
                     {s.name}
+                  </span>
+                  {sMeta.checklist && (
+                    <span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 11 }}>
+                      ⚏ {sMeta.checklist.done}/{sMeta.checklist.total}
+                    </span>
+                  )}
+                  {sDue && (
+                    <span
+                      className="shrink-0 font-mono"
+                      style={{ fontSize: 11.5, color: sDue.overdue ? "var(--w-overdue)" : "var(--w-ink-3)" }}
+                    >
+                      {sDue.label}
+                    </span>
+                  )}
+                  <span className="shrink-0 text-ink-3" style={{ fontSize: 12 }}>
+                    ›
                   </span>
                 </li>
               );
@@ -754,38 +799,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
           ) : (
             <p className="mt-2 text-ink-3 text-xs">{t("detail.maxDepth")}</p>
           )}
-
-          {/* CHECKLIST (R1 — lehké položky) */}
-          <SectionLabel>
-            {t("detail.checklist")}
-            {chk.length > 0 && ` · ${chk.filter((c) => c.checked).length}/${chk.length}`}
-          </SectionLabel>
-          <ul>
-            {chk.map((c) => {
-              const ck = Boolean(c.checked);
-              return (
-                // biome-ignore lint/a11y/useKeyWithClickEvents: toggle na klik do řádku
-                <li
-                  key={c.id}
-                  onClick={() => toggleChk(c.id, c.checked)}
-                  className="flex cursor-pointer items-center border-line border-b"
-                  style={{ gap: 10, padding: "7px 0" }}
-                >
-                  <BrassCheck done={ck} onClick={() => toggleChk(c.id, c.checked)} />
-                  <span style={{ fontSize: 13, color: ck ? "var(--w-ink-3)" : "var(--w-ink)", textDecoration: ck ? "line-through" : "none" }}>
-                    {c.text}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          <input
-            value={chkText}
-            onChange={(e) => setChkText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void addChk()}
-            placeholder={t("detail.addChecklist")}
-            className="mt-2 w-full rounded-lg border border-line border-dashed bg-transparent px-3 py-1.5 text-sm outline-none focus:border-brass"
-          />
 
           {/* PŘIŘAZENÍ (R2) — jen přiřazení + „+ Přiřadit" popover (ř. 1050–1059) */}
           <SectionLabel>{t("detail.assignment")}</SectionLabel>
@@ -996,7 +1009,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
             {t("detail.close")}
           </button>
         </div>
-      </aside>
+      </div>
+      </div>
     </>
   );
 }

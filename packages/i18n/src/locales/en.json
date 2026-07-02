@@ -81,7 +81,8 @@
     "markUndone": "Mark undone",
     "skip": "Skip",
     "close": "Close",
-    "assignBtn": "Assign"
+    "assignBtn": "Assign",
+    "inTask": "In task"
   },
   "projects": {
     "heading": "Projects",

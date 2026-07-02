@@ -81,7 +81,8 @@
     "markUndone": "Označit nehotové",
     "skip": "Přeskočit",
     "close": "Zavřít",
-    "assignBtn": "Přiřadit"
+    "assignBtn": "Přiřadit",
+    "inTask": "V úkolu"
   },
   "projects": {
     "heading": "Projekty",
