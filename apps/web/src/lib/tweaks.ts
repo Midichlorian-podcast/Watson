@@ -10,7 +10,7 @@ const A_LS = "watson.accent";
 
 export function getDensity(): Density {
   const v = localStorage.getItem(D_LS);
-  return v === "vzdusne" || v === "vyvazene" ? v : "kompaktni";
+  return v === "vyvazene" || v === "kompaktni" ? v : "vzdusne"; // default Vzdušné (README ř. 111)
 }
 export function getAccent(): Accent {
   return localStorage.getItem(A_LS) === "brass" ? "brass" : "multi";

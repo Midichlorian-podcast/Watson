@@ -236,7 +236,7 @@ export function CalendarMonth({
                     {ava && (
                       <span
                         className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
-                        style={{ width: 13, height: 13, fontSize: 6.5, color: "#fff", background: "var(--w-navy)" }}
+                        style={{ width: 13, height: 13, fontSize: 6.5, color: "#fff", background: "var(--w-avatar)" }}
                       >
                         {ava.initials}
                       </span>

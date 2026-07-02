@@ -187,7 +187,7 @@
     "darkMode": "Dark mode",
     "darkModeDesc": "Switches the whole interface to dark.",
     "density": "Density and color",
-    "densityDesc": "Airy ↔ compact and project accent are tuned in the Tweaks panel.",
+    "densityDesc": "Airy ↔ compact row and card spacing.",
     "tweaks": "Tweaks",
     "account": "Account",
     "team": "Team and roles",
@@ -213,7 +213,9 @@
     "inviteEmail": "E-mail",
     "inviteSend": "Send invite",
     "inviteSent": "Invite sent",
-    "inviteCancel": "Cancel"
+    "inviteCancel": "Cancel",
+    "language": "Language",
+    "languageDesc": "Full Czech and English interface."
   },
   "priority": {
     "acute": "Acute",

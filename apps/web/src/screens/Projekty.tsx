@@ -225,7 +225,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
               onClick={() => setColor(null)}
               aria-label="—"
               className="h-6 w-6 rounded-full border border-line"
-              style={{ outline: color === null ? "2px solid var(--w-navy)" : "none", outlineOffset: 1 }}
+              style={{ outline: color === null ? "2px solid var(--w-avatar)" : "none", outlineOffset: 1 }}
             />
             {USER_COLORS.map((c) => (
               <button
@@ -234,7 +234,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
                 onClick={() => setColor(c)}
                 aria-label={c}
                 className="h-6 w-6 rounded-full"
-                style={{ background: c, outline: color === c ? "2px solid var(--w-navy)" : "none", outlineOffset: 1 }}
+                style={{ background: c, outline: color === c ? "2px solid var(--w-avatar)" : "none", outlineOffset: 1 }}
               />
             ))}
           </div>
@@ -378,7 +378,7 @@ function ProjectCard({
               style={{
                 width: 24,
                 height: 24,
-                background: "var(--w-navy)",
+                background: "var(--w-avatar)",
                 fontSize: 10,
                 marginLeft: i > 0 ? -6 : 0,
                 boxShadow: a.isOwner ? "0 0 0 2px var(--w-brass)" : "0 0 0 2px var(--w-card)",

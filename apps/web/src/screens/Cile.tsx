@@ -273,7 +273,7 @@ export function Cile() {
                 <span
                   title={memberName(g.owner_id)}
                   className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold text-white"
-                  style={{ width: 24, height: 24, background: "var(--w-navy)", fontSize: 10 }}
+                  style={{ width: 24, height: 24, background: "var(--w-avatar)", fontSize: 10 }}
                 >
                   {initials(memberName(g.owner_id) || "?")}
                 </span>

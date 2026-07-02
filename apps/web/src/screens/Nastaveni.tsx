@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
-import { useTranslation } from "@watson/i18n";
+import i18n, { useTranslation } from "@watson/i18n";
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
 import { signOut, useSession } from "../lib/auth-client";
 import { disconnectPowerSync } from "../lib/powersync/db";
+import { useWorkspace } from "../lib/workspace";
 import {
   type Accent,
   type Density,
@@ -59,6 +61,7 @@ const ROW: CSSProperties = { display: "flex", alignItems: "center", gap: 12, pad
 /** Nastavení — 1:1 dle design handoffu (sekce Vzhled / Účet / Tým a role / Oznámení). */
 export function Nastaveni() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { theme, toggle } = useTheme();
   const { data: session } = useSession();
   const [openRoleId, setOpenRoleId] = useState<string | null>(null);
@@ -88,8 +91,11 @@ export function Nastaveni() {
       return (await r.json()).workspaces as Workspace[];
     },
   });
-  const teamWs = workspaces?.find((w) => !w.isPersonal);
-  const accountWsName = teamWs?.name ?? workspaces?.[0]?.name ?? "";
+  // Tým a role = AKTIVNÍ prostor (prototyp ř. 3182); v osobním prostoru se sekce skryje.
+  const { activeWs } = useWorkspace();
+  const activeWorkspace = workspaces?.find((w) => w.id === activeWs);
+  const teamWs = activeWorkspace && !activeWorkspace.isPersonal ? activeWorkspace : undefined;
+  const accountWsName = activeWorkspace?.name ?? workspaces?.[0]?.name ?? "";
 
   const { data: team, refetch } = useQuery({
     queryKey: ["wsMembers", teamWs?.id],
@@ -156,7 +162,7 @@ export function Nastaveni() {
                 borderRadius: "50%",
                 background: "#fff",
                 boxShadow: "0 1px 2px rgba(0,0,0,.25)",
-                marginLeft: theme === "dark" ? 18 : 0,
+                marginLeft: theme === "dark" ? 20 : 0,
                 transition: "margin-left .15s ease",
               }}
             />
@@ -187,6 +193,21 @@ export function Nastaveni() {
             options={[
               ["multi", t("settings.accentMulti")],
               ["brass", t("settings.accentBrass")],
+            ]}
+          />
+        </div>
+        {/* jazyk — přesunuto z headeru (v pixel referenci header CS/EN nemá) */}
+        <div style={{ ...ROW, borderTop: "1px solid var(--w-line)" }}>
+          <div style={{ flex: 1 }}>
+            <RowTitle>{t("settings.language")}</RowTitle>
+            <RowDesc>{t("settings.languageDesc")}</RowDesc>
+          </div>
+          <Segments
+            value={i18n.language?.startsWith("cs") ? "cs" : "en"}
+            onChange={(v) => void i18n.changeLanguage(v)}
+            options={[
+              ["cs", "Čeština"],
+              ["en", "English"],
             ]}
           />
         </div>
@@ -276,14 +297,27 @@ export function Nastaveni() {
                     borderBottom: "1px solid var(--w-line)",
                   }}
                 >
-                  <Avatar text={initials(m.name)} size={36} bg="var(--w-navy)" />
+                  {/* klik na avatara/jméno → karta člena (Reporty/Lidé, prototyp ř. 920–923) */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void navigate({ to: "/reporty", search: { tab: "lide", clen: m.id } })
+                    }
+                    className="shrink-0 cursor-pointer"
+                  >
+                    <Avatar text={initials(m.name)} size={36} bg="var(--w-avatar)" />
+                  </button>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <div
-                      className="font-display"
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void navigate({ to: "/reporty", search: { tab: "lide", clen: m.id } })
+                      }
+                      className="cursor-pointer font-display hover:text-brass-text"
                       style={{ fontWeight: 700, fontSize: 13.5, color: "var(--w-ink)" }}
                     >
                       {m.name}
-                    </div>
+                    </button>
                     <div
                       className="font-body"
                       style={{
@@ -665,7 +699,7 @@ function NotifyRow({ title, desc, divider }: { title: string; desc: string; divi
         }}
       >
         <span
-          style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", marginLeft: 18 }}
+          style={{ width: 20, height: 20, borderRadius: "50%", background: "#fff", marginLeft: 20 }}
         />
       </div>
     </div>

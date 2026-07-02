@@ -187,7 +187,7 @@
     "darkMode": "Tmavý režim",
     "darkModeDesc": "Přepne celé rozhraní na tmavé.",
     "density": "Hustota a barevnost",
-    "densityDesc": "Vzdušné ↔ kompaktní a akcent projektů ladíš v panelu Tweaks.",
+    "densityDesc": "Vzdušné ↔ kompaktní rozestupy řádků a karet.",
     "tweaks": "Tweaks",
     "account": "Účet",
     "team": "Tým a role",
@@ -213,7 +213,9 @@
     "inviteEmail": "E-mail",
     "inviteSend": "Odeslat pozvánku",
     "inviteSent": "Pozvánka odeslána",
-    "inviteCancel": "Zrušit"
+    "inviteCancel": "Zrušit",
+    "language": "Jazyk",
+    "languageDesc": "Rozhraní kompletně česky i anglicky."
   },
   "priority": {
     "acute": "Akutní",

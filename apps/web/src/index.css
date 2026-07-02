@@ -50,9 +50,9 @@ body {
 }
 
 /* Tweaks (#39) — hustota řádků (VERBATIM prototyp ř. 40-42) + akcent Jen brass (ř. 77). */
-[data-w-density="vzdusne"] { --w-row-py: 15px; --w-row-font: 15px; }
-[data-w-density="vyvazene"] { --w-row-py: 11px; --w-row-font: 14px; }
-[data-w-density="kompaktni"] { --w-row-py: 8px; --w-row-font: 13.5px; }
+[data-w-density="vzdusne"] { --w-row-py: 15px; --w-row-font: 15px; --w-card-pad: 18px; }
+[data-w-density="vyvazene"] { --w-row-py: 11px; --w-row-font: 14px; --w-card-pad: 15px; }
+[data-w-density="kompaktni"] { --w-row-py: 8px; --w-row-font: 13.5px; --w-card-pad: 13px; }
 [data-w-accent="brass"] .w-projdot { background: var(--w-brass) !important; }
 
 /* Pop-in animace modalů/popoverů (VERBATIM prototyp ř. 44). */

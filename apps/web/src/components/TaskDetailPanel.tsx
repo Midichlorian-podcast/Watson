@@ -813,7 +813,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
                   )}
                   <span
                     className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
-                    style={{ width: 24, height: 24, fontSize: 10, color: "#fff", background: "var(--w-navy)" }}
+                    style={{ width: 24, height: 24, fontSize: 10, color: "#fff", background: "var(--w-avatar)" }}
                   >
                     {initials(m?.name ?? "?")}
                   </span>
@@ -877,7 +877,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
                           height: 24,
                           fontSize: 10,
                           color: "#fff",
-                          background: "var(--w-navy)",
+                          background: "var(--w-avatar)",
                           opacity: assigned ? 1 : 0.5,
                         }}
                       >
@@ -946,7 +946,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
               <div key={cm.id} className="flex" style={{ gap: 9, marginBottom: 11 }}>
                 <span
                   className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
-                  style={{ width: 26, height: 26, fontSize: 10, color: "#fff", background: "var(--w-navy)" }}
+                  style={{ width: 26, height: 26, fontSize: 10, color: "#fff", background: "var(--w-avatar)" }}
                 >
                   {initials(m?.name ?? "?")}
                 </span>

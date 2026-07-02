@@ -154,7 +154,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
                   className="h-6 w-6 rounded-md"
                   style={{
                     background: c,
-                    outline: project.color === c ? "2px solid var(--w-navy)" : "none",
+                    outline: project.color === c ? "2px solid var(--w-avatar)" : "none",
                     outlineOffset: "1px",
                   }}
                   aria-label={c}
@@ -187,7 +187,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
                     onClick={() => void patchProject(id, { owner_id: m.id })}
                     className="grid h-[30px] w-[30px] place-items-center rounded-full font-display font-semibold text-[11px] text-white"
                     style={{
-                      background: "var(--w-navy)",
+                      background: "var(--w-avatar)",
                       opacity: on ? 1 : 0.5,
                       outline: on ? "2px solid var(--w-brass)" : "none",
                       outlineOffset: "2px",
@@ -254,7 +254,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
                   key={m.id}
                   title={m.name}
                   className="grid h-[30px] w-[30px] place-items-center rounded-full font-display font-semibold text-[11px] text-white"
-                  style={{ background: "var(--w-navy)" }}
+                  style={{ background: "var(--w-avatar)" }}
                 >
                   {initials(m.name)}
                 </span>

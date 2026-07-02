@@ -368,7 +368,7 @@ export function Reporty() {
               >
                 <span
                   className="flex shrink-0 items-center justify-center rounded-full font-display font-bold text-white"
-                  style={{ width: 40, height: 40, background: "var(--w-navy)", fontSize: 14 }}
+                  style={{ width: 40, height: 40, background: "var(--w-avatar)", fontSize: 14 }}
                 >
                   {initials(m.name)}
                 </span>
@@ -519,7 +519,7 @@ function MemberDetail({
           <div className="flex items-center gap-3.5">
             <span
               className="flex shrink-0 items-center justify-center rounded-full font-display font-bold text-white"
-              style={{ width: 56, height: 56, background: "var(--w-navy)", fontSize: 19 }}
+              style={{ width: 56, height: 56, background: "var(--w-avatar)", fontSize: 19 }}
             >
               {initials(member.name)}
             </span>

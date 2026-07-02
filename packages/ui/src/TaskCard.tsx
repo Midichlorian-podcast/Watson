@@ -357,7 +357,7 @@ export function TaskCard({
                 height: 22,
                 color: "#fff",
                 fontSize: 10,
-                background: a.brass ? "var(--w-brass)" : "var(--w-navy)",
+                background: a.brass ? "var(--w-brass)" : "var(--w-avatar)",
                 boxShadow: "0 0 0 2px var(--w-card)",
                 marginLeft: i > 0 ? -6 : 0,
               }}

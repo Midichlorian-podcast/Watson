@@ -209,7 +209,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                   {it.initials && (
                     <span
                       className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
-                      style={{ width: 20, height: 20, fontSize: 8.5, color: "#fff", background: "var(--w-navy)" }}
+                      style={{ width: 20, height: 20, fontSize: 8.5, color: "#fff", background: "var(--w-avatar)" }}
                     >
                       {it.initials}
                     </span>

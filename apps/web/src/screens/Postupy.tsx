@@ -621,7 +621,7 @@ function FlowDetail({
                       <span
                         title={`${t("flows.handsTo")} ${next ? stepWho(next) : ""}`}
                         className="flex shrink-0 items-center justify-center rounded-full font-bold font-mono text-white"
-                        style={{ width: 19, height: 19, background: "var(--w-navy)", fontSize: 8.5, margin: "2px 0" }}
+                        style={{ width: 19, height: 19, background: "var(--w-avatar)", fontSize: 8.5, margin: "2px 0" }}
                       >
                         {next && hasAssignee(next) ? initials(stepWho(next)) : "?"}
                       </span>
@@ -649,7 +649,7 @@ function FlowDetail({
                         <span className="inline-flex items-center gap-1.5 font-body text-ink-3" style={{ fontSize: 12 }}>
                           <span
                             className="flex items-center justify-center rounded-full font-display font-semibold text-white"
-                            style={{ width: 18, height: 18, background: "var(--w-navy)", fontSize: 9 }}
+                            style={{ width: 18, height: 18, background: "var(--w-avatar)", fontSize: 9 }}
                           >
                             {initials(stepWho(st))}
                           </span>
@@ -1151,7 +1151,7 @@ function FlowModal({
                                 height: 25,
                                 fontSize: 9.5,
                                 color: "#fff",
-                                background: "var(--w-navy)",
+                                background: "var(--w-avatar)",
                                 opacity: on ? 1 : 0.5,
                                 boxShadow: on
                                   ? "0 0 0 2px var(--w-card), 0 0 0 4px var(--w-brass)"

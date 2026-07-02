@@ -22,7 +22,6 @@ export function Header() {
   const title = active ? t(active.labelKey) : t("app.name");
   const { theme, toggle } = useTheme();
   const isDark = theme === "dark";
-  const toggleLang = () => void i18n.changeLanguage(i18n.language?.startsWith("cs") ? "en" : "cs");
 
   // Podtitulek „{n} úkolů · {x,x} h" pro workspace obrazovky (prototyp ř. 269–274 + 3090–3092):
   // count = úkoly aktuální obrazovky, hodiny = součet trvání úkolů s časem.
@@ -251,15 +250,6 @@ export function Header() {
               />
             </svg>
           )}
-        </button>
-
-        <button
-          type="button"
-          onClick={toggleLang}
-          title="CS / EN"
-          className="grid h-[34px] place-items-center rounded-[9px] border border-line bg-panel-2 px-2.5 font-mono text-ink-2 text-xs hover:border-brass"
-        >
-          {i18n.language?.startsWith("cs") ? "CS" : "EN"}
         </button>
 
         <button

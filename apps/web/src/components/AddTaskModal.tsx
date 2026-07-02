@@ -850,7 +850,7 @@ export function AddTaskModal({
                       height: 24,
                       color: "#fff",
                       fontSize: 10,
-                      background: "var(--w-navy)",
+                      background: "var(--w-avatar)",
                     }}
                   >
                     {p.initials}
@@ -1156,7 +1156,7 @@ export function AddTaskModal({
                           height: 30,
                           color: "#fff",
                           fontSize: 11,
-                          background: "var(--w-navy)",
+                          background: "var(--w-avatar)",
                           opacity: on ? 1 : 0.5,
                           boxShadow: on
                             ? "0 0 0 2px var(--w-card), 0 0 0 4px var(--w-brass)"

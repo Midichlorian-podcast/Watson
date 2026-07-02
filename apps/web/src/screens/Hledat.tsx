@@ -248,7 +248,7 @@ export function Hledat() {
             <Row key={r.id} onClick={r.run} sub={r.sub}>
               <span
                 className="flex shrink-0 items-center justify-center rounded-full font-display font-bold text-white"
-                style={{ width: 32, height: 32, background: "var(--w-navy)", fontSize: 12 }}
+                style={{ width: 32, height: 32, background: "var(--w-avatar)", fontSize: 12 }}
               >
                 {initials(r.name)}
               </span>

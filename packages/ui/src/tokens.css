@@ -94,20 +94,32 @@
   --w-shadow: 0 1px 2px rgba(20, 20, 30, 0.04), 0 12px 32px rgba(23, 40, 63, 0.08);
 }
 
-/* ── Tmavý režim ───────────────────────────────────────────── */
+/* ── Tmavý režim — KOMPLETNÍ paleta (prototyp ř. 28–39) ───── */
 [data-w-theme="dark"] {
   --w-paper: #0e131a;
   --w-card: #171f29;
   --w-panel-2: #1e2832;
   --w-sidebar: #0a1019;
+  --w-sidebar-ink: #eef1f4;
+  --w-sidebar-ink-2: rgba(232, 238, 244, 0.56);
+  --w-sidebar-line: rgba(255, 255, 255, 0.08);
   --w-ink: #eceef1;
   --w-ink-2: #a6aeba;
   --w-ink-3: #74808d;
   --w-line: #28323e;
   --w-brass: #d6a460;
   --w-brass-text: #dcab68;
+  --w-brass-soft: rgba(214, 164, 96, 0.16);
+  --w-success: #39ad7d;
+  --w-success-soft: rgba(46, 156, 110, 0.16);
+  --w-success-ink: #6fd2a6;
+  --w-overdue: #e07365;
+  --w-overdue-soft: rgba(224, 115, 101, 0.17);
+  --w-avatar: #33455f;
   --w-p1: #e0635a;
   --w-p2: #e6b557;
   --w-p3: #5a90e8;
   --w-p4: #8a93a0;
+  --w-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 36px rgba(0, 0, 0, 0.42);
+  --w-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
 }
