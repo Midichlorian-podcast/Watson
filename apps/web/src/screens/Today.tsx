@@ -5,6 +5,7 @@ import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { QuickAdd } from "../components/QuickAdd";
 import { TaskItem } from "../components/TaskItem";
+import { WorkspaceChips } from "../components/WorkspaceChips";
 import {
   DEFAULT_TOOLBAR,
   TasksToolbar,
@@ -40,6 +41,7 @@ export function Today() {
     "SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date, created_at DESC",
   );
   const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
+  const [wsFilter, setWsFilter] = useState<string | null>(null);
   const flowSteps = useFlowSteps();
   const navigate = useNavigate();
   const userId = session?.user?.id;
@@ -52,10 +54,15 @@ export function Today() {
   const g = useMemo(() => {
     const tdy = todayISO();
     const all = tasks ?? [];
-    // Spící kroky postupů se v Dnes nezobrazují (README ř. 73).
+    // Spící kroky postupů se v Dnes nezobrazují (README ř. 73) + filtr dle workspace chipů.
     const awake = all.filter((x) => {
       const fs = flowSteps.get(x.id);
-      return !(fs && (fs.state === "dormant" || fs.state === "waiting"));
+      if (fs && (fs.state === "dormant" || fs.state === "waiting")) return false;
+      if (wsFilter) {
+        const p = x.project_id ? projMap.get(x.project_id) : undefined;
+        if (p?.workspace_id !== wsFilter) return false;
+      }
+      return true;
     });
     const opn = sortTasks(filterTasks(awake.filter((x) => !x.completed_at), tb), tb);
     return {
@@ -69,7 +76,7 @@ export function Today() {
       }),
       done: all.filter((x) => x.completed_at),
     };
-  }, [tasks, tb, flowSteps]);
+  }, [tasks, tb, flowSteps, wsFilter, projMap]);
 
   /** „Tvůj další krok" — aktivní krok postupu přiřazený mně (prototyp myFlowSteps, ř. 3156). */
   const myNextStep = useMemo(() => {
@@ -160,6 +167,9 @@ export function Today() {
       </div>
 
       <div className="mx-auto max-w-[1080px]" style={{ padding: "12px 22px 90px" }}>
+        {/* Workspace chipy Vše/Moje/… (prototyp ř. 342–346) */}
+        <WorkspaceChips value={wsFilter} onChange={setWsFilter} />
+
         {/* Chytré přidání úkolu (parser, #7) */}
         <QuickAdd
           projects={projects.map((p: ProjectRow) => ({ id: p.id, name: p.name ?? "" }))}

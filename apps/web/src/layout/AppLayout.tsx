@@ -10,6 +10,7 @@ import { RowMetaProvider } from "../lib/rowMeta";
 import { TaskDetailProvider } from "../lib/taskDetail";
 import { applyTweaks } from "../lib/tweaks";
 import { useIsMobile } from "../lib/useIsMobile";
+import { ViewModeProvider } from "../lib/viewMode";
 import { WatsonProvider } from "../lib/watson";
 import { WorkspaceProvider } from "../lib/workspace";
 import { Header } from "./Header";
@@ -23,6 +24,7 @@ export function AppLayout() {
   return (
     <WorkspaceProvider>
     <RowMetaProvider>
+    <ViewModeProvider>
     <WatsonProvider>
       <AddTaskProvider>
         <TaskDetailProvider>
@@ -51,6 +53,7 @@ export function AppLayout() {
         </TaskDetailProvider>
       </AddTaskProvider>
     </WatsonProvider>
+    </ViewModeProvider>
     </RowMetaProvider>
     </WorkspaceProvider>
   );

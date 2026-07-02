@@ -30,7 +30,9 @@
     "theme": "Toggle theme",
     "assistant": "Watson",
     "collapse": "Collapse panel",
-    "soon": "Coming soon"
+    "soon": "Coming soon",
+    "lockView": "Lock this view as default for all sections",
+    "defaultView": "Default"
   },
   "quickadd": {
     "placeholder": "Add task… (e.g. call Petra tomorrow at 3pm p1 #Sales)"
@@ -138,7 +140,11 @@
     "daysUnit": "days",
     "nextWeekLower": "next week",
     "handedOff": "→ Came to you",
-    "assignAllPill": "Each separately"
+    "assignAllPill": "Each separately",
+    "weekend": "Weekend",
+    "nextWeekBucket": "Next week",
+    "pmonthBucket": "Early next month",
+    "laterBucket": "Later"
   },
   "settings": {
     "appearance": "Appearance",
@@ -406,7 +412,9 @@
     "priority": "Priority",
     "clear": "Clear filter",
     "board": "Board",
-    "addCard": "Add"
+    "addCard": "Add",
+    "allWs": "All",
+    "myWs": "Mine"
   },
   "addmodal": {
     "titlePlaceholder": "Task name — e.g. report tomorrow at 14:00 every Wednesday #Sales @Tom p1",

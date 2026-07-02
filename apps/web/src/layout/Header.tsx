@@ -1,7 +1,9 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useMemo } from "react";
 import i18n, { useTranslation } from "@watson/i18n";
 import { useAddTask } from "../lib/addTask";
+import { type ViewMode, useViewMode } from "../lib/viewMode";
 import { useWatson } from "../lib/watson";
 import { ALL_NAV } from "./nav";
 import { useTheme } from "./useTheme";
@@ -22,11 +24,48 @@ export function Header() {
   const isDark = theme === "dark";
   const toggleLang = () => void i18n.changeLanguage(i18n.language?.startsWith("cs") ? "en" : "cs");
 
-  // Podtitulek „{n} úkolů" jen na Dnes (dle designu — meta řádek titulku).
-  const { data: openCount } = usePsQuery<{ n: number }>(
-    "SELECT count(*) AS n FROM tasks WHERE completed_at IS NULL",
+  // Podtitulek „{n} úkolů · {x,x} h" pro workspace obrazovky (prototyp ř. 269–274 + 3090–3092):
+  // count = úkoly aktuální obrazovky, hodiny = součet trvání úkolů s časem.
+  const { data: openRows } = usePsQuery<{
+    due_date: string | null;
+    start_date: string | null;
+    duration_min: number | null;
+  }>(
+    "SELECT due_date, start_date, duration_min FROM tasks WHERE completed_at IS NULL AND parent_id IS NULL",
   );
-  const showSubtitle = path === "/";
+  const isWorkspace =
+    path === "/" ||
+    path.startsWith("/ukoly") ||
+    path.startsWith("/nadchazejici") ||
+    path.startsWith("/oblibene");
+  const subtitle = useMemo(() => {
+    if (!isWorkspace) return null;
+    const tdy = new Date();
+    const tdyISO = `${tdy.getFullYear()}-${String(tdy.getMonth() + 1).padStart(2, "0")}-${String(tdy.getDate()).padStart(2, "0")}`;
+    const src = (openRows ?? []).filter((r) => {
+      const d = r.due_date ? r.due_date.slice(0, 10) : null;
+      if (path === "/") return d === null || d <= tdyISO;
+      if (path.startsWith("/nadchazejici")) return d !== null && d >= tdyISO;
+      return true;
+    });
+    const mins = src
+      .filter((r) => r.start_date)
+      .reduce((a, r) => a + (r.duration_min ?? 30), 0);
+    const h = Math.round((mins / 60) * 10) / 10;
+    return {
+      count: src.length,
+      timeLabel: h > 0 ? `${String(h).replace(".", ",")} h` : null,
+    };
+  }, [openRows, path, isWorkspace]);
+
+  // Přepínač pohledů Seznam|Nástěnka|Kalendář v headeru (prototyp ř. 277–287; ne Dnes/Schránka).
+  const { view, setView, locked, toggleLock } = useViewMode();
+  const showViewSwitcher = path.startsWith("/ukoly") || path.startsWith("/nadchazejici");
+  const viewLabels: Record<ViewMode, string> = {
+    list: t("calendar.viewList"),
+    board: t("toolbar.board"),
+    calendar: t("calendar.viewCalendar"),
+  };
 
   return (
     <header
@@ -40,12 +79,91 @@ export function Header() {
         >
           {title}
         </div>
-        {showSubtitle && (
-          <div className="mt-0.5 font-mono text-ink-3" style={{ fontSize: 11.5 }}>
-            {t("shell.taskCount", { count: openCount?.[0]?.n ?? 0 })}
+        {subtitle && (
+          <div
+            className="mt-0.5 flex font-mono text-ink-3"
+            style={{ fontSize: 11.5, gap: 8, whiteSpace: "nowrap" }}
+          >
+            <span>{t("shell.taskCount", { count: subtitle.count })}</span>
+            {subtitle.timeLabel && <span>· {subtitle.timeLabel}</span>}
           </div>
         )}
       </div>
+
+      {showViewSwitcher && (
+        <>
+          <div
+            className="flex border border-line bg-panel-2"
+            style={{ marginLeft: 6, flex: "none", borderRadius: 10, padding: 3 }}
+          >
+            {(["list", "board", "calendar"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className="cursor-pointer font-display font-semibold"
+                style={{
+                  fontSize: 12.5,
+                  padding: "5px 12px",
+                  borderRadius: 7,
+                  background: view === v ? "var(--w-card)" : "transparent",
+                  color: view === v ? "var(--w-ink)" : "var(--w-ink-3)",
+                }}
+              >
+                {viewLabels[v]}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={toggleLock}
+            title={t("shell.lockView")}
+            className="flex shrink-0 cursor-pointer items-center justify-center hover:border-brass"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 9,
+              border: `1px solid ${locked ? "var(--w-brass)" : "var(--w-line)"}`,
+              background: locked ? "var(--w-brass-soft)" : "transparent",
+              color: locked ? "var(--w-brass-text)" : "var(--w-ink-2)",
+            }}
+          >
+            {locked ? (
+              <svg width="14" height="14" viewBox="0 0 15 15" fill="none" aria-hidden>
+                <rect x="3" y="7" width="9" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M5 7 V5 A2.5 2.5 0 0 1 10 5 V7" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 15 15" fill="none" aria-hidden>
+                <rect x="3" y="7" width="9" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                <path
+                  d="M5 7 V5 A2.5 2.5 0 0 1 9.7 4"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
+          </button>
+          {locked && (
+            <span
+              className="inline-flex shrink-0 items-center font-display font-semibold"
+              style={{
+                gap: 5,
+                fontSize: 11,
+                color: "var(--w-brass-text)",
+                background: "var(--w-brass-soft)",
+                borderRadius: 7,
+                padding: "4px 9px",
+                whiteSpace: "nowrap",
+              }}
+              title={t("shell.lockView")}
+            >
+              {t("shell.defaultView")}: {viewLabels[view]}
+            </span>
+          )}
+        </>
+      )}
 
       <div className="ml-auto flex items-center" style={{ gap: 9 }}>
         <button

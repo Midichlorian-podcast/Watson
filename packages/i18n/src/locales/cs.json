@@ -30,7 +30,9 @@
     "theme": "Přepnout motiv",
     "assistant": "Watson",
     "collapse": "Sbalit panel",
-    "soon": "Připravujeme"
+    "soon": "Připravujeme",
+    "lockView": "Zamknout toto zobrazení jako výchozí pro všechny sekce",
+    "defaultView": "Výchozí"
   },
   "quickadd": {
     "placeholder": "Přidat úkol… (např. zavolat Petře zítra v 15 p1 #Obchod)"
@@ -138,7 +140,11 @@
     "daysUnit": "dní",
     "nextWeekLower": "příští týden",
     "handedOff": "→ Přišlo na tebe",
-    "assignAllPill": "Každý zvlášť"
+    "assignAllPill": "Každý zvlášť",
+    "weekend": "Víkend",
+    "nextWeekBucket": "Příští týden",
+    "pmonthBucket": "Začátkem příštího měsíce",
+    "laterBucket": "Později"
   },
   "settings": {
     "appearance": "Vzhled",
@@ -406,7 +412,9 @@
     "priority": "Priorita",
     "clear": "Zrušit filtr",
     "board": "Nástěnka",
-    "addCard": "Přidat"
+    "addCard": "Přidat",
+    "allWs": "Vše",
+    "myWs": "Moje"
   },
   "addmodal": {
     "titlePlaceholder": "Název úkolu — např. report zítra v 14:00 každou středu #Obchod @Tomáš p1",
