@@ -269,13 +269,17 @@
     "dwm": "Den / týden / měsíc",
     "menuSelect": "Výběr v nabídce",
     "confirm": "Potvrdit",
-    "saveTask": "Uložit úkol"
+    "saveTask": "Uložit úkol",
+    "undone": "Vráceno zpět",
+    "redone": "Znovu provedeno"
   },
   "palette": {
     "placeholder": "Skoč na obrazovku, projekt, člověka, postup…",
     "empty": "Nic nenalezeno",
     "kindGoto": "Přejít",
-    "kindProject": "Projekt"
+    "kindProject": "Projekt",
+    "kindPerson": "Člověk",
+    "kindFlow": "Postup"
   },
   "inbox": {
     "heading": "Schránka",

@@ -269,13 +269,17 @@
     "dwm": "Day / week / month",
     "menuSelect": "Menu selection",
     "confirm": "Confirm",
-    "saveTask": "Save task"
+    "saveTask": "Save task",
+    "undone": "Undone",
+    "redone": "Redone"
   },
   "palette": {
     "placeholder": "Jump to a screen, project, person, flow…",
     "empty": "Nothing found",
     "kindGoto": "Go to",
-    "kindProject": "Project"
+    "kindProject": "Project",
+    "kindPerson": "Person",
+    "kindFlow": "Flow"
   },
   "inbox": {
     "heading": "Inbox",

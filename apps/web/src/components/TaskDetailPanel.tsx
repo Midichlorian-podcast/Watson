@@ -14,6 +14,7 @@ import { useProject } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { occLabel, rowDue, setOccurrenceOverride, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
+import { deleteTaskWithUndo } from "../lib/undo";
 
 type Pri = 1 | 2 | 3 | 4;
 type Member = { id: string; name: string; email: string; image: string | null };
@@ -321,7 +322,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
     showToast(t("detail.linkCopied"));
   };
   const del = () => {
-    void powerSync.execute("DELETE FROM tasks WHERE id = ?", [realId]);
+    void deleteTaskWithUndo(realId); // mazání s undo (⌘Z)
     onClose();
   };
 

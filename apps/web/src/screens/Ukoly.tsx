@@ -18,6 +18,7 @@ import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { toggleTask } from "../lib/tasks";
+import { deleteTaskWithUndo, pushColumnUndo } from "../lib/undo";
 import { useViewMode } from "../lib/viewMode";
 
 /**
@@ -106,13 +107,15 @@ export function Ukoly() {
       }
       if (["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault();
+        const prev = list.find((x) => x.id === cur)?.priority ?? 4;
+        pushColumnUndo("tasks", cur, "priority", prev, +e.key);
         void powerSync.execute("UPDATE tasks SET priority = ? WHERE id = ?", [+e.key, cur]);
         return;
       }
       if (e.key === "Backspace" || e.key === "Delete") {
         e.preventDefault();
         const ni = ids[i + 1] ?? ids[i - 1] ?? null;
-        void powerSync.execute("DELETE FROM tasks WHERE id = ?", [cur]);
+        void deleteTaskWithUndo(cur); // ⌫ smaže s undo (tahák ř. 1654)
         setKbSel(ni);
         return;
       }

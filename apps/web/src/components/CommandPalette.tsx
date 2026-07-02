@@ -1,26 +1,64 @@
+import { useQuery as usePsQuery } from "@powersync/react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type KeyboardEvent, useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
-import { useProjectDetail } from "../lib/projectDetail";
+import { API_URL } from "../lib/api";
 import { useProjects } from "../lib/projects";
+import { useWorkspace } from "../lib/workspace";
 
-type Route = "/" | "/ukoly" | "/nadchazejici" | "/projekty" | "/nastaveni" | "/schranka" | "/hledat";
+type Route =
+  | "/"
+  | "/ukoly"
+  | "/nadchazejici"
+  | "/projekty"
+  | "/nastaveni"
+  | "/schranka"
+  | "/hledat"
+  | "/cile"
+  | "/reporty"
+  | "/postupy";
 interface PalItem {
   key: string;
   kind: string;
   label: string;
   color?: string;
+  initials?: string;
   run: () => void;
 }
 
-/** ⌘K command palette — 1:1 dle Cloud Design: fuzzy (substring) přes obrazovky + projekty. */
+const ini = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0] ?? "")
+    .join("")
+    .toUpperCase() || "?";
+
+/** ⌘K command palette (prototyp ř. 2282–2287): obrazovky + projekty + lidé + postupy. */
 export function CommandPalette({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const projects = useProjects();
-  const projectDetail = useProjectDetail();
+  const { activeWs } = useWorkspace();
   const [q, setQ] = useState("");
   const [idx, setIdx] = useState(0);
+
+  const { data: chains } = usePsQuery<{ id: string; name: string | null }>(
+    "SELECT id, name FROM chains WHERE state IS NULL OR state != 'done'",
+  );
+  const { data: team } = useQuery({
+    queryKey: ["wsMembersFull", activeWs],
+    enabled: !!activeWs,
+    queryFn: async () => {
+      const r = await fetch(`${API_URL}/api/workspaces/${activeWs}/members`, {
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("members");
+      return (await r.json()).members as { id: string; name: string }[];
+    },
+  });
 
   const go = (to: Route) => () => {
     onClose();
@@ -36,6 +74,9 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         [t("nav.upcoming"), "/nadchazejici"],
         [t("nav.tasks"), "/ukoly"],
         [t("nav.projects"), "/projekty"],
+        [t("nav.goals"), "/cile"],
+        [t("nav.reports"), "/reporty"],
+        [t("nav.flows"), "/postupy"],
         [t("nav.search"), "/hledat"],
         [t("nav.settings"), "/nastaveni"],
       ] as [string, Route][]
@@ -45,6 +86,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       label,
       run: go(to),
     }));
+    // Projekt → filtrovaný seznam Úkolů (prototyp openProj, ř. 2295).
     const projItems: PalItem[] = projects.map((p) => ({
       key: `p:${p.id}`,
       kind: t("palette.kindProject"),
@@ -52,13 +94,32 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       color: p.color ?? undefined,
       run: () => {
         onClose();
-        projectDetail.open(p.id);
+        void navigate({ to: "/ukoly", search: { projekt: p.id } });
       },
     }));
-    const all = [...screens, ...projItems];
+    const peopleItems: PalItem[] = (team ?? []).map((m) => ({
+      key: `m:${m.id}`,
+      kind: t("palette.kindPerson"),
+      label: m.name,
+      initials: ini(m.name),
+      run: () => {
+        onClose();
+        void navigate({ to: "/reporty", search: { tab: "lide", clen: m.id } });
+      },
+    }));
+    const flowItems: PalItem[] = (chains ?? []).map((c) => ({
+      key: `f:${c.id}`,
+      kind: t("palette.kindFlow"),
+      label: c.name ?? "",
+      run: () => {
+        onClose();
+        void navigate({ to: "/postupy", search: { postup: c.id } });
+      },
+    }));
+    const all = [...screens, ...projItems, ...peopleItems, ...flowItems];
     return (query ? all.filter((it) => it.label.toLowerCase().includes(query)) : all).slice(0, 14);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, projects, t]);
+  }, [q, projects, team, chains, t]);
 
   const activeIdx = Math.min(idx, Math.max(0, items.length - 1));
 
@@ -136,7 +197,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                   className="flex w-full items-center gap-2.5 rounded-[9px] text-left"
                   style={{
                     padding: "9px 11px",
-                    background: i === activeIdx ? "var(--w-panel-2)" : "transparent",
+                    background: i === activeIdx ? "var(--w-brass-soft)" : "transparent",
                   }}
                 >
                   {it.color && (
@@ -144,6 +205,14 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                       className="shrink-0 rounded-full"
                       style={{ width: 16, height: 16, background: it.color }}
                     />
+                  )}
+                  {it.initials && (
+                    <span
+                      className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
+                      style={{ width: 20, height: 20, fontSize: 8.5, color: "#fff", background: "var(--w-navy)" }}
+                    >
+                      {it.initials}
+                    </span>
                   )}
                   <span className="flex-1 font-display font-semibold text-ink" style={{ fontSize: 13.5 }}>
                     {it.label}

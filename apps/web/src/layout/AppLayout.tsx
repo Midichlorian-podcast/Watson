@@ -19,9 +19,13 @@ import { MobileTabBar } from "./MobileTabBar";
 import { Sidebar } from "./Sidebar";
 
 export function AppLayout() {
-  const [collapsed, setCollapsed] = useState(false);
+  // Sbalení sidebaru se persistuje (prototyp toggleRail + persist, ř. 2580).
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("watson.rail") === "1");
   const isMobile = useIsMobile();
   useEffect(applyTweaks, []);
+  useEffect(() => {
+    localStorage.setItem("watson.rail", collapsed ? "1" : "0");
+  }, [collapsed]);
   return (
     <WorkspaceProvider>
     <RowMetaProvider>
