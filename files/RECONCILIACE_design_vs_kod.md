@@ -825,3 +825,15 @@ Rozhodnutí/odchylky:
 - **Drag výskytů (virtuální id `@`)**: zakázán — per-occurrence výjimky odloženy (§17).
 - **AddTask Enter**: potvrdí úkol i bez ⌘ (bez našeptávače); prototyp jen ⌘Enter.
 - **pmonth chip label**: ukazuje konkrétní datum („1. 8.") místo prototypího fallbacku „Termín".
+
+## §30 — Postupy detail + reflow (2026-07-02, #47)
+
+Reflow engine (`lib/chainReflow.ts`, port _reflow/shiftFlow): režimy Řetězec (gap_days od
+předchozího, Bez víkendů → nejbližší pracovní den) / Kotva (anchor_offset od kotvy); migrace
+0008 (chains.sched_mode/skip_weekend, chain_steps.anchor_offset/gap_days); starší řetězce bez
+offsetů → odvození z aktuálních termínů (à la _normFlows). Kaskáda při předání: zpožděný
+aktivovaný krok → dnešek + reflow následníků + toast. Šablony z běžícího postupu →
+localStorage `watson.flowTemplates` (ne DB — per-user, lehké; tabulka chain_templates až bude
+sdílení). Odchylka ponechána: tlačítko „Aktivovat krok" u manual gate (prototyp aktivuje jen
+checkboxem) — užitečné, vizuálně sladěno. Role kroku = text v description („Role: X") —
+strukturovaný sloupec až s rolemi workspace.

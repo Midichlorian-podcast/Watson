@@ -7,7 +7,11 @@
  * Rozhodnutí: advance běží KLIENTSKY při toggle úkolu (PowerSync UPDATE, LWW) — server-authored
  * advance až při řešení konfliktů více klientů (viz RECONCILIACE §23).
  */
+import i18n from "@watson/i18n";
+import { API_URL } from "./api";
+import { reflowChain } from "./chainReflow";
 import { powerSync } from "./powersync/db";
+import { showToast } from "./toast";
 
 export interface ChainStepLite {
   id: string;
@@ -49,6 +53,60 @@ async function activateRun(steps: ChainStepLite[], i: number): Promise<void> {
   }
 }
 
+/** Jméno prvního přiřazeného kroku (pro toast „Předáno → X"); offline → „kdokoli z týmu". */
+async function handoffName(taskId: string | null): Promise<string> {
+  const fallback = i18n.t("flows.anyoneTeam");
+  if (!taskId) return fallback;
+  try {
+    const asg = await powerSync.getAll<{ user_id: string | null }>(
+      "SELECT user_id FROM assignments WHERE task_id = ? ORDER BY created_at LIMIT 1",
+      [taskId],
+    );
+    const uid = asg[0]?.user_id;
+    if (!uid) return fallback;
+    const tk = await powerSync.getAll<{ project_id: string | null }>(
+      "SELECT project_id FROM tasks WHERE id = ? LIMIT 1",
+      [taskId],
+    );
+    const pid = tk[0]?.project_id;
+    if (!pid) return fallback;
+    const r = await fetch(`${API_URL}/api/projects/${pid}/members`, { credentials: "include" });
+    if (!r.ok) return fallback;
+    const members = (await r.json()).members as { id: string; name: string }[];
+    return members.find((m) => m.id === uid)?.name ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Kaskáda při předání (prototyp _advance závěr, ř. 2483): zpožděný aktivovaný krok
+ * v režimu Řetězec se přitáhne na dnešek + navazující kroky se přepočítají (reflow).
+ */
+async function cascadePull(chainId: string, step: ChainStepLite): Promise<void> {
+  if (!step.task_id) return;
+  const chain = await powerSync.getAll<{ sched_mode: string | null }>(
+    "SELECT sched_mode FROM chains WHERE id = ? LIMIT 1",
+    [chainId],
+  );
+  if ((chain[0]?.sched_mode ?? "chain") !== "chain") return;
+  const tk = await powerSync.getAll<{ due_date: string | null }>(
+    "SELECT due_date FROM tasks WHERE id = ? LIMIT 1",
+    [step.task_id],
+  );
+  const due = tk[0]?.due_date?.slice(0, 10);
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  if (!due || due >= todayIso) return;
+  const delta = Math.round(
+    (new Date(`${todayIso}T00:00:00`).getTime() - new Date(`${due}T00:00:00`).getTime()) / 86_400_000,
+  );
+  await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [todayIso, step.task_id]);
+  await reflowChain(chainId, step.position ?? 0);
+  const unit = delta === 1 ? i18n.t("flows.day1") : delta < 5 ? i18n.t("flows.day234") : i18n.t("flows.day5");
+  setTimeout(() => showToast(`${i18n.t("flows.cascadeMoved")} ${delta} ${unit}`), 1200);
+}
+
 /** Po změně stavů: pokud jsou všechny kroky uzavřené → chain done; jinak active. */
 async function syncChainState(chainId: string): Promise<void> {
   const steps = await loadChainSteps(chainId);
@@ -84,6 +142,11 @@ export async function advanceChainForTask(taskId: string, nowDone: boolean): Pro
       if (st.step_state === "dormant") {
         if (st.gate === "manual") break; // čeká na ruční aktivaci
         await activateRun(steps, i);
+        // „Předáno → X" + kaskádové přitažení zpožděného kroku (prototyp ř. 2482–2483)
+        void handoffName(st.task_id).then((who) =>
+          showToast(`${i18n.t("flows.handedTo")} ${who}`),
+        );
+        await cascadePull(me.chain_id, st);
       }
       break;
     }

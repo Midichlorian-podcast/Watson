@@ -41,6 +41,10 @@ export const chains = pgTable(
     /** „Datum show" pro auto-datování kroků. */
     anchorDate: timestamp("anchor_date", { withTimezone: true }),
     state: chainStateEnum("state").notNull().default("active"),
+    /** Plánování (prototyp schedMode): chain = termíny z předchozího kroku, anchor = pevné. */
+    schedMode: varchar("sched_mode", { length: 10 }).notNull().default("chain"),
+    /** Reflow přeskakuje víkendy (prototyp skipWeekend). */
+    skipWeekend: integer("skip_weekend").notNull().default(0),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: createdAt(),
@@ -69,6 +73,10 @@ export const chainSteps = pgTable(
     gate: chainGateEnum("gate").notNull().default("after_previous"),
     /** ZDROJ PRAVDY o gatingu. */
     stepState: chainStepStateEnum("step_state").notNull().default("dormant"),
+    /** Offset dne od kotvy řetězce (režim Kotva; prototyp anchorOffset). */
+    anchorOffset: integer("anchor_offset"),
+    /** Odstup od předchozího kroku ve dnech (režim Řetězec; prototyp gapDays). */
+    gapDays: integer("gap_days"),
     activatedAt: timestamp("activated_at", { withTimezone: true }),
     createdAt: createdAt(),
   },

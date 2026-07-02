@@ -11,11 +11,13 @@ import {
   advanceChainForTask,
   rewindToStep,
 } from "../lib/chainAdvance";
+import { setChainSchedMode, shiftChain, toggleChainWeekend } from "../lib/chainReflow";
 import { useSession } from "../lib/auth-client";
+import { showToast } from "../lib/toast";
 import type { ChainRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
-import { useWorkspace } from "../lib/workspace";
+import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
 
@@ -71,6 +73,18 @@ const TEMPLATES: {
     ],
   },
   {
+    id: "ples",
+    label: "Příprava plesu",
+    desc: "Sál → catering → vyúčtování",
+    steps: [
+      { name: "Rezervovat sál", offset: 0, priority: 1, gate: "after_previous" },
+      { name: "Objednat catering", offset: 3, priority: 2, gate: "after_previous" },
+      { name: "Spustit prodej vstupenek", offset: 5, priority: 2, gate: "after_previous" },
+      { name: "Sestavit program večera", offset: 6, priority: 3, gate: "manual" },
+      { name: "Vyúčtování akce", offset: 9, priority: 3, gate: "after_previous" },
+    ],
+  },
+  {
     id: "grant",
     label: "Žádost o grant",
     desc: "Žádost → revize → odeslání",
@@ -84,6 +98,18 @@ const TEMPLATES: {
   },
 ];
 
+/** Role pro kroky builderu (prototyp FLOW_ROLES, ř. 2500) — člověk se dosadí při založení. */
+const FLOW_ROLES = ["Grafik", "Produkce", "Účetní", "Vedoucí"];
+
+/** Šablony uložené z běžících postupů (localStorage, prototyp saveFlowAsTemplate). */
+function savedTemplates(): typeof TEMPLATES {
+  try {
+    return JSON.parse(localStorage.getItem("watson.flowTemplates") ?? "[]") as typeof TEMPLATES;
+  } catch {
+    return [];
+  }
+}
+
 interface StepFull extends ChainStepLite {
   activated_at: string | null;
 }
@@ -95,6 +121,8 @@ export function Postupy() {
   const search = useSearch({ from: "/postupy" });
   const projects = useProjects();
   const { activeWs } = useWorkspace();
+  const { data: workspaces } = useWorkspaces();
+  const activeWsInfo = (workspaces ?? []).find((w) => w.id === activeWs);
   const { data: session } = useSession();
   const meId = session?.user?.id;
 
@@ -157,15 +185,29 @@ export function Postupy() {
       .map((ch) => {
         const chSteps = (steps ?? []).filter((s) => s.chain_id === ch.id);
         const total = chSteps.length;
-        const done = chSteps.filter((s) => s.step_state === "done" || s.step_state === "skipped").length;
+        // Progress = jen done (skipped se do X/Y nepočítá — prototyp flowView).
+        const done = chSteps.filter((s) => s.step_state === "done").length;
         const now = chSteps.find((s) => s.step_state === "active") ?? null;
         const nowTask = now?.task_id ? taskById.get(now.task_id) : undefined;
         const stuck = !!nowTask?.due_date && nowTask.due_date.slice(0, 10) < tdy;
         const proj = wsProjects.find((p) => p.id === ch.project_id);
         const mine = !!(now?.task_id && meId && assigneesByTask.get(now.task_id)?.includes(meId));
-        return { ch, chSteps, total, done, now, nowTask, stuck, proj, mine };
-      });
-  }, [chains, steps, taskById, wsProjectIds, wsProjects, assigneesByTask, meId]);
+        // „Teď: … · X, Y" — všechna jména čárkou (prototyp ř. 3154).
+        const nowWho = now?.task_id
+          ? (assigneesByTask.get(now.task_id) ?? [])
+              .map((uid) => memberName(uid))
+              .filter(Boolean)
+              .join(", ") || t("flows.anyoneTeam")
+          : "";
+        return { ch, chSteps, total, done, now, nowTask, nowWho, stuck, proj, mine };
+      })
+      // Vázne první, pak dle % postupu (prototyp ř. 3155).
+      .sort(
+        (a, b) =>
+          Number(b.stuck) - Number(a.stuck) ||
+          (b.total ? b.done / b.total : 0) - (a.total ? a.done / a.total : 0),
+      );
+  }, [chains, steps, taskById, wsProjectIds, wsProjects, assigneesByTask, meId, memberName, t]);
 
   const shown = mineOnly ? view.filter((v) => v.mine) : view;
   const selected = search.postup ? (view.find((v) => v.ch.id === search.postup) ?? null) : null;
@@ -177,6 +219,20 @@ export function Postupy() {
         <h1 className="font-display font-extrabold text-ink" style={{ fontSize: 17 }}>
           {t("flows.heading")}
         </h1>
+        {/* aktivní prostor (prototyp ř. 775–777) */}
+        <span
+          className="shrink-0"
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 3,
+            marginLeft: 4,
+            background: activeWsInfo?.color ?? "var(--w-ink-3)",
+          }}
+        />
+        <span className="font-display font-semibold text-ink-3" style={{ fontSize: 13 }}>
+          {activeWsInfo?.name ?? ""}
+        </span>
         <button
           type="button"
           onClick={() => setMineOnly((o) => !o)}
@@ -205,7 +261,7 @@ export function Postupy() {
         {t("flows.subtitle")}
       </p>
 
-      {shown.length === 0 ? (
+      {view.length === 0 ? (
         <div className="text-center" style={{ padding: "60px 20px" }}>
           <div className="font-body text-ink-3" style={{ fontSize: 14 }}>
             {t("flows.empty")}
@@ -224,12 +280,12 @@ export function Postupy() {
           className="grid gap-3"
           style={{ gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))" }}
         >
-          {shown.map(({ ch, total, done, now, nowTask, stuck, proj }) => (
+          {shown.map(({ ch, total, done, now, nowTask, nowWho, stuck, proj }) => (
             <button
               key={ch.id}
               type="button"
               onClick={() => void navigate({ to: "/postupy", search: { postup: ch.id } })}
-              className="rounded-[14px] border border-line bg-card text-left transition-shadow hover:shadow-md"
+              className="hover:-translate-y-0.5 rounded-[14px] border border-line bg-card text-left transition-all hover:shadow-md"
               style={{ padding: "15px 16px", boxShadow: "var(--w-shadow-sm)" }}
             >
               <div className="flex items-center gap-2">
@@ -253,13 +309,14 @@ export function Postupy() {
                   }}
                 />
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: "var(--w-brass)" }} />
-                <span className="min-w-0 truncate font-body text-ink-2" style={{ fontSize: 12.5 }}>
-                  {t("flows.now")} {now ? (nowTask?.name ?? "") : t("flows.allDone")}
-                  {now ? ` · ${stepWho(now)}` : ""}
-                </span>
-              </div>
+              {now && (
+                <div className="flex items-center gap-1.5">
+                  <span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: "var(--w-brass)" }} />
+                  <span className="min-w-0 truncate font-body text-ink-2" style={{ fontSize: 12.5 }}>
+                    {t("flows.now")} {nowTask?.name ?? ""} · {nowWho}
+                  </span>
+                </div>
+              )}
               {stuck && (
                 <div
                   className="mt-2 inline-flex items-center gap-1.5 rounded-full font-display font-semibold"
@@ -279,7 +336,11 @@ export function Postupy() {
       )}
 
       {modalOpen && (
-        <FlowModal projects={wsProjects} onClose={() => setModalOpen(false)} />
+        <FlowModal
+          projects={wsProjects}
+          onClose={() => setModalOpen(false)}
+          onCreated={(chainId) => void navigate({ to: "/postupy", search: { postup: chainId } })}
+        />
       )}
 
       {selected && (
@@ -287,6 +348,9 @@ export function Postupy() {
           data={selected}
           taskById={taskById}
           stepWho={stepWho}
+          hasAssignee={(st) =>
+            !!(st.task_id && (assigneesByTask.get(st.task_id)?.length ?? 0) > 0)
+          }
           onClose={() => void navigate({ to: "/postupy", search: {} })}
         />
       )}
@@ -299,6 +363,7 @@ function FlowDetail({
   data,
   taskById,
   stepWho,
+  hasAssignee,
   onClose,
 }: {
   data: {
@@ -311,19 +376,57 @@ function FlowDetail({
   };
   taskById: Map<string, TaskRow>;
   stepWho: (st: ChainStepLite) => string;
+  /** Má krok přiřazenou osobu? (relay avatar „?" u nepřiřazených — prototyp flowView) */
+  hasAssignee: (st: ChainStepLite) => boolean;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const { ch, chSteps, total, done, now } = data;
   const [pendingRewind, setPendingRewind] = useState<string | null>(null);
+  const isChainMode = (ch.sched_mode ?? "chain") !== "anchor";
+  const skipWk = !!ch.skip_weekend;
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      // Enter dokončí aktivní krok (prototyp ř. 2227).
+      const el = document.activeElement as HTMLElement | null;
+      const typing =
+        !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      if (e.key === "Enter" && !typing && now?.task_id) {
+        e.preventDefault();
+        void completeStep(now);
+      }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
+  }, [onClose, now]);
+
+  /** Uložit jako šablonu (prototyp saveFlowAsTemplate, ř. 2495) — per-user do localStorage. */
+  const saveTemplate = () => {
+    const dues = chSteps
+      .map((s) => (s.task_id ? taskById.get(s.task_id)?.due_date?.slice(0, 10) : null));
+    const base = dues.find(Boolean) ?? todayISO();
+    const dayDiff = (a: string) =>
+      Math.round((new Date(`${a}T00:00:00`).getTime() - new Date(`${base}T00:00:00`).getTime()) / 86_400_000);
+    const tpl = {
+      id: `tpl${Date.now()}`,
+      label: ch.name ?? "Postup",
+      desc: `${chSteps.length} ${t("flows.stepsFromRunning")}`,
+      steps: chSteps.map((s, i) => ({
+        name: (s.task_id ? taskById.get(s.task_id)?.name : null) ?? `Krok ${i + 1}`,
+        offset: dayDiff((s.task_id ? taskById.get(s.task_id)?.due_date?.slice(0, 10) : null) ?? base),
+        priority: (s.task_id ? taskById.get(s.task_id)?.priority : null) ?? 3,
+        gate: s.gate ?? "after_previous",
+      })),
+    };
+    const saved = JSON.parse(localStorage.getItem("watson.flowTemplates") ?? "[]") as unknown[];
+    localStorage.setItem("watson.flowTemplates", JSON.stringify([tpl, ...saved]));
+    showToast(`${t("flows.templateSaved")} ${tpl.label}`);
+  };
 
   const GATE_LABEL: Record<string, string> = {
     after_previous: t("flows.gateAuto"),
@@ -338,7 +441,9 @@ function FlowDetail({
   };
   const isClosed = (s: StepFull) => s.step_state === "done" || s.step_state === "skipped";
   const dues = chSteps.map((s) => (s.task_id ? taskById.get(s.task_id)?.due_date : null)).filter(Boolean) as string[];
-  const eta = dues.length ? fmtDay(dues.sort()[dues.length - 1] ?? null) : "";
+  const eta = dues.length
+    ? `${t("flows.etaCca")} ${fmtDay(dues.sort()[dues.length - 1] ?? null)}`
+    : "";
 
   const completeStep = async (st: StepFull) => {
     if (!st.task_id) return;
@@ -399,10 +504,90 @@ function FlowDetail({
               {t("flows.eta")} <strong style={{ color: "var(--w-ink-2)" }}>{eta}</strong>
             </div>
           )}
-          {/* Kotva režim — termíny pevné (hint z prototypu; reflow/kaskáda viz RECONCILIACE §23) */}
-          <div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.4 }}>
-            Termíny jsou pevné. Zpoždění se nepřelévá — Watson označí ohrožený konec.
+
+          {/* PLÁNOVÁNÍ — Řetězec/Kotva + ±1d + Bez víkendů (prototyp ř. 1102–1113) */}
+          <div className="mt-3 flex flex-wrap items-center" style={{ gap: 7 }}>
+            <span
+              className="font-display font-bold text-ink-3 uppercase"
+              style={{ fontSize: 9.5, letterSpacing: ".06em" }}
+            >
+              {t("flows.planning")}
+            </span>
+            <span className="inline-flex overflow-hidden rounded-[8px] border border-line">
+              <button
+                type="button"
+                title={t("flows.chainTitle")}
+                onClick={() => void setChainSchedMode(ch.id, "chain")}
+                className="cursor-pointer font-display font-semibold"
+                style={{
+                  fontSize: 11.5,
+                  padding: "5px 11px",
+                  background: isChainMode ? "var(--w-brass-soft)" : "transparent",
+                  color: isChainMode ? "var(--w-brass-text)" : "var(--w-ink-2)",
+                }}
+              >
+                {t("flows.modeChain")}
+              </button>
+              <button
+                type="button"
+                title={t("flows.anchorTitle")}
+                onClick={() => void setChainSchedMode(ch.id, "anchor")}
+                className="cursor-pointer border-line border-l font-display font-semibold"
+                style={{
+                  fontSize: 11.5,
+                  padding: "5px 11px",
+                  background: !isChainMode ? "var(--w-brass-soft)" : "transparent",
+                  color: !isChainMode ? "var(--w-brass-text)" : "var(--w-ink-2)",
+                }}
+              >
+                {t("flows.modeAnchor")}
+              </button>
+            </span>
+            <button
+              type="button"
+              title={t("flows.shiftEarlier")}
+              onClick={() => void shiftChain(ch.id, -1)}
+              className="cursor-pointer rounded-[8px] border border-line font-mono text-ink-2 hover:border-brass"
+              style={{ fontSize: 11.5, padding: "5px 9px" }}
+            >
+              −1 d
+            </button>
+            <button
+              type="button"
+              title={t("flows.shiftLater")}
+              onClick={() => void shiftChain(ch.id, 1)}
+              className="cursor-pointer rounded-[8px] border border-line font-mono text-ink-2 hover:border-brass"
+              style={{ fontSize: 11.5, padding: "5px 9px" }}
+            >
+              +1 d
+            </button>
+            <button
+              type="button"
+              onClick={() => void toggleChainWeekend(ch.id)}
+              className="cursor-pointer rounded-[8px] font-display font-semibold hover:border-brass"
+              style={{
+                fontSize: 11.5,
+                padding: "5px 10px",
+                border: `1px solid ${skipWk ? "var(--w-brass)" : "var(--w-line)"}`,
+                background: skipWk ? "var(--w-brass-soft)" : "transparent",
+                color: skipWk ? "var(--w-brass-text)" : "var(--w-ink-2)",
+              }}
+            >
+              {t("flows.noWeekends")}
+            </button>
           </div>
+          <div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.4 }}>
+            {isChainMode ? t("flows.chainHint") : t("flows.anchorHint")}
+          </div>
+          <button
+            type="button"
+            onClick={saveTemplate}
+            className="mt-2.5 inline-flex cursor-pointer items-center rounded-[8px] border border-line font-display font-semibold text-ink-2 hover:border-brass"
+            style={{ gap: 6, fontSize: 11.5, padding: "5px 10px" }}
+          >
+            <Icon name="duplikovat" size={13} />
+            {t("flows.saveTemplate")}
+          </button>
         </div>
 
         {/* osa kroků */}
@@ -411,8 +596,12 @@ function FlowDetail({
             const tk = st.task_id ? taskById.get(st.task_id) : undefined;
             const sk = st.step_state ?? "dormant";
             const dotBg =
-              sk === "done" ? "var(--w-success)" : sk === "active" ? "var(--w-brass)" : "var(--w-panel-2)";
-            const dotFg = sk === "dormant" ? "var(--w-ink-3)" : "#fff";
+              sk === "done"
+                ? "var(--w-success-ink)"
+                : sk === "active"
+                  ? "var(--w-brass)"
+                  : "var(--w-panel-2)";
+            const dotFg = sk === "dormant" || sk === "skipped" ? "var(--w-ink-3)" : "#fff";
             const priorClosed = chSteps.slice(0, i).every(isClosed);
             const canActivate = sk === "dormant" && st.gate === "manual" && priorClosed;
             const next = chSteps[i + 1];
@@ -434,19 +623,21 @@ function FlowDetail({
                         className="flex shrink-0 items-center justify-center rounded-full font-bold font-mono text-white"
                         style={{ width: 19, height: 19, background: "var(--w-navy)", fontSize: 8.5, margin: "2px 0" }}
                       >
-                        {next ? initials(stepWho(next)) : "?"}
+                        {next && hasAssignee(next) ? initials(stepWho(next)) : "?"}
                       </span>
                       <span className="flex-1 bg-line" style={{ width: 2, minHeight: 12, marginBottom: 3 }} />
                     </>
                   )}
                 </div>
-                {/* karta kroku */}
+                {/* karta kroku — active: brass-soft bg; dormant: ztlumení (CSS ř. 121–129) */}
                 <div
                   className="min-w-0 flex-1 rounded-xl border"
                   style={{
                     padding: "12px 13px",
                     marginBottom: 12,
                     borderColor: sk === "active" ? "var(--w-brass)" : "var(--w-line)",
+                    background: sk === "active" ? "var(--w-brass-soft)" : undefined,
+                    opacity: sk === "dormant" ? 0.66 : 1,
                   }}
                 >
                   <div className="flex items-start gap-2">
@@ -478,8 +669,25 @@ function FlowDetail({
                       </div>
                     </div>
                     <span
-                      className="shrink-0 whitespace-nowrap rounded-full border border-line font-display font-semibold text-ink-3"
-                      style={{ fontSize: 10.5, padding: "2px 9px" }}
+                      className="shrink-0 whitespace-nowrap rounded-full font-display font-semibold"
+                      style={{
+                        fontSize: 10.5,
+                        padding: "2px 9px",
+                        border: `1px solid ${sk === "active" ? "var(--w-brass)" : sk === "done" ? "transparent" : "var(--w-line)"}`,
+                        background:
+                          sk === "active"
+                            ? "var(--w-brass-soft)"
+                            : sk === "done"
+                              ? "var(--w-success-soft)"
+                              : "var(--w-panel-2)",
+                        color:
+                          sk === "active"
+                            ? "var(--w-brass-text)"
+                            : sk === "done"
+                              ? "var(--w-success-ink)"
+                              : "var(--w-ink-3)",
+                        opacity: sk === "dormant" ? 0.85 : 1,
+                      }}
                     >
                       {STATE_LABEL[sk]}
                     </span>
@@ -556,9 +764,12 @@ function FlowDetail({
 function FlowModal({
   projects,
   onClose,
+  onCreated,
 }: {
   projects: { id: string; name: string | null; workspace_id: string | null }[];
   onClose: () => void;
+  /** Po založení → otevřít detail nového postupu (prototyp createFlow, ř. 2553). */
+  onCreated: (chainId: string) => void;
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
@@ -567,9 +778,19 @@ function FlowModal({
   const [schedFrom, setSchedFrom] = useState<"start" | "deadline">("start");
   const [tpl, setTpl] = useState<string | null>(null);
   const [rows, setRows] = useState<
-    { name: string; offset: number; priority: number; gate: string; who: string }[]
+    {
+      name: string;
+      offset: number;
+      priority: number;
+      gate: string;
+      who: string;
+      role: string;
+      mode: "any" | "all";
+      project: string;
+    }[]
   >([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const allTemplates = useMemo(() => [...savedTemplates(), ...TEMPLATES], []);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -595,11 +816,11 @@ function FlowModal({
   }, [projectId]);
 
   const pick = (id: string) => {
-    const tp = TEMPLATES.find((x) => x.id === id);
+    const tp = allTemplates.find((x) => x.id === id);
     if (!tp) return;
     setTpl(id);
     setName((n) => n.trim() || tp.label);
-    setRows(tp.steps.map((s) => ({ ...s, who: "" })));
+    setRows(tp.steps.map((s) => ({ ...s, who: "", role: "", mode: "any" as const, project: "" })));
   };
 
   const maxOff = rows.reduce((m, r) => Math.max(m, r.offset), 0);
@@ -617,7 +838,8 @@ function FlowModal({
     const proj = projects.find((p) => p.id === projectId);
     const chainId = crypto.randomUUID();
     await powerSync.execute(
-      "INSERT INTO chains (id, project_id, workspace_id, name, anchor_date, state, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)",
+      `INSERT INTO chains (id, project_id, workspace_id, name, anchor_date, state, sched_mode, skip_weekend, created_at)
+       VALUES (?, ?, ?, ?, ?, 'active', 'chain', 0, ?)`,
       [chainId, projectId, proj?.workspace_id ?? null, nm, effAnchor, new Date().toISOString()],
     );
     for (let i = 0; i < rows.length; i++) {
@@ -625,24 +847,42 @@ function FlowModal({
       if (!r) continue;
       const taskId = crypto.randomUUID();
       const due = addDays(effAnchor, r.offset);
+      // per-krok projekt (předání mezi projekty) — default projekt řetězce
+      const stepProject = r.project || projectId;
       // první krok active; souvislé with_previous za ním taky
       let state = "dormant";
       if (i === 0) state = "active";
       else if (rows.slice(1, i + 1).every((x, j) => j + 1 <= i && x.gate === "with_previous"))
         state = "active";
+      const assignMode = r.mode === "all" && r.who ? "shared_all" : "single";
       await powerSync.execute(
-        "INSERT INTO tasks (id, project_id, name, priority, due_date, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        [taskId, projectId, r.name.trim() || `Krok ${i + 1}`, r.priority, due, new Date().toISOString()],
+        `INSERT INTO tasks (id, project_id, name, description, priority, due_date, assignment_mode, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          taskId,
+          stepProject,
+          r.name.trim() || `Krok ${i + 1}`,
+          r.role ? `Role: ${r.role}` : null,
+          r.priority,
+          due,
+          assignMode,
+          new Date().toISOString(),
+        ],
       );
+      const prevOffset = i > 0 ? (rows[i - 1]?.offset ?? 0) : 0;
       await powerSync.execute(
-        "INSERT INTO chain_steps (id, chain_id, task_id, project_id, position, gate, step_state, activated_at, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?)",
+        `INSERT INTO chain_steps (id, chain_id, task_id, project_id, position, gate, step_state,
+          anchor_offset, gap_days, activated_at, created_at)
+         VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           chainId,
           taskId,
-          projectId,
+          stepProject,
           i,
           r.gate,
           state,
+          r.offset,
+          i === 0 ? 0 : r.offset - prevOffset,
           state === "active" ? new Date().toISOString() : null,
           new Date().toISOString(),
         ],
@@ -650,10 +890,11 @@ function FlowModal({
       if (r.who) {
         await powerSync.execute(
           "INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
-          [taskId, projectId, r.who, new Date().toISOString()],
+          [taskId, stepProject, r.who, new Date().toISOString()],
         );
       }
     }
+    onCreated(chainId);
     onClose();
   };
 
@@ -774,15 +1015,16 @@ function FlowModal({
             {/* šablony */}
             <ModalLabel style={{ margin: "18px 0 8px" }}>{t("flows.templates")}</ModalLabel>
             <div className="grid grid-cols-2 gap-2">
-              {TEMPLATES.map((tp) => (
+              {allTemplates.map((tp) => (
                 <button
                   key={tp.id}
                   type="button"
                   onClick={() => pick(tp.id)}
-                  className="rounded-[11px] border bg-panel-2 text-left hover:border-brass"
+                  className="rounded-[11px] border text-left hover:border-brass"
                   style={{
                     padding: "11px 13px",
                     borderColor: tpl === tp.id ? "var(--w-brass)" : "var(--w-line)",
+                    background: tpl === tp.id ? "var(--w-brass-soft)" : "var(--w-panel-2)",
                   }}
                 >
                   <div className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
@@ -797,7 +1039,9 @@ function FlowModal({
                 type="button"
                 onClick={() => {
                   setTpl(null);
-                  setRows([{ name: "", offset: 0, priority: 3, gate: "after_previous", who: "" }]);
+                  setRows([
+                    { name: "", offset: 0, priority: 3, gate: "after_previous", who: "", role: "", mode: "any", project: "" },
+                  ]);
                 }}
                 className="flex items-center justify-center rounded-[11px] border border-line border-dashed font-display font-semibold text-ink-2 hover:border-brass hover:text-ink"
                 style={{ padding: "11px 13px", fontSize: 12.5 }}
@@ -837,6 +1081,50 @@ function FlowModal({
                         className="min-w-0 flex-1 border-none bg-transparent font-display font-semibold text-ink outline-none"
                         style={{ fontSize: 14 }}
                       />
+                      {/* přesun ↑/↓ (prototyp moveFlowStep) */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRows((rs) => {
+                            if (i === 0) return rs;
+                            const c = [...rs];
+                            const a = c[i - 1];
+                            const b = c[i];
+                            if (a && b) {
+                              c[i - 1] = b;
+                              c[i] = a;
+                            }
+                            return c;
+                          })
+                        }
+                        className="px-1 text-ink-3 hover:text-ink"
+                        style={{ opacity: i === 0 ? 0.4 : 1, pointerEvents: i === 0 ? "none" : undefined }}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRows((rs) => {
+                            if (i >= rs.length - 1) return rs;
+                            const c = [...rs];
+                            const a = c[i];
+                            const b = c[i + 1];
+                            if (a && b) {
+                              c[i] = b;
+                              c[i + 1] = a;
+                            }
+                            return c;
+                          })
+                        }
+                        className="px-1 text-ink-3 hover:text-ink"
+                        style={{
+                          opacity: i >= rows.length - 1 ? 0.4 : 1,
+                          pointerEvents: i >= rows.length - 1 ? "none" : undefined,
+                        }}
+                      >
+                        ↓
+                      </button>
                       <button
                         type="button"
                         onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
@@ -847,16 +1135,79 @@ function FlowModal({
                       </button>
                     </div>
                     <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                      <select
-                        value={r.who}
-                        onChange={(e) => setRow(i, { who: e.target.value })}
-                        className="rounded-full border border-line bg-panel-2 font-display font-semibold text-ink-2 outline-none"
-                        style={{ padding: "5px 8px", fontSize: 11, maxWidth: 140 }}
+                      {/* avatarová řada členů (prototyp ř. 1573) */}
+                      <span className="inline-flex items-center" style={{ gap: 5 }}>
+                        {members.map((m) => {
+                          const on = r.who === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              title={m.name}
+                              onClick={() => setRow(i, { who: on ? "" : m.id, role: "" })}
+                              className="flex items-center justify-center rounded-full font-display font-semibold"
+                              style={{
+                                width: 25,
+                                height: 25,
+                                fontSize: 9.5,
+                                color: "#fff",
+                                background: "var(--w-navy)",
+                                opacity: on ? 1 : 0.5,
+                                boxShadow: on
+                                  ? "0 0 0 2px var(--w-card), 0 0 0 4px var(--w-brass)"
+                                  : undefined,
+                                transition: "opacity .12s, box-shadow .12s",
+                              }}
+                            >
+                              {initials(m.name)}
+                            </button>
+                          );
+                        })}
+                      </span>
+                      {/* role (prototyp FLOW_ROLES — člověk se dosadí při založení) */}
+                      {FLOW_ROLES.map((role) => {
+                        const on = r.role === role;
+                        return (
+                          <button
+                            key={role}
+                            type="button"
+                            title={t("flows.roleTitle")}
+                            onClick={() => setRow(i, { role: on ? "" : role, who: "" })}
+                            className="rounded-full font-display font-semibold"
+                            style={{
+                              fontSize: 10.5,
+                              padding: "4px 9px",
+                              border: `1px dashed ${on ? "var(--w-brass)" : "var(--w-line)"}`,
+                              background: on ? "var(--w-brass-soft)" : "transparent",
+                              color: on ? "var(--w-brass-text)" : "var(--w-ink-3)",
+                            }}
+                          >
+                            {role}
+                          </button>
+                        );
+                      })}
+                      {/* režim R2 (prototyp toggleFlowStepMode) */}
+                      <button
+                        type="button"
+                        title={t("flows.modeR2Title")}
+                        onClick={() => setRow(i, { mode: r.mode === "all" ? "any" : "all" })}
+                        className="rounded-full border border-line font-display font-semibold text-ink-2 hover:border-brass"
+                        style={{ padding: "5px 9px", fontSize: 11 }}
                       >
-                        <option value="">{t("flows.who")}</option>
-                        {members.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}
+                        {r.mode === "all" ? t("addmodal.modeAll") : t("addmodal.modeAny")}
+                      </button>
+                      {/* projekt kroku — předání mezi projekty (prototyp ř. 1577) */}
+                      <select
+                        value={r.project}
+                        onChange={(e) => setRow(i, { project: e.target.value })}
+                        title={t("flows.stepProjectTitle")}
+                        className="rounded-full border border-line bg-panel-2 font-display font-semibold text-ink-2 outline-none"
+                        style={{ padding: "5px 8px", fontSize: 11, maxWidth: 130 }}
+                      >
+                        <option value="">{t("flows.project")}</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
                           </option>
                         ))}
                       </select>
@@ -910,7 +1261,16 @@ function FlowModal({
                   onClick={() =>
                     setRows((rs) => [
                       ...rs,
-                      { name: "", offset: (rs[rs.length - 1]?.offset ?? 0) + 1, priority: 3, gate: "after_previous", who: "" },
+                      {
+                        name: "",
+                        offset: (rs[rs.length - 1]?.offset ?? 0) + 1,
+                        priority: 3,
+                        gate: "after_previous",
+                        who: "",
+                        role: "",
+                        mode: "any",
+                        project: "",
+                      },
                     ])
                   }
                   className="inline-flex items-center gap-1.5 font-display font-semibold text-brass-text hover:underline"

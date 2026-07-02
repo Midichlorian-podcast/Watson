@@ -46,10 +46,10 @@ bucket_definitions:
         WHERE project_id = bucket.project_id
       # Postupy (štafeta) — chains + chain_steps (project-scoped).
       - SELECT id, project_id, workspace_id, template_id, name, description, anchor_date,
-               state, created_by, completed_at, created_at
+               state, sched_mode, skip_weekend, created_by, completed_at, created_at
         FROM chains
         WHERE project_id = bucket.project_id
-      - SELECT id, chain_id, task_id, project_id, position, gate, step_state, activated_at, created_at
+      - SELECT id, chain_id, task_id, project_id, position, gate, step_state, anchor_offset, gap_days, activated_at, created_at
         FROM chain_steps
         WHERE project_id = bucket.project_id
 

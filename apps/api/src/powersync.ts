@@ -218,6 +218,8 @@ const TABLES: Record<string, TableDef> = {
       description: "text",
       anchor_date: "ts",
       state: "text",
+      sched_mode: "text",
+      skip_weekend: "int",
       completed_at: "ts",
     },
     hasUpdatedAt: true,
