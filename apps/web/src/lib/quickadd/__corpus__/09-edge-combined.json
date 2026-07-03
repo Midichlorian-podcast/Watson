@@ -1,187 +1,320 @@
 [
-  {
-    "input": "Zavolat Petře zítra v 15:00 p1 #Obchod 90 min",
-    "expected": { "name": "Zavolat Petře", "priority": 1, "startMin": 900, "durationMin": 90, "due": "2026-06-26", "projectId": "obchod" },
-    "why": "Realistická vícetokenová věta. §3 p1→priority1; §4a 'v 15:00'→15*60=900; §5a '90 min'→90; §7c 'zítra'→due 2026-06-26 (today+1); §10 #Obchod přesná shoda→obchod. 'Petře' (jméno bez @) NENÍ token → zůstává. Všechny tokeny vyříznuty → name 'Zavolat Petře'. Pořadí pravidel deadline→prio→čas→trvání→datum→projekt."
-  },
-  {
-    "input": "Poslat fakturu @Jana !30. 6. p2",
-    "expected": { "name": "Poslat fakturu", "priority": 2, "deadline": "2026-06-30", "personQueries": ["Jana"] },
-    "why": "§2 deadline '!30. 6.' (parsuje se PRVNÍ, před prioritou i datem)→2026-06-30 (červen 30 dní); §3 p2→priority2; §14 @Jana→personQueries ['Jana'], token odstraněn v cleanName. name 'Poslat fakturu'. Ověřuje deadline+osoba+priorita najednou."
-  },
-  {
-    "input": "Porada každou středu v 9 #Web",
-    "expected": { "name": "Porada v 9", "due": "2026-07-01", "recurrence": { "kind": "weekly", "weekday": 3, "label": "Každou středu" }, "projectId": null },
-    "why": "EDGE čas vs opakování: '#Web'≠'Web redesign'→projectId undefined (token cut). §4: 'v 9' SAMOTNÉ není čas (4a chce [:.], 4c/4d chtějí 'hodin' za číslem) → time NEnastaveno, 'v 9' zůstane. §11 B 'každou středu'→weekly weekday3, start=weekdayDate(3,0)=2026-07-01→due. RECVOCAB vyřízne 'každou'+'středu', ale 'v 9' přežije → name 'Porada v 9'. Doloženo simulací implementace."
-  },
-  {
-    "input": "Schůzka p1 14:00 p2",
-    "expected": { "name": "Schůzka p2", "priority": 1, "startMin": 840 },
-    "why": "Dvojí prioritní token: §1 cut nahrazuje JEN první výskyt. /\\bp([1-4])\\b/i najde 'p1'→priority1, vyřízne pouze 'p1'. 'p2' parser už nevidí→zůstane. §4b holý '14:00'→840. name 'Schůzka p2'. Demonstruje replace=jen-první u priority."
-  },
-  {
-    "input": "Revize #Obchod #web @Petra @Tomáš p3 zítra 2 hodiny",
-    "expected": { "name": "Revize #web", "priority": 3, "durationMin": 120, "due": "2026-06-26", "projectId": "obchod", "personQueries": ["Petra", "Tomáš"] },
-    "why": "Dvojí #token: hash=work.match bere PRVNÍ '#Obchod' (exact)→obchod, cut jen prvního; '#web' parser nevidí→zůstává v názvu. §3 p3→3; §5e '2 hodiny'→round(2*60)=120; §7c 'zítra'→2026-06-26; §14 dvě osoby ['Petra','Tomáš'] odstraněny z cleanName. name 'Revize #web'."
-  },
-  {
-    "input": "Workshop 4 dny každý den",
-    "expected": { "name": "Workshop", "days": 4, "recurrence": { "kind": "daily", "label": "Každý den" } },
-    "why": "KOLIZE multiday vs opakování 'den': §6 BĚŽÍ PŘED §8 → '4 dny' (regex dn[íiy])→days=4, vyříznuto z work. PAK parseRecurrence na zbytku: hasK + B('den')→daily 'Každý den' (BEZ weekday→bez startISO→bez due). RECVOCAB (rec) vyřízne 'každý'+'den'. name 'Workshop'. Pořadí zajistí, že '4 dny'≠'dny' opakování."
-  },
-  {
-    "input": "Naplánovat v 15 na 2 hodiny",
-    "expected": { "name": "Naplánovat v 15 na", "durationMin": 120 },
-    "why": "EDGE čas-vs-trvání: 'v 15' není čas (4a chce [:.], 4c chce 'hodin' hned za číslem, ale tu je 'na' mezi) → time NEnastaveno, 'v 15' zůstává. §5e '2 hodiny'→120. 'na' (předložka bez čísla) zůstane. name 'Naplánovat v 15 na'. Doloženo simulací: dvojznačné 'v 15' bez 'hodin' time nedá."
-  },
-  {
-    "input": "Stretching deset minut každý den",
-    "expected": { "name": "", "durationMin": 10, "recurrence": { "kind": "daily", "label": "Každý den" } },
-    "why": "5c GREEDY edge + opakování: skupina ([\\p{L}]+(?:\\s+[\\p{L}]+)?) před 'minut' sebere 'Stretching deset'→czNum tens-scan najde 'deset'=10 (přes teens? 'deset'∈teens=10). dur=10, cut() vyřízne 'Stretching deset minut' VČETNĚ task slova. Pak 'každý den'→daily. RECVOCAB vyřízne zbytek. name '' (prázdný po vytažení). Doloženo simulací."
-  },
-  {
-    "input": "úkol bez jakéhokoliv tokenu prostě text",
-    "expected": { "name": "úkol bez jakéhokoliv tokenu prostě text" },
-    "why": "NEGATIVNÍ: žádný token (žádné p1-4, !datum, čas, min/hod, dny, datum, opakovací slovo, #, @, +). Vše undefined: priority/due/deadline/startMin/durationMin/days/recurrence/projectId/personQueries. name = vstup beze změny. Pozor: 'bez'/'text' neobsahují žádný RECVOCAB stem."
-  },
-  {
-    "input": "p1 p2 p3",
-    "expected": { "name": "p2 p3", "priority": 1 },
-    "why": "Trojí prioritní token, čistě tokeny: §3 regex najde první 'p1'→priority1, cut nahradí jen 'p1'. 'p2 p3' zůstanou (parser je nevyhodnocuje znovu). name 'p2 p3' (po collapse mezer). Demonstruje, že replace bere jen první a guard prázdného názvu se NEuplatní (něco zbylo)."
-  },
-  {
-    "input": "Audit !31. 2. a revize 31. 2.",
-    "expected": { "name": "Audit !31. 2. a revize 31. 2." },
-    "why": "Deadline+datum se stejným '31. 2.' (neexistuje). §2 deadline '!31. 2.' validace JEN mo1-12&da1-31 (BEZ délky měsíce)→2026-02-31, cut. PAK §7a běžné datum '31. 2.' (druhý výskyt, bez !)→customDate=2026-02-31, cut. 'a'/'revize' zůstanou. name 'Audit a revize'. Referenční (prototyp) chování: 31.2. projde v obou. [Produkce by oba odmítla.]"
-  },
-  {
-    "input": "Záloha v 25 hodin denně",
-    "expected": { "name": "Záloha v", "durationMin": 1500, "recurrence": { "kind": "daily", "label": "Denně" } },
-    "why": ">23 hodin: §4c 'v 25 hodin' m[1]=25>23 → time NEnastaveno a NEvyřízne se (cut uvnitř if <=23). §5e '25 hodin'→round(25*60)=1500 (trvání NEMÁ strop 23), cut '25 hodin'. 'v' zůstane (předložka). §11 A 'denně'→daily 'Denně'. RECVOCAB vyřízne 'denně'. name 'Záloha v'."
-  },
-  {
-    "input": "report @Petra +Petra @petra",
-    "expected": { "name": "report", "personQueries": ["Petra", "Petra", "petra"] },
-    "why": "Trojí osoba (+ = @, duplicity i case): §12 iterátor /[@+](\\p{L}+)/gu projde všechny→['Petra','Petra','petra'] VERBATIM (deduplikace/case-fold je věc UI, ne parseru). cleanName regex /[@+]\\p{L}+/gu odstraní všechny→ 'report'. Pořadí dle výskytu."
-  },
-  {
-    "input": "každou středu a každý pátek porada",
-    "expected": { "name": "a porada", "due": "2026-07-01", "recurrence": { "kind": "weekly", "weekday": 3, "label": "Každou středu" } },
-    "why": "Dva dny v opakování: parseRecurrence smyčka WD bere PRVNÍ matchnutý den v pořadí tabulky (pondělí..neděle). 'středu' (d=3) je v WD před 'pátek' (d=5)→wd=středa, weekly, start weekdayDate(3,0)=2026-07-01. 'pátek' se jako den NEzpracuje (jen první wd). RECVOCAB ale vyřízne 'každou'+'středu'+'každý'+'pátek'→zbude 'a porada'. Doloženo simulací."
-  },
-  {
-    "input": "Schůzka pozítří v 9:00 p1 #Obchod 45 min @Tomáš",
-    "expected": { "name": "Schůzka", "priority": 1, "startMin": 540, "durationMin": 45, "due": "2026-06-27", "projectId": "obchod", "personQueries": ["Tomáš"] },
-    "why": "Plná kombinace 6 tokenů. §3 p1→1; §4a 'v 9:00'→9*60=540; §5a '45 min'→45; §7b 'pozítří'→hardcoded 2026-06-27; §10 #Obchod→obchod; §14 @Tomáš→['Tomáš']. Vše vyříznuto → name 'Schůzka'. Ověřuje souběh všech hlavních polí."
-  },
-  {
-    "input": "měsíčně #Obchod platba @Jana",
-    "expected": { "name": "platba", "recurrence": { "kind": "monthly", "label": "Měsíčně" }, "projectId": "obchod", "personQueries": ["Jana"] },
-    "why": "Opakování bez startISO + projekt + osoba: §11 A 'měsíčně'→monthly {kind:'monthly'} (BEZ day/weekday→bez startISO→bez due, dateKind zůstane undefined); §10 #Obchod→obchod (cut); §14 @Jana→['Jana']. RECVOCAB vyřízne 'měsíčně'. name 'platba'. Žádné due (abstraktní měsíční pravidlo)."
-  },
-  {
-    "input": "Volat v 8 hodin a v 9 hodin",
-    "expected": { "name": "Volat a v", "startMin": 480, "durationMin": 540 },
-    "why": "EDGE druhý čas→trvání: §4c 'v 8 hodin'→time 8*60=480, cut PRVNÍHO výskytu. Zbude 'a v 9 hodin'. §5e pak chytí '9 hodin' (\\d+ + 'hodin' + \\b)→round(9*60)=540→duration! 'v' (předložka u zbylé fráze) zůstane. name 'Volat a v'. Doloženo simulací: druhá hodinová fráze spadne do trvání, ne do času."
-  },
-  {
-    "input": "v 9 hodin v 10 hodin dvojí čas",
-    "expected": { "name": "v dvojí čas", "startMin": 540, "durationMin": 600 },
-    "why": "Stejný mechanismus jako výše bez task slova: 'v 9 hodin'→time 540 (cut první). '10 hodin'→§5e duration round(10*60)=600. Zbylé 'v'+'dvojí čas'→name 'v dvojí čas'. Ukazuje, že §4 a §5 jsou nezávislé větve a druhý 'v N hodin' skončí jako trvání."
-  },
-  {
-    "input": "Termín 5. 7. nebo !5. 7.",
-    "expected": { "name": "Termín nebo", "deadline": "2026-07-05", "due": "2026-07-05" },
-    "why": "Deadline i datum se shodným '5. 7.': §2 deadline regex /!.../ chytí JEN '!5. 7.' (s vykřičníkem, druhý výskyt)→deadline 2026-07-05, cut. §7a běžné datum chytí '5. 7.' (první, bez !)→customDate 2026-07-05, cut. 'nebo' zůstane. name 'Termín nebo'. Deadline a termín jsou různé pole se stejnou hodnotou."
-  },
-  {
-    "input": "každého 31. v měsíci #Web inventura v 23:00 @Jana",
-    "expected": { "name": "31. inventura", "due": "2026-06-30", "startMin": 1380, "recurrence": { "kind": "monthly-day", "day": 31, "label": "31. v měsíci" }, "personQueries": ["Jana"] },
-    "why": "Monthly-day clamp + čas + projekt + osoba. §4a 'v 23:00'→23*60=1380 (time nastaveno §4, ale dateKind ZŮSTANE undefined). §10 '#Web'≠'Web redesign'→projectId undefined (cut). §11 C '31.' (negative lookahead, za tečkou není číslo)→day=31, label '31. v měsíci', start=nextMonthDayISO(31): 31 není<25→červen, Math.min(31,30)=30→2026-06-30. §8 nastaví dateKind=custom z startISO (čas due nezměnil)→due 2026-06-30. §14 @Jana→['Jana']. '31.' číselný token NEvyříznut (RECVOCAB ho nemá)→name '31. inventura'. 'v měsíci' vyříznuto."
-  },
-  {
-    "input": "úterý v úterý každé úterý",
-    "expected": { "name": "v", "due": "2026-06-30", "recurrence": { "kind": "weekly", "weekday": 2, "label": "Každé úterý" } },
-    "why": "'úterý' jako holý den vs '@každé úterý' opakování: parseRecurrence vidí 'každé úterý'→§11 B weekly weekday2, start=weekdayDate(2,0)=2026-06-30→due (rec truthy, §9 holý den se NEspustí). RECVOCAB ('[úu]ter\\p{L}*' + 'každ\\p{L}*') vyřízne VŠECHNY výskyty 'úterý' i 'každé'. Zbude jen předložka 'v'→name 'v'. Demonstruje 'středa' vs 'každou středu' princip (opakování vyhrává a sebere i holé výskyty)."
-  },
-  {
-    "input": "Schůzka 1.5 h v 14:00",
-    "expected": { "name": "Schůzka", "startMin": 840, "durationMin": 90 },
-    "why": "Trvání desetinné + čas zvlášť: §4a 'v 14:00'→14*60=840 (čas se parsuje PŘED trváním v pořadí, ale obě větve běží). §5e '1.5 h'→round(1.5*60)=90. Oba tokeny vyříznuty→name 'Schůzka'. Ukazuje, že čas (startMin) a trvání (durationMin) koexistují."
-  },
-  {
-    "input": "nákup 0 dny dnes",
-    "expected": { "name": "nákup", "days": 1, "due": "2026-06-25" },
-    "why": "Multiday dolní clamp + relativní datum: §6 '0 dny'→Math.max(1,0)=1→days=1, cut. §7d 'dnes'→dateKind=dnes→due 2026-06-25 (today). name 'nákup'. days=1 (i když není >1, prototyp ho nastaví; runner kontroluje subset)."
-  },
-  {
-    "input": "Sprint příští čtvrtek v 10:00 #Obchod 3 dny @Petra",
-    "expected": { "name": "Sprint", "startMin": 600, "days": 3, "due": "2026-07-09", "projectId": "obchod", "personQueries": ["Petra"] },
-    "why": "Holý den 'příští čtvrtek' (NE opakování, chybí 'každ') + čas + multiday + projekt + osoba. §4a 'v 10:00'→600; §6 '3 dny'→days=3; §10 #Obchod→obchod; §14 @Petra→['Petra']; §9 'čtvrtek'+'příští' (ahead=1), čtvrtek d=4=dnešní → weekdayDate(4,1): add=0→7, +7→25.6+14=2026-07-09→due. RECVOCAB vyřízne 'příští'+'čtvrtek'. name 'Sprint'. (rec=null protože není 'každ' → §9 holý den běží.)"
-  },
-  {
-    "input": "deadline !1. 1. 2027 termín 1. 1.",
-    "expected": { "name": "deadline termín", "deadline": "2027-01-01", "due": "2026-01-01" },
-    "why": "Deadline s rokem vs datum bez roku. §2 '!1. 1. 2027'→deadline 2027-01-01 (rok z textu), cut první. §7a běžné datum '1. 1.' (bez roku, druhý výskyt)→default rok 2026→customDate 2026-01-01, cut. Slova 'deadline'/'termín' nejsou tokeny→zůstanou. name 'deadline termín'. Různý rok deadline (2027) a termínu (2026)."
-  },
-  {
-    "input": "každou neděli p4 odpočinek",
-    "expected": { "name": "odpočinek", "priority": 4, "due": "2026-06-28", "recurrence": { "kind": "weekly", "weekday": 0, "label": "Každou neděli" } },
-    "why": "Opakování neděle + nejnižší priorita. §3 p4→priority4 (cut). §11 B 'každou neděli'→weekly weekday0, start=weekdayDate(0,0): add=(0-4+7)%7=3→25.6+3=2026-06-28→due. RECVOCAB vyřízne 'každou'+'neděli'. name 'odpočinek'."
-  },
-  {
-    "input": "Schůzka v 16 hodin 30 min",
-    "expected": { "name": "Schůzka", "startMin": 960, "durationMin": 30 },
-    "why": "Čas celé hodiny (4c) + trvání minuty (5a) vedle sebe. §4c 'v 16 hodin'→16<=23→16*60=960, cut. §5a '30 min'→30, cut. name 'Schůzka'. Ukazuje koexistenci celohodinového času a minutového trvání bez kolize ('hodin' vs 'min')."
-  },
-  {
-    "input": "p3 dnes",
-    "expected": { "name": "", "priority": 3, "due": "2026-06-25" },
-    "why": "Guard prázdného názvu + jen tokeny. §3 p3→priority3 (cut); §7d 'dnes'→dateKind=dnes→due 2026-06-25. Po vytažení obou tokenů base prázdná→name '' (UI guard řeší jinde, parser vrací name=''). Subset assertuje priority/due."
-  },
-  {
-    "input": "Připravit podklady do 5. 7. v 14:00 90 min p2 #Obchod @Petra",
-    "expected": { "name": "Připravit podklady do", "startMin": 840, "durationMin": 90, "priority": 2, "due": "2026-07-05", "projectId": "obchod", "personQueries": ["Petra"] },
-    "why": "Maximálně hustá realistická věta. §3 p2→2; §4a 'v 14:00'→840; §5a '90 min'→90; §7a '5. 7.'→2026-07-05; §10 #Obchod→obchod; §14 @Petra→['Petra']. 'do' (předložka bez čísla) zůstává. name 'Připravit podklady do'. Souběh 6 atributů + zbylé slovo."
-  },
-  {
-    "input": "Audit !29. 2. 2026 a 29. 2. 2028",
-    "expected": { "name": "Audit !29. 2. 2026 a 29. 2. 2028" },
-    "why": "Přestupný rok v deadline vs datum. §2 deadline '!29. 2. 2026' validace jen mo/da→2026-02-29 (prototyp: 2026 NENÍ přestupný, ale validace délku měsíce neřeší→projde), cut. §7a datum '29. 2. 2028'→2028-02-29 (2028 reálně přestupný), cut. 'a' zůstane. name 'Audit a'. Referenční chování ignoruje délku měsíce u obou."
-  },
-  {
-    "input": "každý sudý čtvrtek v 8:00 #Obchod cvičení @Jana",
-    "expected": { "name": "cvičení", "startMin": 480, "due": "2026-07-09", "recurrence": { "kind": "biweekly", "weekday": 4, "parity": "even", "label": "Každý sudý čtvrtek" }, "projectId": "obchod", "personQueries": ["Jana"] },
-    "why": "Parita + čas z opakovací fráze není (čas je explicitní). §4a 'v 8:00'→8*60=480. §11 B evenOdd='even', wd=čtvrtek(4), inMonth=false→biweekly parity even, label 'Každý sudý čtvrtek', start=weekdayParityISO(4,'even'): nejbližší čt 2.7. (add0→7) isoWeek27 liché≠0→+7→9.7. isoWeek28 sudé→2026-07-09→due. §10 #Obchod→obchod; §14 @Jana→['Jana']. RECVOCAB vyřízne 'každý'+'sudý'+'čtvrtek'. name 'cvičení'."
-  },
-  {
-    "input": "Zkontrolovat zálohy v 25:00",
-    "expected": { "name": "Zkontrolovat zálohy v 25:00" },
-    "why": "NEGATIVNÍ >23 u HH:MM: '25' selže na ([01]?\\d|2[0-3]) v 4a i 4b→žádný time. Není ani datum (jen jedna tečka chybí, dvojtečka). 'v 25:00' zůstává celé. Žádné pole nenastaveno. name beze změny."
-  },
-  {
-    "input": "Schůzka v 14:00 na 90 minut s Tomášem zítra #Obchod",
-    "expected": { "name": "Schůzka na s Tomášem", "startMin": 840, "durationMin": 90, "due": "2026-06-26", "projectId": "obchod" },
-    "why": "Čas + minutové trvání + relativní datum + projekt; jméno bez @ zůstává. §4a 'v 14:00'→840; §5a '90 minut' (\\w* koncovka)→90; §7c 'zítra'→2026-06-26; §10 #Obchod→obchod. 'na'/'s'/'Tomášem' nejsou tokeny→zůstanou. name 'Schůzka na s Tomášem'. (Pozor: 'Tomášem' bez @ NENÍ personQuery.)"
-  },
-  {
-    "input": "1.5 h",
-    "expected": { "name": "", "durationMin": 90 },
-    "why": "Guard prázdného názvu z čistého trvání. §5e '1.5 h'→round(1.5*60)=90, cut→base prázdná→name ''. Jediný token = trvání. Ověřuje prázdný název po vytažení i u trvání."
-  },
-  {
-    "input": "Volat Petře v 9 a Tomášovi v 10",
-    "expected": { "name": "Volat Petře v 9 a Tomášovi v 10" },
-    "why": "NEGATIVNÍ čas: 'v 9' a 'v 10' nejsou čas (4a chce [:.], 4c/4d chtějí 'hodin' za číslem; tu žádné 'hodin' není). Žádný startMin, žádný durationMin (5e chce 'hod/h', ne holé číslo). Jména bez @ nejsou osoby. name beze změny. Ukazuje, že 'v N' bez :MM/hodin se NEparsuje."
-  },
-  {
-    "input": "Revize každý druhý pátek v 16:00 p1 2 hodiny @Petra @Tomáš #Web",
-    "expected": { "name": "Revize", "startMin": 960, "durationMin": 120, "priority": 1, "due": "2026-06-26", "recurrence": { "kind": "biweekly", "weekday": 5, "label": "Každý druhý pátek" }, "projectId": null, "personQueries": ["Petra", "Tomáš"] },
-    "why": "Biweekly bez parity (druhý) + čas + trvání + prio + 2 osoby + neexistující projekt. §3 p1→1; §4a 'v 16:00'→960; §5e '2 hodiny'→120; §10 '#Web'≠'Web redesign'→projectId undefined (cut); §11 B wd=pátek(5), bi=B('druh...')→biweekly weekday5 label wd.every2='Každý druhý pátek', start=weekdayDate(5,0)=2026-06-26→due; §14 ['Petra','Tomáš']. RECVOCAB vyřízne 'každý'+'druhý'+'pátek'. name 'Revize'."
-  },
-  {
-    "input": "úkol s číslem 3.14 bez data",
-    "expected": { "name": "úkol s číslem 3.14 bez data" },
-    "why": "NEGATIVNÍ: '3.14' je '3.' + '14' — datum regex /\\b(\\d{1,2})\\.\\s*(\\d{1,2})\\./ vyžaduje DRUHOU tečku po druhém čísle ('3.14' má za '14' mezeru, ne tečku)→nematchne. Není čas (chybí ':'), není trvání. name beze změny. Hraniční desetinné číslo nezaměněno za datum."
-  }
+	{
+		"input": "Zavolat Petře zítra v 15:00 p1 #Obchod 90 min",
+		"expected": {
+			"name": "Zavolat Petře",
+			"priority": 1,
+			"startMin": 900,
+			"durationMin": 90,
+			"due": "2026-06-26",
+			"projectId": "obchod"
+		},
+		"why": "Realistická vícetokenová věta. §3 p1→priority1; §4a 'v 15:00'→15*60=900; §5a '90 min'→90; §7c 'zítra'→due 2026-06-26 (today+1); §10 #Obchod přesná shoda→obchod. 'Petře' (jméno bez @) NENÍ token → zůstává. Všechny tokeny vyříznuty → name 'Zavolat Petře'. Pořadí pravidel deadline→prio→čas→trvání→datum→projekt."
+	},
+	{
+		"input": "Poslat fakturu @Jana !30. 6. p2",
+		"expected": {
+			"name": "Poslat fakturu",
+			"priority": 2,
+			"deadline": "2026-06-30",
+			"personQueries": ["Jana"]
+		},
+		"why": "§2 deadline '!30. 6.' (parsuje se PRVNÍ, před prioritou i datem)→2026-06-30 (červen 30 dní); §3 p2→priority2; §14 @Jana→personQueries ['Jana'], token odstraněn v cleanName. name 'Poslat fakturu'. Ověřuje deadline+osoba+priorita najednou."
+	},
+	{
+		"input": "Porada každou středu v 9 #Web",
+		"expected": {
+			"name": "Porada v 9",
+			"due": "2026-07-01",
+			"recurrence": {
+				"kind": "weekly",
+				"weekday": 3,
+				"label": "Každou středu"
+			},
+			"projectId": null
+		},
+		"why": "EDGE čas vs opakování: '#Web'≠'Web redesign'→projectId undefined (token cut). §4: 'v 9' SAMOTNÉ není čas (4a chce [:.], 4c/4d chtějí 'hodin' za číslem) → time NEnastaveno, 'v 9' zůstane. §11 B 'každou středu'→weekly weekday3, start=weekdayDate(3,0)=2026-07-01→due. RECVOCAB vyřízne 'každou'+'středu', ale 'v 9' přežije → name 'Porada v 9'. Doloženo simulací implementace."
+	},
+	{
+		"input": "Schůzka p1 14:00 p2",
+		"expected": { "name": "Schůzka p2", "priority": 1, "startMin": 840 },
+		"why": "Dvojí prioritní token: §1 cut nahrazuje JEN první výskyt. /\\bp([1-4])\\b/i najde 'p1'→priority1, vyřízne pouze 'p1'. 'p2' parser už nevidí→zůstane. §4b holý '14:00'→840. name 'Schůzka p2'. Demonstruje replace=jen-první u priority."
+	},
+	{
+		"input": "Revize #Obchod #web @Petra @Tomáš p3 zítra 2 hodiny",
+		"expected": {
+			"name": "Revize #web",
+			"priority": 3,
+			"durationMin": 120,
+			"due": "2026-06-26",
+			"projectId": "obchod",
+			"personQueries": ["Petra", "Tomáš"]
+		},
+		"why": "Dvojí #token: hash=work.match bere PRVNÍ '#Obchod' (exact)→obchod, cut jen prvního; '#web' parser nevidí→zůstává v názvu. §3 p3→3; §5e '2 hodiny'→round(2*60)=120; §7c 'zítra'→2026-06-26; §14 dvě osoby ['Petra','Tomáš'] odstraněny z cleanName. name 'Revize #web'."
+	},
+	{
+		"input": "Workshop 4 dny každý den",
+		"expected": {
+			"name": "Workshop",
+			"days": 4,
+			"recurrence": { "kind": "daily", "label": "Každý den" }
+		},
+		"why": "KOLIZE multiday vs opakování 'den': §6 BĚŽÍ PŘED §8 → '4 dny' (regex dn[íiy])→days=4, vyříznuto z work. PAK parseRecurrence na zbytku: hasK + B('den')→daily 'Každý den' (BEZ weekday→bez startISO→bez due). RECVOCAB (rec) vyřízne 'každý'+'den'. name 'Workshop'. Pořadí zajistí, že '4 dny'≠'dny' opakování."
+	},
+	{
+		"input": "Naplánovat v 15 na 2 hodiny",
+		"expected": { "name": "Naplánovat v 15 na", "durationMin": 120 },
+		"why": "EDGE čas-vs-trvání: 'v 15' není čas (4a chce [:.], 4c chce 'hodin' hned za číslem, ale tu je 'na' mezi) → time NEnastaveno, 'v 15' zůstává. §5e '2 hodiny'→120. 'na' (předložka bez čísla) zůstane. name 'Naplánovat v 15 na'. Doloženo simulací: dvojznačné 'v 15' bez 'hodin' time nedá."
+	},
+	{
+		"input": "Stretching deset minut každý den",
+		"expected": {
+			"name": "",
+			"durationMin": 10,
+			"recurrence": { "kind": "daily", "label": "Každý den" }
+		},
+		"why": "5c GREEDY edge + opakování: skupina ([\\p{L}]+(?:\\s+[\\p{L}]+)?) před 'minut' sebere 'Stretching deset'→czNum tens-scan najde 'deset'=10 (přes teens? 'deset'∈teens=10). dur=10, cut() vyřízne 'Stretching deset minut' VČETNĚ task slova. Pak 'každý den'→daily. RECVOCAB vyřízne zbytek. name '' (prázdný po vytažení). Doloženo simulací."
+	},
+	{
+		"input": "úkol bez jakéhokoliv tokenu prostě text",
+		"expected": { "name": "úkol bez jakéhokoliv tokenu prostě text" },
+		"why": "NEGATIVNÍ: žádný token (žádné p1-4, !datum, čas, min/hod, dny, datum, opakovací slovo, #, @, +). Vše undefined: priority/due/deadline/startMin/durationMin/days/recurrence/projectId/personQueries. name = vstup beze změny. Pozor: 'bez'/'text' neobsahují žádný RECVOCAB stem."
+	},
+	{
+		"input": "p1 p2 p3",
+		"expected": { "name": "p2 p3", "priority": 1 },
+		"why": "Trojí prioritní token, čistě tokeny: §3 regex najde první 'p1'→priority1, cut nahradí jen 'p1'. 'p2 p3' zůstanou (parser je nevyhodnocuje znovu). name 'p2 p3' (po collapse mezer). Demonstruje, že replace bere jen první a guard prázdného názvu se NEuplatní (něco zbylo)."
+	},
+	{
+		"input": "Audit !31. 2. a revize 31. 2.",
+		"expected": { "name": "Audit !31. 2. a revize 31. 2." },
+		"why": "Deadline+datum se stejným '31. 2.' (neexistuje). §2 deadline '!31. 2.' validace JEN mo1-12&da1-31 (BEZ délky měsíce)→2026-02-31, cut. PAK §7a běžné datum '31. 2.' (druhý výskyt, bez !)→customDate=2026-02-31, cut. 'a'/'revize' zůstanou. name 'Audit a revize'. Referenční (prototyp) chování: 31.2. projde v obou. [Produkce by oba odmítla.]"
+	},
+	{
+		"input": "Záloha v 25 hodin denně",
+		"expected": {
+			"name": "Záloha v",
+			"durationMin": 1500,
+			"recurrence": { "kind": "daily", "label": "Denně" }
+		},
+		"why": ">23 hodin: §4c 'v 25 hodin' m[1]=25>23 → time NEnastaveno a NEvyřízne se (cut uvnitř if <=23). §5e '25 hodin'→round(25*60)=1500 (trvání NEMÁ strop 23), cut '25 hodin'. 'v' zůstane (předložka). §11 A 'denně'→daily 'Denně'. RECVOCAB vyřízne 'denně'. name 'Záloha v'."
+	},
+	{
+		"input": "report @Petra +Petra @petra",
+		"expected": {
+			"name": "report",
+			"personQueries": ["Petra", "Petra", "petra"]
+		},
+		"why": "Trojí osoba (+ = @, duplicity i case): §12 iterátor /[@+](\\p{L}+)/gu projde všechny→['Petra','Petra','petra'] VERBATIM (deduplikace/case-fold je věc UI, ne parseru). cleanName regex /[@+]\\p{L}+/gu odstraní všechny→ 'report'. Pořadí dle výskytu."
+	},
+	{
+		"input": "každou středu a každý pátek porada",
+		"expected": {
+			"name": "a porada",
+			"due": "2026-07-01",
+			"recurrence": { "kind": "weekly", "weekday": 3, "label": "Každou středu" }
+		},
+		"why": "Dva dny v opakování: parseRecurrence smyčka WD bere PRVNÍ matchnutý den v pořadí tabulky (pondělí..neděle). 'středu' (d=3) je v WD před 'pátek' (d=5)→wd=středa, weekly, start weekdayDate(3,0)=2026-07-01. 'pátek' se jako den NEzpracuje (jen první wd). RECVOCAB ale vyřízne 'každou'+'středu'+'každý'+'pátek'→zbude 'a porada'. Doloženo simulací."
+	},
+	{
+		"input": "Schůzka pozítří v 9:00 p1 #Obchod 45 min @Tomáš",
+		"expected": {
+			"name": "Schůzka",
+			"priority": 1,
+			"startMin": 540,
+			"durationMin": 45,
+			"due": "2026-06-27",
+			"projectId": "obchod",
+			"personQueries": ["Tomáš"]
+		},
+		"why": "Plná kombinace 6 tokenů. §3 p1→1; §4a 'v 9:00'→9*60=540; §5a '45 min'→45; §7b 'pozítří'→hardcoded 2026-06-27; §10 #Obchod→obchod; §14 @Tomáš→['Tomáš']. Vše vyříznuto → name 'Schůzka'. Ověřuje souběh všech hlavních polí."
+	},
+	{
+		"input": "měsíčně #Obchod platba @Jana",
+		"expected": {
+			"name": "platba",
+			"recurrence": { "kind": "monthly", "label": "Měsíčně" },
+			"projectId": "obchod",
+			"personQueries": ["Jana"]
+		},
+		"why": "Opakování bez startISO + projekt + osoba: §11 A 'měsíčně'→monthly {kind:'monthly'} (BEZ day/weekday→bez startISO→bez due, dateKind zůstane undefined); §10 #Obchod→obchod (cut); §14 @Jana→['Jana']. RECVOCAB vyřízne 'měsíčně'. name 'platba'. Žádné due (abstraktní měsíční pravidlo)."
+	},
+	{
+		"input": "Volat v 8 hodin a v 9 hodin",
+		"expected": { "name": "Volat a v", "startMin": 480, "durationMin": 540 },
+		"why": "EDGE druhý čas→trvání: §4c 'v 8 hodin'→time 8*60=480, cut PRVNÍHO výskytu. Zbude 'a v 9 hodin'. §5e pak chytí '9 hodin' (\\d+ + 'hodin' + \\b)→round(9*60)=540→duration! 'v' (předložka u zbylé fráze) zůstane. name 'Volat a v'. Doloženo simulací: druhá hodinová fráze spadne do trvání, ne do času."
+	},
+	{
+		"input": "v 9 hodin v 10 hodin dvojí čas",
+		"expected": { "name": "v dvojí čas", "startMin": 540, "durationMin": 600 },
+		"why": "Stejný mechanismus jako výše bez task slova: 'v 9 hodin'→time 540 (cut první). '10 hodin'→§5e duration round(10*60)=600. Zbylé 'v'+'dvojí čas'→name 'v dvojí čas'. Ukazuje, že §4 a §5 jsou nezávislé větve a druhý 'v N hodin' skončí jako trvání."
+	},
+	{
+		"input": "Termín 5. 7. nebo !5. 7.",
+		"expected": {
+			"name": "Termín nebo",
+			"deadline": "2026-07-05",
+			"due": "2026-07-05"
+		},
+		"why": "Deadline i datum se shodným '5. 7.': §2 deadline regex /!.../ chytí JEN '!5. 7.' (s vykřičníkem, druhý výskyt)→deadline 2026-07-05, cut. §7a běžné datum chytí '5. 7.' (první, bez !)→customDate 2026-07-05, cut. 'nebo' zůstane. name 'Termín nebo'. Deadline a termín jsou různé pole se stejnou hodnotou."
+	},
+	{
+		"input": "každého 31. v měsíci #Web inventura v 23:00 @Jana",
+		"expected": {
+			"name": "31. inventura",
+			"due": "2026-06-30",
+			"startMin": 1380,
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 31,
+				"label": "31. v měsíci"
+			},
+			"personQueries": ["Jana"]
+		},
+		"why": "Monthly-day clamp + čas + projekt + osoba. §4a 'v 23:00'→23*60=1380 (time nastaveno §4, ale dateKind ZŮSTANE undefined). §10 '#Web'≠'Web redesign'→projectId undefined (cut). §11 C '31.' (negative lookahead, za tečkou není číslo)→day=31, label '31. v měsíci', start=nextMonthDayISO(31): 31 není<25→červen, Math.min(31,30)=30→2026-06-30. §8 nastaví dateKind=custom z startISO (čas due nezměnil)→due 2026-06-30. §14 @Jana→['Jana']. '31.' číselný token NEvyříznut (RECVOCAB ho nemá)→name '31. inventura'. 'v měsíci' vyříznuto."
+	},
+	{
+		"input": "úterý v úterý každé úterý",
+		"expected": {
+			"name": "v",
+			"due": "2026-06-30",
+			"recurrence": { "kind": "weekly", "weekday": 2, "label": "Každé úterý" }
+		},
+		"why": "'úterý' jako holý den vs '@každé úterý' opakování: parseRecurrence vidí 'každé úterý'→§11 B weekly weekday2, start=weekdayDate(2,0)=2026-06-30→due (rec truthy, §9 holý den se NEspustí). RECVOCAB ('[úu]ter\\p{L}*' + 'každ\\p{L}*') vyřízne VŠECHNY výskyty 'úterý' i 'každé'. Zbude jen předložka 'v'→name 'v'. Demonstruje 'středa' vs 'každou středu' princip (opakování vyhrává a sebere i holé výskyty)."
+	},
+	{
+		"input": "Schůzka 1.5 h v 14:00",
+		"expected": { "name": "Schůzka", "startMin": 840, "durationMin": 90 },
+		"why": "Trvání desetinné + čas zvlášť: §4a 'v 14:00'→14*60=840 (čas se parsuje PŘED trváním v pořadí, ale obě větve běží). §5e '1.5 h'→round(1.5*60)=90. Oba tokeny vyříznuty→name 'Schůzka'. Ukazuje, že čas (startMin) a trvání (durationMin) koexistují."
+	},
+	{
+		"input": "nákup 0 dny dnes",
+		"expected": { "name": "nákup", "days": 1, "due": "2026-06-25" },
+		"why": "Multiday dolní clamp + relativní datum: §6 '0 dny'→Math.max(1,0)=1→days=1, cut. §7d 'dnes'→dateKind=dnes→due 2026-06-25 (today). name 'nákup'. days=1 (i když není >1, prototyp ho nastaví; runner kontroluje subset)."
+	},
+	{
+		"input": "Sprint příští čtvrtek v 10:00 #Obchod 3 dny @Petra",
+		"expected": {
+			"name": "Sprint",
+			"startMin": 600,
+			"days": 3,
+			"due": "2026-07-09",
+			"projectId": "obchod",
+			"personQueries": ["Petra"]
+		},
+		"why": "Holý den 'příští čtvrtek' (NE opakování, chybí 'každ') + čas + multiday + projekt + osoba. §4a 'v 10:00'→600; §6 '3 dny'→days=3; §10 #Obchod→obchod; §14 @Petra→['Petra']; §9 'čtvrtek'+'příští' (ahead=1), čtvrtek d=4=dnešní → weekdayDate(4,1): add=0→7, +7→25.6+14=2026-07-09→due. RECVOCAB vyřízne 'příští'+'čtvrtek'. name 'Sprint'. (rec=null protože není 'každ' → §9 holý den běží.)"
+	},
+	{
+		"input": "deadline !1. 1. 2027 termín 1. 1.",
+		"expected": {
+			"name": "deadline termín",
+			"deadline": "2027-01-01",
+			"due": "2026-01-01"
+		},
+		"why": "Deadline s rokem vs datum bez roku. §2 '!1. 1. 2027'→deadline 2027-01-01 (rok z textu), cut první. §7a běžné datum '1. 1.' (bez roku, druhý výskyt)→default rok 2026→customDate 2026-01-01, cut. Slova 'deadline'/'termín' nejsou tokeny→zůstanou. name 'deadline termín'. Různý rok deadline (2027) a termínu (2026)."
+	},
+	{
+		"input": "každou neděli p4 odpočinek",
+		"expected": {
+			"name": "odpočinek",
+			"priority": 4,
+			"due": "2026-06-28",
+			"recurrence": { "kind": "weekly", "weekday": 0, "label": "Každou neděli" }
+		},
+		"why": "Opakování neděle + nejnižší priorita. §3 p4→priority4 (cut). §11 B 'každou neděli'→weekly weekday0, start=weekdayDate(0,0): add=(0-4+7)%7=3→25.6+3=2026-06-28→due. RECVOCAB vyřízne 'každou'+'neděli'. name 'odpočinek'."
+	},
+	{
+		"input": "Schůzka v 16 hodin 30 min",
+		"expected": { "name": "Schůzka", "startMin": 960, "durationMin": 30 },
+		"why": "Čas celé hodiny (4c) + trvání minuty (5a) vedle sebe. §4c 'v 16 hodin'→16<=23→16*60=960, cut. §5a '30 min'→30, cut. name 'Schůzka'. Ukazuje koexistenci celohodinového času a minutového trvání bez kolize ('hodin' vs 'min')."
+	},
+	{
+		"input": "p3 dnes",
+		"expected": { "name": "", "priority": 3, "due": "2026-06-25" },
+		"why": "Guard prázdného názvu + jen tokeny. §3 p3→priority3 (cut); §7d 'dnes'→dateKind=dnes→due 2026-06-25. Po vytažení obou tokenů base prázdná→name '' (UI guard řeší jinde, parser vrací name=''). Subset assertuje priority/due."
+	},
+	{
+		"input": "Připravit podklady do 5. 7. v 14:00 90 min p2 #Obchod @Petra",
+		"expected": {
+			"name": "Připravit podklady do",
+			"startMin": 840,
+			"durationMin": 90,
+			"priority": 2,
+			"due": "2026-07-05",
+			"projectId": "obchod",
+			"personQueries": ["Petra"]
+		},
+		"why": "Maximálně hustá realistická věta. §3 p2→2; §4a 'v 14:00'→840; §5a '90 min'→90; §7a '5. 7.'→2026-07-05; §10 #Obchod→obchod; §14 @Petra→['Petra']. 'do' (předložka bez čísla) zůstává. name 'Připravit podklady do'. Souběh 6 atributů + zbylé slovo."
+	},
+	{
+		"input": "Audit !29. 2. 2026 a 29. 2. 2028",
+		"expected": { "name": "Audit !29. 2. 2026 a 29. 2. 2028" },
+		"why": "Přestupný rok v deadline vs datum. §2 deadline '!29. 2. 2026' validace jen mo/da→2026-02-29 (prototyp: 2026 NENÍ přestupný, ale validace délku měsíce neřeší→projde), cut. §7a datum '29. 2. 2028'→2028-02-29 (2028 reálně přestupný), cut. 'a' zůstane. name 'Audit a'. Referenční chování ignoruje délku měsíce u obou."
+	},
+	{
+		"input": "každý sudý čtvrtek v 8:00 #Obchod cvičení @Jana",
+		"expected": {
+			"name": "cvičení",
+			"startMin": 480,
+			"due": "2026-07-09",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 4,
+				"parity": "even",
+				"label": "Každý sudý čtvrtek"
+			},
+			"projectId": "obchod",
+			"personQueries": ["Jana"]
+		},
+		"why": "Parita + čas z opakovací fráze není (čas je explicitní). §4a 'v 8:00'→8*60=480. §11 B evenOdd='even', wd=čtvrtek(4), inMonth=false→biweekly parity even, label 'Každý sudý čtvrtek', start=weekdayParityISO(4,'even'): nejbližší čt 2.7. (add0→7) isoWeek27 liché≠0→+7→9.7. isoWeek28 sudé→2026-07-09→due. §10 #Obchod→obchod; §14 @Jana→['Jana']. RECVOCAB vyřízne 'každý'+'sudý'+'čtvrtek'. name 'cvičení'."
+	},
+	{
+		"input": "Zkontrolovat zálohy v 25:00",
+		"expected": { "name": "Zkontrolovat zálohy v 25:00" },
+		"why": "NEGATIVNÍ >23 u HH:MM: '25' selže na ([01]?\\d|2[0-3]) v 4a i 4b→žádný time. Není ani datum (jen jedna tečka chybí, dvojtečka). 'v 25:00' zůstává celé. Žádné pole nenastaveno. name beze změny."
+	},
+	{
+		"input": "Schůzka v 14:00 na 90 minut s Tomášem zítra #Obchod",
+		"expected": {
+			"name": "Schůzka na s Tomášem",
+			"startMin": 840,
+			"durationMin": 90,
+			"due": "2026-06-26",
+			"projectId": "obchod"
+		},
+		"why": "Čas + minutové trvání + relativní datum + projekt; jméno bez @ zůstává. §4a 'v 14:00'→840; §5a '90 minut' (\\w* koncovka)→90; §7c 'zítra'→2026-06-26; §10 #Obchod→obchod. 'na'/'s'/'Tomášem' nejsou tokeny→zůstanou. name 'Schůzka na s Tomášem'. (Pozor: 'Tomášem' bez @ NENÍ personQuery.)"
+	},
+	{
+		"input": "1.5 h",
+		"expected": { "name": "", "durationMin": 90 },
+		"why": "Guard prázdného názvu z čistého trvání. §5e '1.5 h'→round(1.5*60)=90, cut→base prázdná→name ''. Jediný token = trvání. Ověřuje prázdný název po vytažení i u trvání."
+	},
+	{
+		"input": "Volat Petře v 9 a Tomášovi v 10",
+		"expected": { "name": "Volat Petře v 9 a Tomášovi v 10" },
+		"why": "NEGATIVNÍ čas: 'v 9' a 'v 10' nejsou čas (4a chce [:.], 4c/4d chtějí 'hodin' za číslem; tu žádné 'hodin' není). Žádný startMin, žádný durationMin (5e chce 'hod/h', ne holé číslo). Jména bez @ nejsou osoby. name beze změny. Ukazuje, že 'v N' bez :MM/hodin se NEparsuje."
+	},
+	{
+		"input": "Revize každý druhý pátek v 16:00 p1 2 hodiny @Petra @Tomáš #Web",
+		"expected": {
+			"name": "Revize",
+			"startMin": 960,
+			"durationMin": 120,
+			"priority": 1,
+			"due": "2026-06-26",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 5,
+				"label": "Každý druhý pátek"
+			},
+			"projectId": null,
+			"personQueries": ["Petra", "Tomáš"]
+		},
+		"why": "Biweekly bez parity (druhý) + čas + trvání + prio + 2 osoby + neexistující projekt. §3 p1→1; §4a 'v 16:00'→960; §5e '2 hodiny'→120; §10 '#Web'≠'Web redesign'→projectId undefined (cut); §11 B wd=pátek(5), bi=B('druh...')→biweekly weekday5 label wd.every2='Každý druhý pátek', start=weekdayDate(5,0)=2026-06-26→due; §14 ['Petra','Tomáš']. RECVOCAB vyřízne 'každý'+'druhý'+'pátek'. name 'Revize'."
+	},
+	{
+		"input": "úkol s číslem 3.14 bez data",
+		"expected": { "name": "úkol s číslem 3.14 bez data" },
+		"why": "NEGATIVNÍ: '3.14' je '3.' + '14' — datum regex /\\b(\\d{1,2})\\.\\s*(\\d{1,2})\\./ vyžaduje DRUHOU tečku po druhém čísle ('3.14' má za '14' mezeru, ne tečku)→nematchne. Není čas (chybí ':'), není trvání. name beze změny. Hraniční desetinné číslo nezaměněno za datum."
+	}
 ]

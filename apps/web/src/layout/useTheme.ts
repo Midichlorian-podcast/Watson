@@ -9,33 +9,35 @@ const KEY = "w-theme";
  * Zatím localStorage; trvale per-uživatel přes sync engine později (K3).
  */
 let current: Theme =
-  typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "dark" ? "dark" : "light";
+	typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "dark"
+		? "dark"
+		: "light";
 const listeners = new Set<() => void>();
 
 function apply(theme: Theme) {
-  const el = document.documentElement;
-  if (theme === "dark") el.setAttribute("data-w-theme", "dark");
-  else el.removeAttribute("data-w-theme");
-  localStorage.setItem(KEY, theme);
+	const el = document.documentElement;
+	if (theme === "dark") el.setAttribute("data-w-theme", "dark");
+	else el.removeAttribute("data-w-theme");
+	localStorage.setItem(KEY, theme);
 }
 if (typeof document !== "undefined") apply(current);
 
 function setTheme(theme: Theme) {
-  current = theme;
-  apply(theme);
-  for (const l of listeners) l();
+	current = theme;
+	apply(theme);
+	for (const l of listeners) l();
 }
 
 const subscribe = (l: () => void) => {
-  listeners.add(l);
-  return () => listeners.delete(l);
+	listeners.add(l);
+	return () => listeners.delete(l);
 };
 
 export function useTheme() {
-  const theme = useSyncExternalStore(
-    subscribe,
-    () => current,
-    () => current,
-  );
-  return { theme, toggle: () => setTheme(theme === "dark" ? "light" : "dark") };
+	const theme = useSyncExternalStore(
+		subscribe,
+		() => current,
+		() => current,
+	);
+	return { theme, toggle: () => setTheme(theme === "dark" ? "light" : "dark") };
 }

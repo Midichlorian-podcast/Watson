@@ -1,338 +1,473 @@
 [
-  {
-    "input": "každé první úterý v měsíci týmová porada",
-    "expected": {
-      "name": "týmová porada",
-      "recurrence": { "kind": "monthly-nth", "nth": 1, "weekday": 2, "label": "1. úterý v měsíci" },
-      "due": "2026-07-07"
-    },
-    "why": "Větev B nth: hasK=true, inMonth=true, nthDefs 'prvn'→1, WD úterý d=2 (label every 'Každé úterý' nepoužit). label = nth+'. '+nom+' v měsíci' = '1. úterý v měsíci'. startISO=nthWeekdayISO(1,2): 1. úterý ≥ 25.6.2026 → červenec 7.7. (úterky v červnu jsou ≤30.6., první budoucí 1. úterý je 7.7.). due=startISO (dateKind bylo undefined)."
-  },
-  {
-    "input": "každou první středu v měsíci porada vedení",
-    "expected": {
-      "name": "porada vedení",
-      "recurrence": { "kind": "monthly-nth", "nth": 1, "weekday": 3, "label": "1. středa v měsíci" },
-      "due": "2026-07-01"
-    },
-    "why": "nth=1, WD středa d=3, nom='středa' → label '1. středa v měsíci'. nthWeekdayISO(1,3): první středa měsíce ≥ dneška. V červnu jsou středy 3,10,17,24 — 1. středa (3.6.) už prošla → najde se v aktuálním měsíci ale dt<b → příští měsíc; 1. středa července = 1.7.2026."
-  },
-  {
-    "input": "každé druhé úterý v měsíci report",
-    "expected": {
-      "name": "report",
-      "recurrence": { "kind": "monthly-nth", "nth": 2, "weekday": 2, "label": "2. úterý v měsíci" },
-      "due": "2026-07-14"
-    },
-    "why": "nthDefs 'druh[éouý]'→2 má přednost před default každý-druhý biweekly (nth větev se vyhodnocuje první). label '2. úterý v měsíci'. nthWeekdayISO(2,2): 2. úterý června je 9.6. (<dnes) → příští měsíc; úterky července 7,14,21,28 → 2. = 14.7.2026."
-  },
-  {
-    "input": "každé třetí pondělí v měsíci 1:1 s týmem",
-    "expected": {
-      "name": "1:1 s týmem",
-      "recurrence": { "kind": "monthly-nth", "nth": 3, "weekday": 1, "label": "3. pondělí v měsíci" },
-      "due": "2026-07-20"
-    },
-    "why": "nthDefs 't[řr]et[íi]'→3, WD pondělí d=1. label '3. pondělí v měsíci'. nthWeekdayISO(3,1): pondělky července 6,13,20,27 → 3. = 20.7.2026 (3. pondělí června 15.6. < dnes → příští měsíc). Pozn.: '1:1' nesplňuje HH:MM ([0-5]\\d minuty vyžadují 2 číslice) → žádný čas, '1:1' zůstává v názvu (ověřeno: name='1:1 s týmem', time=undefined)."
-  },
-  {
-    "input": "každý čtvrtý pátek v měsíci výplata",
-    "expected": {
-      "name": "výplata",
-      "recurrence": { "kind": "monthly-nth", "nth": 4, "weekday": 5, "label": "4. pátek v měsíci" },
-      "due": "2026-06-26"
-    },
-    "why": "nthDefs '[čc]tvrt[éouý]'→4, WD pátek d=5. label '4. pátek v měsíci'. nthWeekdayISO(4,5): pátky června 5,12,19,26 → 4. pátek = 26.6.2026, což je ≥ dnes (25.6.) → zůstává v červnu (ne příští měsíc)."
-  },
-  {
-    "input": "každé páté pondělí v měsíci bonus",
-    "expected": {
-      "name": "páté bonus",
-      "recurrence": { "kind": "monthly-nth", "nth": 5, "weekday": 1, "label": "5. pondělí v měsíci" },
-      "due": "2026-06-29"
-    },
-    "why": "nthDefs 'p[áa]t[éouý]'→5 (pozor: zachytí 'páté'), WD pondělí d=1. label '5. pondělí v měsíci'. nthWeekdayISO(5,1): pondělky června 1,8,15,22,29 → 5. = 29.6.2026 ≥ dnes. POZOR: 'páté' NENÍ v RECVOCAB (jen 'p[áa]t(?:ek|ku|ky)'), proto zůstává v názvu → name='páté bonus'."
-  },
-  {
-    "input": "každý poslední pátek v měsíci fakturace",
-    "expected": {
-      "name": "fakturace",
-      "recurrence": { "kind": "monthly-nth", "nth": -1, "weekday": 5, "label": "Poslední pátek v měsíci" },
-      "due": "2026-06-26"
-    },
-    "why": "nthDefs 'posledn[íiěe]?'→-1 (první v pořadí). label pro nth=-1 = 'Poslední '+nom+' v měsíci' = 'Poslední pátek v měsíci'. nthWeekdayISO(-1,5): poslední pátek června 2026 = 26.6. (≥ dnes 25.6.) → zůstává v červnu."
-  },
-  {
-    "input": "Poslední pátek v měsíci fakturace",
-    "expected": {
-      "name": "fakturace",
-      "due": "2026-06-26"
-    },
-    "why": "NEGATIVNÍ: bez 'každ' a bez sudý/lichý → větev A (jen příslovce denně/týdně/měsíčně/ročně) → žádné → parseRecurrence vrací null. ŽÁDNÉ opakování! Pak §9 holý den: 'pátek' (p[áa]t(?:ek)) → weekdayDate(5,0)=nejbližší budoucí pátek. POZOR ale 'poslední' není den; bareWd najde 'pátek' → weekdayDate(5,0): add=(5-4+7)%7=1 → 26.6.2026. 'poslední'+'v měsíci' vyříznuty přes bareWd RECVOCAB. Spec finding: 'poslední pátek v měsíci' BEZ 'každ' NEdá monthly-nth."
-  },
-  {
-    "input": "poslední čtvrtek v měsíci uzávěrka",
-    "expected": {
-      "name": "uzávěrka",
-      "due": "2026-07-02"
-    },
-    "why": "NEGATIVNÍ stejně jako výše: bez 'každ' → parseRecurrence null. §9 holý den 'čtvrtek' → weekdayDate(4,0): add=(4-4+7)%7=0 → add===0→7 → 2.7.2026 (dnes je čtvrtek, bere AŽ příští). 'poslední'+'v měsíci' vyříznuty (bareWd=true → RECVOCAB). Žádný recurrence/repeatRule."
-  },
-  {
-    "input": "každý poslední čtvrtek v měsíci měsíční uzávěrka",
-    "expected": {
-      "name": "měsíční uzávěrka",
-      "recurrence": { "kind": "monthly-nth", "nth": -1, "weekday": 4, "label": "Poslední čtvrtek v měsíci" },
-      "due": "2026-06-25"
-    },
-    "why": "S 'každ' → nth=-1, WD čtvrtek d=4. label 'Poslední čtvrtek v měsíci'. nthWeekdayISO(-1,4): poslední čtvrtek června 2026 = 25.6. = dnes; dt<b je false (dt===b) → zůstává 25.6.2026 (EDGE: start = dnešní den). Ověřeno reálným během: name='měsíční uzávěrka' — 'v měsíci' (z fráze opakování) je vyříznuto, ale druhé slovo 'měsíční' z názvu zůstává (RECVOCAB replace nahrazuje jen první výskyt vzoru a 'měsíční' přežije)."
-  },
-  {
-    "input": "každou poslední neděli v měsíci záloha dat",
-    "expected": {
-      "name": "záloha dat",
-      "recurrence": { "kind": "monthly-nth", "nth": -1, "weekday": 0, "label": "Poslední neděle v měsíci" },
-      "due": "2026-06-28"
-    },
-    "why": "nth=-1, WD neděle d=0, nom='neděle'. label 'Poslední neděle v měsíci'. nthWeekdayISO(-1,0): poslední neděle června 2026 = 28.6. (neděle 7,14,21,28) ≥ dnes 25.6. → 28.6.2026."
-  },
-  {
-    "input": "každé poslední úterý v měsíci kontrola skladu",
-    "expected": {
-      "name": "kontrola skladu",
-      "recurrence": { "kind": "monthly-nth", "nth": -1, "weekday": 2, "label": "Poslední úterý v měsíci" },
-      "due": "2026-06-30"
-    },
-    "why": "nth=-1, WD úterý d=2. label 'Poslední úterý v měsíci'. nthWeekdayISO(-1,2): poslední úterý června 2026 = 30.6. (úterky 2,9,16,23,30) ≥ dnes → 30.6.2026."
-  },
-  {
-    "input": "každou poslední středu v měsíci retro",
-    "expected": {
-      "name": "retro",
-      "recurrence": { "kind": "monthly-nth", "nth": -1, "weekday": 3, "label": "Poslední středa v měsíci" },
-      "due": "2026-07-29"
-    },
-    "why": "nth=-1, WD středa d=3. label 'Poslední středa v měsíci'. nthWeekdayISO(-1,3): poslední středa června je 24.6. (středy 3,10,17,24), 24.6. < dnes 25.6. → dt<b → příští měsíc; poslední středa července = 29.7.2026."
-  },
-  {
-    "input": "každého 25. v měsíci zaplatit nájem",
-    "expected": {
-      "name": "25. zaplatit nájem",
-      "recurrence": { "kind": "monthly-day", "day": 25, "label": "25. v měsíci" },
-      "due": "2026-06-25"
-    },
-    "why": "Větev C: wd=null, dayFromGen vrací null (žádná řadová číslovka), pak regex (\\d{1,2})\\.(?!\\s*\\d) → '25.' (za tečkou není číslo) → day=25. label '25. v měsíci'. nextMonthDayISO(25): day===25 není <25 → zůstává červen, Math.min(25,30)=25 → 2026-06-25. POZOR: '25.' číselný token NENÍ vyříznut z názvu (parseRecurrence jen čte, RECVOCAB ho nepokrývá) → name='25. zaplatit nájem'."
-  },
-  {
-    "input": "každého dvacátého pátého v měsíci nájem",
-    "expected": {
-      "name": "dvacátého pátého nájem",
-      "recurrence": { "kind": "monthly-day", "day": 25, "label": "25. v měsíci" },
-      "due": "2026-06-25"
-    },
-    "why": "Větev C slovem: dayFromGen → T['dvacát']=20 + U['pát']=5 (vzor 'dvacátého pátého') = 25. label '25. v měsíci'. nextMonthDayISO(25)=2026-06-25 (=dnes). POZOR: 'dvacátého' ani 'pátého' NEJSOU v RECVOCAB (jen 'p[áa]t(?:ek|ku|ky)') → zůstávají → name='dvacátého pátého nájem'."
-  },
-  {
-    "input": "každého prvního v měsíci kontrola rozpočtu",
-    "expected": {
-      "name": "kontrola rozpočtu",
-      "recurrence": { "kind": "monthly-day", "day": 1, "label": "1. v měsíci" },
-      "due": "2026-07-01"
-    },
-    "why": "dayFromGen: U['prvn']=1 (řadová jednotka s lookbehind) → day=1. label '1. v měsíci'. nextMonthDayISO(1): 1<25 → příští měsíc → 2026-07-01. POZOR: 'prvního' JE v RECVOCAB ('prvn\\p{L}*') → vyříznuto → name='kontrola rozpočtu'."
-  },
-  {
-    "input": "každého patnáctého v měsíci přehled KPI",
-    "expected": {
-      "name": "patnáctého přehled KPI",
-      "recurrence": { "kind": "monthly-day", "day": 15, "label": "15. v měsíci" },
-      "due": "2026-07-15"
-    },
-    "why": "dayFromGen: D['patnáct']+koncovka 'ého' = 15. label '15. v měsíci'. nextMonthDayISO(15): 15<25 → příští měsíc → 2026-07-15. POZOR: 'patnáctého' NENÍ v RECVOCAB → zůstává → name='patnáctého přehled KPI'."
-  },
-  {
-    "input": "každého třicátého v měsíci uzavřít účetnictví",
-    "expected": {
-      "name": "třicátého uzavřít účetnictví",
-      "recurrence": { "kind": "monthly-day", "day": 30, "label": "30. v měsíci" },
-      "due": "2026-06-30"
-    },
-    "why": "dayFromGen: T['třicát']+'ého'=30 (bez následné jednotky). label '30. v měsíci'. nextMonthDayISO(30): 30 není <25 → červen, Math.min(30,30)=30 → 2026-06-30. 'třicátého' NENÍ v RECVOCAB → name='třicátého uzavřít účetnictví'."
-  },
-  {
-    "input": "každého dvacátého v měsíci záloha",
-    "expected": {
-      "name": "dvacátého záloha",
-      "recurrence": { "kind": "monthly-day", "day": 20, "label": "20. v měsíci" },
-      "due": "2026-07-20"
-    },
-    "why": "dayFromGen: T['dvacát']+'ého'=20 (bez jednotky). label '20. v měsíci'. nextMonthDayISO(20): 20<25 → příští měsíc → 2026-07-20. 'dvacátého' NENÍ v RECVOCAB → name='dvacátého záloha'."
-  },
-  {
-    "input": "každého pátého v měsíci výkaz hodin",
-    "expected": {
-      "name": "pátého výkaz",
-      "recurrence": { "kind": "monthly-day", "day": 5, "label": "5. v měsíci" },
-      "due": "2026-07-05"
-    },
-    "why": "dayFromGen: U['pát']=5 přes lookbehind (?<![\\p{L}])pát(?:ého) — 'pátého' samostatně. label '5. v měsíci'. nextMonthDayISO(5): 5<25 → příští měsíc → 2026-07-05. 'pátého' NENÍ v RECVOCAB (jen pátek/pátku/pátky) → zůstává. ALE 'hodin' JE v RECVOCAB ('hodin\\p{L}*') a rec!=null → vyříznuto → name='pátého výkaz' (pozor: slovo 'hodin' z 'výkaz hodin' zmizí jako falešný recurrence-token)."
-  },
-  {
-    "input": "každého 10. v měsíci odeslat výkaz",
-    "expected": {
-      "name": "10. odeslat výkaz",
-      "recurrence": { "kind": "monthly-day", "day": 10, "label": "10. v měsíci" },
-      "due": "2026-07-10"
-    },
-    "why": "Větev C číselně: '10.' s negative lookahead (?!\\s*\\d) → day=10. label '10. v měsíci'. nextMonthDayISO(10): 10<25 → příští měsíc → 2026-07-10. '10.' token NEvyříznut → name='10. odeslat výkaz'."
-  },
-  {
-    "input": "každého 31. v měsíci inventura",
-    "expected": {
-      "name": "31. inventura",
-      "recurrence": { "kind": "monthly-day", "day": 31, "label": "31. v měsíci" },
-      "due": "2026-06-30"
-    },
-    "why": "EDGE clamp: '31.' → day=31. label '31. v měsíci'. nextMonthDayISO(31): 31 není <25 → červen; Math.min(31, last=30)=30 → 2026-06-30 (červen má jen 30 dní → clamp na poslední den). '31.' NEvyříznut → name='31. inventura'."
-  },
-  {
-    "input": "každého 1. v měsíci nájemné v 9:00",
-    "expected": {
-      "name": "1. nájemné",
-      "recurrence": { "kind": "monthly-day", "day": 1, "label": "1. v měsíci" },
-      "due": "2026-07-01",
-      "startMin": 540
-    },
-    "why": "'1.' → day=1, nextMonthDayISO(1)=2026-07-01. Čas: §4a 'v 9:00' → tH=9,tM=0 → time '09:00' → startMin=9*60=540. due=startISO (dateKind undefined při startu, čas nastaví time ale ne dateKind). '1.' zůstává v názvu, 'v 9:00' vyříznut → name='1. nájemné'."
-  },
-  {
-    "input": "každého 25. v měsíci nájem v 8:30",
-    "expected": {
-      "name": "25. nájem",
-      "recurrence": { "kind": "monthly-day", "day": 25, "label": "25. v měsíci" },
-      "due": "2026-06-25",
-      "startMin": 510
-    },
-    "why": "day=25 → nextMonthDayISO=2026-06-25 (=dnes). Čas §4a 'v 8:30' → 08:30 → startMin=8*60+30=510. '25.' zůstává, 'v 8:30' vyříznut → name='25. nájem'."
-  },
-  {
-    "input": "každý sudý čtvrtek úklid kuchyňky",
-    "expected": {
-      "name": "úklid kuchyňky",
-      "recurrence": { "kind": "biweekly", "weekday": 4, "parity": "even", "label": "Každý sudý čtvrtek" },
-      "due": "2026-07-09"
-    },
-    "why": "evenOdd: B('sud…')→'even'. WD čtvrtek d=4. Větev B (wd) ale inMonth=false (žádné 'v měsíci') → nth větev se přeskočí → evenOdd větev → biweekly parity even, label wd.evenL='Každý sudý čtvrtek'. startISO=weekdayParityISO(4,'even'): nejbližší budoucí čtvrtek = 2.7. (add=(4-4+7)%7=0→7), isoWeek(2.7.)=27 (liché ≠ even=0) → +7 → 9.7.2026, isoWeek=28 sudé. due=2026-07-09."
-  },
-  {
-    "input": "každý lichý čtvrtek zalít květiny",
-    "expected": {
-      "name": "zalít květiny",
-      "recurrence": { "kind": "biweekly", "weekday": 4, "parity": "odd", "label": "Každý lichý čtvrtek" },
-      "due": "2026-07-02"
-    },
-    "why": "evenOdd: B('lich…')→'odd'. WD čtvrtek d=4. biweekly parity odd, label wd.oddL='Každý lichý čtvrtek'. weekdayParityISO(4,'odd'): nejbližší budoucí čtvrtek 2.7. (add 0→7), isoWeek(2.7.)=27 liché = want(odd=1) → zůstává → 2026-07-02."
-  },
-  {
-    "input": "každý sudý pátek p1 kontrola serverů",
-    "expected": {
-      "name": "kontrola serverů",
-      "priority": 1,
-      "recurrence": { "kind": "biweekly", "weekday": 5, "parity": "even", "label": "Každý sudý pátek" },
-      "due": "2026-06-26"
-    },
-    "why": "evenOdd even, WD pátek d=5. label 'Každý sudý pátek'. weekdayParityISO(5,'even'): nejbližší budoucí pátek = 26.6. (add=(5-4+7)%7=1), isoWeek(26.6.)=26 sudé = want(even=0) → zůstává 2026-06-26. Priorita: p1 → priority=1, token vyříznut. 'p1' před 'kontrola' → name='kontrola serverů'."
-  },
-  {
-    "input": "každý lichý pátek p3 zálohování",
-    "expected": {
-      "name": "zálohování",
-      "priority": 3,
-      "recurrence": { "kind": "biweekly", "weekday": 5, "parity": "odd", "label": "Každý lichý pátek" },
-      "due": "2026-07-03"
-    },
-    "why": "evenOdd odd, WD pátek d=5. label 'Každý lichý pátek'. weekdayParityISO(5,'odd'): nejbližší pátek 26.6. isoWeek=26 sudé ≠ want(odd=1) → +7 → 3.7.2026 isoWeek=27 liché. p3 → priority=3."
-  },
-  {
-    "input": "každou sudou středu #Obchod stand-up",
-    "expected": {
-      "name": "stand-up",
-      "recurrence": { "kind": "biweekly", "weekday": 3, "parity": "even", "label": "Každou sudou středu" },
-      "projectId": "obchod",
-      "due": "2026-07-08"
-    },
-    "why": "evenOdd even, WD středa d=3 (skloňované 'sudou středu'). label wd.evenL='Každou sudou středu'. weekdayParityISO(3,'even'): nejbližší středa 1.7. (add=(3-4+7)%7=6), isoWeek(1.7.)=27 liché ≠ want(even=0) → +7 → 8.7.2026 isoWeek=28 sudé. #Obchod = přesná shoda projektu → projectId='obchod', token vyříznut → name='stand-up'."
-  },
-  {
-    "input": "každou sudou sobotu generální úklid",
-    "expected": {
-      "name": "generální úklid",
-      "recurrence": { "kind": "biweekly", "weekday": 6, "parity": "even", "label": "Každou sudou sobotu" },
-      "due": "2026-06-27"
-    },
-    "why": "evenOdd even, WD sobota d=6 ('sudou sobotu'). label wd.evenL='Každou sudou sobotu'. weekdayParityISO(6,'even'): nejbližší sobota 27.6. (add=(6-4+7)%7=2), isoWeek(27.6.)=26 sudé = want(even=0) → zůstává → 2026-06-27."
-  },
-  {
-    "input": "každé liché úterý porada",
-    "expected": {
-      "name": "porada",
-      "recurrence": { "kind": "biweekly", "weekday": 2, "parity": "odd", "label": "Každé liché úterý" },
-      "due": "2026-06-30"
-    },
-    "why": "evenOdd odd, WD úterý d=2. Bez 'v měsíci' → biweekly parity odd, label wd.oddL='Každé liché úterý'. weekdayParityISO(2,'odd'): nejbližší úterý 30.6. (add=(2-4+7)%7=5), isoWeek(30.6.)=27 liché = want(odd=1) → 2026-06-30."
-  },
-  {
-    "input": "každé první úterý v měsíci porada @Petra",
-    "expected": {
-      "name": "porada",
-      "recurrence": { "kind": "monthly-nth", "nth": 1, "weekday": 2, "label": "1. úterý v měsíci" },
-      "due": "2026-07-07",
-      "personQueries": ["Petra"]
-    },
-    "why": "monthly-nth nth=1 wd=2 jako základ; due=nthWeekdayISO(1,2)=2026-07-07. @Petra → personQueries=['Petra'] (token z @X/+X, neresolvovaný), token se z názvu odstraní (cleanName replace /[@+]\\p{L}+/) → name='porada'."
-  },
-  {
-    "input": "každého 25. v měsíci faktury +Tomáš",
-    "expected": {
-      "name": "25. faktury",
-      "recurrence": { "kind": "monthly-day", "day": 25, "label": "25. v měsíci" },
-      "due": "2026-06-25",
-      "personQueries": ["Tomáš"]
-    },
-    "why": "monthly-day day=25, due=nextMonthDayISO(25)=2026-06-25. +Tomáš → personQueries=['Tomáš'] (+ se chová jako @, token odebrán z cleanName). POZOR: '25.' číselný token NENÍ vyříznut (parseRecurrence jen čte, RECVOCAB ho nepokrývá) → zůstává → name='25. faktury'."
-  },
-  {
-    "input": "měsíčně přehled nákladů",
-    "expected": {
-      "name": "přehled nákladů",
-      "recurrence": { "kind": "monthly", "label": "Měsíčně" }
-    },
-    "why": "NEGATIVNÍ vůči monthly-nth/day: bez 'každ' a bez sudý/lichý → větev A příslovce: B('měsíčně')→ monthly, repeatRule {kind:'monthly'} (BEZ day/weekday/nth), label 'Měsíčně'. Žádné startISO → due se NEnastaví z opakování (zůstane default 'dnes' v draftu, ale parser nevrací custom). 'měsíčně' vyříznuto přes RECVOCAB (rec!=null) → name='přehled nákladů'."
-  },
-  {
-    "input": "každý měsíc revize smluv",
-    "expected": {
-      "name": "revize smluv",
-      "recurrence": { "kind": "monthly", "label": "Každý měsíc" }
-    },
-    "why": "NEGATIVNÍ: hasK=true ale žádný wd, dayFromGen=null, žádné číslo s tečkou → větev D fallback: B('m[ěe]s[íi]c')→ monthly, repeatRule {kind:'monthly'}, label 'Každý měsíc'. Žádný startISO → bez due z opakování. 'každý'+'měsíc' vyříznuty → name='revize smluv'."
-  },
-  {
-    "input": "každého 30. v měsíci mzdy p2",
-    "expected": {
-      "name": "30. mzdy",
-      "recurrence": { "kind": "monthly-day", "day": 30, "label": "30. v měsíci" },
-      "due": "2026-06-30"
-    },
-    "why": "day=30 → nextMonthDayISO(30)=2026-06-30 (30 není <25, červen má 30 dní). p2 → priority=2, ale priority=2 je default → NEasseruji priority (může být undefined nebo 2 dle implementace; token 'p2' se vyřízne). '30.' zůstává v názvu → name='30. mzdy'."
-  },
-  {
-    "input": "každého druhého v měsíci kontrola záloh",
-    "expected": {
-      "name": "kontrola záloh",
-      "recurrence": { "kind": "monthly-day", "day": 2, "label": "2. v měsíci" },
-      "due": "2026-07-02"
-    },
-    "why": "POZOR na záměnu s biweekly: zde wd=null (žádný den v týdnu), takže větev B se nespustí. dayFromGen: U['druh']=2 přes lookbehind 'druhého' → day=2. monthly-day day=2, label '2. v měsíci'. nextMonthDayISO(2): 2<25 → příští měsíc → 2026-07-02. 'druhého' JE 'druh\\p{L}*' v RECVOCAB → vyříznuto → name='kontrola záloh'."
-  }
+	{
+		"input": "každé první úterý v měsíci týmová porada",
+		"expected": {
+			"name": "týmová porada",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": 1,
+				"weekday": 2,
+				"label": "1. úterý v měsíci"
+			},
+			"due": "2026-07-07"
+		},
+		"why": "Větev B nth: hasK=true, inMonth=true, nthDefs 'prvn'→1, WD úterý d=2 (label every 'Každé úterý' nepoužit). label = nth+'. '+nom+' v měsíci' = '1. úterý v měsíci'. startISO=nthWeekdayISO(1,2): 1. úterý ≥ 25.6.2026 → červenec 7.7. (úterky v červnu jsou ≤30.6., první budoucí 1. úterý je 7.7.). due=startISO (dateKind bylo undefined)."
+	},
+	{
+		"input": "každou první středu v měsíci porada vedení",
+		"expected": {
+			"name": "porada vedení",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": 1,
+				"weekday": 3,
+				"label": "1. středa v měsíci"
+			},
+			"due": "2026-07-01"
+		},
+		"why": "nth=1, WD středa d=3, nom='středa' → label '1. středa v měsíci'. nthWeekdayISO(1,3): první středa měsíce ≥ dneška. V červnu jsou středy 3,10,17,24 — 1. středa (3.6.) už prošla → najde se v aktuálním měsíci ale dt<b → příští měsíc; 1. středa července = 1.7.2026."
+	},
+	{
+		"input": "každé druhé úterý v měsíci report",
+		"expected": {
+			"name": "report",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": 2,
+				"weekday": 2,
+				"label": "2. úterý v měsíci"
+			},
+			"due": "2026-07-14"
+		},
+		"why": "nthDefs 'druh[éouý]'→2 má přednost před default každý-druhý biweekly (nth větev se vyhodnocuje první). label '2. úterý v měsíci'. nthWeekdayISO(2,2): 2. úterý června je 9.6. (<dnes) → příští měsíc; úterky července 7,14,21,28 → 2. = 14.7.2026."
+	},
+	{
+		"input": "každé třetí pondělí v měsíci 1:1 s týmem",
+		"expected": {
+			"name": "1:1 s týmem",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": 3,
+				"weekday": 1,
+				"label": "3. pondělí v měsíci"
+			},
+			"due": "2026-07-20"
+		},
+		"why": "nthDefs 't[řr]et[íi]'→3, WD pondělí d=1. label '3. pondělí v měsíci'. nthWeekdayISO(3,1): pondělky července 6,13,20,27 → 3. = 20.7.2026 (3. pondělí června 15.6. < dnes → příští měsíc). Pozn.: '1:1' nesplňuje HH:MM ([0-5]\\d minuty vyžadují 2 číslice) → žádný čas, '1:1' zůstává v názvu (ověřeno: name='1:1 s týmem', time=undefined)."
+	},
+	{
+		"input": "každý čtvrtý pátek v měsíci výplata",
+		"expected": {
+			"name": "výplata",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": 4,
+				"weekday": 5,
+				"label": "4. pátek v měsíci"
+			},
+			"due": "2026-06-26"
+		},
+		"why": "nthDefs '[čc]tvrt[éouý]'→4, WD pátek d=5. label '4. pátek v měsíci'. nthWeekdayISO(4,5): pátky června 5,12,19,26 → 4. pátek = 26.6.2026, což je ≥ dnes (25.6.) → zůstává v červnu (ne příští měsíc)."
+	},
+	{
+		"input": "každé páté pondělí v měsíci bonus",
+		"expected": {
+			"name": "páté bonus",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": 5,
+				"weekday": 1,
+				"label": "5. pondělí v měsíci"
+			},
+			"due": "2026-06-29"
+		},
+		"why": "nthDefs 'p[áa]t[éouý]'→5 (pozor: zachytí 'páté'), WD pondělí d=1. label '5. pondělí v měsíci'. nthWeekdayISO(5,1): pondělky června 1,8,15,22,29 → 5. = 29.6.2026 ≥ dnes. POZOR: 'páté' NENÍ v RECVOCAB (jen 'p[áa]t(?:ek|ku|ky)'), proto zůstává v názvu → name='páté bonus'."
+	},
+	{
+		"input": "každý poslední pátek v měsíci fakturace",
+		"expected": {
+			"name": "fakturace",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": -1,
+				"weekday": 5,
+				"label": "Poslední pátek v měsíci"
+			},
+			"due": "2026-06-26"
+		},
+		"why": "nthDefs 'posledn[íiěe]?'→-1 (první v pořadí). label pro nth=-1 = 'Poslední '+nom+' v měsíci' = 'Poslední pátek v měsíci'. nthWeekdayISO(-1,5): poslední pátek června 2026 = 26.6. (≥ dnes 25.6.) → zůstává v červnu."
+	},
+	{
+		"input": "Poslední pátek v měsíci fakturace",
+		"expected": {
+			"name": "fakturace",
+			"due": "2026-06-26"
+		},
+		"why": "NEGATIVNÍ: bez 'každ' a bez sudý/lichý → větev A (jen příslovce denně/týdně/měsíčně/ročně) → žádné → parseRecurrence vrací null. ŽÁDNÉ opakování! Pak §9 holý den: 'pátek' (p[áa]t(?:ek)) → weekdayDate(5,0)=nejbližší budoucí pátek. POZOR ale 'poslední' není den; bareWd najde 'pátek' → weekdayDate(5,0): add=(5-4+7)%7=1 → 26.6.2026. 'poslední'+'v měsíci' vyříznuty přes bareWd RECVOCAB. Spec finding: 'poslední pátek v měsíci' BEZ 'každ' NEdá monthly-nth."
+	},
+	{
+		"input": "poslední čtvrtek v měsíci uzávěrka",
+		"expected": {
+			"name": "uzávěrka",
+			"due": "2026-07-02"
+		},
+		"why": "NEGATIVNÍ stejně jako výše: bez 'každ' → parseRecurrence null. §9 holý den 'čtvrtek' → weekdayDate(4,0): add=(4-4+7)%7=0 → add===0→7 → 2.7.2026 (dnes je čtvrtek, bere AŽ příští). 'poslední'+'v měsíci' vyříznuty (bareWd=true → RECVOCAB). Žádný recurrence/repeatRule."
+	},
+	{
+		"input": "každý poslední čtvrtek v měsíci měsíční uzávěrka",
+		"expected": {
+			"name": "měsíční uzávěrka",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": -1,
+				"weekday": 4,
+				"label": "Poslední čtvrtek v měsíci"
+			},
+			"due": "2026-06-25"
+		},
+		"why": "S 'každ' → nth=-1, WD čtvrtek d=4. label 'Poslední čtvrtek v měsíci'. nthWeekdayISO(-1,4): poslední čtvrtek června 2026 = 25.6. = dnes; dt<b je false (dt===b) → zůstává 25.6.2026 (EDGE: start = dnešní den). Ověřeno reálným během: name='měsíční uzávěrka' — 'v měsíci' (z fráze opakování) je vyříznuto, ale druhé slovo 'měsíční' z názvu zůstává (RECVOCAB replace nahrazuje jen první výskyt vzoru a 'měsíční' přežije)."
+	},
+	{
+		"input": "každou poslední neděli v měsíci záloha dat",
+		"expected": {
+			"name": "záloha dat",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": -1,
+				"weekday": 0,
+				"label": "Poslední neděle v měsíci"
+			},
+			"due": "2026-06-28"
+		},
+		"why": "nth=-1, WD neděle d=0, nom='neděle'. label 'Poslední neděle v měsíci'. nthWeekdayISO(-1,0): poslední neděle června 2026 = 28.6. (neděle 7,14,21,28) ≥ dnes 25.6. → 28.6.2026."
+	},
+	{
+		"input": "každé poslední úterý v měsíci kontrola skladu",
+		"expected": {
+			"name": "kontrola skladu",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": -1,
+				"weekday": 2,
+				"label": "Poslední úterý v měsíci"
+			},
+			"due": "2026-06-30"
+		},
+		"why": "nth=-1, WD úterý d=2. label 'Poslední úterý v měsíci'. nthWeekdayISO(-1,2): poslední úterý června 2026 = 30.6. (úterky 2,9,16,23,30) ≥ dnes → 30.6.2026."
+	},
+	{
+		"input": "každou poslední středu v měsíci retro",
+		"expected": {
+			"name": "retro",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": -1,
+				"weekday": 3,
+				"label": "Poslední středa v měsíci"
+			},
+			"due": "2026-07-29"
+		},
+		"why": "nth=-1, WD středa d=3. label 'Poslední středa v měsíci'. nthWeekdayISO(-1,3): poslední středa června je 24.6. (středy 3,10,17,24), 24.6. < dnes 25.6. → dt<b → příští měsíc; poslední středa července = 29.7.2026."
+	},
+	{
+		"input": "každého 25. v měsíci zaplatit nájem",
+		"expected": {
+			"name": "25. zaplatit nájem",
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 25,
+				"label": "25. v měsíci"
+			},
+			"due": "2026-06-25"
+		},
+		"why": "Větev C: wd=null, dayFromGen vrací null (žádná řadová číslovka), pak regex (\\d{1,2})\\.(?!\\s*\\d) → '25.' (za tečkou není číslo) → day=25. label '25. v měsíci'. nextMonthDayISO(25): day===25 není <25 → zůstává červen, Math.min(25,30)=25 → 2026-06-25. POZOR: '25.' číselný token NENÍ vyříznut z názvu (parseRecurrence jen čte, RECVOCAB ho nepokrývá) → name='25. zaplatit nájem'."
+	},
+	{
+		"input": "každého dvacátého pátého v měsíci nájem",
+		"expected": {
+			"name": "dvacátého pátého nájem",
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 25,
+				"label": "25. v měsíci"
+			},
+			"due": "2026-06-25"
+		},
+		"why": "Větev C slovem: dayFromGen → T['dvacát']=20 + U['pát']=5 (vzor 'dvacátého pátého') = 25. label '25. v měsíci'. nextMonthDayISO(25)=2026-06-25 (=dnes). POZOR: 'dvacátého' ani 'pátého' NEJSOU v RECVOCAB (jen 'p[áa]t(?:ek|ku|ky)') → zůstávají → name='dvacátého pátého nájem'."
+	},
+	{
+		"input": "každého prvního v měsíci kontrola rozpočtu",
+		"expected": {
+			"name": "kontrola rozpočtu",
+			"recurrence": { "kind": "monthly-day", "day": 1, "label": "1. v měsíci" },
+			"due": "2026-07-01"
+		},
+		"why": "dayFromGen: U['prvn']=1 (řadová jednotka s lookbehind) → day=1. label '1. v měsíci'. nextMonthDayISO(1): 1<25 → příští měsíc → 2026-07-01. POZOR: 'prvního' JE v RECVOCAB ('prvn\\p{L}*') → vyříznuto → name='kontrola rozpočtu'."
+	},
+	{
+		"input": "každého patnáctého v měsíci přehled KPI",
+		"expected": {
+			"name": "patnáctého přehled KPI",
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 15,
+				"label": "15. v měsíci"
+			},
+			"due": "2026-07-15"
+		},
+		"why": "dayFromGen: D['patnáct']+koncovka 'ého' = 15. label '15. v měsíci'. nextMonthDayISO(15): 15<25 → příští měsíc → 2026-07-15. POZOR: 'patnáctého' NENÍ v RECVOCAB → zůstává → name='patnáctého přehled KPI'."
+	},
+	{
+		"input": "každého třicátého v měsíci uzavřít účetnictví",
+		"expected": {
+			"name": "třicátého uzavřít účetnictví",
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 30,
+				"label": "30. v měsíci"
+			},
+			"due": "2026-06-30"
+		},
+		"why": "dayFromGen: T['třicát']+'ého'=30 (bez následné jednotky). label '30. v měsíci'. nextMonthDayISO(30): 30 není <25 → červen, Math.min(30,30)=30 → 2026-06-30. 'třicátého' NENÍ v RECVOCAB → name='třicátého uzavřít účetnictví'."
+	},
+	{
+		"input": "každého dvacátého v měsíci záloha",
+		"expected": {
+			"name": "dvacátého záloha",
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 20,
+				"label": "20. v měsíci"
+			},
+			"due": "2026-07-20"
+		},
+		"why": "dayFromGen: T['dvacát']+'ého'=20 (bez jednotky). label '20. v měsíci'. nextMonthDayISO(20): 20<25 → příští měsíc → 2026-07-20. 'dvacátého' NENÍ v RECVOCAB → name='dvacátého záloha'."
+	},
+	{
+		"input": "každého pátého v měsíci výkaz hodin",
+		"expected": {
+			"name": "pátého výkaz",
+			"recurrence": { "kind": "monthly-day", "day": 5, "label": "5. v měsíci" },
+			"due": "2026-07-05"
+		},
+		"why": "dayFromGen: U['pát']=5 přes lookbehind (?<![\\p{L}])pát(?:ého) — 'pátého' samostatně. label '5. v měsíci'. nextMonthDayISO(5): 5<25 → příští měsíc → 2026-07-05. 'pátého' NENÍ v RECVOCAB (jen pátek/pátku/pátky) → zůstává. ALE 'hodin' JE v RECVOCAB ('hodin\\p{L}*') a rec!=null → vyříznuto → name='pátého výkaz' (pozor: slovo 'hodin' z 'výkaz hodin' zmizí jako falešný recurrence-token)."
+	},
+	{
+		"input": "každého 10. v měsíci odeslat výkaz",
+		"expected": {
+			"name": "10. odeslat výkaz",
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 10,
+				"label": "10. v měsíci"
+			},
+			"due": "2026-07-10"
+		},
+		"why": "Větev C číselně: '10.' s negative lookahead (?!\\s*\\d) → day=10. label '10. v měsíci'. nextMonthDayISO(10): 10<25 → příští měsíc → 2026-07-10. '10.' token NEvyříznut → name='10. odeslat výkaz'."
+	},
+	{
+		"input": "každého 31. v měsíci inventura",
+		"expected": {
+			"name": "31. inventura",
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 31,
+				"label": "31. v měsíci"
+			},
+			"due": "2026-06-30"
+		},
+		"why": "EDGE clamp: '31.' → day=31. label '31. v měsíci'. nextMonthDayISO(31): 31 není <25 → červen; Math.min(31, last=30)=30 → 2026-06-30 (červen má jen 30 dní → clamp na poslední den). '31.' NEvyříznut → name='31. inventura'."
+	},
+	{
+		"input": "každého 1. v měsíci nájemné v 9:00",
+		"expected": {
+			"name": "1. nájemné",
+			"recurrence": { "kind": "monthly-day", "day": 1, "label": "1. v měsíci" },
+			"due": "2026-07-01",
+			"startMin": 540
+		},
+		"why": "'1.' → day=1, nextMonthDayISO(1)=2026-07-01. Čas: §4a 'v 9:00' → tH=9,tM=0 → time '09:00' → startMin=9*60=540. due=startISO (dateKind undefined při startu, čas nastaví time ale ne dateKind). '1.' zůstává v názvu, 'v 9:00' vyříznut → name='1. nájemné'."
+	},
+	{
+		"input": "každého 25. v měsíci nájem v 8:30",
+		"expected": {
+			"name": "25. nájem",
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 25,
+				"label": "25. v měsíci"
+			},
+			"due": "2026-06-25",
+			"startMin": 510
+		},
+		"why": "day=25 → nextMonthDayISO=2026-06-25 (=dnes). Čas §4a 'v 8:30' → 08:30 → startMin=8*60+30=510. '25.' zůstává, 'v 8:30' vyříznut → name='25. nájem'."
+	},
+	{
+		"input": "každý sudý čtvrtek úklid kuchyňky",
+		"expected": {
+			"name": "úklid kuchyňky",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 4,
+				"parity": "even",
+				"label": "Každý sudý čtvrtek"
+			},
+			"due": "2026-07-09"
+		},
+		"why": "evenOdd: B('sud…')→'even'. WD čtvrtek d=4. Větev B (wd) ale inMonth=false (žádné 'v měsíci') → nth větev se přeskočí → evenOdd větev → biweekly parity even, label wd.evenL='Každý sudý čtvrtek'. startISO=weekdayParityISO(4,'even'): nejbližší budoucí čtvrtek = 2.7. (add=(4-4+7)%7=0→7), isoWeek(2.7.)=27 (liché ≠ even=0) → +7 → 9.7.2026, isoWeek=28 sudé. due=2026-07-09."
+	},
+	{
+		"input": "každý lichý čtvrtek zalít květiny",
+		"expected": {
+			"name": "zalít květiny",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 4,
+				"parity": "odd",
+				"label": "Každý lichý čtvrtek"
+			},
+			"due": "2026-07-02"
+		},
+		"why": "evenOdd: B('lich…')→'odd'. WD čtvrtek d=4. biweekly parity odd, label wd.oddL='Každý lichý čtvrtek'. weekdayParityISO(4,'odd'): nejbližší budoucí čtvrtek 2.7. (add 0→7), isoWeek(2.7.)=27 liché = want(odd=1) → zůstává → 2026-07-02."
+	},
+	{
+		"input": "každý sudý pátek p1 kontrola serverů",
+		"expected": {
+			"name": "kontrola serverů",
+			"priority": 1,
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 5,
+				"parity": "even",
+				"label": "Každý sudý pátek"
+			},
+			"due": "2026-06-26"
+		},
+		"why": "evenOdd even, WD pátek d=5. label 'Každý sudý pátek'. weekdayParityISO(5,'even'): nejbližší budoucí pátek = 26.6. (add=(5-4+7)%7=1), isoWeek(26.6.)=26 sudé = want(even=0) → zůstává 2026-06-26. Priorita: p1 → priority=1, token vyříznut. 'p1' před 'kontrola' → name='kontrola serverů'."
+	},
+	{
+		"input": "každý lichý pátek p3 zálohování",
+		"expected": {
+			"name": "zálohování",
+			"priority": 3,
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 5,
+				"parity": "odd",
+				"label": "Každý lichý pátek"
+			},
+			"due": "2026-07-03"
+		},
+		"why": "evenOdd odd, WD pátek d=5. label 'Každý lichý pátek'. weekdayParityISO(5,'odd'): nejbližší pátek 26.6. isoWeek=26 sudé ≠ want(odd=1) → +7 → 3.7.2026 isoWeek=27 liché. p3 → priority=3."
+	},
+	{
+		"input": "každou sudou středu #Obchod stand-up",
+		"expected": {
+			"name": "stand-up",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 3,
+				"parity": "even",
+				"label": "Každou sudou středu"
+			},
+			"projectId": "obchod",
+			"due": "2026-07-08"
+		},
+		"why": "evenOdd even, WD středa d=3 (skloňované 'sudou středu'). label wd.evenL='Každou sudou středu'. weekdayParityISO(3,'even'): nejbližší středa 1.7. (add=(3-4+7)%7=6), isoWeek(1.7.)=27 liché ≠ want(even=0) → +7 → 8.7.2026 isoWeek=28 sudé. #Obchod = přesná shoda projektu → projectId='obchod', token vyříznut → name='stand-up'."
+	},
+	{
+		"input": "každou sudou sobotu generální úklid",
+		"expected": {
+			"name": "generální úklid",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 6,
+				"parity": "even",
+				"label": "Každou sudou sobotu"
+			},
+			"due": "2026-06-27"
+		},
+		"why": "evenOdd even, WD sobota d=6 ('sudou sobotu'). label wd.evenL='Každou sudou sobotu'. weekdayParityISO(6,'even'): nejbližší sobota 27.6. (add=(6-4+7)%7=2), isoWeek(27.6.)=26 sudé = want(even=0) → zůstává → 2026-06-27."
+	},
+	{
+		"input": "každé liché úterý porada",
+		"expected": {
+			"name": "porada",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 2,
+				"parity": "odd",
+				"label": "Každé liché úterý"
+			},
+			"due": "2026-06-30"
+		},
+		"why": "evenOdd odd, WD úterý d=2. Bez 'v měsíci' → biweekly parity odd, label wd.oddL='Každé liché úterý'. weekdayParityISO(2,'odd'): nejbližší úterý 30.6. (add=(2-4+7)%7=5), isoWeek(30.6.)=27 liché = want(odd=1) → 2026-06-30."
+	},
+	{
+		"input": "každé první úterý v měsíci porada @Petra",
+		"expected": {
+			"name": "porada",
+			"recurrence": {
+				"kind": "monthly-nth",
+				"nth": 1,
+				"weekday": 2,
+				"label": "1. úterý v měsíci"
+			},
+			"due": "2026-07-07",
+			"personQueries": ["Petra"]
+		},
+		"why": "monthly-nth nth=1 wd=2 jako základ; due=nthWeekdayISO(1,2)=2026-07-07. @Petra → personQueries=['Petra'] (token z @X/+X, neresolvovaný), token se z názvu odstraní (cleanName replace /[@+]\\p{L}+/) → name='porada'."
+	},
+	{
+		"input": "každého 25. v měsíci faktury +Tomáš",
+		"expected": {
+			"name": "25. faktury",
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 25,
+				"label": "25. v měsíci"
+			},
+			"due": "2026-06-25",
+			"personQueries": ["Tomáš"]
+		},
+		"why": "monthly-day day=25, due=nextMonthDayISO(25)=2026-06-25. +Tomáš → personQueries=['Tomáš'] (+ se chová jako @, token odebrán z cleanName). POZOR: '25.' číselný token NENÍ vyříznut (parseRecurrence jen čte, RECVOCAB ho nepokrývá) → zůstává → name='25. faktury'."
+	},
+	{
+		"input": "měsíčně přehled nákladů",
+		"expected": {
+			"name": "přehled nákladů",
+			"recurrence": { "kind": "monthly", "label": "Měsíčně" }
+		},
+		"why": "NEGATIVNÍ vůči monthly-nth/day: bez 'každ' a bez sudý/lichý → větev A příslovce: B('měsíčně')→ monthly, repeatRule {kind:'monthly'} (BEZ day/weekday/nth), label 'Měsíčně'. Žádné startISO → due se NEnastaví z opakování (zůstane default 'dnes' v draftu, ale parser nevrací custom). 'měsíčně' vyříznuto přes RECVOCAB (rec!=null) → name='přehled nákladů'."
+	},
+	{
+		"input": "každý měsíc revize smluv",
+		"expected": {
+			"name": "revize smluv",
+			"recurrence": { "kind": "monthly", "label": "Každý měsíc" }
+		},
+		"why": "NEGATIVNÍ: hasK=true ale žádný wd, dayFromGen=null, žádné číslo s tečkou → větev D fallback: B('m[ěe]s[íi]c')→ monthly, repeatRule {kind:'monthly'}, label 'Každý měsíc'. Žádný startISO → bez due z opakování. 'každý'+'měsíc' vyříznuty → name='revize smluv'."
+	},
+	{
+		"input": "každého 30. v měsíci mzdy p2",
+		"expected": {
+			"name": "30. mzdy",
+			"recurrence": {
+				"kind": "monthly-day",
+				"day": 30,
+				"label": "30. v měsíci"
+			},
+			"due": "2026-06-30"
+		},
+		"why": "day=30 → nextMonthDayISO(30)=2026-06-30 (30 není <25, červen má 30 dní). p2 → priority=2, ale priority=2 je default → NEasseruji priority (může být undefined nebo 2 dle implementace; token 'p2' se vyřízne). '30.' zůstává v názvu → name='30. mzdy'."
+	},
+	{
+		"input": "každého druhého v měsíci kontrola záloh",
+		"expected": {
+			"name": "kontrola záloh",
+			"recurrence": { "kind": "monthly-day", "day": 2, "label": "2. v měsíci" },
+			"due": "2026-07-02"
+		},
+		"why": "POZOR na záměnu s biweekly: zde wd=null (žádný den v týdnu), takže větev B se nespustí. dayFromGen: U['druh']=2 přes lookbehind 'druhého' → day=2. monthly-day day=2, label '2. v měsíci'. nextMonthDayISO(2): 2<25 → příští měsíc → 2026-07-02. 'druhého' JE 'druh\\p{L}*' v RECVOCAB → vyříznuto → name='kontrola záloh'."
+	}
 ]

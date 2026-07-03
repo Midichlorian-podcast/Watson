@@ -1,212 +1,217 @@
 [
-  {
-    "input": "Schůzka 14:00",
-    "expected": { "name": "Schůzka", "startMin": 840 },
-    "why": "§4b holý HH:MM (jen :, bez předložky). tH=14,tM=0 → 14*60+0=840. Token 14:00 vyříznut → name 'Schůzka'."
-  },
-  {
-    "input": "Porada 9:30",
-    "expected": { "name": "Porada", "startMin": 570 },
-    "why": "§4b holý HH:MM. [01]?\\d chytne 9. tH=9,tM=30 → 9*60+30=570."
-  },
-  {
-    "input": "Stand-up 8:05",
-    "expected": { "name": "Stand-up", "startMin": 485 },
-    "why": "§4b holý HH:MM, jednociferná hodina + minuty s vedoucí nulou. 8*60+5=485."
-  },
-  {
-    "input": "Oběd v 12:00",
-    "expected": { "name": "Oběd", "startMin": 720 },
-    "why": "§4a předložka 'v' + HH:MM. tH=12,tM=0 → 12*60=720. Předložka i čas vyříznuty."
-  },
-  {
-    "input": "Hovor ve 9:30",
-    "expected": { "name": "Hovor", "startMin": 570 },
-    "why": "§4a předložka 've' + HH:MM (i flag → ve funguje). 9*60+30=570."
-  },
-  {
-    "input": "Trénink od 18:00",
-    "expected": { "name": "Trénink", "startMin": 1080 },
-    "why": "§4a předložka 'od' + HH:MM. 18*60=1080."
-  },
-  {
-    "input": "Schůzka od 14.00",
-    "expected": { "name": "Schůzka", "startMin": 840 },
-    "why": "§4a předložka + HH.MM (oddělovač tečka je u 4a povolen [:.]). 14*60=840. Bez předložky by '14.00' time NEdalo (4b jen ':')."
-  },
-  {
-    "input": "Call ve 14.30",
-    "expected": { "name": "Call", "startMin": 870 },
-    "why": "§4a 've' + HH.MM s tečkou. 14*60+30=870."
-  },
-  {
-    "input": "Volat klientovi v 15 hodin",
-    "expected": { "name": "Volat klientovi", "startMin": 900 },
-    "why": "§4c předložka + celé hodiny číslem + 'hodin'. m[1]=15<=23 → tH=15,tM=0 → 900. 'v 15 hodin' vyříznuto."
-  },
-  {
-    "input": "Schůzka od 9 hodin",
-    "expected": { "name": "Schůzka", "startMin": 540 },
-    "why": "§4c 'od' + 9 + 'hodin'. 9<=23 → tM=0 → 9*60=540."
-  },
-  {
-    "input": "Porada v 9 hodinách",
-    "expected": { "name": "Porada", "startMin": 540 },
-    "why": "§4c \\w* za 'hodin' pokryje pádovou koncovku 'hodinách'. 9*60=540."
-  },
-  {
-    "input": "Prezentace ve 13 hodin",
-    "expected": { "name": "Prezentace", "startMin": 780 },
-    "why": "§4c 've' + 13 + 'hodin'. 13*60=780."
-  },
-  {
-    "input": "Sraz v 23 hodin",
-    "expected": { "name": "Sraz", "startMin": 1380 },
-    "why": "§4c hraniční platná hodina 23<=23 → 23*60=1380."
-  },
-  {
-    "input": "Schůzka v 0 hodin",
-    "expected": { "name": "Schůzka", "startMin": 0 },
-    "why": "§4c hraniční hodina 0<=23 → 0*60=0 (DAY_START). startMin=0 = půlnoc."
-  },
-  {
-    "input": "Volat v patnácti hodin",
-    "expected": { "name": "Volat", "startMin": 900 },
-    "why": "§4d slovní hodina. czNum: teens 'patnácti'=15, 15<=23 → tH=15,tM=0 → 900."
-  },
-  {
-    "input": "Schůzka v devíti hodin",
-    "expected": { "name": "Schůzka", "startMin": 540 },
-    "why": "§4d czNum ones 'devíti'=9, 9<=23 → 9*60=540."
-  },
-  {
-    "input": "Porada ve dvanáct hodin",
-    "expected": { "name": "Porada", "startMin": 720 },
-    "why": "§4d 've' + slovem. 4c selže (není číslice), 4d vezme 'dvanáct'. czNum teens 'dvanáct'=12 → 720. (12<=23)"
-  },
-  {
-    "input": "Trénink v deseti hodin",
-    "expected": { "name": "Trénink", "startMin": 600 },
-    "why": "§4d czNum teens 'deseti'=10 → 10*60=600."
-  },
-  {
-    "input": "Hovor v osmi hodin",
-    "expected": { "name": "Hovor", "startMin": 480 },
-    "why": "§4d czNum ones 'osmi'=8 → 8*60=480."
-  },
-  {
-    "input": "Volat v dvacet jedna hodin",
-    "expected": { "name": "Volat", "startMin": 1260 },
-    "why": "§4d složená číslovka (2 slova): czNum vzor [tens][ones] 'dvacet'+'jedna'=20+1=21, 21<=23 → 21*60=1260."
-  },
-  {
-    "input": "Akce v dvacet tři hodin",
-    "expected": { "name": "Akce", "startMin": 1380 },
-    "why": "§4d složená 'dvacet'+'tři'=20+3=23, hraniční 23<=23 → 23*60=1380."
-  },
-  {
-    "input": "Schůzka v devatenáct hodin",
-    "expected": { "name": "Schůzka", "startMin": 1140 },
-    "why": "§4d teens 'devatenáct'=19 (teens mají přednost před tens) → 19*60=1140."
-  },
-  {
-    "input": "Brífink v sedmnáct hodin",
-    "expected": { "name": "Brífink", "startMin": 1020 },
-    "why": "§4d teens 'sedmnáct'=17 → 17*60=1020."
-  },
-  {
-    "input": "Schůzka v sedm hodin",
-    "expected": { "name": "Schůzka", "startMin": 420 },
-    "why": "§4d ones 'sedm'=7 → 7*60=420."
-  },
-  {
-    "input": "Číst v patnact hodin",
-    "expected": { "name": "Číst", "startMin": 900 },
-    "why": "§4d czNum bez diakritiky: teens 'patnact'=15 → 900. Tabulka czNum drží i tvary bez háčků."
-  },
-  {
-    "input": "Volat ve dvacet jedna hodin",
-    "expected": { "name": "Volat", "startMin": 1260 },
-    "why": "§4d 've' + složená 'dvacet jedna'=21. Regex 4d bere 1-2 slova před 'hodin'. 21*60=1260."
-  },
-  {
-    "input": "Pozor v 24 hodin",
-    "expected": { "name": "Pozor v", "durationMin": 1440 },
-    "why": "§4c EDGE: m[1]=24>23 → time NEnastaveno a 'v 24 hodin' se v §4 NEvyřízne. Pak §5e trvání chytne '24 hodin' → round(24*60)=1440 → duration. Po vyříznutí trvání zůstane 'Pozor v'."
-  },
-  {
-    "input": "Limit v 25 hodin",
-    "expected": { "name": "Limit v", "durationMin": 1500 },
-    "why": "§4c EDGE: 25>23 → žádný time, nevyřízne se ve §4. §5e trvání 25*60=1500. 'v' zůstane v názvu."
-  },
-  {
-    "input": "Test ve třiceti hodin",
-    "expected": { "name": "Test ve třiceti hodin" },
-    "why": "§4d EDGE >23: czNum tens 'třiceti'=30>23 → time NEnastaveno a 've třiceti hodin' se NEvyřízne (cut je uvnitř if v!=null && v<=23). §5 trvání: 5a-5c chtějí 'min', 5e chce číslici (slovo nepasuje), 5f chce 'po dobu' (chybí) → žádné duration. rec=null → RECVOCAB mask se neaplikuje. Nic se neodřízne → name zůstává 'Test ve třiceti hodin'."
-  },
-  {
-    "input": "Refaktor v 14:00 p1 #Obchod",
-    "expected": { "name": "Refaktor", "startMin": 840, "priority": 1, "projectId": "obchod" },
-    "why": "Kombinace: §4a 'v 14:00'→840, §3 p1→priority1, §10 #Obchod přesná shoda→projectId 'obchod'. Všechny tokeny vyříznuty → 'Refaktor'."
-  },
-  {
-    "input": "Připomenout 7:00 zítra",
-    "expected": { "name": "Připomenout", "startMin": 420, "due": "2026-06-26" },
-    "why": "§4b '7:00'→7*60=420; §7c 'zítra'→dateKind=zitra→due 2026-06-26 (today+1)."
-  },
-  {
-    "input": "Schůzka v 16:45 na 30 min",
-    "expected": { "name": "Schůzka na", "startMin": 1005, "durationMin": 30 },
-    "why": "§4a 'v 16:45'→16*60+45=1005. §5a '30 min'→duration 30. 'na' (předložka) není token → zůstane: 'Schůzka na'."
-  },
-  {
-    "input": "Volat v 8 hodin a poslat report",
-    "expected": { "name": "Volat a poslat report", "startMin": 480 },
-    "why": "§4c 'v 8 hodin'→8*60=480, vyříznuto uprostřed. Zbytek 'Volat a poslat report' (mezery sloučeny)."
-  },
-  {
-    "input": "schůzka v 9:00 V KANCELÁŘI",
-    "expected": { "name": "schůzka V KANCELÁŘI", "startMin": 540 },
-    "why": "§4a case-insensitive: 'v 9:00' (malé v) chytí, 'V KANCELÁŘI' je samostatné velké V+slovo → 9:00 chytne 4a první (\\s* mezi v a číslicí). 9*60=540. replace nahradí jen první výskyt 'v 9:00'."
-  },
-  {
-    "input": "Deadline úkolu 14:60",
-    "expected": { "name": "Deadline úkolu 14:60" },
-    "why": "NEGATIVNÍ: minuta '60' selže na [0-5]\\d → §4a ani §4b nematchne. Žádný time. '14:60' není ani datum (chybí dvě tečky). Zůstává v názvu."
-  },
-  {
-    "input": "Report 24:00",
-    "expected": { "name": "Report 24:00" },
-    "why": "NEGATIVNÍ: hodina '24' selže na ([01]?\\d|2[0-3]) → 4b nematchne. Žádný time, '24:00' zůstává."
-  },
-  {
-    "input": "Měření 14.00",
-    "expected": { "name": "Měření 14.00" },
-    "why": "NEGATIVNÍ: '14.00' BEZ předložky. 4a vyžaduje v/ve/od, 4b povolí jen ':'. Žádný time. Není ani datum (jen jedna tečka, druhá skupina by chyběla)."
-  },
-  {
-    "input": "Plán v patnáct hodin",
-    "expected": { "name": "Plán", "startMin": 900 },
-    "why": "§4d nominativ 'patnáct' (ne 'patnácti'): czNum teens 'patnáct'=15 → 900. Tabulka má oba tvary."
-  },
-  {
-    "input": "Setkání v 11:15",
-    "expected": { "name": "Setkání", "startMin": 675 },
-    "why": "§4a 'v 11:15' → 11*60+15=675."
-  },
-  {
-    "input": "Cvičení v 6 hodin",
-    "expected": { "name": "Cvičení", "startMin": 360 },
-    "why": "§4c 'v 6 hodin' → 6*60=360. Jednociferná hodina číslem."
-  },
-  {
-    "input": "Volat v jedenáct hodin",
-    "expected": { "name": "Volat", "startMin": 660 },
-    "why": "§4d teens 'jedenáct'=11 → 11*60=660."
-  },
-  {
-    "input": "Hovor v dvacet dva hodin",
-    "expected": { "name": "Hovor", "startMin": 1320 },
-    "why": "§4d složená 'dvacet'+'dva'=20+2=22, 22<=23 → 22*60=1320."
-  }
+	{
+		"input": "Schůzka 14:00",
+		"expected": { "name": "Schůzka", "startMin": 840 },
+		"why": "§4b holý HH:MM (jen :, bez předložky). tH=14,tM=0 → 14*60+0=840. Token 14:00 vyříznut → name 'Schůzka'."
+	},
+	{
+		"input": "Porada 9:30",
+		"expected": { "name": "Porada", "startMin": 570 },
+		"why": "§4b holý HH:MM. [01]?\\d chytne 9. tH=9,tM=30 → 9*60+30=570."
+	},
+	{
+		"input": "Stand-up 8:05",
+		"expected": { "name": "Stand-up", "startMin": 485 },
+		"why": "§4b holý HH:MM, jednociferná hodina + minuty s vedoucí nulou. 8*60+5=485."
+	},
+	{
+		"input": "Oběd v 12:00",
+		"expected": { "name": "Oběd", "startMin": 720 },
+		"why": "§4a předložka 'v' + HH:MM. tH=12,tM=0 → 12*60=720. Předložka i čas vyříznuty."
+	},
+	{
+		"input": "Hovor ve 9:30",
+		"expected": { "name": "Hovor", "startMin": 570 },
+		"why": "§4a předložka 've' + HH:MM (i flag → ve funguje). 9*60+30=570."
+	},
+	{
+		"input": "Trénink od 18:00",
+		"expected": { "name": "Trénink", "startMin": 1080 },
+		"why": "§4a předložka 'od' + HH:MM. 18*60=1080."
+	},
+	{
+		"input": "Schůzka od 14.00",
+		"expected": { "name": "Schůzka", "startMin": 840 },
+		"why": "§4a předložka + HH.MM (oddělovač tečka je u 4a povolen [:.]). 14*60=840. Bez předložky by '14.00' time NEdalo (4b jen ':')."
+	},
+	{
+		"input": "Call ve 14.30",
+		"expected": { "name": "Call", "startMin": 870 },
+		"why": "§4a 've' + HH.MM s tečkou. 14*60+30=870."
+	},
+	{
+		"input": "Volat klientovi v 15 hodin",
+		"expected": { "name": "Volat klientovi", "startMin": 900 },
+		"why": "§4c předložka + celé hodiny číslem + 'hodin'. m[1]=15<=23 → tH=15,tM=0 → 900. 'v 15 hodin' vyříznuto."
+	},
+	{
+		"input": "Schůzka od 9 hodin",
+		"expected": { "name": "Schůzka", "startMin": 540 },
+		"why": "§4c 'od' + 9 + 'hodin'. 9<=23 → tM=0 → 9*60=540."
+	},
+	{
+		"input": "Porada v 9 hodinách",
+		"expected": { "name": "Porada", "startMin": 540 },
+		"why": "§4c \\w* za 'hodin' pokryje pádovou koncovku 'hodinách'. 9*60=540."
+	},
+	{
+		"input": "Prezentace ve 13 hodin",
+		"expected": { "name": "Prezentace", "startMin": 780 },
+		"why": "§4c 've' + 13 + 'hodin'. 13*60=780."
+	},
+	{
+		"input": "Sraz v 23 hodin",
+		"expected": { "name": "Sraz", "startMin": 1380 },
+		"why": "§4c hraniční platná hodina 23<=23 → 23*60=1380."
+	},
+	{
+		"input": "Schůzka v 0 hodin",
+		"expected": { "name": "Schůzka", "startMin": 0 },
+		"why": "§4c hraniční hodina 0<=23 → 0*60=0 (DAY_START). startMin=0 = půlnoc."
+	},
+	{
+		"input": "Volat v patnácti hodin",
+		"expected": { "name": "Volat", "startMin": 900 },
+		"why": "§4d slovní hodina. czNum: teens 'patnácti'=15, 15<=23 → tH=15,tM=0 → 900."
+	},
+	{
+		"input": "Schůzka v devíti hodin",
+		"expected": { "name": "Schůzka", "startMin": 540 },
+		"why": "§4d czNum ones 'devíti'=9, 9<=23 → 9*60=540."
+	},
+	{
+		"input": "Porada ve dvanáct hodin",
+		"expected": { "name": "Porada", "startMin": 720 },
+		"why": "§4d 've' + slovem. 4c selže (není číslice), 4d vezme 'dvanáct'. czNum teens 'dvanáct'=12 → 720. (12<=23)"
+	},
+	{
+		"input": "Trénink v deseti hodin",
+		"expected": { "name": "Trénink", "startMin": 600 },
+		"why": "§4d czNum teens 'deseti'=10 → 10*60=600."
+	},
+	{
+		"input": "Hovor v osmi hodin",
+		"expected": { "name": "Hovor", "startMin": 480 },
+		"why": "§4d czNum ones 'osmi'=8 → 8*60=480."
+	},
+	{
+		"input": "Volat v dvacet jedna hodin",
+		"expected": { "name": "Volat", "startMin": 1260 },
+		"why": "§4d složená číslovka (2 slova): czNum vzor [tens][ones] 'dvacet'+'jedna'=20+1=21, 21<=23 → 21*60=1260."
+	},
+	{
+		"input": "Akce v dvacet tři hodin",
+		"expected": { "name": "Akce", "startMin": 1380 },
+		"why": "§4d složená 'dvacet'+'tři'=20+3=23, hraniční 23<=23 → 23*60=1380."
+	},
+	{
+		"input": "Schůzka v devatenáct hodin",
+		"expected": { "name": "Schůzka", "startMin": 1140 },
+		"why": "§4d teens 'devatenáct'=19 (teens mají přednost před tens) → 19*60=1140."
+	},
+	{
+		"input": "Brífink v sedmnáct hodin",
+		"expected": { "name": "Brífink", "startMin": 1020 },
+		"why": "§4d teens 'sedmnáct'=17 → 17*60=1020."
+	},
+	{
+		"input": "Schůzka v sedm hodin",
+		"expected": { "name": "Schůzka", "startMin": 420 },
+		"why": "§4d ones 'sedm'=7 → 7*60=420."
+	},
+	{
+		"input": "Číst v patnact hodin",
+		"expected": { "name": "Číst", "startMin": 900 },
+		"why": "§4d czNum bez diakritiky: teens 'patnact'=15 → 900. Tabulka czNum drží i tvary bez háčků."
+	},
+	{
+		"input": "Volat ve dvacet jedna hodin",
+		"expected": { "name": "Volat", "startMin": 1260 },
+		"why": "§4d 've' + složená 'dvacet jedna'=21. Regex 4d bere 1-2 slova před 'hodin'. 21*60=1260."
+	},
+	{
+		"input": "Pozor v 24 hodin",
+		"expected": { "name": "Pozor v", "durationMin": 1440 },
+		"why": "§4c EDGE: m[1]=24>23 → time NEnastaveno a 'v 24 hodin' se v §4 NEvyřízne. Pak §5e trvání chytne '24 hodin' → round(24*60)=1440 → duration. Po vyříznutí trvání zůstane 'Pozor v'."
+	},
+	{
+		"input": "Limit v 25 hodin",
+		"expected": { "name": "Limit v", "durationMin": 1500 },
+		"why": "§4c EDGE: 25>23 → žádný time, nevyřízne se ve §4. §5e trvání 25*60=1500. 'v' zůstane v názvu."
+	},
+	{
+		"input": "Test ve třiceti hodin",
+		"expected": { "name": "Test ve třiceti hodin" },
+		"why": "§4d EDGE >23: czNum tens 'třiceti'=30>23 → time NEnastaveno a 've třiceti hodin' se NEvyřízne (cut je uvnitř if v!=null && v<=23). §5 trvání: 5a-5c chtějí 'min', 5e chce číslici (slovo nepasuje), 5f chce 'po dobu' (chybí) → žádné duration. rec=null → RECVOCAB mask se neaplikuje. Nic se neodřízne → name zůstává 'Test ve třiceti hodin'."
+	},
+	{
+		"input": "Refaktor v 14:00 p1 #Obchod",
+		"expected": {
+			"name": "Refaktor",
+			"startMin": 840,
+			"priority": 1,
+			"projectId": "obchod"
+		},
+		"why": "Kombinace: §4a 'v 14:00'→840, §3 p1→priority1, §10 #Obchod přesná shoda→projectId 'obchod'. Všechny tokeny vyříznuty → 'Refaktor'."
+	},
+	{
+		"input": "Připomenout 7:00 zítra",
+		"expected": { "name": "Připomenout", "startMin": 420, "due": "2026-06-26" },
+		"why": "§4b '7:00'→7*60=420; §7c 'zítra'→dateKind=zitra→due 2026-06-26 (today+1)."
+	},
+	{
+		"input": "Schůzka v 16:45 na 30 min",
+		"expected": { "name": "Schůzka na", "startMin": 1005, "durationMin": 30 },
+		"why": "§4a 'v 16:45'→16*60+45=1005. §5a '30 min'→duration 30. 'na' (předložka) není token → zůstane: 'Schůzka na'."
+	},
+	{
+		"input": "Volat v 8 hodin a poslat report",
+		"expected": { "name": "Volat a poslat report", "startMin": 480 },
+		"why": "§4c 'v 8 hodin'→8*60=480, vyříznuto uprostřed. Zbytek 'Volat a poslat report' (mezery sloučeny)."
+	},
+	{
+		"input": "schůzka v 9:00 V KANCELÁŘI",
+		"expected": { "name": "schůzka V KANCELÁŘI", "startMin": 540 },
+		"why": "§4a case-insensitive: 'v 9:00' (malé v) chytí, 'V KANCELÁŘI' je samostatné velké V+slovo → 9:00 chytne 4a první (\\s* mezi v a číslicí). 9*60=540. replace nahradí jen první výskyt 'v 9:00'."
+	},
+	{
+		"input": "Deadline úkolu 14:60",
+		"expected": { "name": "Deadline úkolu 14:60" },
+		"why": "NEGATIVNÍ: minuta '60' selže na [0-5]\\d → §4a ani §4b nematchne. Žádný time. '14:60' není ani datum (chybí dvě tečky). Zůstává v názvu."
+	},
+	{
+		"input": "Report 24:00",
+		"expected": { "name": "Report 24:00" },
+		"why": "NEGATIVNÍ: hodina '24' selže na ([01]?\\d|2[0-3]) → 4b nematchne. Žádný time, '24:00' zůstává."
+	},
+	{
+		"input": "Měření 14.00",
+		"expected": { "name": "Měření 14.00" },
+		"why": "NEGATIVNÍ: '14.00' BEZ předložky. 4a vyžaduje v/ve/od, 4b povolí jen ':'. Žádný time. Není ani datum (jen jedna tečka, druhá skupina by chyběla)."
+	},
+	{
+		"input": "Plán v patnáct hodin",
+		"expected": { "name": "Plán", "startMin": 900 },
+		"why": "§4d nominativ 'patnáct' (ne 'patnácti'): czNum teens 'patnáct'=15 → 900. Tabulka má oba tvary."
+	},
+	{
+		"input": "Setkání v 11:15",
+		"expected": { "name": "Setkání", "startMin": 675 },
+		"why": "§4a 'v 11:15' → 11*60+15=675."
+	},
+	{
+		"input": "Cvičení v 6 hodin",
+		"expected": { "name": "Cvičení", "startMin": 360 },
+		"why": "§4c 'v 6 hodin' → 6*60=360. Jednociferná hodina číslem."
+	},
+	{
+		"input": "Volat v jedenáct hodin",
+		"expected": { "name": "Volat", "startMin": 660 },
+		"why": "§4d teens 'jedenáct'=11 → 11*60=660."
+	},
+	{
+		"input": "Hovor v dvacet dva hodin",
+		"expected": { "name": "Hovor", "startMin": 1320 },
+		"why": "§4d složená 'dvacet'+'dva'=20+2=22, 22<=23 → 22*60=1320."
+	}
 ]

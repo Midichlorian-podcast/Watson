@@ -57,8 +57,8 @@ bucket_definitions:
   user_workspaces:
     parameters: SELECT workspace_id FROM memberships WHERE user_id = request.user_id()
     data:
-      - SELECT id, workspace_id, name, scope, metric, target, due_date, periodic,
-               owner_id, created_by, created_at
+      - SELECT id, workspace_id, name, scope, metric, target, due_date, period, periodic,
+               period_start, filter_person_id, filter_keyword, owner_id, created_by, created_at
         FROM goals
         WHERE workspace_id = bucket.workspace_id
       - SELECT id, goal_id, project_id, workspace_id

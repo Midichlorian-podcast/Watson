@@ -1,22 +1,25 @@
-import { useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
+import { useMemo, useState } from "react";
 import { useAddTask } from "../lib/addTask";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
 import { toggleTask } from "../lib/tasks";
+// sdílené helpery rozsahu úkolu (tIso/tIsoEnd/addDaysISO) — kruhový import je bezpečný,
+// používají se až za renderu
+import { addDaysISO, tIso, tIsoEnd } from "./Calendar";
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const taskDay = (t: TaskRow) => (t.due_date ?? t.start_date)?.slice(0, 10) ?? null;
+const isoOf = (d: Date) =>
+	`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const startMin = (t: TaskRow): number | null => {
-  const s = t.start_date;
-  if (!s || s.length < 16) return null;
-  const h = +s.slice(11, 13);
-  const m = +s.slice(14, 16);
-  if (Number.isNaN(h) || Number.isNaN(m) || (h === 0 && m === 0)) return null;
-  return h * 60 + m;
+	const s = t.start_date;
+	if (!s || s.length < 16) return null;
+	const h = +s.slice(11, 13);
+	const m = +s.slice(14, 16);
+	if (Number.isNaN(h) || Number.isNaN(m) || (h === 0 && m === 0)) return null;
+	return h * 60 + m;
 };
 
 /**
@@ -25,244 +28,291 @@ const startMin = (t: TaskRow): number | null => {
  * „+N další" klikací → den, drag mezi buňkami, klik do prázdné buňky = nový úkol.
  */
 export function CalendarMonth({
-  tasks,
-  controlledBase,
-  borderColorOf,
-  onOpenDay,
-  onDropDay,
+	tasks,
+	controlledBase,
+	borderColorOf,
+	onOpenDay,
+	onDropDay,
 }: {
-  tasks: TaskRow[];
-  /** Řízený měsíc (z Calendar toolbaru) — skryje vlastní hlavičku. */
-  controlledBase?: Date;
-  /** Barva levého okraje chipu (priorita/projekt dle gear menu). */
-  borderColorOf?: (t: TaskRow) => string;
-  /** Klik na „+N další" → přepnout na den. */
-  onOpenDay?: (d: Date) => void;
-  /** Drop chipu na jiný den. */
-  onDropDay?: (id: string, iso: string, min: number | null) => void;
+	tasks: TaskRow[];
+	/** Řízený měsíc (z Calendar toolbaru) — skryje vlastní hlavičku. */
+	controlledBase?: Date;
+	/** Barva levého okraje chipu (priorita/projekt dle gear menu). */
+	borderColorOf?: (t: TaskRow) => string;
+	/** Klik na „+N další" → přepnout na den. */
+	onOpenDay?: (d: Date) => void;
+	/** Drop chipu na jiný den. */
+	onDropDay?: (id: string, iso: string, min: number | null) => void;
 }) {
-  const { t, i18n } = useTranslation();
-  const { open } = useTaskDetail();
-  const { openAdd } = useAddTask();
-  const { metaOf } = useRowMeta();
-  const projects = useProjects();
-  const projColor = (id: string | null) =>
-    (id ? projects.find((p) => p.id === id)?.color : null) ?? "var(--w-ink-3)";
-  const [offset, setOffset] = useState(0);
+	const { t, i18n } = useTranslation();
+	const { open } = useTaskDetail();
+	const { openAdd } = useAddTask();
+	const { metaOf } = useRowMeta();
+	const projects = useProjects();
+	const projColor = (id: string | null) =>
+		(id ? projects.find((p) => p.id === id)?.color : null) ?? "var(--w-ink-3)";
+	const [offset, setOffset] = useState(0);
 
-  const today = new Date();
-  const todayIso = isoOf(today);
-  const base = controlledBase ?? new Date(today.getFullYear(), today.getMonth() + offset, 1);
-  const year = base.getFullYear();
-  const month = base.getMonth();
+	const today = new Date();
+	const todayIso = isoOf(today);
+	const base =
+		controlledBase ??
+		new Date(today.getFullYear(), today.getMonth() + offset, 1);
+	const year = base.getFullYear();
+	const month = base.getMonth();
 
-  /** Buňky: null pozice před 1. dnem, pak 1..dim (ř. 2869). */
-  const cells = useMemo(() => {
-    const firstDow = (new Date(year, month, 1).getDay() + 6) % 7;
-    const dim = new Date(year, month + 1, 0).getDate();
-    const out: (number | null)[] = [];
-    for (let i = 0; i < firstDow; i++) out.push(null);
-    for (let d = 1; d <= dim; d++) out.push(d);
-    return out;
-  }, [year, month]);
+	/** Buňky: null pozice před 1. dnem, pak 1..dim (ř. 2869). */
+	const cells = useMemo(() => {
+		const firstDow = (new Date(year, month, 1).getDay() + 6) % 7;
+		const dim = new Date(year, month + 1, 0).getDate();
+		const out: (number | null)[] = [];
+		for (let i = 0; i < firstDow; i++) out.push(null);
+		for (let d = 1; d <= dim; d++) out.push(d);
+		return out;
+	}, [year, month]);
 
-  const byDay = useMemo(() => {
-    const m = new Map<string, TaskRow[]>();
-    for (const tk of tasks) {
-      const d = taskDay(tk);
-      if (!d) continue;
-      const arr = m.get(d);
-      if (arr) arr.push(tk);
-      else m.set(d, [tk]);
-    }
-    return m;
-  }, [tasks]);
+	const byDay = useMemo(() => {
+		const m = new Map<string, TaskRow[]>();
+		for (const tk of tasks) {
+			const s = tIso(tk);
+			if (!s) continue;
+			// Vícedenní úkol (days > 1) zasahuje každou buňku rozsahu (prototyp _hit ř. 2632 + ř. 2874).
+			const e = tIsoEnd(tk) ?? s;
+			for (let d = s, i = 0; d <= e && i < 62; d = addDaysISO(d, 1), i++) {
+				const arr = m.get(d);
+				if (arr) arr.push(tk);
+				else m.set(d, [tk]);
+			}
+		}
+		return m;
+	}, [tasks]);
 
-  const weekdayLabels = useMemo(() => {
-    const fmt = new Intl.DateTimeFormat(i18n.language, { weekday: "short" });
-    return Array.from({ length: 7 }, (_, i) => fmt.format(new Date(2024, 0, 1 + i)));
-  }, [i18n.language]);
+	const weekdayLabels = useMemo(() => {
+		const fmt = new Intl.DateTimeFormat(i18n.language, { weekday: "short" });
+		return Array.from({ length: 7 }, (_, i) =>
+			fmt.format(new Date(2024, 0, 1 + i)),
+		);
+	}, [i18n.language]);
 
-  const title = new Intl.DateTimeFormat(i18n.language, { month: "long", year: "numeric" }).format(base);
-  const border = borderColorOf ?? ((tk: TaskRow) => `var(--w-p${tk.priority ?? 4})`);
+	const title = new Intl.DateTimeFormat(i18n.language, {
+		month: "long",
+		year: "numeric",
+	}).format(base);
+	const border =
+		borderColorOf ?? ((tk: TaskRow) => `var(--w-p${tk.priority ?? 4})`);
 
-  return (
-    <div>
-      {/* hlavička (skrytá při řízeném režimu z Calendar) */}
-      {!controlledBase && (
-        <div className="mb-3 flex items-center gap-2">
-          <h2 className="font-display font-extrabold text-lg text-navy capitalize">{title}</h2>
-          <div className="ml-auto flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setOffset((o) => o - 1)}
-              aria-label={t("calendar.prev")}
-              className="grid h-8 w-8 place-items-center rounded-lg border border-line text-ink-3 hover:border-brass hover:text-ink"
-            >
-              ‹
-            </button>
-            <button
-              type="button"
-              onClick={() => setOffset(0)}
-              className="rounded-lg border border-line px-3 py-1.5 font-display font-semibold text-ink text-xs hover:border-brass"
-            >
-              {t("calendar.today")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setOffset((o) => o + 1)}
-              aria-label={t("calendar.next")}
-              className="grid h-8 w-8 place-items-center rounded-lg border border-line text-ink-3 hover:border-brass hover:text-ink"
-            >
-              ›
-            </button>
-          </div>
-        </div>
-      )}
+	return (
+		// v řízeném režimu z Calendar scrolluje měsíc uvnitř full-bleed sloupce (prototyp ř. 2891)
+		<div
+			className={controlledBase ? "min-h-0 flex-1 overflow-y-auto" : undefined}
+		>
+			{/* hlavička (skrytá při řízeném režimu z Calendar) */}
+			{!controlledBase && (
+				<div className="mb-3 flex items-center gap-2">
+					<h2 className="font-display font-extrabold text-lg text-navy capitalize">
+						{title}
+					</h2>
+					<div className="ml-auto flex items-center gap-1">
+						<button
+							type="button"
+							onClick={() => setOffset((o) => o - 1)}
+							aria-label={t("calendar.prev")}
+							className="grid h-8 w-8 place-items-center rounded-lg border border-line text-ink-3 hover:border-brass hover:text-ink"
+						>
+							‹
+						</button>
+						<button
+							type="button"
+							onClick={() => setOffset(0)}
+							className="rounded-lg border border-line px-3 py-1.5 font-display font-semibold text-ink text-xs hover:border-brass"
+						>
+							{t("calendar.today")}
+						</button>
+						<button
+							type="button"
+							onClick={() => setOffset((o) => o + 1)}
+							aria-label={t("calendar.next")}
+							className="grid h-8 w-8 place-items-center rounded-lg border border-line text-ink-3 hover:border-brass hover:text-ink"
+						>
+							›
+						</button>
+					</div>
+				</div>
+			)}
 
-      {/* dny v týdnu */}
-      <div className="grid grid-cols-7 gap-1.5" style={{ marginTop: 10 }}>
-        {weekdayLabels.map((w) => (
-          <div
-            key={w}
-            className="pb-1 text-center font-display font-bold text-[11px] text-ink-3 uppercase tracking-wider"
-          >
-            {w}
-          </div>
-        ))}
-      </div>
+			{/* dny v týdnu */}
+			<div className="grid grid-cols-7 gap-1.5" style={{ marginTop: 10 }}>
+				{weekdayLabels.map((w) => (
+					<div
+						key={w}
+						className="pb-1 text-center font-display font-bold text-[11px] text-ink-3 uppercase tracking-wider"
+					>
+						{w}
+					</div>
+				))}
+			</div>
 
-      {/* mřížka — fixní výška řádků 126px, overflow hidden (ř. 2871) */}
-      <div className="grid grid-cols-7 gap-1.5" style={{ gridAutoRows: 126 }}>
-        {cells.map((dayNum, i) => {
-          if (dayNum === null) return <div key={`x${i}`} />;
-          const d = new Date(year, month, dayNum);
-          const iso = isoOf(d);
-          const isToday = iso === todayIso;
-          const list = byDay.get(iso) ?? [];
-          const shown = list.slice(0, 3);
-          const more = list.length - shown.length;
-          return (
-            // biome-ignore lint/a11y/useKeyWithClickEvents: klik do prázdné buňky = nový úkol
-            <div
-              key={iso}
-              onClick={(e) => {
-                if ((e.target as HTMLElement).closest("[data-mchip]")) return;
-                openAdd({ date: iso });
-              }}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const id = e.dataTransfer.getData("text/plain");
-                if (id && !id.includes("@")) onDropDay?.(id, iso, null);
-              }}
-              className="flex cursor-pointer flex-col gap-[3px] overflow-hidden rounded-[10px] border p-1.5"
-              style={{
-                borderColor: isToday ? "var(--w-brass)" : "var(--w-line)",
-                background: isToday ? "var(--w-brass-soft)" : "var(--w-card)",
-              }}
-            >
-              <span
-                className="font-mono"
-                style={{
-                  fontSize: 12,
-                  fontWeight: isToday ? 700 : 400,
-                  color: isToday ? "var(--w-brass-text)" : "var(--w-ink-2)",
-                }}
-              >
-                {dayNum}
-              </span>
-              {shown.map((tk) => {
-                const done = Boolean(tk.completed_at);
-                const sm = startMin(tk);
-                const ava = metaOf(tk).avatars[0];
-                return (
-                  // biome-ignore lint/a11y/useKeyWithClickEvents: chip, klik = detail
-                  <div
-                    key={tk.id}
-                    data-mchip
-                    draggable={!tk.id.includes("@")}
-                    onDragStart={(e) => e.dataTransfer.setData("text/plain", tk.id)}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      open(tk.id);
-                    }}
-                    title={`${tk.name ?? ""}${sm != null ? ` · ${pad(Math.floor(sm / 60))}:${pad(sm % 60)}` : ""}`}
-                    className="flex cursor-pointer items-center gap-1 rounded-[4px]"
-                    style={{
-                      background: "var(--w-panel-2)",
-                      borderLeft: `2px solid ${done ? "var(--w-line)" : border(tk)}`,
-                      padding: "2px 4px",
-                      opacity: done ? 0.55 : 1,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!tk.id.includes("@")) void toggleTask(tk);
-                      }}
-                      aria-label={done ? "Označit jako nehotové" : "Dokončit"}
-                      className="grid shrink-0 place-items-center rounded-full"
-                      style={{
-                        width: 11,
-                        height: 11,
-                        border: `1.6px solid ${done ? "var(--w-success-ink)" : "var(--w-ink-3)"}`,
-                        background: done ? "var(--w-success-ink)" : "transparent",
-                      }}
-                    >
-                      {done && <span style={{ color: "#fff", fontSize: 7, lineHeight: 1 }}>✓</span>}
-                    </button>
-                    <span
-                      className="shrink-0 rounded-full"
-                      style={{ width: 5, height: 5, background: projColor(tk.project_id) }}
-                    />
-                    <span
-                      className="min-w-0 flex-1 truncate"
-                      style={{
-                        fontSize: 10.5,
-                        color: done ? "var(--w-ink-3)" : "var(--w-ink)",
-                        textDecoration: done ? "line-through" : "none",
-                      }}
-                    >
-                      {tk.name}
-                    </span>
-                    <span
-                      className="shrink-0 font-mono"
-                      style={{ fontSize: 8, color: sm != null ? "var(--w-ink-3)" : "var(--w-brass-text)" }}
-                    >
-                      {sm != null ? `${pad(Math.floor(sm / 60))}:${pad(sm % 60)}` : t("calendar.allDay")}
-                    </span>
-                    {ava && (
-                      <span
-                        className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
-                        style={{ width: 13, height: 13, fontSize: 6.5, color: "#fff", background: "var(--w-avatar)" }}
-                      >
-                        {ava.initials}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-              {more > 0 && (
-                <button
-                  type="button"
-                  data-mchip
-                  title={t("calendar.openDayN", { n: list.length })}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenDay?.(d);
-                  }}
-                  className="rounded-[5px] text-left font-display font-bold hover:bg-brass-soft"
-                  style={{ fontSize: 10, color: "var(--w-brass-text)", padding: "2px 5px" }}
-                >
-                  {t("calendar.more", { more })}
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+			{/* mřížka — fixní výška řádků 126px, overflow hidden (ř. 2871) */}
+			<div className="grid grid-cols-7 gap-1.5" style={{ gridAutoRows: 126 }}>
+				{cells.map((dayNum, i) => {
+					if (dayNum === null) return <div key={`x${i}`} />;
+					const d = new Date(year, month, dayNum);
+					const iso = isoOf(d);
+					const isToday = iso === todayIso;
+					const list = byDay.get(iso) ?? [];
+					const shown = list.slice(0, 3);
+					const more = list.length - shown.length;
+					return (
+						// biome-ignore lint/a11y/useKeyWithClickEvents: klik do prázdné buňky = nový úkol
+						<div
+							key={iso}
+							onClick={(e) => {
+								if ((e.target as HTMLElement).closest("[data-mchip]")) return;
+								openAdd({ date: iso });
+							}}
+							onDragOver={(e) => e.preventDefault()}
+							onDrop={(e) => {
+								e.preventDefault();
+								const id = e.dataTransfer.getData("text/plain");
+								if (id && !id.includes("@")) onDropDay?.(id, iso, null);
+							}}
+							className="flex cursor-pointer flex-col gap-[3px] overflow-hidden rounded-[10px] border p-1.5"
+							style={{
+								borderColor: isToday ? "var(--w-brass)" : "var(--w-line)",
+								background: isToday ? "var(--w-brass-soft)" : "var(--w-card)",
+							}}
+						>
+							<span
+								className="font-mono"
+								style={{
+									fontSize: 12,
+									fontWeight: isToday ? 700 : 400,
+									color: isToday ? "var(--w-brass-text)" : "var(--w-ink-2)",
+								}}
+							>
+								{dayNum}
+							</span>
+							{shown.map((tk) => {
+								const done = Boolean(tk.completed_at);
+								const sm = startMin(tk);
+								const ava = metaOf(tk).avatars[0];
+								return (
+									// biome-ignore lint/a11y/useKeyWithClickEvents: chip, klik = detail
+									<div
+										key={tk.id}
+										data-mchip
+										draggable={!tk.id.includes("@")}
+										onDragStart={(e) =>
+											e.dataTransfer.setData("text/plain", tk.id)
+										}
+										onClick={(e) => {
+											e.stopPropagation();
+											open(tk.id);
+										}}
+										title={`${tk.name ?? ""}${sm != null ? ` · ${pad(Math.floor(sm / 60))}:${pad(sm % 60)}` : ""}`}
+										className="flex cursor-pointer items-center gap-1 rounded-[4px]"
+										style={{
+											background: "var(--w-panel-2)",
+											borderLeft: `2px solid ${done ? "var(--w-line)" : border(tk)}`,
+											padding: "2px 4px",
+											opacity: done ? 0.55 : 1,
+										}}
+									>
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												if (!tk.id.includes("@")) void toggleTask(tk);
+											}}
+											aria-label={done ? "Označit jako nehotové" : "Dokončit"}
+											className="grid shrink-0 place-items-center rounded-full"
+											style={{
+												width: 11,
+												height: 11,
+												border: `1.6px solid ${done ? "var(--w-success-ink)" : "var(--w-ink-3)"}`,
+												background: done
+													? "var(--w-success-ink)"
+													: "transparent",
+											}}
+										>
+											{done && (
+												<span
+													style={{ color: "#fff", fontSize: 7, lineHeight: 1 }}
+												>
+													✓
+												</span>
+											)}
+										</button>
+										<span
+											className="shrink-0 rounded-full"
+											style={{
+												width: 5,
+												height: 5,
+												background: projColor(tk.project_id),
+											}}
+										/>
+										<span
+											className="min-w-0 flex-1 truncate"
+											style={{
+												fontSize: 10.5,
+												color: done ? "var(--w-ink-3)" : "var(--w-ink)",
+												textDecoration: done ? "line-through" : "none",
+											}}
+										>
+											{tk.name}
+										</span>
+										<span
+											className="shrink-0 font-mono"
+											style={{
+												fontSize: 8,
+												color:
+													sm != null ? "var(--w-ink-3)" : "var(--w-brass-text)",
+											}}
+										>
+											{sm != null
+												? `${pad(Math.floor(sm / 60))}:${pad(sm % 60)}`
+												: t("calendar.allDay")}
+										</span>
+										{ava && (
+											<span
+												className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
+												style={{
+													width: 13,
+													height: 13,
+													fontSize: 6.5,
+													color: "#fff",
+													background: "var(--w-avatar)",
+												}}
+											>
+												{ava.initials}
+											</span>
+										)}
+									</div>
+								);
+							})}
+							{more > 0 && (
+								<button
+									type="button"
+									data-mchip
+									title={t("calendar.openDayN", { n: list.length })}
+									onClick={(e) => {
+										e.stopPropagation();
+										onOpenDay?.(d);
+									}}
+									className="rounded-[5px] text-left font-display font-bold hover:bg-brass-soft"
+									style={{
+										fontSize: 10,
+										color: "var(--w-brass-text)",
+										padding: "2px 5px",
+									}}
+								>
+									{t("calendar.more", { more })}
+								</button>
+							)}
+						</div>
+					);
+				})}
+			</div>
+		</div>
+	);
 }

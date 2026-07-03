@@ -6,31 +6,32 @@ import type { ProjectRow, SectionRow, StatusRow } from "./powersync/AppSchema";
  * Barva projektu = tělo karet úkolů (R6).
  */
 export function useProjects() {
-  const { data } = usePsQuery<ProjectRow>(
-    "SELECT * FROM projects WHERE status != 'archive' OR status IS NULL ORDER BY name",
-  );
-  return data ?? [];
+	const { data } = usePsQuery<ProjectRow>(
+		"SELECT * FROM projects WHERE status != 'archive' OR status IS NULL ORDER BY name",
+	);
+	return data ?? [];
 }
 
 export function useProject(id: string | undefined) {
-  const { data } = usePsQuery<ProjectRow>("SELECT * FROM projects WHERE id = ? LIMIT 1", [
-    id ?? "",
-  ]);
-  return data?.[0];
+	const { data } = usePsQuery<ProjectRow>(
+		"SELECT * FROM projects WHERE id = ? LIMIT 1",
+		[id ?? ""],
+	);
+	return data?.[0];
 }
 
 export function useSections(projectId: string | undefined) {
-  const { data } = usePsQuery<SectionRow>(
-    "SELECT * FROM sections WHERE project_id = ? ORDER BY position, created_at",
-    [projectId ?? ""],
-  );
-  return data ?? [];
+	const { data } = usePsQuery<SectionRow>(
+		"SELECT * FROM sections WHERE project_id = ? ORDER BY position, created_at",
+		[projectId ?? ""],
+	);
+	return data ?? [];
 }
 
 export function useStatuses(projectId: string | undefined) {
-  const { data } = usePsQuery<StatusRow>(
-    "SELECT * FROM statuses WHERE project_id = ? ORDER BY position, created_at",
-    [projectId ?? ""],
-  );
-  return data ?? [];
+	const { data } = usePsQuery<StatusRow>(
+		"SELECT * FROM statuses WHERE project_id = ? ORDER BY position, created_at",
+		[projectId ?? ""],
+	);
+	return data ?? [];
 }

@@ -1,21 +1,21 @@
 {
-  "name": "@watson/shared",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "scripts": {
-    "lint": "echo \"(lint: TODO)\"",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "zod": "^3.24.1"
-  },
-  "devDependencies": {
-    "typescript": "^5.7.3"
-  }
+	"name": "@watson/shared",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"lint": "echo \"(lint: TODO)\"",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"zod": "^3.24.1"
+	},
+	"devDependencies": {
+		"typescript": "^5.7.3"
+	}
 }

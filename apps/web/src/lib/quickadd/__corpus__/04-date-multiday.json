@@ -1,202 +1,215 @@
 [
-  {
-    "input": "odevzdat report 3. 7. 2027",
-    "expected": { "name": "odevzdat report", "due": "2027-07-03" },
-    "why": "§7a explicitní d. m. rrrr: da=3,mo=7,y=2027 → mo 1-12 & da 1-31 OK → dateKind=custom, customDate=2027-07-03; runner mapuje custom na due. Token '3. 7. 2027' vyříznut z name."
-  },
-  {
-    "input": "schůzka s klientem 5. 7.",
-    "expected": { "name": "schůzka s klientem", "due": "2026-07-05" },
-    "why": "§7a bez roku → default rok 2026: da=5,mo=7 → 2026-07-05. Token vyříznut."
-  },
-  {
-    "input": "kontrola faktur 25.6.",
-    "expected": { "name": "kontrola faktur", "due": "2026-06-25" },
-    "why": "§7a bez mezer (regex má \\s* takže '25.6.' projde): da=25,mo=6,y=2026 → 2026-06-25. To je dnešek, ale parser jen nastaví customDate; bucket řeší jinde."
-  },
-  {
-    "input": "narozeniny 1. 1.",
-    "expected": { "name": "narozeniny", "due": "2026-01-01" },
-    "why": "§7a da=1,mo=1 → 2026-01-01. Leden v minulosti vůči dnešku, ale prototyp vždy default rok 2026 (žádné 'příští rok' rozlišení)."
-  },
-  {
-    "input": "vyúčtování 31. 12. 2026",
-    "expected": { "name": "vyúčtování", "due": "2026-12-31" },
-    "why": "§7a da=31,mo=12,y=2026 → 2026-12-31. Den 31 platný v prosinci."
-  },
-  {
-    "input": "deadline projektu 31. 2.",
-    "expected": { "name": "deadline projektu 31. 2." },
-    "why": "§7a validace JEN mo 1-12 & da 1-31, BEZ kontroly délky měsíce → 31.2. PROJDE (záměrná chyba prototypu): customDate=2026-02-31, token vyříznut. (Produkce by neměla vyříznout, ale spec referenční chování validuje takto.)"
-  },
-  {
-    "input": "schůzka 30. 2. 2027",
-    "expected": { "name": "schůzka 30. 2. 2027" },
-    "why": "§7a regex chytí '30. 2. 2027' → da=30,mo=2,y=2027 → customDate=2027-02-30. Den 30 v únoru fyzicky neexistuje, ale validace JEN da 1-31 to pustí (žádná délka měsíce)."
-  },
-  {
-    "input": "podklady 0. 7.",
-    "expected": { "name": "podklady 0. 7." },
-    "why": "§7a da=0 → selže podmínka da>=1 → NEnastaví dateKind a NEvyřízne (cut je uvnitř if u běžného data, na rozdíl od deadline). due nezadán, token zůstává v name."
-  },
-  {
-    "input": "kontrola 13. 13.",
-    "expected": { "name": "kontrola 13. 13." },
-    "why": "§7a mo=13 > 12 → podmínka selže → nevyřízne, due nenastaven, token zůstává v name."
-  },
-  {
-    "input": "zaplatit nájem 15. 0. 2027",
-    "expected": { "name": "zaplatit nájem 15. 0. 2027" },
-    "why": "§7a mo=0 < 1 → selže → nevyřízne. (Regex chytne '15. 0.', y='2027', ale validace mo>=1 padá.)"
-  },
-  {
-    "input": "zavolat babičce dnes",
-    "expected": { "name": "zavolat babičce", "due": "2026-06-25" },
-    "why": "§7d /\\bdnes\\b/ → dateKind='dnes' (customDate se NEnastaví). Runner mapuje přes termISO: dnes→2026-06-25 (today)."
-  },
-  {
-    "input": "koupit chleba zítra",
-    "expected": { "name": "koupit chleba", "due": "2026-06-26" },
-    "why": "§7c /z[íi]tra/ → dateKind='zitra' (bez customDate). termISO: zitra→2026-06-26 (today+1)."
-  },
-  {
-    "input": "poslat nabídku zitra",
-    "expected": { "name": "poslat nabídku", "due": "2026-06-26" },
-    "why": "§7c bez diakritiky 'zitra' regex /z[íi]tra/i chytne. dateKind='zitra' → 2026-06-26."
-  },
-  {
-    "input": "připravit prezentaci pozítří",
-    "expected": { "name": "připravit prezentaci", "due": "2026-06-27" },
-    "why": "§7b pozítří → dateKind='custom', customDate HARDCODED '2026-06-27' (25.6.+2). Vyříznuto."
-  },
-  {
-    "input": "úklid pozitri",
-    "expected": { "name": "úklid", "due": "2026-06-27" },
-    "why": "§7b bez diakritiky: /poz[íi]t[řr][íi]/i chytne 'pozitri' → 2026-06-27."
-  },
-  {
-    "input": "schůzka po zítří",
-    "expected": { "name": "schůzka", "due": "2026-06-27" },
-    "why": "§7b alternativa 'po\\s+z[íi]t[řr][íi]' → pozítří → 2026-06-27. Mezera mezi 'po' a 'zítří' povolená."
-  },
-  {
-    "input": "kontrola dneska večer",
-    "expected": { "name": "kontrola dneska večer" },
-    "why": "§7d regex /\\bdnes\\b/ vyžaduje slovo 'dnes' s hranicí; 'dneska' má za 'dnes' písmena → \\b mezi 's' a 'k' neexistuje → NEchytne. Žádný due, 'dneska' zůstává v name (a 'večer' parser nezná)."
-  },
-  {
-    "input": "natřít plot 4 dny",
-    "expected": { "name": "natřít plot", "days": 4 },
-    "why": "§6 /(\\d+)\\s*dn[íiy]\\b/i: '4 dny' → days=clamp(1,60,4)=4. Token vyříznut. due NEnastaven (multi-day samo termín neurčuje)."
-  },
-  {
-    "input": "rekonstrukce 3 dní",
-    "expected": { "name": "rekonstrukce", "days": 3 },
-    "why": "§6 'dní' končí na í (∈ í/i/y) → match, days=3."
-  },
-  {
-    "input": "školení 2 dny",
-    "expected": { "name": "školení", "days": 2 },
-    "why": "§6 '2 dny' → days=2."
-  },
-  {
-    "input": "stěhování 1 den",
-    "expected": { "name": "stěhování 1 den" },
-    "why": "§6 regex 'dn[íiy]' NEpokrývá jednotné 'den' (chybí 'e' po dn). '1 den' se NEchytí → days nenastaven, zůstává v name. (Záměrné: 'den' jednotně není rozsah.)"
-  },
-  {
-    "input": "akce 5 dnů",
-    "expected": { "name": "akce 5 dnů" },
-    "why": "§6 'dnů' končí na ů; množina je jen [íiy] (NE ů) → 'dnů' se NEchytí. days nenastaven, token zůstává."
-  },
-  {
-    "input": "festival 90 dny",
-    "expected": { "name": "festival", "days": 60 },
-    "why": "§6 clamp horní: 90 > 60 → Math.min(60,90)=60. Token '90 dny' vyříznut."
-  },
-  {
-    "input": "výlet 100 dní",
-    "expected": { "name": "výlet", "days": 60 },
-    "why": "§6 clamp: 100 → 60."
-  },
-  {
-    "input": "trénink 0 dny",
-    "expected": { "name": "trénink", "days": 1 },
-    "why": "§6 clamp dolní: parseInt=0 → Math.max(1,0)=1. Token vyříznut. Pozn.: days=1 NENÍ >1, ale prototyp ho přesto nastaví; runner při subset-matchi days kontroluje, takže ho asseruji =1."
-  },
-  {
-    "input": "konference 7dny",
-    "expected": { "name": "konference", "days": 7 },
-    "why": "§6 \\s* mezi číslem a 'dn' povoluje 0 mezer: '7dny' → days=7. Token '7dny' vyříznut."
-  },
-  {
-    "input": "tábor 14 dní od 3. 7.",
-    "expected": { "name": "tábor od", "days": 14, "due": "2026-07-03" },
-    "why": "Pořadí §6 PŘED §7: nejdřív multiday '14 dní'→days=14 (vyříznut), pak datum '3. 7.'→due=2026-07-03. Zbytek 'tábor  od ' → 'tábor od' (slovo 'od' parser jako předložku času nechytí bez čísla, zůstane)."
-  },
-  {
-    "input": "revize !5. 7. hotovo 10. 7.",
-    "expected": { "name": "revize hotovo", "deadline": "2026-07-05", "due": "2026-07-10" },
-    "why": "Pořadí: §2 deadline '!5. 7.'→deadline=2026-07-05 (vyříznut PRVNÍ, jinak by datum chytlo '5. 7.'). Pak §7 datum '10. 7.'→due=2026-07-10. Obě tokeny pryč z name."
-  },
-  {
-    "input": "odevzdat !31. 2.",
-    "expected": { "name": "odevzdat !31. 2." },
-    "why": "§2 deadline validace JEN mo 1-12 & da 1-31 → 31.2. projde → deadline=2026-02-31. Token vyříznut."
-  },
-  {
-    "input": "úkol !35. 6.",
-    "expected": { "name": "úkol !35. 6." },
-    "why": "§2 deadline da=35 > 31 → deadline NEnastaven, ALE cut(dl[0]) je MIMO if → token '!35. 6.' se i tak vyřízne z name (záměrná nekonzistence §2). Žádný deadline."
-  },
-  {
-    "input": "audit !13. 13. 2027",
-    "expected": { "name": "audit !13. 13. 2027" },
-    "why": "§2 deadline mo=13 > 12 → deadline nenastaven, ale token vyříznut (cut mimo if). name='audit'."
-  },
-  {
-    "input": "prezentace 3 dny zítra",
-    "expected": { "name": "prezentace", "days": 3, "due": "2026-06-26" },
-    "why": "§6 multiday '3 dny'→days=3 (vyříznut), pak §7 relativní 'zítra'→dateKind=zitra→due=2026-06-26. Oba tokeny pryč."
-  },
-  {
-    "input": "report dnes 5 dní",
-    "expected": { "name": "report", "days": 5, "due": "2026-06-25" },
-    "why": "§6 PŘED §7: '5 dní'→days=5 (vyříznut), 'dnes'→dateKind=dnes→due=2026-06-25. Pořadí tokenů ve vstupu nehraje roli, řídí pořadí pravidel."
-  },
-  {
-    "input": "termín 7. 7. a deadline !14. 7.",
-    "expected": { "name": "termín a deadline", "deadline": "2026-07-14", "due": "2026-07-07" },
-    "why": "§2 deadline '!14. 7.' (vyříznut první, s vykřičníkem) → deadline=2026-07-14; §7 datum '7. 7.' → due=2026-07-07. Slova 'termín'/'a'/'deadline' zůstávají."
-  },
-  {
-    "input": "schůzka 5. 7. nebo 12. 7.",
-    "expected": { "name": "schůzka nebo 12. 7.", "due": "2026-07-05" },
-    "why": "§7 else-if řetěz: PRVNÍ match vyhrává. Datum regex chytne '5. 7.' → due=2026-07-05, cut nahradí JEN první výskyt (work.replace string=1.výskyt). '12. 7.' už se nevyhodnocuje (else-if), zůstává v name."
-  },
-  {
-    "input": "platba 5. 7. 2025",
-    "expected": { "name": "platba", "due": "2025-07-05" },
-    "why": "§7a explicitní rok 2025 (minulý) se respektuje tak jak je: 2025-07-05. Prototyp nerozlišuje minulost/budoucnost u explicitního roku."
-  },
-  {
-    "input": "kontrola termínu",
-    "expected": { "name": "kontrola termínu" },
-    "why": "Žádný datový/multiday token. 'termínu' není explicitní datum ani relativní slovo → due/days nenastaveny. name beze změny."
-  },
-  {
-    "input": "schůzka pozítří 2 dny",
-    "expected": { "name": "schůzka", "days": 2, "due": "2026-06-27" },
-    "why": "§6 '2 dny'→days=2 (vyříznut první), §7 pozítří→due=2026-06-27 (hardcoded). Kombinace vícedenní + relativní termín."
-  },
-  {
-    "input": "odjezd 22. 6.",
-    "expected": { "name": "odjezd", "due": "2026-06-22" },
-    "why": "§7a da=22,mo=6 → 2026-06-22 (v minulosti vůči dnešku 25.6., ale parser jen plní customDate). Spadá do legacy okna 22-28 (řeší resolveDate, ne parser)."
-  },
-  {
-    "input": "report za 4 dny p1 zítra",
-    "expected": { "name": "report za", "days": 4, "priority": 1, "due": "2026-06-26" },
-    "why": "Pořadí: §3 priorita 'p1'→priority=1; §6 '4 dny'→days=4; §7 'zítra'→due=2026-06-26. 'za' parser nezná, zůstává. Demonstruje souběh priority+multiday+datum."
-  }
+	{
+		"input": "odevzdat report 3. 7. 2027",
+		"expected": { "name": "odevzdat report", "due": "2027-07-03" },
+		"why": "§7a explicitní d. m. rrrr: da=3,mo=7,y=2027 → mo 1-12 & da 1-31 OK → dateKind=custom, customDate=2027-07-03; runner mapuje custom na due. Token '3. 7. 2027' vyříznut z name."
+	},
+	{
+		"input": "schůzka s klientem 5. 7.",
+		"expected": { "name": "schůzka s klientem", "due": "2026-07-05" },
+		"why": "§7a bez roku → default rok 2026: da=5,mo=7 → 2026-07-05. Token vyříznut."
+	},
+	{
+		"input": "kontrola faktur 25.6.",
+		"expected": { "name": "kontrola faktur", "due": "2026-06-25" },
+		"why": "§7a bez mezer (regex má \\s* takže '25.6.' projde): da=25,mo=6,y=2026 → 2026-06-25. To je dnešek, ale parser jen nastaví customDate; bucket řeší jinde."
+	},
+	{
+		"input": "narozeniny 1. 1.",
+		"expected": { "name": "narozeniny", "due": "2026-01-01" },
+		"why": "§7a da=1,mo=1 → 2026-01-01. Leden v minulosti vůči dnešku, ale prototyp vždy default rok 2026 (žádné 'příští rok' rozlišení)."
+	},
+	{
+		"input": "vyúčtování 31. 12. 2026",
+		"expected": { "name": "vyúčtování", "due": "2026-12-31" },
+		"why": "§7a da=31,mo=12,y=2026 → 2026-12-31. Den 31 platný v prosinci."
+	},
+	{
+		"input": "deadline projektu 31. 2.",
+		"expected": { "name": "deadline projektu 31. 2." },
+		"why": "§7a validace JEN mo 1-12 & da 1-31, BEZ kontroly délky měsíce → 31.2. PROJDE (záměrná chyba prototypu): customDate=2026-02-31, token vyříznut. (Produkce by neměla vyříznout, ale spec referenční chování validuje takto.)"
+	},
+	{
+		"input": "schůzka 30. 2. 2027",
+		"expected": { "name": "schůzka 30. 2. 2027" },
+		"why": "§7a regex chytí '30. 2. 2027' → da=30,mo=2,y=2027 → customDate=2027-02-30. Den 30 v únoru fyzicky neexistuje, ale validace JEN da 1-31 to pustí (žádná délka měsíce)."
+	},
+	{
+		"input": "podklady 0. 7.",
+		"expected": { "name": "podklady 0. 7." },
+		"why": "§7a da=0 → selže podmínka da>=1 → NEnastaví dateKind a NEvyřízne (cut je uvnitř if u běžného data, na rozdíl od deadline). due nezadán, token zůstává v name."
+	},
+	{
+		"input": "kontrola 13. 13.",
+		"expected": { "name": "kontrola 13. 13." },
+		"why": "§7a mo=13 > 12 → podmínka selže → nevyřízne, due nenastaven, token zůstává v name."
+	},
+	{
+		"input": "zaplatit nájem 15. 0. 2027",
+		"expected": { "name": "zaplatit nájem 15. 0. 2027" },
+		"why": "§7a mo=0 < 1 → selže → nevyřízne. (Regex chytne '15. 0.', y='2027', ale validace mo>=1 padá.)"
+	},
+	{
+		"input": "zavolat babičce dnes",
+		"expected": { "name": "zavolat babičce", "due": "2026-06-25" },
+		"why": "§7d /\\bdnes\\b/ → dateKind='dnes' (customDate se NEnastaví). Runner mapuje přes termISO: dnes→2026-06-25 (today)."
+	},
+	{
+		"input": "koupit chleba zítra",
+		"expected": { "name": "koupit chleba", "due": "2026-06-26" },
+		"why": "§7c /z[íi]tra/ → dateKind='zitra' (bez customDate). termISO: zitra→2026-06-26 (today+1)."
+	},
+	{
+		"input": "poslat nabídku zitra",
+		"expected": { "name": "poslat nabídku", "due": "2026-06-26" },
+		"why": "§7c bez diakritiky 'zitra' regex /z[íi]tra/i chytne. dateKind='zitra' → 2026-06-26."
+	},
+	{
+		"input": "připravit prezentaci pozítří",
+		"expected": { "name": "připravit prezentaci", "due": "2026-06-27" },
+		"why": "§7b pozítří → dateKind='custom', customDate HARDCODED '2026-06-27' (25.6.+2). Vyříznuto."
+	},
+	{
+		"input": "úklid pozitri",
+		"expected": { "name": "úklid", "due": "2026-06-27" },
+		"why": "§7b bez diakritiky: /poz[íi]t[řr][íi]/i chytne 'pozitri' → 2026-06-27."
+	},
+	{
+		"input": "schůzka po zítří",
+		"expected": { "name": "schůzka", "due": "2026-06-27" },
+		"why": "§7b alternativa 'po\\s+z[íi]t[řr][íi]' → pozítří → 2026-06-27. Mezera mezi 'po' a 'zítří' povolená."
+	},
+	{
+		"input": "kontrola dneska večer",
+		"expected": { "name": "kontrola dneska večer" },
+		"why": "§7d regex /\\bdnes\\b/ vyžaduje slovo 'dnes' s hranicí; 'dneska' má za 'dnes' písmena → \\b mezi 's' a 'k' neexistuje → NEchytne. Žádný due, 'dneska' zůstává v name (a 'večer' parser nezná)."
+	},
+	{
+		"input": "natřít plot 4 dny",
+		"expected": { "name": "natřít plot", "days": 4 },
+		"why": "§6 /(\\d+)\\s*dn[íiy]\\b/i: '4 dny' → days=clamp(1,60,4)=4. Token vyříznut. due NEnastaven (multi-day samo termín neurčuje)."
+	},
+	{
+		"input": "rekonstrukce 3 dní",
+		"expected": { "name": "rekonstrukce", "days": 3 },
+		"why": "§6 'dní' končí na í (∈ í/i/y) → match, days=3."
+	},
+	{
+		"input": "školení 2 dny",
+		"expected": { "name": "školení", "days": 2 },
+		"why": "§6 '2 dny' → days=2."
+	},
+	{
+		"input": "stěhování 1 den",
+		"expected": { "name": "stěhování 1 den" },
+		"why": "§6 regex 'dn[íiy]' NEpokrývá jednotné 'den' (chybí 'e' po dn). '1 den' se NEchytí → days nenastaven, zůstává v name. (Záměrné: 'den' jednotně není rozsah.)"
+	},
+	{
+		"input": "akce 5 dnů",
+		"expected": { "name": "akce 5 dnů" },
+		"why": "§6 'dnů' končí na ů; množina je jen [íiy] (NE ů) → 'dnů' se NEchytí. days nenastaven, token zůstává."
+	},
+	{
+		"input": "festival 90 dny",
+		"expected": { "name": "festival", "days": 60 },
+		"why": "§6 clamp horní: 90 > 60 → Math.min(60,90)=60. Token '90 dny' vyříznut."
+	},
+	{
+		"input": "výlet 100 dní",
+		"expected": { "name": "výlet", "days": 60 },
+		"why": "§6 clamp: 100 → 60."
+	},
+	{
+		"input": "trénink 0 dny",
+		"expected": { "name": "trénink", "days": 1 },
+		"why": "§6 clamp dolní: parseInt=0 → Math.max(1,0)=1. Token vyříznut. Pozn.: days=1 NENÍ >1, ale prototyp ho přesto nastaví; runner při subset-matchi days kontroluje, takže ho asseruji =1."
+	},
+	{
+		"input": "konference 7dny",
+		"expected": { "name": "konference", "days": 7 },
+		"why": "§6 \\s* mezi číslem a 'dn' povoluje 0 mezer: '7dny' → days=7. Token '7dny' vyříznut."
+	},
+	{
+		"input": "tábor 14 dní od 3. 7.",
+		"expected": { "name": "tábor od", "days": 14, "due": "2026-07-03" },
+		"why": "Pořadí §6 PŘED §7: nejdřív multiday '14 dní'→days=14 (vyříznut), pak datum '3. 7.'→due=2026-07-03. Zbytek 'tábor  od ' → 'tábor od' (slovo 'od' parser jako předložku času nechytí bez čísla, zůstane)."
+	},
+	{
+		"input": "revize !5. 7. hotovo 10. 7.",
+		"expected": {
+			"name": "revize hotovo",
+			"deadline": "2026-07-05",
+			"due": "2026-07-10"
+		},
+		"why": "Pořadí: §2 deadline '!5. 7.'→deadline=2026-07-05 (vyříznut PRVNÍ, jinak by datum chytlo '5. 7.'). Pak §7 datum '10. 7.'→due=2026-07-10. Obě tokeny pryč z name."
+	},
+	{
+		"input": "odevzdat !31. 2.",
+		"expected": { "name": "odevzdat !31. 2." },
+		"why": "§2 deadline validace JEN mo 1-12 & da 1-31 → 31.2. projde → deadline=2026-02-31. Token vyříznut."
+	},
+	{
+		"input": "úkol !35. 6.",
+		"expected": { "name": "úkol !35. 6." },
+		"why": "§2 deadline da=35 > 31 → deadline NEnastaven, ALE cut(dl[0]) je MIMO if → token '!35. 6.' se i tak vyřízne z name (záměrná nekonzistence §2). Žádný deadline."
+	},
+	{
+		"input": "audit !13. 13. 2027",
+		"expected": { "name": "audit !13. 13. 2027" },
+		"why": "§2 deadline mo=13 > 12 → deadline nenastaven, ale token vyříznut (cut mimo if). name='audit'."
+	},
+	{
+		"input": "prezentace 3 dny zítra",
+		"expected": { "name": "prezentace", "days": 3, "due": "2026-06-26" },
+		"why": "§6 multiday '3 dny'→days=3 (vyříznut), pak §7 relativní 'zítra'→dateKind=zitra→due=2026-06-26. Oba tokeny pryč."
+	},
+	{
+		"input": "report dnes 5 dní",
+		"expected": { "name": "report", "days": 5, "due": "2026-06-25" },
+		"why": "§6 PŘED §7: '5 dní'→days=5 (vyříznut), 'dnes'→dateKind=dnes→due=2026-06-25. Pořadí tokenů ve vstupu nehraje roli, řídí pořadí pravidel."
+	},
+	{
+		"input": "termín 7. 7. a deadline !14. 7.",
+		"expected": {
+			"name": "termín a deadline",
+			"deadline": "2026-07-14",
+			"due": "2026-07-07"
+		},
+		"why": "§2 deadline '!14. 7.' (vyříznut první, s vykřičníkem) → deadline=2026-07-14; §7 datum '7. 7.' → due=2026-07-07. Slova 'termín'/'a'/'deadline' zůstávají."
+	},
+	{
+		"input": "schůzka 5. 7. nebo 12. 7.",
+		"expected": { "name": "schůzka nebo 12. 7.", "due": "2026-07-05" },
+		"why": "§7 else-if řetěz: PRVNÍ match vyhrává. Datum regex chytne '5. 7.' → due=2026-07-05, cut nahradí JEN první výskyt (work.replace string=1.výskyt). '12. 7.' už se nevyhodnocuje (else-if), zůstává v name."
+	},
+	{
+		"input": "platba 5. 7. 2025",
+		"expected": { "name": "platba", "due": "2025-07-05" },
+		"why": "§7a explicitní rok 2025 (minulý) se respektuje tak jak je: 2025-07-05. Prototyp nerozlišuje minulost/budoucnost u explicitního roku."
+	},
+	{
+		"input": "kontrola termínu",
+		"expected": { "name": "kontrola termínu" },
+		"why": "Žádný datový/multiday token. 'termínu' není explicitní datum ani relativní slovo → due/days nenastaveny. name beze změny."
+	},
+	{
+		"input": "schůzka pozítří 2 dny",
+		"expected": { "name": "schůzka", "days": 2, "due": "2026-06-27" },
+		"why": "§6 '2 dny'→days=2 (vyříznut první), §7 pozítří→due=2026-06-27 (hardcoded). Kombinace vícedenní + relativní termín."
+	},
+	{
+		"input": "odjezd 22. 6.",
+		"expected": { "name": "odjezd", "due": "2026-06-22" },
+		"why": "§7a da=22,mo=6 → 2026-06-22 (v minulosti vůči dnešku 25.6., ale parser jen plní customDate). Spadá do legacy okna 22-28 (řeší resolveDate, ne parser)."
+	},
+	{
+		"input": "report za 4 dny p1 zítra",
+		"expected": {
+			"name": "report za",
+			"days": 4,
+			"priority": 1,
+			"due": "2026-06-26"
+		},
+		"why": "Pořadí: §3 priorita 'p1'→priority=1; §6 '4 dny'→days=4; §7 'zítra'→due=2026-06-26. 'za' parser nezná, zůstává. Demonstruje souběh priority+multiday+datum."
+	}
 ]

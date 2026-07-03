@@ -1,152 +1,156 @@
 [
-  {
-    "input": "Zavolat klientovi pondělí",
-    "expected": { "name": "Zavolat klientovi", "due": "2026-06-29" },
-    "why": "§9 holý den: pondělí d=1. weekdayDate(1,0): add=(1-4+7)%7=4 → 25.6.+4=29.6. parseRecurrence(work) bez 'každ'/sudý/lichý → null (větev A končí return null před WD smyčkou), takže §9 se spustí. RECVOCAB (bareWd) vyřízne 'pondělí'."
-  },
-  {
-    "input": "pondělí nákup mléka",
-    "expected": { "name": "nákup mléka", "due": "2026-06-29" },
-    "why": "§9 pondělí d=1 → 2026-06-29 (add=4). Den na začátku; RECVOCAB stem 'pond[ěe]l\\p{L}*' vyřízne 'pondělí'. 'nákup'/'mléka' neobsahují žádný stem → zůstávají."
-  },
-  {
-    "input": "Odeslat fakturu úterý",
-    "expected": { "name": "Odeslat fakturu", "due": "2026-06-30" },
-    "why": "§9 úterý d=2. weekdayDate(2,0): add=(2-4+7)%7=5 → 25.6.+5=30.6. RECVOCAB '[úu]ter\\p{L}*' vyřízne 'úterý'."
-  },
-  {
-    "input": "schůzka v úterý",
-    "expected": { "name": "schůzka v", "due": "2026-06-30" },
-    "why": "§9 úterý d=2 → 2026-06-30. WD2 regex '(?:^|\\s)[úu]ter[\\p{L}]*(?=\\s|$)' matchuje 'úterý'. RECVOCAB vyřízne 'úterý'; předložka 'v' není v RECVOCAB → zůstane v názvu jako koncové slovo (dokumentuje reálné chování)."
-  },
-  {
-    "input": "středa porada týmu",
-    "expected": { "name": "porada týmu", "due": "2026-07-01" },
-    "why": "KOLIZE: 'středa' BEZ 'každ' → parseRecurrence vrací null (větev A 'if(!hasK && !evenOdd)' má vlastní return null PŘED WD smyčkou), proto se bere §9 holý termín, NE opakování. středa d=3: add=(3-4+7)%7=6 → 25.6.+6=2026-07-01."
-  },
-  {
-    "input": "Připravit podklady ve středu",
-    "expected": { "name": "Připravit podklady ve", "due": "2026-07-01" },
-    "why": "§9 středa d=3 → 2026-07-01. WD2 'st[řr]ed' + [\\p{L}]* matchuje 'středu' (pádový tvar). RECVOCAB 'st[řr]ed\\p{L}*' vyřízne 'středu'; 've' (předložka) v RECVOCAB není → zůstává."
-  },
-  {
-    "input": "čtvrtek oběd s Petrou",
-    "expected": { "name": "oběd s Petrou", "due": "2026-07-02" },
-    "why": "§9 čtvrtek d=4 = DNEŠNÍ den. weekdayDate(4,0): add=(4-4+7)%7=0 → add===0 → add=7 → 25.6.+7=2026-07-02 (AŽ PŘÍŠTÍ čtvrtek, ne dnes). RECVOCAB '[čc]tvrt\\p{L}*' vyřízne 'čtvrtek'."
-  },
-  {
-    "input": "Dokončit report ve čtvrtek",
-    "expected": { "name": "Dokončit report ve", "due": "2026-07-02" },
-    "why": "§9 čtvrtek=dnešní → add=0→7 → 2026-07-02. RECVOCAB vyřízne 'čtvrtek'; 've' zůstane (není v RECVOCAB)."
-  },
-  {
-    "input": "pátek vyzvednout balík",
-    "expected": { "name": "vyzvednout balík", "due": "2026-06-26" },
-    "why": "§9 pátek d=5. weekdayDate(5,0): add=(5-4+7)%7=1 → 25.6.+1=26.6. WD2 i RECVOCAB stem 'p[áa]t(?:ek|ku|ky)' matchuje 'pátek' (jen koncovky ek/ku/ky!) → vyřízne."
-  },
-  {
-    "input": "Zaplatit nájem v pátek",
-    "expected": { "name": "Zaplatit nájem v", "due": "2026-06-26" },
-    "why": "§9 pátek d=5 → 2026-06-26 (add=1). RECVOCAB 'p[áa]t(?:ek|ku|ky)' vyřízne 'pátek'; 'v' zůstane."
-  },
-  {
-    "input": "sobota úklid garáže",
-    "expected": { "name": "úklid garáže", "due": "2026-06-27" },
-    "why": "§9 sobota d=6. weekdayDate(6,0): add=(6-4+7)%7=2 → 25.6.+2=27.6. RECVOCAB 'sobot\\p{L}*' vyřízne 'sobota'."
-  },
-  {
-    "input": "neděle zavolat babičce",
-    "expected": { "name": "zavolat babičce", "due": "2026-06-28" },
-    "why": "§9 neděle d=0. weekdayDate(0,0): add=(0-4+7)%7=3 → 25.6.+3=28.6. RECVOCAB 'ned[ěe]l\\p{L}*' vyřízne 'neděle'."
-  },
-  {
-    "input": "Naplánovat sprint příští pondělí",
-    "expected": { "name": "Naplánovat sprint", "due": "2026-07-06" },
-    "why": "§9 'příští' → /p[řr][íi]št/i matchuje → ahead=1. pondělí d=1: weekdayDate(1,1)=29.6.+7=2026-07-06. RECVOCAB vyřízne i 'příští' (stem 'p[řr][íi]št\\p{L}*') i 'pondělí'."
-  },
-  {
-    "input": "příští úterý prezentace",
-    "expected": { "name": "prezentace", "due": "2026-07-07" },
-    "why": "§9 'příští' ahead=1. úterý d=2: weekdayDate(2,1)=30.6.+7=2026-07-07. RECVOCAB vyřízne 'příští' + 'úterý'."
-  },
-  {
-    "input": "Revize kódu příští středa",
-    "expected": { "name": "Revize kódu", "due": "2026-07-08" },
-    "why": "§9 'příští' ahead=1. středa d=3: weekdayDate(3,1)=1.7.+7=2026-07-08. 'středa' bez 'každ' = holý termín (ne opakování). RECVOCAB vyřízne 'příští' + 'středa'."
-  },
-  {
-    "input": "Workshop příští čtvrtek",
-    "expected": { "name": "Workshop", "due": "2026-07-09" },
-    "why": "§9 'příští' ahead=1 + čtvrtek d=4 (dnešní). weekdayDate(4,1): add=0→7, +7*1 → 25.6.+7+7=2026-07-09. RECVOCAB vyřízne 'příští' + 'čtvrtek'."
-  },
-  {
-    "input": "příští pátek deadline review",
-    "expected": { "name": "deadline review", "due": "2026-07-03" },
-    "why": "§9 'příští' ahead=1. pátek d=5: weekdayDate(5,1)=26.6.+7=2026-07-03. RECVOCAB vyřízne 'příští' + 'pátek'."
-  },
-  {
-    "input": "Výlet příští sobota",
-    "expected": { "name": "Výlet", "due": "2026-07-04" },
-    "why": "§9 'příští' ahead=1. sobota d=6: weekdayDate(6,1)=27.6.+7=2026-07-04. RECVOCAB vyřízne 'příští' + 'sobota'."
-  },
-  {
-    "input": "Brigáda příští neděle",
-    "expected": { "name": "Brigáda", "due": "2026-07-05" },
-    "why": "§9 'příští' ahead=1. neděle d=0: weekdayDate(0,1)=28.6.+7=2026-07-05. RECVOCAB vyřízne 'příští' + 'neděle'."
-  },
-  {
-    "input": "Telefonát pondeli bez diakritiky",
-    "expected": { "name": "Telefonát bez diakritiky", "due": "2026-06-29" },
-    "why": "BEZ DIAKRITIKY: WD2 stem 'pond[ěe]l' matchuje 'pondeli' ([ěe]=e), pak [\\p{L}]* chytne 'i'. d=1 → 2026-06-29. RECVOCAB 'pond[ěe]l\\p{L}*' vyřízne 'pondeli'."
-  },
-  {
-    "input": "Objednat obed ctvrtek",
-    "expected": { "name": "Objednat obed", "due": "2026-07-02" },
-    "why": "BEZ DIAKRITIKY: WD2 '[čc]tvrt' ([čc]=c) matchuje 'ctvrtek'. čtvrtek=dnešní → add=0→7 → 2026-07-02. RECVOCAB vyřízne 'ctvrtek'; 'obed' zůstává."
-  },
-  {
-    "input": "uklid v sobotu",
-    "expected": { "name": "uklid v", "due": "2026-06-27" },
-    "why": "BEZ DIAKRITIKY: 'sobot' matchuje 'sobotu' (pádový tvar). d=6 → 2026-06-27. RECVOCAB vyřízne 'sobotu'; 'v' zůstává."
-  },
-  {
-    "input": "porada stredu",
-    "expected": { "name": "porada", "due": "2026-07-01" },
-    "why": "BEZ DIAKRITIKY: 'st[řr]ed' ([řr]=r) matchuje 'stredu'. středa d=3 → 2026-07-01. 'stredu' bez 'každ' = holý termín. RECVOCAB 'st[řr]ed\\p{L}*' vyřízne 'stredu'."
-  },
-  {
-    "input": "Sraz nedeli vecer",
-    "expected": { "name": "Sraz vecer", "due": "2026-06-28" },
-    "why": "BEZ DIAKRITIKY: 'ned[ěe]l' matchuje 'nedeli'. neděle d=0 → 2026-06-28. RECVOCAB vyřízne 'nedeli'; 'vecer' zůstává."
-  },
-  {
-    "input": "Kontrola pátku",
-    "expected": { "name": "Kontrola", "due": "2026-06-26" },
-    "why": "PÁDOVÝ TVAR: stem 'p[áa]t(?:ek|ku|ky)' matchuje 'pátku' (pát+ku). pátek d=5 → 2026-06-26. RECVOCAB stejný stem vyřízne 'pátku'."
-  },
-  {
-    "input": "Termin pondelky",
-    "expected": { "name": "Termin", "due": "2026-06-29" },
-    "why": "PÁDOVÝ TVAR bez diakritiky: 'pond[ěe]l'+[\\p{L}]* matchuje 'pondelky'. pondělí d=1 → 2026-06-29. RECVOCAB vyřízne 'pondelky'."
-  },
-  {
-    "input": "Schuzka pristi patek",
-    "expected": { "name": "Schuzka pristi", "due": "2026-06-26" },
-    "why": "EDGE 'příští' bez diakritiky NEFUNGUJE: /p[řr][íi]št/i vyžaduje 'š', ale 'pristi' má 's' → ahead=0 (žádný posun). patek d=5 → weekdayDate(5,0)=2026-06-26. RECVOCAB 'p[řr][íi]št\\p{L}*' rovněž nematchne 'pristi' → zůstane v názvu; vyřízne se jen 'patek' (stem p[áa]t...ek)."
-  },
-  {
-    "input": "Vyzvednout lístky sobotu",
-    "expected": { "name": "Vyzvednout lístky", "due": "2026-06-27" },
-    "why": "§9 'sobot'+[\\p{L}]* matchuje 'sobotu'. sobota d=6 → 2026-06-27. RECVOCAB vyřízne 'sobotu'. Den uprostřed/na konci, pořadí tokenů nemění výsledek."
-  },
-  {
-    "input": "Schůzka úterý 14:00",
-    "expected": { "name": "Schůzka", "due": "2026-06-30", "startMin": 840 },
-    "why": "§9 úterý d=2 → 2026-06-30. Čas §4b '14:00' → startMin 14*60=840 (vyříznut PŘED §9 v pořadí pravidel). RECVOCAB vyřízne 'úterý'."
-  },
-  {
-    "input": "pondělí p1 zavolat dodavateli",
-    "expected": { "name": "zavolat dodavateli", "due": "2026-06-29", "priority": 1 },
-    "why": "§9 pondělí d=1 → 2026-06-29. Priorita §3 'p1' → priority 1 (vyříznuta v pořadí pravidel před §9). RECVOCAB vyřízne 'pondělí'; 'p1' token odebrán §3."
-  }
+	{
+		"input": "Zavolat klientovi pondělí",
+		"expected": { "name": "Zavolat klientovi", "due": "2026-06-29" },
+		"why": "§9 holý den: pondělí d=1. weekdayDate(1,0): add=(1-4+7)%7=4 → 25.6.+4=29.6. parseRecurrence(work) bez 'každ'/sudý/lichý → null (větev A končí return null před WD smyčkou), takže §9 se spustí. RECVOCAB (bareWd) vyřízne 'pondělí'."
+	},
+	{
+		"input": "pondělí nákup mléka",
+		"expected": { "name": "nákup mléka", "due": "2026-06-29" },
+		"why": "§9 pondělí d=1 → 2026-06-29 (add=4). Den na začátku; RECVOCAB stem 'pond[ěe]l\\p{L}*' vyřízne 'pondělí'. 'nákup'/'mléka' neobsahují žádný stem → zůstávají."
+	},
+	{
+		"input": "Odeslat fakturu úterý",
+		"expected": { "name": "Odeslat fakturu", "due": "2026-06-30" },
+		"why": "§9 úterý d=2. weekdayDate(2,0): add=(2-4+7)%7=5 → 25.6.+5=30.6. RECVOCAB '[úu]ter\\p{L}*' vyřízne 'úterý'."
+	},
+	{
+		"input": "schůzka v úterý",
+		"expected": { "name": "schůzka v", "due": "2026-06-30" },
+		"why": "§9 úterý d=2 → 2026-06-30. WD2 regex '(?:^|\\s)[úu]ter[\\p{L}]*(?=\\s|$)' matchuje 'úterý'. RECVOCAB vyřízne 'úterý'; předložka 'v' není v RECVOCAB → zůstane v názvu jako koncové slovo (dokumentuje reálné chování)."
+	},
+	{
+		"input": "středa porada týmu",
+		"expected": { "name": "porada týmu", "due": "2026-07-01" },
+		"why": "KOLIZE: 'středa' BEZ 'každ' → parseRecurrence vrací null (větev A 'if(!hasK && !evenOdd)' má vlastní return null PŘED WD smyčkou), proto se bere §9 holý termín, NE opakování. středa d=3: add=(3-4+7)%7=6 → 25.6.+6=2026-07-01."
+	},
+	{
+		"input": "Připravit podklady ve středu",
+		"expected": { "name": "Připravit podklady ve", "due": "2026-07-01" },
+		"why": "§9 středa d=3 → 2026-07-01. WD2 'st[řr]ed' + [\\p{L}]* matchuje 'středu' (pádový tvar). RECVOCAB 'st[řr]ed\\p{L}*' vyřízne 'středu'; 've' (předložka) v RECVOCAB není → zůstává."
+	},
+	{
+		"input": "čtvrtek oběd s Petrou",
+		"expected": { "name": "oběd s Petrou", "due": "2026-07-02" },
+		"why": "§9 čtvrtek d=4 = DNEŠNÍ den. weekdayDate(4,0): add=(4-4+7)%7=0 → add===0 → add=7 → 25.6.+7=2026-07-02 (AŽ PŘÍŠTÍ čtvrtek, ne dnes). RECVOCAB '[čc]tvrt\\p{L}*' vyřízne 'čtvrtek'."
+	},
+	{
+		"input": "Dokončit report ve čtvrtek",
+		"expected": { "name": "Dokončit report ve", "due": "2026-07-02" },
+		"why": "§9 čtvrtek=dnešní → add=0→7 → 2026-07-02. RECVOCAB vyřízne 'čtvrtek'; 've' zůstane (není v RECVOCAB)."
+	},
+	{
+		"input": "pátek vyzvednout balík",
+		"expected": { "name": "vyzvednout balík", "due": "2026-06-26" },
+		"why": "§9 pátek d=5. weekdayDate(5,0): add=(5-4+7)%7=1 → 25.6.+1=26.6. WD2 i RECVOCAB stem 'p[áa]t(?:ek|ku|ky)' matchuje 'pátek' (jen koncovky ek/ku/ky!) → vyřízne."
+	},
+	{
+		"input": "Zaplatit nájem v pátek",
+		"expected": { "name": "Zaplatit nájem v", "due": "2026-06-26" },
+		"why": "§9 pátek d=5 → 2026-06-26 (add=1). RECVOCAB 'p[áa]t(?:ek|ku|ky)' vyřízne 'pátek'; 'v' zůstane."
+	},
+	{
+		"input": "sobota úklid garáže",
+		"expected": { "name": "úklid garáže", "due": "2026-06-27" },
+		"why": "§9 sobota d=6. weekdayDate(6,0): add=(6-4+7)%7=2 → 25.6.+2=27.6. RECVOCAB 'sobot\\p{L}*' vyřízne 'sobota'."
+	},
+	{
+		"input": "neděle zavolat babičce",
+		"expected": { "name": "zavolat babičce", "due": "2026-06-28" },
+		"why": "§9 neděle d=0. weekdayDate(0,0): add=(0-4+7)%7=3 → 25.6.+3=28.6. RECVOCAB 'ned[ěe]l\\p{L}*' vyřízne 'neděle'."
+	},
+	{
+		"input": "Naplánovat sprint příští pondělí",
+		"expected": { "name": "Naplánovat sprint", "due": "2026-07-06" },
+		"why": "§9 'příští' → /p[řr][íi]št/i matchuje → ahead=1. pondělí d=1: weekdayDate(1,1)=29.6.+7=2026-07-06. RECVOCAB vyřízne i 'příští' (stem 'p[řr][íi]št\\p{L}*') i 'pondělí'."
+	},
+	{
+		"input": "příští úterý prezentace",
+		"expected": { "name": "prezentace", "due": "2026-07-07" },
+		"why": "§9 'příští' ahead=1. úterý d=2: weekdayDate(2,1)=30.6.+7=2026-07-07. RECVOCAB vyřízne 'příští' + 'úterý'."
+	},
+	{
+		"input": "Revize kódu příští středa",
+		"expected": { "name": "Revize kódu", "due": "2026-07-08" },
+		"why": "§9 'příští' ahead=1. středa d=3: weekdayDate(3,1)=1.7.+7=2026-07-08. 'středa' bez 'každ' = holý termín (ne opakování). RECVOCAB vyřízne 'příští' + 'středa'."
+	},
+	{
+		"input": "Workshop příští čtvrtek",
+		"expected": { "name": "Workshop", "due": "2026-07-09" },
+		"why": "§9 'příští' ahead=1 + čtvrtek d=4 (dnešní). weekdayDate(4,1): add=0→7, +7*1 → 25.6.+7+7=2026-07-09. RECVOCAB vyřízne 'příští' + 'čtvrtek'."
+	},
+	{
+		"input": "příští pátek deadline review",
+		"expected": { "name": "deadline review", "due": "2026-07-03" },
+		"why": "§9 'příští' ahead=1. pátek d=5: weekdayDate(5,1)=26.6.+7=2026-07-03. RECVOCAB vyřízne 'příští' + 'pátek'."
+	},
+	{
+		"input": "Výlet příští sobota",
+		"expected": { "name": "Výlet", "due": "2026-07-04" },
+		"why": "§9 'příští' ahead=1. sobota d=6: weekdayDate(6,1)=27.6.+7=2026-07-04. RECVOCAB vyřízne 'příští' + 'sobota'."
+	},
+	{
+		"input": "Brigáda příští neděle",
+		"expected": { "name": "Brigáda", "due": "2026-07-05" },
+		"why": "§9 'příští' ahead=1. neděle d=0: weekdayDate(0,1)=28.6.+7=2026-07-05. RECVOCAB vyřízne 'příští' + 'neděle'."
+	},
+	{
+		"input": "Telefonát pondeli bez diakritiky",
+		"expected": { "name": "Telefonát bez diakritiky", "due": "2026-06-29" },
+		"why": "BEZ DIAKRITIKY: WD2 stem 'pond[ěe]l' matchuje 'pondeli' ([ěe]=e), pak [\\p{L}]* chytne 'i'. d=1 → 2026-06-29. RECVOCAB 'pond[ěe]l\\p{L}*' vyřízne 'pondeli'."
+	},
+	{
+		"input": "Objednat obed ctvrtek",
+		"expected": { "name": "Objednat obed", "due": "2026-07-02" },
+		"why": "BEZ DIAKRITIKY: WD2 '[čc]tvrt' ([čc]=c) matchuje 'ctvrtek'. čtvrtek=dnešní → add=0→7 → 2026-07-02. RECVOCAB vyřízne 'ctvrtek'; 'obed' zůstává."
+	},
+	{
+		"input": "uklid v sobotu",
+		"expected": { "name": "uklid v", "due": "2026-06-27" },
+		"why": "BEZ DIAKRITIKY: 'sobot' matchuje 'sobotu' (pádový tvar). d=6 → 2026-06-27. RECVOCAB vyřízne 'sobotu'; 'v' zůstává."
+	},
+	{
+		"input": "porada stredu",
+		"expected": { "name": "porada", "due": "2026-07-01" },
+		"why": "BEZ DIAKRITIKY: 'st[řr]ed' ([řr]=r) matchuje 'stredu'. středa d=3 → 2026-07-01. 'stredu' bez 'každ' = holý termín. RECVOCAB 'st[řr]ed\\p{L}*' vyřízne 'stredu'."
+	},
+	{
+		"input": "Sraz nedeli vecer",
+		"expected": { "name": "Sraz vecer", "due": "2026-06-28" },
+		"why": "BEZ DIAKRITIKY: 'ned[ěe]l' matchuje 'nedeli'. neděle d=0 → 2026-06-28. RECVOCAB vyřízne 'nedeli'; 'vecer' zůstává."
+	},
+	{
+		"input": "Kontrola pátku",
+		"expected": { "name": "Kontrola", "due": "2026-06-26" },
+		"why": "PÁDOVÝ TVAR: stem 'p[áa]t(?:ek|ku|ky)' matchuje 'pátku' (pát+ku). pátek d=5 → 2026-06-26. RECVOCAB stejný stem vyřízne 'pátku'."
+	},
+	{
+		"input": "Termin pondelky",
+		"expected": { "name": "Termin", "due": "2026-06-29" },
+		"why": "PÁDOVÝ TVAR bez diakritiky: 'pond[ěe]l'+[\\p{L}]* matchuje 'pondelky'. pondělí d=1 → 2026-06-29. RECVOCAB vyřízne 'pondelky'."
+	},
+	{
+		"input": "Schuzka pristi patek",
+		"expected": { "name": "Schuzka pristi", "due": "2026-06-26" },
+		"why": "EDGE 'příští' bez diakritiky NEFUNGUJE: /p[řr][íi]št/i vyžaduje 'š', ale 'pristi' má 's' → ahead=0 (žádný posun). patek d=5 → weekdayDate(5,0)=2026-06-26. RECVOCAB 'p[řr][íi]št\\p{L}*' rovněž nematchne 'pristi' → zůstane v názvu; vyřízne se jen 'patek' (stem p[áa]t...ek)."
+	},
+	{
+		"input": "Vyzvednout lístky sobotu",
+		"expected": { "name": "Vyzvednout lístky", "due": "2026-06-27" },
+		"why": "§9 'sobot'+[\\p{L}]* matchuje 'sobotu'. sobota d=6 → 2026-06-27. RECVOCAB vyřízne 'sobotu'. Den uprostřed/na konci, pořadí tokenů nemění výsledek."
+	},
+	{
+		"input": "Schůzka úterý 14:00",
+		"expected": { "name": "Schůzka", "due": "2026-06-30", "startMin": 840 },
+		"why": "§9 úterý d=2 → 2026-06-30. Čas §4b '14:00' → startMin 14*60=840 (vyříznut PŘED §9 v pořadí pravidel). RECVOCAB vyřízne 'úterý'."
+	},
+	{
+		"input": "pondělí p1 zavolat dodavateli",
+		"expected": {
+			"name": "zavolat dodavateli",
+			"due": "2026-06-29",
+			"priority": 1
+		},
+		"why": "§9 pondělí d=1 → 2026-06-29. Priorita §3 'p1' → priority 1 (vyříznuta v pořadí pravidel před §9). RECVOCAB vyřízne 'pondělí'; 'p1' token odebrán §3."
+	}
 ]

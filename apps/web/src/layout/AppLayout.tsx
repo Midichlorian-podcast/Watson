@@ -20,50 +20,58 @@ import { MobileTabBar } from "./MobileTabBar";
 import { Sidebar } from "./Sidebar";
 
 export function AppLayout() {
-  // Sbalení sidebaru se persistuje (prototyp toggleRail + persist, ř. 2580).
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("watson.rail") === "1");
-  const isMobile = useIsMobile();
-  useEffect(applyTweaks, []);
-  useEffect(() => {
-    localStorage.setItem("watson.rail", collapsed ? "1" : "0");
-  }, [collapsed]);
-  return (
-    <WorkspaceProvider>
-    <RowMetaProvider>
-    <ViewModeProvider>
-    <ListSearchProvider>
-    <WatsonProvider>
-      <AddTaskProvider>
-        <TaskDetailProvider>
-          <ProjectDetailProvider>
-            <KeyboardProvider>
-              <div className="flex h-full min-h-full" style={{ background: "var(--w-paper)" }}>
-                {!isMobile && (
-                  <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
-                )}
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <Header />
-                  <main
-                    className="flex-1 overflow-auto"
-                    style={isMobile ? { paddingBottom: 58 } : undefined}
-                  >
-                    <Outlet />
-                  </main>
-                </div>
-                {isMobile && <MobileTabBar />}
-                <WriteRejectedToast />
-                <ActionToast />
-                <TaskDetailPanel />
-                <ProjectDetailPanel />
-              </div>
-            </KeyboardProvider>
-          </ProjectDetailProvider>
-        </TaskDetailProvider>
-      </AddTaskProvider>
-    </WatsonProvider>
-    </ListSearchProvider>
-    </ViewModeProvider>
-    </RowMetaProvider>
-    </WorkspaceProvider>
-  );
+	// Sbalení sidebaru se persistuje (prototyp toggleRail + persist, ř. 2580).
+	const [collapsed, setCollapsed] = useState(
+		() => localStorage.getItem("watson.rail") === "1",
+	);
+	const isMobile = useIsMobile();
+	useEffect(applyTweaks, []);
+	useEffect(() => {
+		localStorage.setItem("watson.rail", collapsed ? "1" : "0");
+	}, [collapsed]);
+	return (
+		<WorkspaceProvider>
+			<RowMetaProvider>
+				<ViewModeProvider>
+					<ListSearchProvider>
+						<WatsonProvider>
+							<AddTaskProvider>
+								<TaskDetailProvider>
+									<ProjectDetailProvider>
+										<KeyboardProvider>
+											<div
+												className="flex h-full min-h-full"
+												style={{ background: "var(--w-paper)" }}
+											>
+												{!isMobile && (
+													<Sidebar
+														collapsed={collapsed}
+														onToggle={() => setCollapsed((c) => !c)}
+													/>
+												)}
+												<div className="flex min-w-0 flex-1 flex-col">
+													<Header />
+													<main
+														className="flex-1 overflow-auto"
+														style={isMobile ? { paddingBottom: 58 } : undefined}
+													>
+														<Outlet />
+													</main>
+												</div>
+												{isMobile && <MobileTabBar />}
+												<WriteRejectedToast />
+												<ActionToast />
+												<TaskDetailPanel />
+												<ProjectDetailPanel />
+											</div>
+										</KeyboardProvider>
+									</ProjectDetailProvider>
+								</TaskDetailProvider>
+							</AddTaskProvider>
+						</WatsonProvider>
+					</ListSearchProvider>
+				</ViewModeProvider>
+			</RowMetaProvider>
+		</WorkspaceProvider>
+	);
 }

@@ -1,255 +1,275 @@
 [
-  {
-    "input": "Zalévat květiny denně",
-    "expected": {
-      "name": "Zalévat květiny",
-      "recurrence": { "kind": "daily", "label": "Denně" }
-    },
-    "why": "§11 větev A (!hasK && !evenOdd): B('denně') → daily, repeatLabel 'Denně'. Žádné weekday → žádný startISO → bez due. Token 'denně' vyříznut RECVOCAB (rec truthy)."
-  },
-  {
-    "input": "denne zkontrolovat zálohy",
-    "expected": {
-      "name": "zkontrolovat zálohy",
-      "recurrence": { "kind": "daily", "label": "Denně" }
-    },
-    "why": "§11 A: B('denne') (bez diakritiky) → daily, 'Denně'. RECVOCAB 'denne' na začátku → vyříznuto, zbytek trim."
-  },
-  {
-    "input": "Zkontrolovat email každý den",
-    "expected": {
-      "name": "Zkontrolovat email",
-      "recurrence": { "kind": "daily", "label": "Každý den" }
-    },
-    "why": "§11 D fallback: hasK=true → větev A přeskočena; wd=null; žádné číslo; B('den') → daily, repeatLabel 'Každý den'. Bez weekday → bez startISO/due. 'každý'+'den' vyříznuty RECVOCAB."
-  },
-  {
-    "input": "cvičit každý den ráno",
-    "expected": {
-      "name": "cvičit ráno",
-      "recurrence": { "kind": "daily", "label": "Každý den" }
-    },
-    "why": "§11 D: B('den') → daily 'Každý den'. 'ráno' není v RECVOCAB → zůstává; 'každý' a 'den' vyříznuty, mezery sloučeny."
-  },
-  {
-    "input": "Reportovat stav týdně",
-    "expected": {
-      "name": "Reportovat stav",
-      "recurrence": { "kind": "weekly", "label": "Týdně" }
-    },
-    "why": "§11 A: B('týdně') → weekly, 'Týdně'. Žádný konkrétní den → bez weekday, bez startISO/due."
-  },
-  {
-    "input": "tydne porada tymu",
-    "expected": {
-      "name": "porada tymu",
-      "recurrence": { "kind": "weekly", "label": "Týdně" }
-    },
-    "why": "§11 A: B('tydne') (bez diakritiky) → weekly 'Týdně'. 'tymu' není opakovací slovo → zůstává."
-  },
-  {
-    "input": "Záloha serveru každý týden",
-    "expected": {
-      "name": "Záloha serveru",
-      "recurrence": { "kind": "weekly", "label": "Každý týden" }
-    },
-    "why": "§11 D: hasK → A přeskočeno; wd=null; B('t[ýy]den') → bi=false (žádné druh/dva/2) → weekly, repeatLabel 'Každý týden'. Bez weekday → bez due."
-  },
-  {
-    "input": "Platit nájem měsíčně",
-    "expected": {
-      "name": "Platit nájem",
-      "recurrence": { "kind": "monthly", "label": "Měsíčně" }
-    },
-    "why": "§11 A: B('měsíčně') → monthly, 'Měsíčně'. Bez startISO → bez due."
-  },
-  {
-    "input": "mesicne vyuctovani",
-    "expected": {
-      "name": "vyuctovani",
-      "recurrence": { "kind": "monthly", "label": "Měsíčně" }
-    },
-    "why": "§11 A: B('mesicne') (bez diakritiky) → monthly 'Měsíčně'. RECVOCAB 'mesicne' vyříznuto."
-  },
-  {
-    "input": "Generální úklid každý měsíc",
-    "expected": {
-      "name": "Generální úklid",
-      "recurrence": { "kind": "monthly", "label": "Každý měsíc" }
-    },
-    "why": "§11 D: hasK → A skip; wd=null; B('m[ěe]s[íi]c') → monthly, repeatLabel 'Každý měsíc'. Bez weekday/day → bez due."
-  },
-  {
-    "input": "Daňové přiznání ročně",
-    "expected": {
-      "name": "Daňové přiznání",
-      "recurrence": { "kind": "yearly", "label": "Ročně" }
-    },
-    "why": "§11 A: B('ročně') → yearly, 'Ročně'. Bez startISO → bez due."
-  },
-  {
-    "input": "rocne revize hasicaku",
-    "expected": {
-      "name": "revize hasicaku",
-      "recurrence": { "kind": "yearly", "label": "Ročně" }
-    },
-    "why": "§11 A: B('rocne') (bez diakritiky) → yearly 'Ročně'."
-  },
-  {
-    "input": "Obnovit doménu každý rok",
-    "expected": {
-      "name": "Obnovit doménu",
-      "recurrence": { "kind": "yearly", "label": "Každý rok" }
-    },
-    "why": "§11 D: hasK → A skip; wd=null; žádné měsíc/týden/den; B('rok') → yearly, repeatLabel 'Každý rok'. Bez due."
-  },
-  {
-    "input": "Týmová porada každou středu",
-    "expected": {
-      "name": "Týmová porada",
-      "due": "2026-07-01",
-      "recurrence": { "kind": "weekly", "weekday": 3, "label": "Každou středu" }
-    },
-    "why": "§11 B: wd=středa(d=3); inMonth=false; evenOdd=null; bi=false → weekly+weekday:3, label wd.every='Každou středu', startISO=weekdayDate(3,0). today=čt(getDay4): add=(3-4+7)%7=6 → 25.6+6=2026-07-01 → due. §8 nastaví dateKind=custom z startISO."
-  },
-  {
-    "input": "Stojací schůzka každé úterý",
-    "expected": {
-      "name": "Stojací schůzka",
-      "due": "2026-06-30",
-      "recurrence": { "kind": "weekly", "weekday": 2, "label": "Každé úterý" }
-    },
-    "why": "§11 B: wd=úterý(d=2), bi=false → weekly+weekday:2, label 'Každé úterý', start=weekdayDate(2,0): add=(2-4+7)%7=5 → 25.6+5=2026-06-30."
-  },
-  {
-    "input": "Úklid kuchyně každé pondělí",
-    "expected": {
-      "name": "Úklid kuchyně",
-      "due": "2026-06-29",
-      "recurrence": { "kind": "weekly", "weekday": 1, "label": "Každé pondělí" }
-    },
-    "why": "§11 B: wd=pondělí(d=1), bi=false → weekly+weekday:1, label 'Každé pondělí', start=weekdayDate(1,0): add=(1-4+7)%7=4 → 25.6+4=2026-06-29."
-  },
-  {
-    "input": "Lekce angličtiny každý čtvrtek",
-    "expected": {
-      "name": "Lekce angličtiny",
-      "due": "2026-07-02",
-      "recurrence": { "kind": "weekly", "weekday": 4, "label": "Každý čtvrtek" }
-    },
-    "why": "§11 B: wd=čtvrtek(d=4), bi=false → weekly+weekday:4, label wd.every='Každý čtvrtek', start=weekdayDate(4,0): add=(4-4+7)%7=0→7 (dnešní den → AŽ příští týden) → 25.6+7=2026-07-02."
-  },
-  {
-    "input": "Pizza večer každý pátek",
-    "expected": {
-      "name": "Pizza večer",
-      "due": "2026-06-26",
-      "recurrence": { "kind": "weekly", "weekday": 5, "label": "Každý pátek" }
-    },
-    "why": "§11 B: wd=pátek(d=5), bi=false → weekly+weekday:5, label 'Každý pátek', start=weekdayDate(5,0): add=(5-4+7)%7=1 → 25.6+1=2026-06-26."
-  },
-  {
-    "input": "Velký nákup každou sobotu",
-    "expected": {
-      "name": "Velký nákup",
-      "due": "2026-06-27",
-      "recurrence": { "kind": "weekly", "weekday": 6, "label": "Každou sobotu" }
-    },
-    "why": "§11 B: wd=sobota(d=6), bi=false → weekly+weekday:6, label 'Každou sobotu', start=weekdayDate(6,0): add=(6-4+7)%7=2 → 25.6+2=2026-06-27."
-  },
-  {
-    "input": "Volat babičce každou neděli",
-    "expected": {
-      "name": "Volat babičce",
-      "due": "2026-06-28",
-      "recurrence": { "kind": "weekly", "weekday": 0, "label": "Každou neděli" }
-    },
-    "why": "§11 B: wd=neděle(d=0), bi=false → weekly+weekday:0, label 'Každou neděli', start=weekdayDate(0,0): add=(0-4+7)%7=3 → 25.6+3=2026-06-28."
-  },
-  {
-    "input": "středu každou plavání",
-    "expected": {
-      "name": "plavání",
-      "due": "2026-07-01",
-      "recurrence": { "kind": "weekly", "weekday": 3, "label": "Každou středu" }
-    },
-    "why": "Pořadí tokenů nezáleží: B() i hasK hledají kdekoli. wd=středa(3), bi=false → weekly, 'Každou středu', start 2026-07-01. RECVOCAB vyřízne 'středu' i 'každou', zbude 'plavání'."
-  },
-  {
-    "input": "Retro každou druhou středu",
-    "expected": {
-      "name": "Retro",
-      "due": "2026-07-01",
-      "recurrence": { "kind": "biweekly", "weekday": 3, "label": "Každou druhou středu" }
-    },
-    "why": "§11 B default: wd=středa(3); bi=B('druh[éouýa]\\w*')→'druhou' true → biweekly+weekday:3, label wd.every2='Každou druhou středu', start=weekdayDate(3,0)=2026-07-01."
-  },
-  {
-    "input": "Sprint planning každé druhé úterý",
-    "expected": {
-      "name": "Sprint planning",
-      "due": "2026-06-30",
-      "recurrence": { "kind": "biweekly", "weekday": 2, "label": "Každé druhé úterý" }
-    },
-    "why": "§11 B: wd=úterý(2); bi true ('druhé') → biweekly+weekday:2, label 'Každé druhé úterý', start=weekdayDate(2,0)=2026-06-30."
-  },
-  {
-    "input": "Fakturace každý druhý pátek",
-    "expected": {
-      "name": "Fakturace",
-      "due": "2026-06-26",
-      "recurrence": { "kind": "biweekly", "weekday": 5, "label": "Každý druhý pátek" }
-    },
-    "why": "§11 B: wd=pátek(5); bi true ('druhý') → biweekly+weekday:5, label 'Každý druhý pátek', start=weekdayDate(5,0)=2026-06-26."
-  },
-  {
-    "input": "Výplata každé 2 týdny",
-    "expected": {
-      "name": "Výplata 2",
-      "recurrence": { "kind": "biweekly", "label": "Každé 2 týdny" }
-    },
-    "why": "§11 D: hasK; wd=null (žádný den); B('t[ýy]dn\\w*' přes 'týdny'); bi=B('druh...')||B('dva')||/\\b2\\b/.test(s) → '2' true → biweekly BEZ weekday, repeatLabel 'Každé 2 týdny'. Bez weekday → bez startISO/due. EDGE: číslice '2' NENÍ v RECVOCAB → zůstává v názvu → name 'Výplata 2'."
-  },
-  {
-    "input": "Mzdy každý druhý týden",
-    "expected": {
-      "name": "Mzdy",
-      "recurrence": { "kind": "biweekly", "label": "Každé 2 týdny" }
-    },
-    "why": "§11 D: hasK; wd=null; B('t[ýy]den')→'týden'; bi=B('druh[éouýa]\\w*')→'druhý' → biweekly BEZ weekday, label 'Každé 2 týdny'. Bez due. 'druhý'+'týden'+'každý' vyříznuty RECVOCAB."
-  },
-  {
-    "input": "Záloha databáze každou neděli",
-    "expected": {
-      "name": "Záloha databáze",
-      "due": "2026-06-28",
-      "recurrence": { "kind": "weekly", "weekday": 0, "label": "Každou neděli" }
-    },
-    "why": "§11 B: wd=neděle(0), bi=false → weekly+weekday:0, 'Každou neděli', start=2026-06-28 (add 3)."
-  },
-  {
-    "input": "úklid každou druhou sobotu",
-    "expected": {
-      "name": "úklid",
-      "due": "2026-06-27",
-      "recurrence": { "kind": "biweekly", "weekday": 6, "label": "Každou druhou sobotu" }
-    },
-    "why": "§11 B: wd=sobota(6); bi true ('druhou') → biweekly+weekday:6, label wd.every2='Každou druhou sobotu', start=weekdayDate(6,0)=2026-06-27."
-  },
-  {
-    "input": "Čtení knihy každý druhý čtvrtek",
-    "expected": {
-      "name": "Čtení knihy",
-      "due": "2026-07-02",
-      "recurrence": { "kind": "biweekly", "weekday": 4, "label": "Každý druhý čtvrtek" }
-    },
-    "why": "§11 B: wd=čtvrtek(4); bi true ('druhý') → biweekly+weekday:4, label 'Každý druhý čtvrtek', start=weekdayDate(4,0): add 0→7 (dnešní den → příští týden) → 2026-07-02."
-  },
-  {
-    "input": "denně bez názvu úkolu odstraním",
-    "expected": {
-      "recurrence": { "kind": "daily", "label": "Denně" }
-    },
-    "why": "Robustnost: ověřuje jen rozpoznání 'denně'→daily 'Denně' bez ohledu na zbytek věty (name nezadán → nekontroluje se). §11 A."
-  }
+	{
+		"input": "Zalévat květiny denně",
+		"expected": {
+			"name": "Zalévat květiny",
+			"recurrence": { "kind": "daily", "label": "Denně" }
+		},
+		"why": "§11 větev A (!hasK && !evenOdd): B('denně') → daily, repeatLabel 'Denně'. Žádné weekday → žádný startISO → bez due. Token 'denně' vyříznut RECVOCAB (rec truthy)."
+	},
+	{
+		"input": "denne zkontrolovat zálohy",
+		"expected": {
+			"name": "zkontrolovat zálohy",
+			"recurrence": { "kind": "daily", "label": "Denně" }
+		},
+		"why": "§11 A: B('denne') (bez diakritiky) → daily, 'Denně'. RECVOCAB 'denne' na začátku → vyříznuto, zbytek trim."
+	},
+	{
+		"input": "Zkontrolovat email každý den",
+		"expected": {
+			"name": "Zkontrolovat email",
+			"recurrence": { "kind": "daily", "label": "Každý den" }
+		},
+		"why": "§11 D fallback: hasK=true → větev A přeskočena; wd=null; žádné číslo; B('den') → daily, repeatLabel 'Každý den'. Bez weekday → bez startISO/due. 'každý'+'den' vyříznuty RECVOCAB."
+	},
+	{
+		"input": "cvičit každý den ráno",
+		"expected": {
+			"name": "cvičit ráno",
+			"recurrence": { "kind": "daily", "label": "Každý den" }
+		},
+		"why": "§11 D: B('den') → daily 'Každý den'. 'ráno' není v RECVOCAB → zůstává; 'každý' a 'den' vyříznuty, mezery sloučeny."
+	},
+	{
+		"input": "Reportovat stav týdně",
+		"expected": {
+			"name": "Reportovat stav",
+			"recurrence": { "kind": "weekly", "label": "Týdně" }
+		},
+		"why": "§11 A: B('týdně') → weekly, 'Týdně'. Žádný konkrétní den → bez weekday, bez startISO/due."
+	},
+	{
+		"input": "tydne porada tymu",
+		"expected": {
+			"name": "porada tymu",
+			"recurrence": { "kind": "weekly", "label": "Týdně" }
+		},
+		"why": "§11 A: B('tydne') (bez diakritiky) → weekly 'Týdně'. 'tymu' není opakovací slovo → zůstává."
+	},
+	{
+		"input": "Záloha serveru každý týden",
+		"expected": {
+			"name": "Záloha serveru",
+			"recurrence": { "kind": "weekly", "label": "Každý týden" }
+		},
+		"why": "§11 D: hasK → A přeskočeno; wd=null; B('t[ýy]den') → bi=false (žádné druh/dva/2) → weekly, repeatLabel 'Každý týden'. Bez weekday → bez due."
+	},
+	{
+		"input": "Platit nájem měsíčně",
+		"expected": {
+			"name": "Platit nájem",
+			"recurrence": { "kind": "monthly", "label": "Měsíčně" }
+		},
+		"why": "§11 A: B('měsíčně') → monthly, 'Měsíčně'. Bez startISO → bez due."
+	},
+	{
+		"input": "mesicne vyuctovani",
+		"expected": {
+			"name": "vyuctovani",
+			"recurrence": { "kind": "monthly", "label": "Měsíčně" }
+		},
+		"why": "§11 A: B('mesicne') (bez diakritiky) → monthly 'Měsíčně'. RECVOCAB 'mesicne' vyříznuto."
+	},
+	{
+		"input": "Generální úklid každý měsíc",
+		"expected": {
+			"name": "Generální úklid",
+			"recurrence": { "kind": "monthly", "label": "Každý měsíc" }
+		},
+		"why": "§11 D: hasK → A skip; wd=null; B('m[ěe]s[íi]c') → monthly, repeatLabel 'Každý měsíc'. Bez weekday/day → bez due."
+	},
+	{
+		"input": "Daňové přiznání ročně",
+		"expected": {
+			"name": "Daňové přiznání",
+			"recurrence": { "kind": "yearly", "label": "Ročně" }
+		},
+		"why": "§11 A: B('ročně') → yearly, 'Ročně'. Bez startISO → bez due."
+	},
+	{
+		"input": "rocne revize hasicaku",
+		"expected": {
+			"name": "revize hasicaku",
+			"recurrence": { "kind": "yearly", "label": "Ročně" }
+		},
+		"why": "§11 A: B('rocne') (bez diakritiky) → yearly 'Ročně'."
+	},
+	{
+		"input": "Obnovit doménu každý rok",
+		"expected": {
+			"name": "Obnovit doménu",
+			"recurrence": { "kind": "yearly", "label": "Každý rok" }
+		},
+		"why": "§11 D: hasK → A skip; wd=null; žádné měsíc/týden/den; B('rok') → yearly, repeatLabel 'Každý rok'. Bez due."
+	},
+	{
+		"input": "Týmová porada každou středu",
+		"expected": {
+			"name": "Týmová porada",
+			"due": "2026-07-01",
+			"recurrence": { "kind": "weekly", "weekday": 3, "label": "Každou středu" }
+		},
+		"why": "§11 B: wd=středa(d=3); inMonth=false; evenOdd=null; bi=false → weekly+weekday:3, label wd.every='Každou středu', startISO=weekdayDate(3,0). today=čt(getDay4): add=(3-4+7)%7=6 → 25.6+6=2026-07-01 → due. §8 nastaví dateKind=custom z startISO."
+	},
+	{
+		"input": "Stojací schůzka každé úterý",
+		"expected": {
+			"name": "Stojací schůzka",
+			"due": "2026-06-30",
+			"recurrence": { "kind": "weekly", "weekday": 2, "label": "Každé úterý" }
+		},
+		"why": "§11 B: wd=úterý(d=2), bi=false → weekly+weekday:2, label 'Každé úterý', start=weekdayDate(2,0): add=(2-4+7)%7=5 → 25.6+5=2026-06-30."
+	},
+	{
+		"input": "Úklid kuchyně každé pondělí",
+		"expected": {
+			"name": "Úklid kuchyně",
+			"due": "2026-06-29",
+			"recurrence": { "kind": "weekly", "weekday": 1, "label": "Každé pondělí" }
+		},
+		"why": "§11 B: wd=pondělí(d=1), bi=false → weekly+weekday:1, label 'Každé pondělí', start=weekdayDate(1,0): add=(1-4+7)%7=4 → 25.6+4=2026-06-29."
+	},
+	{
+		"input": "Lekce angličtiny každý čtvrtek",
+		"expected": {
+			"name": "Lekce angličtiny",
+			"due": "2026-07-02",
+			"recurrence": { "kind": "weekly", "weekday": 4, "label": "Každý čtvrtek" }
+		},
+		"why": "§11 B: wd=čtvrtek(d=4), bi=false → weekly+weekday:4, label wd.every='Každý čtvrtek', start=weekdayDate(4,0): add=(4-4+7)%7=0→7 (dnešní den → AŽ příští týden) → 25.6+7=2026-07-02."
+	},
+	{
+		"input": "Pizza večer každý pátek",
+		"expected": {
+			"name": "Pizza večer",
+			"due": "2026-06-26",
+			"recurrence": { "kind": "weekly", "weekday": 5, "label": "Každý pátek" }
+		},
+		"why": "§11 B: wd=pátek(d=5), bi=false → weekly+weekday:5, label 'Každý pátek', start=weekdayDate(5,0): add=(5-4+7)%7=1 → 25.6+1=2026-06-26."
+	},
+	{
+		"input": "Velký nákup každou sobotu",
+		"expected": {
+			"name": "Velký nákup",
+			"due": "2026-06-27",
+			"recurrence": { "kind": "weekly", "weekday": 6, "label": "Každou sobotu" }
+		},
+		"why": "§11 B: wd=sobota(d=6), bi=false → weekly+weekday:6, label 'Každou sobotu', start=weekdayDate(6,0): add=(6-4+7)%7=2 → 25.6+2=2026-06-27."
+	},
+	{
+		"input": "Volat babičce každou neděli",
+		"expected": {
+			"name": "Volat babičce",
+			"due": "2026-06-28",
+			"recurrence": { "kind": "weekly", "weekday": 0, "label": "Každou neděli" }
+		},
+		"why": "§11 B: wd=neděle(d=0), bi=false → weekly+weekday:0, label 'Každou neděli', start=weekdayDate(0,0): add=(0-4+7)%7=3 → 25.6+3=2026-06-28."
+	},
+	{
+		"input": "středu každou plavání",
+		"expected": {
+			"name": "plavání",
+			"due": "2026-07-01",
+			"recurrence": { "kind": "weekly", "weekday": 3, "label": "Každou středu" }
+		},
+		"why": "Pořadí tokenů nezáleží: B() i hasK hledají kdekoli. wd=středa(3), bi=false → weekly, 'Každou středu', start 2026-07-01. RECVOCAB vyřízne 'středu' i 'každou', zbude 'plavání'."
+	},
+	{
+		"input": "Retro každou druhou středu",
+		"expected": {
+			"name": "Retro",
+			"due": "2026-07-01",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 3,
+				"label": "Každou druhou středu"
+			}
+		},
+		"why": "§11 B default: wd=středa(3); bi=B('druh[éouýa]\\w*')→'druhou' true → biweekly+weekday:3, label wd.every2='Každou druhou středu', start=weekdayDate(3,0)=2026-07-01."
+	},
+	{
+		"input": "Sprint planning každé druhé úterý",
+		"expected": {
+			"name": "Sprint planning",
+			"due": "2026-06-30",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 2,
+				"label": "Každé druhé úterý"
+			}
+		},
+		"why": "§11 B: wd=úterý(2); bi true ('druhé') → biweekly+weekday:2, label 'Každé druhé úterý', start=weekdayDate(2,0)=2026-06-30."
+	},
+	{
+		"input": "Fakturace každý druhý pátek",
+		"expected": {
+			"name": "Fakturace",
+			"due": "2026-06-26",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 5,
+				"label": "Každý druhý pátek"
+			}
+		},
+		"why": "§11 B: wd=pátek(5); bi true ('druhý') → biweekly+weekday:5, label 'Každý druhý pátek', start=weekdayDate(5,0)=2026-06-26."
+	},
+	{
+		"input": "Výplata každé 2 týdny",
+		"expected": {
+			"name": "Výplata 2",
+			"recurrence": { "kind": "biweekly", "label": "Každé 2 týdny" }
+		},
+		"why": "§11 D: hasK; wd=null (žádný den); B('t[ýy]dn\\w*' přes 'týdny'); bi=B('druh...')||B('dva')||/\\b2\\b/.test(s) → '2' true → biweekly BEZ weekday, repeatLabel 'Každé 2 týdny'. Bez weekday → bez startISO/due. EDGE: číslice '2' NENÍ v RECVOCAB → zůstává v názvu → name 'Výplata 2'."
+	},
+	{
+		"input": "Mzdy každý druhý týden",
+		"expected": {
+			"name": "Mzdy",
+			"recurrence": { "kind": "biweekly", "label": "Každé 2 týdny" }
+		},
+		"why": "§11 D: hasK; wd=null; B('t[ýy]den')→'týden'; bi=B('druh[éouýa]\\w*')→'druhý' → biweekly BEZ weekday, label 'Každé 2 týdny'. Bez due. 'druhý'+'týden'+'každý' vyříznuty RECVOCAB."
+	},
+	{
+		"input": "Záloha databáze každou neděli",
+		"expected": {
+			"name": "Záloha databáze",
+			"due": "2026-06-28",
+			"recurrence": { "kind": "weekly", "weekday": 0, "label": "Každou neděli" }
+		},
+		"why": "§11 B: wd=neděle(0), bi=false → weekly+weekday:0, 'Každou neděli', start=2026-06-28 (add 3)."
+	},
+	{
+		"input": "úklid každou druhou sobotu",
+		"expected": {
+			"name": "úklid",
+			"due": "2026-06-27",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 6,
+				"label": "Každou druhou sobotu"
+			}
+		},
+		"why": "§11 B: wd=sobota(6); bi true ('druhou') → biweekly+weekday:6, label wd.every2='Každou druhou sobotu', start=weekdayDate(6,0)=2026-06-27."
+	},
+	{
+		"input": "Čtení knihy každý druhý čtvrtek",
+		"expected": {
+			"name": "Čtení knihy",
+			"due": "2026-07-02",
+			"recurrence": {
+				"kind": "biweekly",
+				"weekday": 4,
+				"label": "Každý druhý čtvrtek"
+			}
+		},
+		"why": "§11 B: wd=čtvrtek(4); bi true ('druhý') → biweekly+weekday:4, label 'Každý druhý čtvrtek', start=weekdayDate(4,0): add 0→7 (dnešní den → příští týden) → 2026-07-02."
+	},
+	{
+		"input": "denně bez názvu úkolu odstraním",
+		"expected": {
+			"recurrence": { "kind": "daily", "label": "Denně" }
+		},
+		"why": "Robustnost: ověřuje jen rozpoznání 'denně'→daily 'Denně' bez ohledu na zbytek věty (name nezadán → nekontroluje se). §11 A."
+	}
 ]

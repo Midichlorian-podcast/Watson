@@ -1,6 +1,6 @@
 {
-	"id": "080318ac-699d-42bc-9894-49aa18afea86",
-	"prevId": "6b70a89c-6c34-410a-9b45-1e04565ed0dc",
+	"id": "72c0a7c7-70c4-4ceb-9cf0-4f60fca2de8c",
+	"prevId": "080318ac-699d-42bc-9894-49aa18afea86",
 	"version": "7",
 	"dialect": "postgresql",
 	"tables": {
@@ -2535,6 +2535,12 @@
 					"primaryKey": false,
 					"notNull": false
 				},
+				"period": {
+					"name": "period",
+					"type": "varchar(60)",
+					"primaryKey": false,
+					"notNull": false
+				},
 				"periodic": {
 					"name": "periodic",
 					"type": "goal_periodic",
@@ -2542,6 +2548,24 @@
 					"primaryKey": false,
 					"notNull": true,
 					"default": "'none'"
+				},
+				"period_start": {
+					"name": "period_start",
+					"type": "timestamp with time zone",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"filter_person_id": {
+					"name": "filter_person_id",
+					"type": "uuid",
+					"primaryKey": false,
+					"notNull": false
+				},
+				"filter_keyword": {
+					"name": "filter_keyword",
+					"type": "varchar(120)",
+					"primaryKey": false,
+					"notNull": false
 				},
 				"owner_id": {
 					"name": "owner_id",
@@ -2595,6 +2619,15 @@
 					"columnsFrom": ["workspace_id"],
 					"columnsTo": ["id"],
 					"onDelete": "cascade",
+					"onUpdate": "no action"
+				},
+				"goals_filter_person_id_users_id_fk": {
+					"name": "goals_filter_person_id_users_id_fk",
+					"tableFrom": "goals",
+					"tableTo": "users",
+					"columnsFrom": ["filter_person_id"],
+					"columnsTo": ["id"],
+					"onDelete": "set null",
 					"onUpdate": "no action"
 				},
 				"goals_owner_id_users_id_fk": {

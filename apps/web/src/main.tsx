@@ -13,9 +13,9 @@ const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("#root nenalezen");
 
 createRoot(rootEl).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </StrictMode>,
+	<StrictMode>
+		<QueryClientProvider client={queryClient}>
+			<App />
+		</QueryClientProvider>
+	</StrictMode>,
 );

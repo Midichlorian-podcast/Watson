@@ -1,162 +1,204 @@
 [
-  {
-    "input": "připravit nabídku #Obchod",
-    "expected": { "name": "připravit nabídku", "projectId": "obchod" },
-    "why": "§10: /#(\\p{L}+)/u zachytí 'Obchod', přesná shoda (case-insensitive) s názvem projektu 'Obchod' → projectId 'obchod'. Token '#Obchod' se cut → name 'připravit nabídku'."
-  },
-  {
-    "input": "#Obchod zavolat klientovi",
-    "expected": { "name": "zavolat klientovi", "projectId": "obchod" },
-    "why": "§10: token na začátku. Exact match 'Obchod' → projectId 'obchod'. Po cutu a collapse mezer name 'zavolat klientovi'."
-  },
-  {
-    "input": "poslat fakturu #obchod",
-    "expected": { "name": "poslat fakturu", "projectId": "obchod" },
-    "why": "§10: porovnání je case-insensitive (name.toLowerCase()===hash[1].toLowerCase()), '#obchod' = 'Obchod' → projectId 'obchod', token pryč."
-  },
-  {
-    "input": "revize rozpočtu #OBCHOD",
-    "expected": { "name": "revize rozpočtu", "projectId": "obchod" },
-    "why": "§10: case-insensitive shoda i pro velká písmena → projectId 'obchod'."
-  },
-  {
-    "input": "rozeslat agendu #q3",
-    "expected": { "name": "rozeslat agendu 3", "projectId": null },
-    "why": "§10: /#(\\p{L}+)/u bere jen písmena → z '#q3' zachytí jen 'q' (3 je číslice). 'q' ≠ žádný název → projectId undefined. cut('#q') odřízne jen '#q', zbylé '3' zůstane v názvu → 'rozeslat agendu 3'. Víceslovný název 'Q3 plánování' přes # NEprojde."
-  },
-  {
-    "input": "rozeslat agendu #Q3",
-    "expected": { "name": "rozeslat agendu 3", "projectId": null },
-    "why": "§10: '#Q3' → \\p{L}+ zachytí 'Q', cut('#Q'), zbude '3'. 'Q' ≠ název → projectId undefined. Stejné jako #q3."
-  },
-  {
-    "input": "naplánovat sprint #web",
-    "expected": { "name": "naplánovat sprint", "projectId": null },
-    "why": "§10: '#web' zachytí 'web', ale projekt se jmenuje 'Web redesign' (víceslovný). 'web' ≠ 'Web redesign' → projectId undefined, ale token '#web' se cut vždy (cut mimo if) → name 'naplánovat sprint'."
-  },
-  {
-    "input": "doplnit podklady #marketing",
-    "expected": { "name": "doplnit podklady", "projectId": null },
-    "why": "§10: '#marketing' nemá přesnou shodu v PROJECTS → projectId undefined; token se přesto cut → name 'doplnit podklady'."
-  },
-  {
-    "input": "úkol #neznámý projekt",
-    "expected": { "name": "úkol projekt", "projectId": null },
-    "why": "§10: '#neznámý' → \\p{L}+ zachytí celé 'neznámý' (jen písmena), žádná shoda → projectId undefined. cut('#neznámý'), collapse mezer → 'úkol projekt'."
-  },
-  {
-    "input": "připravit prezentaci @Petra",
-    "expected": { "name": "připravit prezentaci", "personQueries": ["Petra"] },
-    "why": "§14/§12: /[@+](\\p{L}+)/gu zachytí 'Petra' → personQueries ['Petra'] (neresolvované). V cleanName se '@Petra' odstraní → name 'připravit prezentaci'."
-  },
-  {
-    "input": "připravit prezentaci +Petra",
-    "expected": { "name": "připravit prezentaci", "personQueries": ["Petra"] },
-    "why": "§14: '+' se chová identicky jako '@'. Query 'Petra', token odstraněn z cleanName."
-  },
-  {
-    "input": "@Tomáš zkontroluj smlouvu",
-    "expected": { "name": "zkontroluj smlouvu", "personQueries": ["Tomáš"] },
-    "why": "§14: '@Tomáš' s diakritikou → \\p{L}+ pokryje 'Tomáš' → query 'Tomáš'. Token na začátku odstraněn z cleanName, collapse → 'zkontroluj smlouvu'."
-  },
-  {
-    "input": "naplánovat schůzku @Petra @Tomáš",
-    "expected": { "name": "naplánovat schůzku", "personQueries": ["Petra", "Tomáš"] },
-    "why": "§12: are=/[@+](\\p{L}+)/gu iteruje přes všechny výskyty v pořadí → ['Petra','Tomáš']. Oba tokeny odstraněny z cleanName."
-  },
-  {
-    "input": "sdílet report +Jana @Tomáš",
-    "expected": { "name": "sdílet report", "personQueries": ["Jana", "Tomáš"] },
-    "why": "§12: pořadí dle výskytu, mix '+' a '@' → ['Jana','Tomáš']. Oba odstraněny z názvu."
-  },
-  {
-    "input": "ranní porada @jd",
-    "expected": { "name": "ranní porada", "personQueries": ["jd"] },
-    "why": "§14: query string je VERBATIM zachycené písmeno(a) po '@' — 'jd'. Parser neresolvuje (to dělá UI autocomplete), jen vrátí personQueries ['jd']. Token pryč z name."
-  },
-  {
-    "input": "odeslat nabídku #Obchod @Petra",
-    "expected": { "name": "odeslat nabídku", "projectId": "obchod", "personQueries": ["Petra"] },
-    "why": "Kombinace §10+§14: '#Obchod' → projectId 'obchod' (cut), '@Petra' → personQueries ['Petra'] (odstraněn v cleanName). name 'odeslat nabídku'."
-  },
-  {
-    "input": "@Tomáš revize webu #web",
-    "expected": { "name": "revize webu", "projectId": null, "personQueries": ["Tomáš"] },
-    "why": "§10: '#web' ≠ 'Web redesign' (víceslovný název) → projectId undefined, token '#web' se cut. §14: '@Tomáš' → personQueries ['Tomáš'], odstraněno z cleanName. Slovo 'webu' (bez #) zůstává → name 'revize webu'. Žádný datum/holý-den token zde není (vyhýbám se bareWd/RECVOCAB interakci)."
-  },
-  {
-    "input": "#Obchod",
-    "expected": { "name": "", "projectId": "obchod" },
-    "why": "Guard prázdného názvu (§12/§17): vstup je jen token. '#Obchod' → projectId 'obchod', cut → base prázdná → name ''."
-  },
-  {
-    "input": "@Petra",
-    "expected": { "name": "", "personQueries": ["Petra"] },
-    "why": "Guard: jen osoba. personQueries ['Petra'], v cleanName odstraněno → name ''. (liveName by '@Petra' ještě obsahoval, ale name=cleanName.)"
-  },
-  {
-    "input": "#Obchod @Petra p1",
-    "expected": { "name": "", "projectId": "obchod", "priority": 1, "personQueries": ["Petra"] },
-    "why": "Guard: vstup jen z tokenů. §3 'p1' → priority 1 (cut), §10 '#Obchod' → projectId 'obchod' (cut), §14 '@Petra' → query 'Petra' (odstraněn v cleanName). Vše pryč → name ''."
-  },
-  {
-    "input": "p2 #Obchod @Tomáš @Jana",
-    "expected": { "name": "", "projectId": "obchod", "priority": 2, "personQueries": ["Tomáš", "Jana"] },
-    "why": "Guard: samé tokeny. priority 2, projectId 'obchod', personQueries v pořadí ['Tomáš','Jana']. name ''."
-  },
-  {
-    "input": "schválit rozpočet p1 #Obchod @Petra @Tomáš",
-    "expected": { "name": "schválit rozpočet", "projectId": "obchod", "priority": 1, "personQueries": ["Petra", "Tomáš"] },
-    "why": "Plná kombinace: §3 p1→priority 1 (cut), §10 #Obchod→projectId 'obchod' (cut), §14 dvě osoby ['Petra','Tomáš']. Zbylý název 'schválit rozpočet'."
-  },
-  {
-    "input": "poslat #Obchod podklady @Petra dnes",
-    "expected": { "name": "poslat podklady", "projectId": "obchod", "personQueries": ["Petra"] },
-    "why": "Tokeny rozeseté uvnitř názvu: '#Obchod' cut, '@Petra' odstraněn v cleanName, 'dnes' (§7d) je datum-token a vyřízne se ze základu → zbývá 'poslat podklady' po collapse mezer. Testujeme jen name/projectId/personQueries (subset)."
-  },
-  {
-    "input": "report o Petře a Tomášovi",
-    "expected": { "name": "report o Petře a Tomášovi", "personQueries": null },
-    "why": "Negativní: jména bez '@'/'+' NEjsou osoby (parser nedělá NER). Žádný token → personQueries undefined, name beze změny."
-  },
-  {
-    "input": "diskuze o #obchodu na poradě",
-    "expected": { "name": "diskuze o na poradě", "projectId": null },
-    "why": "§10: '#obchodu' → \\p{L}+ zachytí 'obchodu' (pádový tvar), ≠ 'Obchod' (přesná shoda celého názvu, ne stem) → projectId undefined. Token '#obchodu' se přesto cut → 'diskuze o na poradě'."
-  },
-  {
-    "input": "e-mail na @petra.novakova",
-    "expected": { "name": "e-mail na .novakova", "personQueries": ["petra"] },
-    "why": "§14: /[@+](\\p{L}+)/ se zastaví na nepísmenném znaku '.' → query 'petra'. cleanName odstraní '@petra', tečka a 'novakova' zůstanou → 'e-mail na .novakova'. (Demonstruje, že query = jen souvislá písmena po '@'.)"
-  },
-  {
-    "input": "úkol c.j. 5 @Tomáš #Obchod",
-    "expected": { "name": "úkol c.j. 5", "projectId": "obchod", "personQueries": ["Tomáš"] },
-    "why": "Kombinace: '@Tomáš'→query 'Tomáš', '#Obchod'→projectId 'obchod' (cut). 'c.j. 5' zůstává (tečky bez čísla-měsíce nejsou datum: /\\b(\\d{1,2})\\.\\s*(\\d{1,2})\\./ nepasuje na 'c.j.'). name 'úkol c.j. 5'."
-  },
-  {
-    "input": "připravit #Obchod nabídku #web",
-    "expected": { "name": "připravit nabídku #web", "projectId": "obchod" },
-    "why": "§10: hash=work.match bere PRVNÍ výskyt → '#Obchod' (exact) → projectId 'obchod', cut jen prvního výskytu (replace nahrazuje jen první). Druhý '#web' parser už nevidí (jen jeden match) → zůstane v názvu. name 'připravit nabídku #web'."
-  },
-  {
-    "input": "@Petra @Petra duplicitní zmínka",
-    "expected": { "name": "duplicitní zmínka", "personQueries": ["Petra", "Petra"] },
-    "why": "§12: iterátor /[@+](\\p{L}+)/gu projde OBA výskyty → personQueries ['Petra','Petra'] (deduplikace je věc UI, ne parseru). cleanName regex /[@+]\\p{L}+/gu odstraní oba → 'duplicitní zmínka'."
-  },
-  {
-    "input": "nový web #web @Jana p3",
-    "expected": { "name": "nový web", "projectId": null, "priority": 3, "personQueries": ["Jana"] },
-    "why": "§10: '#web'≠'Web redesign'→projectId undefined, token cut. §3 p3→priority 3 (cut). §14 '@Jana'→query 'Jana'. Slovo 'web' (bez #) v názvu zůstává → name 'nový web'."
-  },
-  {
-    "input": "+Tomáš",
-    "expected": { "name": "", "personQueries": ["Tomáš"] },
-    "why": "Guard: jen '+osoba'. query 'Tomáš', odstraněno z cleanName → name ''."
-  },
-  {
-    "input": "#Web",
-    "expected": { "name": "", "projectId": null },
-    "why": "§10: '#Web' → query 'Web' ≠ 'Web redesign' → projectId undefined. Token cut, vstup jen z tokenu → name '' (guard prázdného názvu)."
-  }
+	{
+		"input": "připravit nabídku #Obchod",
+		"expected": { "name": "připravit nabídku", "projectId": "obchod" },
+		"why": "§10: /#(\\p{L}+)/u zachytí 'Obchod', přesná shoda (case-insensitive) s názvem projektu 'Obchod' → projectId 'obchod'. Token '#Obchod' se cut → name 'připravit nabídku'."
+	},
+	{
+		"input": "#Obchod zavolat klientovi",
+		"expected": { "name": "zavolat klientovi", "projectId": "obchod" },
+		"why": "§10: token na začátku. Exact match 'Obchod' → projectId 'obchod'. Po cutu a collapse mezer name 'zavolat klientovi'."
+	},
+	{
+		"input": "poslat fakturu #obchod",
+		"expected": { "name": "poslat fakturu", "projectId": "obchod" },
+		"why": "§10: porovnání je case-insensitive (name.toLowerCase()===hash[1].toLowerCase()), '#obchod' = 'Obchod' → projectId 'obchod', token pryč."
+	},
+	{
+		"input": "revize rozpočtu #OBCHOD",
+		"expected": { "name": "revize rozpočtu", "projectId": "obchod" },
+		"why": "§10: case-insensitive shoda i pro velká písmena → projectId 'obchod'."
+	},
+	{
+		"input": "rozeslat agendu #q3",
+		"expected": { "name": "rozeslat agendu 3", "projectId": null },
+		"why": "§10: /#(\\p{L}+)/u bere jen písmena → z '#q3' zachytí jen 'q' (3 je číslice). 'q' ≠ žádný název → projectId undefined. cut('#q') odřízne jen '#q', zbylé '3' zůstane v názvu → 'rozeslat agendu 3'. Víceslovný název 'Q3 plánování' přes # NEprojde."
+	},
+	{
+		"input": "rozeslat agendu #Q3",
+		"expected": { "name": "rozeslat agendu 3", "projectId": null },
+		"why": "§10: '#Q3' → \\p{L}+ zachytí 'Q', cut('#Q'), zbude '3'. 'Q' ≠ název → projectId undefined. Stejné jako #q3."
+	},
+	{
+		"input": "naplánovat sprint #web",
+		"expected": { "name": "naplánovat sprint", "projectId": null },
+		"why": "§10: '#web' zachytí 'web', ale projekt se jmenuje 'Web redesign' (víceslovný). 'web' ≠ 'Web redesign' → projectId undefined, ale token '#web' se cut vždy (cut mimo if) → name 'naplánovat sprint'."
+	},
+	{
+		"input": "doplnit podklady #marketing",
+		"expected": { "name": "doplnit podklady", "projectId": null },
+		"why": "§10: '#marketing' nemá přesnou shodu v PROJECTS → projectId undefined; token se přesto cut → name 'doplnit podklady'."
+	},
+	{
+		"input": "úkol #neznámý projekt",
+		"expected": { "name": "úkol projekt", "projectId": null },
+		"why": "§10: '#neznámý' → \\p{L}+ zachytí celé 'neznámý' (jen písmena), žádná shoda → projectId undefined. cut('#neznámý'), collapse mezer → 'úkol projekt'."
+	},
+	{
+		"input": "připravit prezentaci @Petra",
+		"expected": { "name": "připravit prezentaci", "personQueries": ["Petra"] },
+		"why": "§14/§12: /[@+](\\p{L}+)/gu zachytí 'Petra' → personQueries ['Petra'] (neresolvované). V cleanName se '@Petra' odstraní → name 'připravit prezentaci'."
+	},
+	{
+		"input": "připravit prezentaci +Petra",
+		"expected": { "name": "připravit prezentaci", "personQueries": ["Petra"] },
+		"why": "§14: '+' se chová identicky jako '@'. Query 'Petra', token odstraněn z cleanName."
+	},
+	{
+		"input": "@Tomáš zkontroluj smlouvu",
+		"expected": { "name": "zkontroluj smlouvu", "personQueries": ["Tomáš"] },
+		"why": "§14: '@Tomáš' s diakritikou → \\p{L}+ pokryje 'Tomáš' → query 'Tomáš'. Token na začátku odstraněn z cleanName, collapse → 'zkontroluj smlouvu'."
+	},
+	{
+		"input": "naplánovat schůzku @Petra @Tomáš",
+		"expected": {
+			"name": "naplánovat schůzku",
+			"personQueries": ["Petra", "Tomáš"]
+		},
+		"why": "§12: are=/[@+](\\p{L}+)/gu iteruje přes všechny výskyty v pořadí → ['Petra','Tomáš']. Oba tokeny odstraněny z cleanName."
+	},
+	{
+		"input": "sdílet report +Jana @Tomáš",
+		"expected": { "name": "sdílet report", "personQueries": ["Jana", "Tomáš"] },
+		"why": "§12: pořadí dle výskytu, mix '+' a '@' → ['Jana','Tomáš']. Oba odstraněny z názvu."
+	},
+	{
+		"input": "ranní porada @jd",
+		"expected": { "name": "ranní porada", "personQueries": ["jd"] },
+		"why": "§14: query string je VERBATIM zachycené písmeno(a) po '@' — 'jd'. Parser neresolvuje (to dělá UI autocomplete), jen vrátí personQueries ['jd']. Token pryč z name."
+	},
+	{
+		"input": "odeslat nabídku #Obchod @Petra",
+		"expected": {
+			"name": "odeslat nabídku",
+			"projectId": "obchod",
+			"personQueries": ["Petra"]
+		},
+		"why": "Kombinace §10+§14: '#Obchod' → projectId 'obchod' (cut), '@Petra' → personQueries ['Petra'] (odstraněn v cleanName). name 'odeslat nabídku'."
+	},
+	{
+		"input": "@Tomáš revize webu #web",
+		"expected": {
+			"name": "revize webu",
+			"projectId": null,
+			"personQueries": ["Tomáš"]
+		},
+		"why": "§10: '#web' ≠ 'Web redesign' (víceslovný název) → projectId undefined, token '#web' se cut. §14: '@Tomáš' → personQueries ['Tomáš'], odstraněno z cleanName. Slovo 'webu' (bez #) zůstává → name 'revize webu'. Žádný datum/holý-den token zde není (vyhýbám se bareWd/RECVOCAB interakci)."
+	},
+	{
+		"input": "#Obchod",
+		"expected": { "name": "", "projectId": "obchod" },
+		"why": "Guard prázdného názvu (§12/§17): vstup je jen token. '#Obchod' → projectId 'obchod', cut → base prázdná → name ''."
+	},
+	{
+		"input": "@Petra",
+		"expected": { "name": "", "personQueries": ["Petra"] },
+		"why": "Guard: jen osoba. personQueries ['Petra'], v cleanName odstraněno → name ''. (liveName by '@Petra' ještě obsahoval, ale name=cleanName.)"
+	},
+	{
+		"input": "#Obchod @Petra p1",
+		"expected": {
+			"name": "",
+			"projectId": "obchod",
+			"priority": 1,
+			"personQueries": ["Petra"]
+		},
+		"why": "Guard: vstup jen z tokenů. §3 'p1' → priority 1 (cut), §10 '#Obchod' → projectId 'obchod' (cut), §14 '@Petra' → query 'Petra' (odstraněn v cleanName). Vše pryč → name ''."
+	},
+	{
+		"input": "p2 #Obchod @Tomáš @Jana",
+		"expected": {
+			"name": "",
+			"projectId": "obchod",
+			"priority": 2,
+			"personQueries": ["Tomáš", "Jana"]
+		},
+		"why": "Guard: samé tokeny. priority 2, projectId 'obchod', personQueries v pořadí ['Tomáš','Jana']. name ''."
+	},
+	{
+		"input": "schválit rozpočet p1 #Obchod @Petra @Tomáš",
+		"expected": {
+			"name": "schválit rozpočet",
+			"projectId": "obchod",
+			"priority": 1,
+			"personQueries": ["Petra", "Tomáš"]
+		},
+		"why": "Plná kombinace: §3 p1→priority 1 (cut), §10 #Obchod→projectId 'obchod' (cut), §14 dvě osoby ['Petra','Tomáš']. Zbylý název 'schválit rozpočet'."
+	},
+	{
+		"input": "poslat #Obchod podklady @Petra dnes",
+		"expected": {
+			"name": "poslat podklady",
+			"projectId": "obchod",
+			"personQueries": ["Petra"]
+		},
+		"why": "Tokeny rozeseté uvnitř názvu: '#Obchod' cut, '@Petra' odstraněn v cleanName, 'dnes' (§7d) je datum-token a vyřízne se ze základu → zbývá 'poslat podklady' po collapse mezer. Testujeme jen name/projectId/personQueries (subset)."
+	},
+	{
+		"input": "report o Petře a Tomášovi",
+		"expected": { "name": "report o Petře a Tomášovi", "personQueries": null },
+		"why": "Negativní: jména bez '@'/'+' NEjsou osoby (parser nedělá NER). Žádný token → personQueries undefined, name beze změny."
+	},
+	{
+		"input": "diskuze o #obchodu na poradě",
+		"expected": { "name": "diskuze o na poradě", "projectId": null },
+		"why": "§10: '#obchodu' → \\p{L}+ zachytí 'obchodu' (pádový tvar), ≠ 'Obchod' (přesná shoda celého názvu, ne stem) → projectId undefined. Token '#obchodu' se přesto cut → 'diskuze o na poradě'."
+	},
+	{
+		"input": "e-mail na @petra.novakova",
+		"expected": { "name": "e-mail na .novakova", "personQueries": ["petra"] },
+		"why": "§14: /[@+](\\p{L}+)/ se zastaví na nepísmenném znaku '.' → query 'petra'. cleanName odstraní '@petra', tečka a 'novakova' zůstanou → 'e-mail na .novakova'. (Demonstruje, že query = jen souvislá písmena po '@'.)"
+	},
+	{
+		"input": "úkol c.j. 5 @Tomáš #Obchod",
+		"expected": {
+			"name": "úkol c.j. 5",
+			"projectId": "obchod",
+			"personQueries": ["Tomáš"]
+		},
+		"why": "Kombinace: '@Tomáš'→query 'Tomáš', '#Obchod'→projectId 'obchod' (cut). 'c.j. 5' zůstává (tečky bez čísla-měsíce nejsou datum: /\\b(\\d{1,2})\\.\\s*(\\d{1,2})\\./ nepasuje na 'c.j.'). name 'úkol c.j. 5'."
+	},
+	{
+		"input": "připravit #Obchod nabídku #web",
+		"expected": { "name": "připravit nabídku #web", "projectId": "obchod" },
+		"why": "§10: hash=work.match bere PRVNÍ výskyt → '#Obchod' (exact) → projectId 'obchod', cut jen prvního výskytu (replace nahrazuje jen první). Druhý '#web' parser už nevidí (jen jeden match) → zůstane v názvu. name 'připravit nabídku #web'."
+	},
+	{
+		"input": "@Petra @Petra duplicitní zmínka",
+		"expected": {
+			"name": "duplicitní zmínka",
+			"personQueries": ["Petra", "Petra"]
+		},
+		"why": "§12: iterátor /[@+](\\p{L}+)/gu projde OBA výskyty → personQueries ['Petra','Petra'] (deduplikace je věc UI, ne parseru). cleanName regex /[@+]\\p{L}+/gu odstraní oba → 'duplicitní zmínka'."
+	},
+	{
+		"input": "nový web #web @Jana p3",
+		"expected": {
+			"name": "nový web",
+			"projectId": null,
+			"priority": 3,
+			"personQueries": ["Jana"]
+		},
+		"why": "§10: '#web'≠'Web redesign'→projectId undefined, token cut. §3 p3→priority 3 (cut). §14 '@Jana'→query 'Jana'. Slovo 'web' (bez #) v názvu zůstává → name 'nový web'."
+	},
+	{
+		"input": "+Tomáš",
+		"expected": { "name": "", "personQueries": ["Tomáš"] },
+		"why": "Guard: jen '+osoba'. query 'Tomáš', odstraněno z cleanName → name ''."
+	},
+	{
+		"input": "#Web",
+		"expected": { "name": "", "projectId": null },
+		"why": "§10: '#Web' → query 'Web' ≠ 'Web redesign' → projectId undefined. Token cut, vstup jen z tokenu → name '' (guard prázdného názvu)."
+	}
 ]

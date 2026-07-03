@@ -6,120 +6,121 @@
  * tělo karty = výchozí barva projektu NEBO per-uživatelská barva úkolu.
  */
 :root {
-  /* ── Brand ───────────────────────────────────────────────── */
-  --w-navy: #17283f;
-  --w-navy-2: #24395a;
-  --w-brass: #c68a3e; /* akcent / velké prvky */
-  --w-brass-text: #a8722e; /* tmavší pro text (kontrast) */
-  --w-brass-soft: rgba(198, 138, 62, 0.13);
+	/* ── Brand ───────────────────────────────────────────────── */
+	--w-navy: #17283f;
+	--w-navy-2: #24395a;
+	--w-brass: #c68a3e; /* akcent / velké prvky */
+	--w-brass-text: #a8722e; /* tmavší pro text (kontrast) */
+	--w-brass-soft: rgba(198, 138, 62, 0.13);
 
-  /* ── Plochy ──────────────────────────────────────────────── */
-  --w-paper: #f5f4f0; /* pozadí appky (--bg) */
-  --w-card: #ffffff; /* karty/panely (--panel) */
-  --w-panel-2: #faf9f6; /* jemně odlišený panel */
-  --w-ink: #16161a;
-  --w-ink-2: #55554f;
-  --w-ink-3: #8c8a82;
-  --w-line: #e7e5df;
+	/* ── Plochy ──────────────────────────────────────────────── */
+	--w-paper: #f5f4f0; /* pozadí appky (--bg) */
+	--w-card: #ffffff; /* karty/panely (--panel) */
+	--w-panel-2: #faf9f6; /* jemně odlišený panel */
+	--w-ink: #16161a;
+	--w-ink-2: #55554f;
+	--w-ink-3: #8c8a82;
+	--w-line: #e7e5df;
 
-  /* ── Sidebar (tmavě navy) ────────────────────────────────── */
-  --w-sidebar: #17283f;
-  --w-sidebar-ink: #ffffff;
-  --w-sidebar-ink-2: rgba(255, 255, 255, 0.62);
-  --w-sidebar-line: rgba(255, 255, 255, 0.1);
+	/* ── Sidebar (tmavě navy) ────────────────────────────────── */
+	--w-sidebar: #17283f;
+	--w-sidebar-ink: #ffffff;
+	--w-sidebar-ink-2: rgba(255, 255, 255, 0.62);
+	--w-sidebar-line: rgba(255, 255, 255, 0.1);
 
-  /* ── Sémantické ──────────────────────────────────────────── */
-  --w-success: #2e9c6e;
-  --w-success-soft: #eaf6f0;
-  --w-success-ink: #1c7a52;
-  --w-overdue: #c2473c; /* po termínu */
-  --w-overdue-soft: #fbedea;
-  --w-avatar: #17283f;
+	/* ── Sémantické ──────────────────────────────────────────── */
+	--w-success: #2e9c6e;
+	--w-success-soft: #eaf6f0;
+	--w-success-ink: #1c7a52;
+	--w-overdue: #c2473c; /* po termínu */
+	--w-overdue-soft: #fbedea;
+	--w-avatar: #17283f;
 
-  /* ── Priorita = barva (levý okraj karty) ─────────────────── */
-  --w-p1: #d8473d; /* červená */
-  --w-p2: #e0a32e; /* žlutá */
-  --w-p3: #2a6fdb; /* modrá */
-  --w-p4: #9aa0a8; /* šedá */
+	/* ── Priorita = barva (levý okraj karty) ─────────────────── */
+	--w-p1: #d8473d; /* červená */
+	--w-p2: #e0a32e; /* žlutá */
+	--w-p3: #2a6fdb; /* modrá */
+	--w-p4: #9aa0a8; /* šedá */
 
-  /* ── Uživatelská paleta barev úkolů (10; tělo karty / per-uživatel) ── */
-  --w-c-rose: #d8473d;
-  --w-c-amber: #e0a32e;
-  --w-c-lime: #7aa32e;
-  --w-c-green: #2e9c6e;
-  --w-c-teal: #1f9a9a;
-  --w-c-sky: #2aa3db;
-  --w-c-blue: #2a6fdb;
-  --w-c-violet: #7c5cfc;
-  --w-c-plum: #b8487e;
-  --w-c-slate: #6b7280;
+	/* ── Uživatelská paleta barev úkolů (10; tělo karty / per-uživatel) ── */
+	--w-c-rose: #d8473d;
+	--w-c-amber: #e0a32e;
+	--w-c-lime: #7aa32e;
+	--w-c-green: #2e9c6e;
+	--w-c-teal: #1f9a9a;
+	--w-c-sky: #2aa3db;
+	--w-c-blue: #2a6fdb;
+	--w-c-violet: #7c5cfc;
+	--w-c-plum: #b8487e;
+	--w-c-slate: #6b7280;
 
-  /* ── Typografie ──────────────────────────────────────────── */
-  --w-font-display: "Montserrat", ui-sans-serif, system-ui, sans-serif;
-  --w-font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --w-font-mono: ui-monospace, Menlo, Consolas, monospace;
-  --w-text-xs: 0.6875rem;
-  --w-text-sm: 0.8125rem;
-  --w-text-base: 0.9375rem;
-  --w-text-lg: 1.125rem;
-  --w-text-xl: 1.5rem;
-  --w-text-2xl: 1.875rem;
-  --w-text-3xl: 3rem;
-  --w-weight-body: 400;
-  --w-weight-medium: 500;
-  --w-weight-semibold: 600;
-  --w-weight-display: 800;
+	/* ── Typografie ──────────────────────────────────────────── */
+	--w-font-display: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+	--w-font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+	--w-font-mono: ui-monospace, Menlo, Consolas, monospace;
+	--w-text-xs: 0.6875rem;
+	--w-text-sm: 0.8125rem;
+	--w-text-base: 0.9375rem;
+	--w-text-lg: 1.125rem;
+	--w-text-xl: 1.5rem;
+	--w-text-2xl: 1.875rem;
+	--w-text-3xl: 3rem;
+	--w-weight-body: 400;
+	--w-weight-medium: 500;
+	--w-weight-semibold: 600;
+	--w-weight-display: 800;
 
-  /* ── Spacing (4px base) ──────────────────────────────────── */
-  --w-space-1: 4px;
-  --w-space-2: 8px;
-  --w-space-3: 12px;
-  --w-space-4: 16px;
-  --w-space-5: 24px;
-  --w-space-6: 32px;
-  --w-space-7: 48px;
-  --w-space-8: 64px;
+	/* ── Spacing (4px base) ──────────────────────────────────── */
+	--w-space-1: 4px;
+	--w-space-2: 8px;
+	--w-space-3: 12px;
+	--w-space-4: 16px;
+	--w-space-5: 24px;
+	--w-space-6: 32px;
+	--w-space-7: 48px;
+	--w-space-8: 64px;
 
-  /* ── Hustota (řádky) — Vzdušné default / Vyvážené ────────── */
-  --w-row-py: 15px; /* Vzdušné; Vyvážené = 11px */
-  --w-card-pad: 18px; /* Vzdušné; Vyvážené = 15px */
+	/* ── Hustota (řádky) — Vzdušné default / Vyvážené ────────── */
+	--w-row-py: 15px; /* Vzdušné; Vyvážené = 11px */
+	--w-card-pad: 18px; /* Vzdušné; Vyvážené = 15px */
 
-  /* ── Tvar ────────────────────────────────────────────────── */
-  --w-radius: 16px;
-  --w-radius-sm: 10px;
-  --w-radius-pill: 999px;
+	/* ── Tvar ────────────────────────────────────────────────── */
+	--w-radius: 16px;
+	--w-radius-sm: 10px;
+	--w-radius-pill: 999px;
 
-  /* ── Stíny ───────────────────────────────────────────────── */
-  --w-shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.05);
-  --w-shadow: 0 1px 2px rgba(20, 20, 30, 0.04), 0 12px 32px rgba(23, 40, 63, 0.08);
+	/* ── Stíny ───────────────────────────────────────────────── */
+	--w-shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.05);
+	--w-shadow:
+		0 1px 2px rgba(20, 20, 30, 0.04), 0 12px 32px rgba(23, 40, 63, 0.08);
 }
 
 /* ── Tmavý režim — KOMPLETNÍ paleta (prototyp ř. 28–39) ───── */
 [data-w-theme="dark"] {
-  --w-paper: #0e131a;
-  --w-card: #171f29;
-  --w-panel-2: #1e2832;
-  --w-sidebar: #0a1019;
-  --w-sidebar-ink: #eef1f4;
-  --w-sidebar-ink-2: rgba(232, 238, 244, 0.56);
-  --w-sidebar-line: rgba(255, 255, 255, 0.08);
-  --w-ink: #eceef1;
-  --w-ink-2: #a6aeba;
-  --w-ink-3: #74808d;
-  --w-line: #28323e;
-  --w-brass: #d6a460;
-  --w-brass-text: #dcab68;
-  --w-brass-soft: rgba(214, 164, 96, 0.16);
-  --w-success: #39ad7d;
-  --w-success-soft: rgba(46, 156, 110, 0.16);
-  --w-success-ink: #6fd2a6;
-  --w-overdue: #e07365;
-  --w-overdue-soft: rgba(224, 115, 101, 0.17);
-  --w-avatar: #33455f;
-  --w-p1: #e0635a;
-  --w-p2: #e6b557;
-  --w-p3: #5a90e8;
-  --w-p4: #8a93a0;
-  --w-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 36px rgba(0, 0, 0, 0.42);
-  --w-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+	--w-paper: #0e131a;
+	--w-card: #171f29;
+	--w-panel-2: #1e2832;
+	--w-sidebar: #0a1019;
+	--w-sidebar-ink: #eef1f4;
+	--w-sidebar-ink-2: rgba(232, 238, 244, 0.56);
+	--w-sidebar-line: rgba(255, 255, 255, 0.08);
+	--w-ink: #eceef1;
+	--w-ink-2: #a6aeba;
+	--w-ink-3: #74808d;
+	--w-line: #28323e;
+	--w-brass: #d6a460;
+	--w-brass-text: #dcab68;
+	--w-brass-soft: rgba(214, 164, 96, 0.16);
+	--w-success: #39ad7d;
+	--w-success-soft: rgba(46, 156, 110, 0.16);
+	--w-success-ink: #6fd2a6;
+	--w-overdue: #e07365;
+	--w-overdue-soft: rgba(224, 115, 101, 0.17);
+	--w-avatar: #33455f;
+	--w-p1: #e0635a;
+	--w-p2: #e6b557;
+	--w-p3: #5a90e8;
+	--w-p4: #8a93a0;
+	--w-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 36px rgba(0, 0, 0, 0.42);
+	--w-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
 }

@@ -1,187 +1,196 @@
 [
-  {
-    "input": "Schůzka s týmem 90 min",
-    "expected": { "name": "Schůzka s týmem", "durationMin": 90 },
-    "why": "5a /(?:po dobu\\s+)?(\\d+)\\s*min\\w*/i → dur=+'90'=90. Token '90 min' vyříznut cut() → name 'Schůzka s týmem'."
-  },
-  {
-    "input": "Připravit prezentaci 45 minut",
-    "expected": { "name": "Připravit prezentaci", "durationMin": 45 },
-    "why": "5a, \\w* pokryje koncovku 'minut'. dur=45. Token vyříznut."
-  },
-  {
-    "input": "Telefonát klientovi 30 min",
-    "expected": { "name": "Telefonát klientovi", "durationMin": 30 },
-    "why": "5a dur=30; name bez tokenu."
-  },
-  {
-    "input": "Prezentace po dobu 90 minut",
-    "expected": { "name": "Prezentace", "durationMin": 90 },
-    "why": "5a má volitelný prefix '(?:po dobu\\s+)?' a číslo 90 → match 'po dobu 90 minut', dur=90. 5b se nedostane ke slovu (digit chytí 5a). name 'Prezentace'."
-  },
-  {
-    "input": "Workshop po dobu 120 minut",
-    "expected": { "name": "Workshop", "durationMin": 120 },
-    "why": "5a s prefixem 'po dobu', dur=120."
-  },
-  {
-    "input": "Code review po dobu šedesáti minut",
-    "expected": { "name": "Code review", "durationMin": 60 },
-    "why": "5a vyžaduje \\d+ → selže (slovo). 5b /po dobu\\s+([\\p{L}]+(?:\\s+[\\p{L}]+)?)\\s*minut\\w*/iu → mm[1]='šedesáti', czNum='šedesáti'=60 (§13 tens). dur=60. name 'Code review'."
-  },
-  {
-    "input": "Hovor po dobu dvaceti minut",
-    "expected": { "name": "Hovor", "durationMin": 20 },
-    "why": "5b, czNum('dvaceti')=20 (§13 tens). dur=20."
-  },
-  {
-    "input": "Brainstorming po dobu třiceti minut",
-    "expected": { "name": "Brainstorming", "durationMin": 30 },
-    "why": "5b, czNum('třiceti')=30. dur=30."
-  },
-  {
-    "input": "Pauza šedesát minut",
-    "expected": { "name": "", "durationMin": 60 },
-    "why": "5c GREEDY edge: skupina ([\\p{L}]+(?:\\s+[\\p{L}]+)?) sebere 2 slova před 'minut' → mm[1]='Pauza šedesát'. czNum přes tens-scan najde 'šedesát'=60 (slovo 'pauza' ignoruje). dur=60. cut() vyřízne celé mm[0]='Pauza šedesát minut' → name '' (i task slovo zmizí). Doloženo simulací implementace."
-  },
-  {
-    "input": "patnáct minut protažení",
-    "expected": { "name": "protažení", "durationMin": 15 },
-    "why": "5c, mm[1]='patnáct', czNum('patnáct')=15 (§13 teens). dur=15. name 'protažení'."
-  },
-  {
-    "input": "deset minut pauza",
-    "expected": { "name": "pauza", "durationMin": 10 },
-    "why": "5c, czNum('deset')=10 (§13 teens). dur=10."
-  },
-  {
-    "input": "Oběd s kolegou půl hodiny",
-    "expected": { "name": "Oběd s kolegou", "durationMin": 30 },
-    "why": "5a–5c selžou (žádné 'min'/číslo-minut). 5d /(?:po dobu\\s+)?p[ůu]l\\s+hodin\\w*/i → dur=30 (fixně). Token 'půl hodiny' vyříznut → name 'Oběd s kolegou'."
-  },
-  {
-    "input": "Káva s Petrou pul hodiny",
-    "expected": { "name": "Káva s Petrou", "durationMin": 30 },
-    "why": "5d, p[ůu]l matchne i 'pul' bez diakritiky. dur=30."
-  },
-  {
-    "input": "Sezení po dobu půl hodiny",
-    "expected": { "name": "Sezení", "durationMin": 30 },
-    "why": "5d s volitelným prefixem 'po dobu', dur=30. name 'Sezení'."
-  },
-  {
-    "input": "Standup 1.5 h",
-    "expected": { "name": "Standup", "durationMin": 90 },
-    "why": "5e /(?:po dobu\\s+)?(\\d+(?:[.,]\\d+)?)\\s*(?:hodin\\w*|hod\\w*|h)\\b/i → parseFloat('1.5')=1.5, round(1.5*60)=90. 'h' na \\b. name 'Standup'."
-  },
-  {
-    "input": "Plánování 1,5 hod",
-    "expected": { "name": "Plánování", "durationMin": 90 },
-    "why": "5e, čárka→tečka přes replace(',','.'), parseFloat('1.5')=1.5, round(*60)=90. Varianta 'hod\\w*'."
-  },
-  {
-    "input": "Workshop 2 hodiny",
-    "expected": { "name": "Workshop", "durationMin": 120 },
-    "why": "5e, parseFloat('2')=2, round(2*60)=120. 'hodiny' přes 'hodin\\w*'. name 'Workshop'."
-  },
-  {
-    "input": "Trénink 3 hodiny",
-    "expected": { "name": "Trénink", "durationMin": 180 },
-    "why": "5e, round(3*60)=180."
-  },
-  {
-    "input": "Focus blok 2h",
-    "expected": { "name": "Focus blok", "durationMin": 120 },
-    "why": "5e, \\s* dovolí nula mezer před 'h', '2h' → round(2*60)=120. name 'Focus blok'."
-  },
-  {
-    "input": "Retro 1 hod",
-    "expected": { "name": "Retro", "durationMin": 60 },
-    "why": "5e, parseFloat('1')=1, round(60)=60. 'hod' přes 'hod\\w*'."
-  },
-  {
-    "input": "Schůzka po dobu dvou hodin",
-    "expected": { "name": "Schůzka", "durationMin": 120 },
-    "why": "5a–5e selžou (žádný digit ani 'min'/'půl'; 'dvou' není číslice → 5e regex (\\d+...) nematchne). 5f /po dobu\\s+([\\p{L}]+)\\s+hodin\\w*/iu → czNum('dvou')=2 (§13 ones), dur=2*60=120. name 'Schůzka'."
-  },
-  {
-    "input": "Workshop po dobu tří hodin",
-    "expected": { "name": "Workshop", "durationMin": 180 },
-    "why": "5f, czNum('tří')=3 (§13 ones), dur=3*60=180."
-  },
-  {
-    "input": "Porada po dobu čtyř hodin",
-    "expected": { "name": "Porada", "durationMin": 240 },
-    "why": "5f, czNum('čtyř')=4 (§13 ones), dur=4*60=240."
-  },
-  {
-    "input": "Záloha serveru 25 hodin",
-    "expected": { "name": "Záloha serveru", "durationMin": 1500 },
-    "why": "NEGATIVNÍ/edge: trvání NEMÁ horní strop <=23 jako čas (§4). 5e round(25*60)=1500. Token '25 hodin' vyříznut → name 'Záloha serveru'."
-  },
-  {
-    "input": "Render videa 1,25 h",
-    "expected": { "name": "Render videa", "durationMin": 75 },
-    "why": "5e desetinné: čárka→tečka, parseFloat('1.25')=1.25, round(1.25*60)=round(75)=75."
-  },
-  {
-    "input": "Export dat 0,5 hodiny",
-    "expected": { "name": "Export dat", "durationMin": 30 },
-    "why": "5e, parseFloat('0.5')=0.5, round(30)=30. 'hodiny' přes 'hodin\\w*'."
-  },
-  {
-    "input": "Komprese 1,1 h",
-    "expected": { "name": "Komprese", "durationMin": 66 },
-    "why": "5e zaokrouhlení: round(1.1*60)=round(66)=66. Ověřuje Math.round na nedělitelném výsledku."
-  },
-  {
-    "input": "Test 2,5 hodiny",
-    "expected": { "name": "Test", "durationMin": 150 },
-    "why": "5e, round(2.5*60)=150."
-  },
-  {
-    "input": "Migrace 1.75 hod",
-    "expected": { "name": "Migrace", "durationMin": 105 },
-    "why": "5e, round(1.75*60)=round(105)=105."
-  },
-  {
-    "input": "Konzultace 90 minut s Tomášem",
-    "expected": { "name": "Konzultace s Tomášem", "durationMin": 90 },
-    "why": "5a (digit) má přednost před slovními minutami, dur=90. cut() nahradí PRVNÍ výskyt '90 minut' → name 'Konzultace s Tomášem' (zbytek věty zachován)."
-  },
-  {
-    "input": "Trénink čtyřicet minut",
-    "expected": { "name": "", "durationMin": 40 },
-    "why": "5c GREEDY edge: mm[1]='Trénink čtyřicet' (2-slovní záběr). czNum: tens-scan najde 'čtyřicet'=40. dur=40. cut() vyřízne i 'Trénink' → name '' (doloženo simulací implementace)."
-  },
-  {
-    "input": "dvacet minut strečink",
-    "expected": { "name": "strečink", "durationMin": 20 },
-    "why": "5c na začátku: mm[1]='dvacet' (2-slovo 'dvacet minut' selže na druhém 'minut', backtrack), czNum('dvacet')=20 (§13 tens). name 'strečink'."
-  },
-  {
-    "input": "Pohovor po dobu 60 min",
-    "expected": { "name": "Pohovor", "durationMin": 60 },
-    "why": "5a s prefixem 'po dobu', \\w* po 'min' (zde nula koncovky), dur=60. name 'Pohovor'."
-  },
-  {
-    "input": "Rozhovor po dobu pěti hodin",
-    "expected": { "name": "Rozhovor", "durationMin": 300 },
-    "why": "5f, czNum('pěti')=5 (§13 ones), dur=5*60=300. name 'Rozhovor'."
-  },
-  {
-    "input": "Příprava 0 min",
-    "expected": { "name": "Příprava", "durationMin": 0 },
-    "why": "5a, dur=+'0'=0. Trvání bez dolního clampu v parseru → durationMin=0. name 'Příprava'."
-  },
-  {
-    "input": "Schůzka p2 90 min zítra",
-    "expected": { "name": "Schůzka", "priority": 2, "durationMin": 90, "due": "2026-06-26" },
-    "why": "Kombinace: priorita p2 (§3) → priority=2; 5a dur=90; §7c 'zítra' → due=2026-06-26 (today=2026-06-25+1, pozn. runner aplikuje today). Všechny tokeny vyříznuty → name 'Schůzka'."
-  },
-  {
-    "input": "Workshop 1.5 h #Obchod",
-    "expected": { "name": "Workshop", "durationMin": 90, "projectId": "obchod" },
-    "why": "5e dur=round(1.5*60)=90; §10 #Obchod přesná shoda názvu projektu → projectId='obchod'. Token #Obchod vyříznut → name 'Workshop'."
-  }
+	{
+		"input": "Schůzka s týmem 90 min",
+		"expected": { "name": "Schůzka s týmem", "durationMin": 90 },
+		"why": "5a /(?:po dobu\\s+)?(\\d+)\\s*min\\w*/i → dur=+'90'=90. Token '90 min' vyříznut cut() → name 'Schůzka s týmem'."
+	},
+	{
+		"input": "Připravit prezentaci 45 minut",
+		"expected": { "name": "Připravit prezentaci", "durationMin": 45 },
+		"why": "5a, \\w* pokryje koncovku 'minut'. dur=45. Token vyříznut."
+	},
+	{
+		"input": "Telefonát klientovi 30 min",
+		"expected": { "name": "Telefonát klientovi", "durationMin": 30 },
+		"why": "5a dur=30; name bez tokenu."
+	},
+	{
+		"input": "Prezentace po dobu 90 minut",
+		"expected": { "name": "Prezentace", "durationMin": 90 },
+		"why": "5a má volitelný prefix '(?:po dobu\\s+)?' a číslo 90 → match 'po dobu 90 minut', dur=90. 5b se nedostane ke slovu (digit chytí 5a). name 'Prezentace'."
+	},
+	{
+		"input": "Workshop po dobu 120 minut",
+		"expected": { "name": "Workshop", "durationMin": 120 },
+		"why": "5a s prefixem 'po dobu', dur=120."
+	},
+	{
+		"input": "Code review po dobu šedesáti minut",
+		"expected": { "name": "Code review", "durationMin": 60 },
+		"why": "5a vyžaduje \\d+ → selže (slovo). 5b /po dobu\\s+([\\p{L}]+(?:\\s+[\\p{L}]+)?)\\s*minut\\w*/iu → mm[1]='šedesáti', czNum='šedesáti'=60 (§13 tens). dur=60. name 'Code review'."
+	},
+	{
+		"input": "Hovor po dobu dvaceti minut",
+		"expected": { "name": "Hovor", "durationMin": 20 },
+		"why": "5b, czNum('dvaceti')=20 (§13 tens). dur=20."
+	},
+	{
+		"input": "Brainstorming po dobu třiceti minut",
+		"expected": { "name": "Brainstorming", "durationMin": 30 },
+		"why": "5b, czNum('třiceti')=30. dur=30."
+	},
+	{
+		"input": "Pauza šedesát minut",
+		"expected": { "name": "", "durationMin": 60 },
+		"why": "5c GREEDY edge: skupina ([\\p{L}]+(?:\\s+[\\p{L}]+)?) sebere 2 slova před 'minut' → mm[1]='Pauza šedesát'. czNum přes tens-scan najde 'šedesát'=60 (slovo 'pauza' ignoruje). dur=60. cut() vyřízne celé mm[0]='Pauza šedesát minut' → name '' (i task slovo zmizí). Doloženo simulací implementace."
+	},
+	{
+		"input": "patnáct minut protažení",
+		"expected": { "name": "protažení", "durationMin": 15 },
+		"why": "5c, mm[1]='patnáct', czNum('patnáct')=15 (§13 teens). dur=15. name 'protažení'."
+	},
+	{
+		"input": "deset minut pauza",
+		"expected": { "name": "pauza", "durationMin": 10 },
+		"why": "5c, czNum('deset')=10 (§13 teens). dur=10."
+	},
+	{
+		"input": "Oběd s kolegou půl hodiny",
+		"expected": { "name": "Oběd s kolegou", "durationMin": 30 },
+		"why": "5a–5c selžou (žádné 'min'/číslo-minut). 5d /(?:po dobu\\s+)?p[ůu]l\\s+hodin\\w*/i → dur=30 (fixně). Token 'půl hodiny' vyříznut → name 'Oběd s kolegou'."
+	},
+	{
+		"input": "Káva s Petrou pul hodiny",
+		"expected": { "name": "Káva s Petrou", "durationMin": 30 },
+		"why": "5d, p[ůu]l matchne i 'pul' bez diakritiky. dur=30."
+	},
+	{
+		"input": "Sezení po dobu půl hodiny",
+		"expected": { "name": "Sezení", "durationMin": 30 },
+		"why": "5d s volitelným prefixem 'po dobu', dur=30. name 'Sezení'."
+	},
+	{
+		"input": "Standup 1.5 h",
+		"expected": { "name": "Standup", "durationMin": 90 },
+		"why": "5e /(?:po dobu\\s+)?(\\d+(?:[.,]\\d+)?)\\s*(?:hodin\\w*|hod\\w*|h)\\b/i → parseFloat('1.5')=1.5, round(1.5*60)=90. 'h' na \\b. name 'Standup'."
+	},
+	{
+		"input": "Plánování 1,5 hod",
+		"expected": { "name": "Plánování", "durationMin": 90 },
+		"why": "5e, čárka→tečka přes replace(',','.'), parseFloat('1.5')=1.5, round(*60)=90. Varianta 'hod\\w*'."
+	},
+	{
+		"input": "Workshop 2 hodiny",
+		"expected": { "name": "Workshop", "durationMin": 120 },
+		"why": "5e, parseFloat('2')=2, round(2*60)=120. 'hodiny' přes 'hodin\\w*'. name 'Workshop'."
+	},
+	{
+		"input": "Trénink 3 hodiny",
+		"expected": { "name": "Trénink", "durationMin": 180 },
+		"why": "5e, round(3*60)=180."
+	},
+	{
+		"input": "Focus blok 2h",
+		"expected": { "name": "Focus blok", "durationMin": 120 },
+		"why": "5e, \\s* dovolí nula mezer před 'h', '2h' → round(2*60)=120. name 'Focus blok'."
+	},
+	{
+		"input": "Retro 1 hod",
+		"expected": { "name": "Retro", "durationMin": 60 },
+		"why": "5e, parseFloat('1')=1, round(60)=60. 'hod' přes 'hod\\w*'."
+	},
+	{
+		"input": "Schůzka po dobu dvou hodin",
+		"expected": { "name": "Schůzka", "durationMin": 120 },
+		"why": "5a–5e selžou (žádný digit ani 'min'/'půl'; 'dvou' není číslice → 5e regex (\\d+...) nematchne). 5f /po dobu\\s+([\\p{L}]+)\\s+hodin\\w*/iu → czNum('dvou')=2 (§13 ones), dur=2*60=120. name 'Schůzka'."
+	},
+	{
+		"input": "Workshop po dobu tří hodin",
+		"expected": { "name": "Workshop", "durationMin": 180 },
+		"why": "5f, czNum('tří')=3 (§13 ones), dur=3*60=180."
+	},
+	{
+		"input": "Porada po dobu čtyř hodin",
+		"expected": { "name": "Porada", "durationMin": 240 },
+		"why": "5f, czNum('čtyř')=4 (§13 ones), dur=4*60=240."
+	},
+	{
+		"input": "Záloha serveru 25 hodin",
+		"expected": { "name": "Záloha serveru", "durationMin": 1500 },
+		"why": "NEGATIVNÍ/edge: trvání NEMÁ horní strop <=23 jako čas (§4). 5e round(25*60)=1500. Token '25 hodin' vyříznut → name 'Záloha serveru'."
+	},
+	{
+		"input": "Render videa 1,25 h",
+		"expected": { "name": "Render videa", "durationMin": 75 },
+		"why": "5e desetinné: čárka→tečka, parseFloat('1.25')=1.25, round(1.25*60)=round(75)=75."
+	},
+	{
+		"input": "Export dat 0,5 hodiny",
+		"expected": { "name": "Export dat", "durationMin": 30 },
+		"why": "5e, parseFloat('0.5')=0.5, round(30)=30. 'hodiny' přes 'hodin\\w*'."
+	},
+	{
+		"input": "Komprese 1,1 h",
+		"expected": { "name": "Komprese", "durationMin": 66 },
+		"why": "5e zaokrouhlení: round(1.1*60)=round(66)=66. Ověřuje Math.round na nedělitelném výsledku."
+	},
+	{
+		"input": "Test 2,5 hodiny",
+		"expected": { "name": "Test", "durationMin": 150 },
+		"why": "5e, round(2.5*60)=150."
+	},
+	{
+		"input": "Migrace 1.75 hod",
+		"expected": { "name": "Migrace", "durationMin": 105 },
+		"why": "5e, round(1.75*60)=round(105)=105."
+	},
+	{
+		"input": "Konzultace 90 minut s Tomášem",
+		"expected": { "name": "Konzultace s Tomášem", "durationMin": 90 },
+		"why": "5a (digit) má přednost před slovními minutami, dur=90. cut() nahradí PRVNÍ výskyt '90 minut' → name 'Konzultace s Tomášem' (zbytek věty zachován)."
+	},
+	{
+		"input": "Trénink čtyřicet minut",
+		"expected": { "name": "", "durationMin": 40 },
+		"why": "5c GREEDY edge: mm[1]='Trénink čtyřicet' (2-slovní záběr). czNum: tens-scan najde 'čtyřicet'=40. dur=40. cut() vyřízne i 'Trénink' → name '' (doloženo simulací implementace)."
+	},
+	{
+		"input": "dvacet minut strečink",
+		"expected": { "name": "strečink", "durationMin": 20 },
+		"why": "5c na začátku: mm[1]='dvacet' (2-slovo 'dvacet minut' selže na druhém 'minut', backtrack), czNum('dvacet')=20 (§13 tens). name 'strečink'."
+	},
+	{
+		"input": "Pohovor po dobu 60 min",
+		"expected": { "name": "Pohovor", "durationMin": 60 },
+		"why": "5a s prefixem 'po dobu', \\w* po 'min' (zde nula koncovky), dur=60. name 'Pohovor'."
+	},
+	{
+		"input": "Rozhovor po dobu pěti hodin",
+		"expected": { "name": "Rozhovor", "durationMin": 300 },
+		"why": "5f, czNum('pěti')=5 (§13 ones), dur=5*60=300. name 'Rozhovor'."
+	},
+	{
+		"input": "Příprava 0 min",
+		"expected": { "name": "Příprava", "durationMin": 0 },
+		"why": "5a, dur=+'0'=0. Trvání bez dolního clampu v parseru → durationMin=0. name 'Příprava'."
+	},
+	{
+		"input": "Schůzka p2 90 min zítra",
+		"expected": {
+			"name": "Schůzka",
+			"priority": 2,
+			"durationMin": 90,
+			"due": "2026-06-26"
+		},
+		"why": "Kombinace: priorita p2 (§3) → priority=2; 5a dur=90; §7c 'zítra' → due=2026-06-26 (today=2026-06-25+1, pozn. runner aplikuje today). Všechny tokeny vyříznuty → name 'Schůzka'."
+	},
+	{
+		"input": "Workshop 1.5 h #Obchod",
+		"expected": {
+			"name": "Workshop",
+			"durationMin": 90,
+			"projectId": "obchod"
+		},
+		"why": "5e dur=round(1.5*60)=90; §10 #Obchod přesná shoda názvu projektu → projectId='obchod'. Token #Obchod vyříznut → name 'Workshop'."
+	}
 ]

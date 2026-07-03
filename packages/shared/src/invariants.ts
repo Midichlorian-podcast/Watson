@@ -13,10 +13,10 @@ export type Priority = (typeof PRIORITIES)[number];
 
 /** Sémantika priorit (P1 nejvyšší, P4 = default/nejnižší). */
 export const PRIORITY_LABELS: Record<Priority, string> = {
-  1: "priority.acute", // Akutní
-  2: "priority.soon", // Co nejdřív
-  3: "priority.notAcute", // Neakutní
-  4: "priority.future", // Budoucnost
+	1: "priority.acute", // Akutní
+	2: "priority.soon", // Co nejdřív
+	3: "priority.notAcute", // Neakutní
+	4: "priority.future", // Budoucnost
 };
 
 /**
@@ -32,10 +32,15 @@ export type AssignmentMode = (typeof ASSIGNMENT_MODES)[number];
  * R2 — výchozí režim pro NEINTERAKTIVNÍ cesty (automatizace / AI / hromadně).
  * Interaktivně se na režim VŽDY ptáme; tohle je default jen tam, kde není koho se ptát.
  */
-export const DEFAULT_NONINTERACTIVE_ASSIGNMENT_MODE: AssignmentMode = "shared_all";
+export const DEFAULT_NONINTERACTIVE_ASSIGNMENT_MODE: AssignmentMode =
+	"shared_all";
 
 /** R4 — scope úprav opakovaného úkolu. */
-export const RECURRENCE_EDIT_SCOPES = ["this_occurrence", "this_and_future", "all"] as const;
+export const RECURRENCE_EDIT_SCOPES = [
+	"this_occurrence",
+	"this_and_future",
+	"all",
+] as const;
 export type RecurrenceEditScope = (typeof RECURRENCE_EDIT_SCOPES)[number];
 
 /** R4 — základ opakování: výchozí od termínu; "od dokončení" je per úkol (every!). */
@@ -72,7 +77,12 @@ export const PROJECT_KINDS = ["flow", "goal", "cycle"] as const;
 export type ProjectKind = (typeof PROJECT_KINDS)[number];
 
 /** Stav projektu (Cloud Design): Aktivní / Pozastavený / Archiv / Hotovo. */
-export const PROJECT_STATUSES = ["active", "paused", "archive", "done"] as const;
+export const PROJECT_STATUSES = [
+	"active",
+	"paused",
+	"archive",
+	"done",
+] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
 /** Postupy (štafeta) — stav běžící instance řetězce. */
@@ -80,15 +90,28 @@ export const CHAIN_STATES = ["active", "done", "canceled", "on_hold"] as const;
 export type ChainState = (typeof CHAIN_STATES)[number];
 
 /** Stav kroku řetězce (ZDROJ PRAVDY o gatingu). waiting↔dormant, now↔active. */
-export const CHAIN_STEP_STATES = ["dormant", "active", "done", "skipped"] as const;
+export const CHAIN_STEP_STATES = [
+	"dormant",
+	"active",
+	"done",
+	"skipped",
+] as const;
 export type ChainStepState = (typeof CHAIN_STEP_STATES)[number];
 
 /** Jak se krok aktivuje. */
-export const CHAIN_GATES = ["after_previous", "with_previous", "manual"] as const;
+export const CHAIN_GATES = [
+	"after_previous",
+	"with_previous",
+	"manual",
+] as const;
 export type ChainGate = (typeof CHAIN_GATES)[number];
 
 /** Základna auto-datování termínu kroku. */
-export const CHAIN_DUE_BASIS = ["from_anchor", "from_activation", "from_prev_done"] as const;
+export const CHAIN_DUE_BASIS = [
+	"from_anchor",
+	"from_activation",
+	"from_prev_done",
+] as const;
 export type ChainDueBasis = (typeof CHAIN_DUE_BASIS)[number];
 
 /** Cíle — rozsah (tým/projekt/osoba v týmu/osobní prostor). */
@@ -96,11 +119,22 @@ export const GOAL_SCOPES = ["team", "project", "person", "personal"] as const;
 export type GoalScope = (typeof GOAL_SCOPES)[number];
 
 /** Cíle — metrika měření (dokončení % / včasnost % / počet / stav projektu). */
-export const GOAL_METRICS = ["completion", "ontime", "count", "project"] as const;
+export const GOAL_METRICS = [
+	"completion",
+	"ontime",
+	"count",
+	"project",
+] as const;
 export type GoalMetric = (typeof GOAL_METRICS)[number];
 
 /** Cíle — periodicita/resetovatelnost. */
-export const GOAL_PERIODIC = ["none", "week", "month", "quarter", "year"] as const;
+export const GOAL_PERIODIC = [
+	"none",
+	"week",
+	"month",
+	"quarter",
+	"year",
+] as const;
 export type GoalPeriodic = (typeof GOAL_PERIODIC)[number];
 
 /** Rozsah statusu — jednoduché per projekt (default), volitelně per workspace. */
@@ -108,7 +142,12 @@ export const STATUS_SCOPES = ["project", "workspace"] as const;
 export type StatusScope = (typeof STATUS_SCOPES)[number];
 
 /** Typy připomínek (E1). */
-export const REMINDER_TYPES = ["time", "relative", "recurring", "location"] as const;
+export const REMINDER_TYPES = [
+	"time",
+	"relative",
+	"recurring",
+	"location",
+] as const;
 export type ReminderType = (typeof REMINDER_TYPES)[number];
 
 /** Notifikační kanály (MVP: push + e-mail; in_app pro inbox). */
@@ -126,7 +165,11 @@ export const AI_LEVELS = ["off", "suggest", "auto_notify"] as const;
 export type AiLevel = (typeof AI_LEVELS)[number];
 
 /** Stav AI návrhu. */
-export const AI_SUGGESTION_STATUS = ["pending", "accepted", "dismissed"] as const;
+export const AI_SUGGESTION_STATUS = [
+	"pending",
+	"accepted",
+	"dismissed",
+] as const;
 export type AiSuggestionStatus = (typeof AI_SUGGESTION_STATUS)[number];
 
 /** Aktér auditní události (člověk vs AI). */

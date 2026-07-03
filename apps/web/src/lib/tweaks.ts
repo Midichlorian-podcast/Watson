@@ -9,24 +9,24 @@ const D_LS = "watson.density";
 const A_LS = "watson.accent";
 
 export function getDensity(): Density {
-  const v = localStorage.getItem(D_LS);
-  return v === "vyvazene" || v === "kompaktni" ? v : "vzdusne"; // default Vzdušné (README ř. 111)
+	const v = localStorage.getItem(D_LS);
+	return v === "vyvazene" || v === "kompaktni" ? v : "vzdusne"; // default Vzdušné (README ř. 111)
 }
 export function getAccent(): Accent {
-  return localStorage.getItem(A_LS) === "brass" ? "brass" : "multi";
+	return localStorage.getItem(A_LS) === "brass" ? "brass" : "multi";
 }
 
 export function applyTweaks(): void {
-  const el = document.documentElement;
-  el.setAttribute("data-w-density", getDensity());
-  el.setAttribute("data-w-accent", getAccent());
+	const el = document.documentElement;
+	el.setAttribute("data-w-density", getDensity());
+	el.setAttribute("data-w-accent", getAccent());
 }
 
 export function setDensity(d: Density): void {
-  localStorage.setItem(D_LS, d);
-  applyTweaks();
+	localStorage.setItem(D_LS, d);
+	applyTweaks();
 }
 export function setAccent(a: Accent): void {
-  localStorage.setItem(A_LS, a);
-  applyTweaks();
+	localStorage.setItem(A_LS, a);
+	applyTweaks();
 }

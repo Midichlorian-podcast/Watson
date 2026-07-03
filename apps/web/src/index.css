@@ -37,26 +37,58 @@
 html,
 body,
 #root {
-  height: 100%;
+	height: 100%;
 }
 
 body {
-  margin: 0;
-  background-color: var(--w-paper);
-  color: var(--w-ink);
-  font-family: var(--w-font-body);
-  line-height: 1.55;
-  -webkit-font-smoothing: antialiased;
+	margin: 0;
+	background-color: var(--w-paper);
+	color: var(--w-ink);
+	font-family: var(--w-font-body);
+	line-height: 1.55;
+	-webkit-font-smoothing: antialiased;
 }
 
 /* Tweaks (#39) — hustota řádků (VERBATIM prototyp ř. 40-42) + akcent Jen brass (ř. 77). */
-[data-w-density="vzdusne"] { --w-row-py: 15px; --w-row-font: 15px; --w-card-pad: 18px; }
-[data-w-density="vyvazene"] { --w-row-py: 11px; --w-row-font: 14px; --w-card-pad: 15px; }
-[data-w-density="kompaktni"] { --w-row-py: 8px; --w-row-font: 13.5px; --w-card-pad: 13px; }
-[data-w-accent="brass"] .w-projdot { background: var(--w-brass) !important; }
+[data-w-density="vzdusne"] {
+	--w-row-py: 15px;
+	--w-row-font: 15px;
+	--w-card-pad: 18px;
+}
+[data-w-density="vyvazene"] {
+	--w-row-py: 11px;
+	--w-row-font: 14px;
+	--w-card-pad: 15px;
+}
+[data-w-density="kompaktni"] {
+	--w-row-py: 8px;
+	--w-row-font: 13.5px;
+	--w-card-pad: 13px;
+}
+[data-w-accent="brass"] .w-projdot {
+	background: var(--w-brass) !important;
+}
 
 /* Pop-in animace modalů/popoverů (VERBATIM prototyp ř. 44). */
-@keyframes wPop { from { transform: scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes wPop {
+	from {
+		transform: scale(0.97);
+		opacity: 0;
+	}
+	to {
+		transform: none;
+		opacity: 1;
+	}
+}
 
 /* Slide-in detail panelu (VERBATIM prototyp ř. 43). */
-@keyframes wSlide { from { transform: translateX(26px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes wSlide {
+	from {
+		transform: translateX(26px);
+		opacity: 0;
+	}
+	to {
+		transform: none;
+		opacity: 1;
+	}
+}

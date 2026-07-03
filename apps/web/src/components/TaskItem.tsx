@@ -10,7 +10,11 @@ import { deadlineLabel, rowDue, toggleTask } from "../lib/tasks";
 import { useWorkspaces } from "../lib/workspace";
 
 type Pri = 1 | 2 | 3 | 4;
-export type TaskProject = { name: string | null; color: string | null; workspace_id?: string | null };
+export type TaskProject = {
+	name: string | null;
+	color: string | null;
+	workspace_id?: string | null;
+};
 
 /**
  * Sdílená položka seznamu úkolů — plná anatomie řádku dle prototypu: meta ikony
@@ -18,74 +22,84 @@ export type TaskProject = { name: string | null; color: string | null; workspace
  * avatary/„Každý zvlášť", barva řádku. Klik → detail panel.
  */
 export function TaskItem({
-  task,
-  project,
-  wsColor,
-  flow,
+	task,
+	project,
+	wsColor,
+	flow,
 }: {
-  task: TaskRow;
-  project?: TaskProject;
-  /** Barva workspace (čtvereček před názvem projektu). */
-  wsColor?: string;
-  /** Krok postupu (chip, klik → postup). */
-  flow?: FlowStepInfo;
+	task: TaskRow;
+	project?: TaskProject;
+	/** Barva workspace (čtvereček před názvem projektu). */
+	wsColor?: string;
+	/** Krok postupu (chip, klik → postup). */
+	flow?: FlowStepInfo;
 }) {
-  const { t } = useTranslation();
-  const { open } = useTaskDetail();
-  const { metaOf } = useRowMeta();
-  const { data: session } = useSession();
-  const { data: workspaces } = useWorkspaces();
-  const navigate = useNavigate();
-  const meta = metaOf(task);
-  const myId = session?.user?.id;
-  // wsdot — čtvereček barvy prostoru před názvem projektu (prototyp ř. 422 + CSS 105).
-  const resolvedWsColor =
-    wsColor ??
-    (project?.workspace_id
-      ? ((workspaces ?? []).find((w) => w.id === project.workspace_id)?.color ?? undefined)
-      : undefined);
-  // „→ Přišlo na tebe" — aktivní krok štafety přiřazený mně (prototyp handedOff).
-  const handedOff =
-    flow?.state === "active" && !!myId && meta.assigneeIds.includes(myId) && !task.completed_at;
-  return (
-    <li>
-      <TaskCard
-        name={task.name ?? ""}
-        priority={(task.priority ?? 4) as Pri}
-        projectName={project?.name ?? undefined}
-        projectColor={project?.color ?? undefined}
-        wsColor={resolvedWsColor}
-        parentName={meta.parentName}
-        color={task.color ?? undefined}
-        due={rowDue(task, t)}
-        deadline={deadlineLabel(task.deadline)}
-        status={meta.status}
-        flow={
-          flow
-            ? {
-                name: flow.name,
-                pos: flow.pos,
-                total: flow.total,
-                state: flow.state,
-                onClick: () => void navigate({ to: "/postupy", search: { postup: flow.chainId } }),
-              }
-            : undefined
-        }
-        handedOff={handedOff}
-        handedOffLabel={t("today.handedOff")}
-        checklist={meta.checklist}
-        recurring={Boolean(task.recurrence)}
-        reminder={meta.reminder}
-        comments={meta.comments}
-        assignAll={
-          meta.assignAll ? { ...meta.assignAll, label: t("today.assignAllPill") } : undefined
-        }
-        avatars={meta.avatars}
-        dormant={flow?.state === "dormant" || flow?.state === "waiting"}
-        done={Boolean(task.completed_at)}
-        onToggle={() => void toggleTask(task)}
-        onOpen={() => open(task.id)}
-      />
-    </li>
-  );
+	const { t } = useTranslation();
+	const { open } = useTaskDetail();
+	const { metaOf } = useRowMeta();
+	const { data: session } = useSession();
+	const { data: workspaces } = useWorkspaces();
+	const navigate = useNavigate();
+	const meta = metaOf(task);
+	const myId = session?.user?.id;
+	// wsdot — čtvereček barvy prostoru před názvem projektu (prototyp ř. 422 + CSS 105).
+	const resolvedWsColor =
+		wsColor ??
+		(project?.workspace_id
+			? ((workspaces ?? []).find((w) => w.id === project.workspace_id)?.color ??
+				undefined)
+			: undefined);
+	// „→ Přišlo na tebe" — aktivní krok štafety přiřazený mně (prototyp handedOff).
+	const handedOff =
+		flow?.state === "active" &&
+		!!myId &&
+		meta.assigneeIds.includes(myId) &&
+		!task.completed_at;
+	return (
+		<li>
+			<TaskCard
+				name={task.name ?? ""}
+				priority={(task.priority ?? 4) as Pri}
+				projectName={project?.name ?? undefined}
+				projectColor={project?.color ?? undefined}
+				wsColor={resolvedWsColor}
+				parentName={meta.parentName}
+				color={task.color ?? undefined}
+				due={rowDue(task, t)}
+				deadline={deadlineLabel(task.deadline)}
+				status={meta.status}
+				flow={
+					flow
+						? {
+								name: flow.name,
+								pos: flow.pos,
+								total: flow.total,
+								state: flow.state,
+								onClick: () =>
+									void navigate({
+										to: "/postupy",
+										search: { postup: flow.chainId },
+									}),
+							}
+						: undefined
+				}
+				handedOff={handedOff}
+				handedOffLabel={t("today.handedOff")}
+				checklist={meta.checklist}
+				recurring={Boolean(task.recurrence)}
+				reminder={meta.reminder}
+				comments={meta.comments}
+				assignAll={
+					meta.assignAll
+						? { ...meta.assignAll, label: t("today.assignAllPill") }
+						: undefined
+				}
+				avatars={meta.avatars}
+				dormant={flow?.state === "dormant" || flow?.state === "waiting"}
+				done={Boolean(task.completed_at)}
+				onToggle={() => void toggleTask(task)}
+				onOpen={() => open(task.id)}
+			/>
+		</li>
+	);
 }
