@@ -83,7 +83,9 @@
     "skip": "Přeskočit",
     "close": "Zavřít",
     "assignBtn": "Přiřadit",
-    "inTask": "V úkolu"
+    "inTask": "V úkolu",
+    "time": "Čas",
+    "duration": "Trvání"
   },
   "projects": {
     "heading": "Projekty",
@@ -183,7 +185,9 @@
     "weekend": "Víkend",
     "nextWeekBucket": "Příští týden",
     "pmonthBucket": "Začátkem příštího měsíce",
-    "laterBucket": "Později"
+    "laterBucket": "Později",
+    "flowNextTitle": "Tvůj další krok v postupech",
+    "thenHandOff": "pak předáš"
   },
   "settings": {
     "appearance": "Vzhled",
@@ -369,7 +373,11 @@
     "andMore": "… a dalších {{n}}",
     "stateOntime": "včas",
     "stateLate": "pozdě",
-    "stateOpen": "otevřený"
+    "stateOpen": "otevřený",
+    "gstatDone": "Splněno",
+    "gstatTrack": "Na cestě",
+    "gstatRisk": "Ohrožený",
+    "gstatOver": "Po termínu"
   },
   "reports": {
     "heading": "Reporty",

@@ -73,7 +73,7 @@ export function Cile() {
     "SELECT id, goal_id, label, done, position FROM goal_milestones ORDER BY position, created_at",
   );
   const { data: tasks } = usePsQuery<TaskRow>(
-    "SELECT id, project_id, completed_at, due_date FROM tasks",
+    "SELECT id, name, project_id, completed_at, due_date FROM tasks",
   );
   const { data: assignments } = usePsQuery<{ task_id: string | null; user_id: string | null }>(
     "SELECT task_id, user_id FROM assignments",
@@ -290,8 +290,8 @@ export function Cile() {
                     p && (
                       <span
                         key={p.id}
-                        className="inline-flex items-center gap-1 font-display font-semibold text-ink-3"
-                        style={{ fontSize: 10.5 }}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-panel-2 font-body text-ink-3"
+                        style={{ fontSize: 11.5, padding: "3px 9px" }}
                       >
                         <span
                           className="rounded-full"
@@ -345,14 +345,15 @@ export function Cile() {
 }
 
 function StatusBadge({ st }: { st: GoalStatusKind }) {
-  const [label, bg, color, dot] = GSTAT[st];
+  const { t } = useTranslation();
+  const [, bg, color, dot] = GSTAT[st];
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full font-display font-semibold"
       style={{ fontSize: 11, padding: "3px 10px", background: bg, color }}
     >
       <span className="rounded-full" style={{ width: 6, height: 6, background: dot }} />
-      {label}
+      {t(`goals.gstat${st[0]?.toUpperCase()}${st.slice(1)}`)}
     </span>
   );
 }
@@ -658,11 +659,15 @@ function GoalDetail({
   const filterLabel =
     links.length > 0 ? links.map((p) => p?.name ?? "").join(" · ") : t("goals.filterWhole");
   const canTarget = metric !== "project";
-  const adjTarget = (d: number) =>
+  // Krok a strop dle metriky (prototyp adjGoalTarget, ř. 2352: count ±5 / % ±1; max 100000 / 100).
+  const adjTarget = (dir: number) => {
+    const step = metric === "count" ? 5 : 1;
+    const max = metric === "count" ? 100000 : 100;
     void powerSync.execute("UPDATE goals SET target = ? WHERE id = ?", [
-      Math.max(1, (g.target ?? 0) + d),
+      Math.max(1, Math.min(max, (g.target ?? 0) + dir * step)),
       g.id,
     ]);
+  };
 
   const pace =
     pr.pct >= 100
@@ -767,7 +772,7 @@ function GoalDetail({
                 <span className="inline-flex items-center" style={{ gap: 4 }}>
                   <button
                     type="button"
-                    onClick={() => adjTarget(metric === "count" ? -1 : -5)}
+                    onClick={() => adjTarget(-1)}
                     className="grid cursor-pointer place-items-center rounded-[7px] border border-line font-display font-bold text-ink-2 hover:border-brass"
                     style={{ width: 22, height: 22, fontSize: 13 }}
                   >
@@ -779,7 +784,7 @@ function GoalDetail({
                   </span>
                   <button
                     type="button"
-                    onClick={() => adjTarget(metric === "count" ? 1 : 5)}
+                    onClick={() => adjTarget(1)}
                     className="grid cursor-pointer place-items-center rounded-[7px] border border-line font-display font-bold text-ink-2 hover:border-brass"
                     style={{ width: 22, height: 22, fontSize: 13 }}
                   >

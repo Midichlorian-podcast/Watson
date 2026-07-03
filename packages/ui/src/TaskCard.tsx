@@ -39,6 +39,8 @@ export interface TaskCardProps {
   avatars?: { initials: string; brass?: boolean }[];
   /** Spící krok postupu — šrafovaný řádek (prototyp data-dormant). */
   dormant?: boolean;
+  /** Kontext vrstveného podúkolu — „↑ {rodič}" v podřádku. */
+  parentName?: string;
   done?: boolean;
   onToggle?: () => void;
   onOpen?: () => void;
@@ -80,6 +82,7 @@ export function TaskCard({
   assignAll,
   avatars,
   dormant,
+  parentName,
   done,
   onToggle,
   onOpen,
@@ -90,7 +93,14 @@ export function TaskCard({
       ? tint(color)
       : undefined;
   const hasSub =
-    !!projectName || !!flow || handedOff || !!checklist || recurring || reminder || !!comments;
+    !!projectName ||
+    !!parentName ||
+    !!flow ||
+    handedOff ||
+    !!checklist ||
+    recurring ||
+    reminder ||
+    !!comments;
 
   return (
     <div
@@ -162,6 +172,14 @@ export function TaskCard({
         </div>
         {hasSub && (
           <div className="flex items-center" style={{ gap: 10, marginTop: 2 }}>
+            {parentName && (
+              <span
+                className="min-w-0 truncate font-body text-ink-3"
+                style={{ fontSize: 11.5, maxWidth: 180 }}
+              >
+                ↑ {parentName}
+              </span>
+            )}
             {projectName && (
               <span className="inline-flex items-center" style={{ gap: 6 }}>
                 {wsColor && (

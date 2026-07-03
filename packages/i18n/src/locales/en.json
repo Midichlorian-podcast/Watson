@@ -83,7 +83,9 @@
     "skip": "Skip",
     "close": "Close",
     "assignBtn": "Assign",
-    "inTask": "In task"
+    "inTask": "In task",
+    "time": "Time",
+    "duration": "Duration"
   },
   "projects": {
     "heading": "Projects",
@@ -183,7 +185,9 @@
     "weekend": "Weekend",
     "nextWeekBucket": "Next week",
     "pmonthBucket": "Early next month",
-    "laterBucket": "Later"
+    "laterBucket": "Later",
+    "flowNextTitle": "Your next step in flows",
+    "thenHandOff": "then hand off"
   },
   "settings": {
     "appearance": "Appearance",
@@ -369,7 +373,11 @@
     "andMore": "… and {{n}} more",
     "stateOntime": "on time",
     "stateLate": "late",
-    "stateOpen": "open"
+    "stateOpen": "open",
+    "gstatDone": "Achieved",
+    "gstatTrack": "On track",
+    "gstatRisk": "At risk",
+    "gstatOver": "Overdue"
   },
   "reports": {
     "heading": "Reports",

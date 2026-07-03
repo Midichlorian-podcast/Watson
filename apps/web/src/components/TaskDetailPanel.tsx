@@ -291,17 +291,33 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
     setCmtText("");
   };
 
+  /** Duplikace včetně podúkolů (rekurzivně) a přiřazení (prototyp kopíruje celý objekt). */
   const duplicate = async () => {
-    const nid = crypto.randomUUID();
-    await powerSync.execute(
-      `INSERT INTO tasks (id, project_id, section_id, parent_id, name, description, priority, color,
-        due_date, start_date, deadline, duration_min, days, recurrence, recurrence_rule,
-        recurrence_basis, assignment_mode, created_at)
-       SELECT ?, project_id, section_id, parent_id, name || ' (kopie)', description, priority, color,
-        due_date, start_date, deadline, duration_min, days, recurrence, recurrence_rule,
-        recurrence_basis, assignment_mode, ? FROM tasks WHERE id = ?`,
-      [nid, new Date().toISOString(), realId],
-    );
+    const now = new Date().toISOString();
+    const copyOne = async (srcId: string, newParentId: string | null, suffix: string) => {
+      const nid = crypto.randomUUID();
+      await powerSync.execute(
+        `INSERT INTO tasks (id, project_id, section_id, parent_id, name, description, priority, color,
+          due_date, start_date, deadline, duration_min, days, recurrence, recurrence_rule,
+          recurrence_basis, assignment_mode, created_at)
+         SELECT ?, project_id, section_id, ?, name || ?, description, priority, color,
+          due_date, start_date, deadline, duration_min, days, recurrence, recurrence_rule,
+          recurrence_basis, assignment_mode, ? FROM tasks WHERE id = ?`,
+        [nid, newParentId, suffix, now, srcId],
+      );
+      await powerSync.execute(
+        `INSERT INTO assignments (id, task_id, project_id, user_id, created_at)
+         SELECT uuid(), ?, project_id, user_id, ? FROM assignments WHERE task_id = ?`,
+        [nid, now, srcId],
+      );
+      const kids = await powerSync.getAll<{ id: string }>(
+        "SELECT id FROM tasks WHERE parent_id = ?",
+        [srcId],
+      );
+      for (const k of kids) await copyOne(k.id, nid, "");
+      return nid;
+    };
+    const nid = await copyOne(realId, task?.parent_id ?? null, " (kopie)");
     setMenuOpen(false);
     open(nid);
   };
@@ -624,6 +640,51 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
                     />
                   </label>
                 ))}
+                {/* čas + trvání (parita s AddTask — funguje i pro podúkoly) */}
+                <label className="flex items-center" style={{ gap: 6 }}>
+                  <span className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
+                    {t("detail.time")}
+                  </span>
+                  <input
+                    type="time"
+                    value={
+                      task.start_date && task.start_date.length >= 16
+                        ? task.start_date.slice(11, 16)
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const base =
+                        task.due_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
+                      void patch(realId, {
+                        start_date: e.target.value ? `${base}T${e.target.value}:00` : null,
+                        // čas bez termínu → nastavit i termín (jinak by blok neměl den)
+                        ...(e.target.value && !task.due_date ? { due_date: base } : {}),
+                      });
+                    }}
+                    className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-ink-2 text-xs outline-none focus:border-brass"
+                  />
+                </label>
+                <label className="flex items-center" style={{ gap: 6 }}>
+                  <span className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
+                    {t("detail.duration")}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10080}
+                    step={5}
+                    value={task.duration_min ?? ""}
+                    onChange={(e) => {
+                      const n = Number.parseInt(e.target.value, 10);
+                      void patch(realId, { duration_min: Number.isNaN(n) ? null : n });
+                    }}
+                    className="rounded-lg border border-line bg-card px-2 py-1 text-right font-mono text-ink-2 text-xs outline-none focus:border-brass"
+                    style={{ width: 64 }}
+                  />
+                  <span className="font-body text-ink-3" style={{ fontSize: 11 }}>
+                    {t("addmodal.min")}
+                  </span>
+                </label>
               </div>
               <div className="flex flex-wrap items-center" style={{ gap: 6, marginTop: 9 }}>
                 <button
@@ -752,11 +813,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
                     round
                     size={18}
                     done={sd}
-                    onClick={() => {
-                      void patch(s.id, {
-                        completed_at: sd ? null : new Date().toISOString(),
-                      });
-                    }}
+                    // toggleTask = jednotná sémantika R9/advance/opakování (ne přímý patch)
+                    onClick={() => void toggleTask(s)}
                   />
                   <span
                     className="min-w-0 flex-1 truncate font-display font-semibold"

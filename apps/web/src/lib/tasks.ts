@@ -62,7 +62,7 @@ export async function toggleTask(task: TaskRow) {
   const nowDone = !task.completed_at;
   const kind = recurrenceKind(task.recurrence_rule);
   const due = task.due_date?.slice(0, 10);
-  if (nowDone && kind && due && !task.parent_id) {
+  if (nowDone && kind && due) {
     // Konec opakování z rule JSON (endKind/until/count + doneCount).
     let rule: Record<string, unknown> = {};
     try {
@@ -93,8 +93,22 @@ export async function toggleTask(task: TaskRow) {
       return;
     }
   }
-  await powerSync.execute("UPDATE tasks SET completed_at = ? WHERE id = ?", [
+  // R9: zaškrtnutí ⇄ stav „Hotovo" — synchronizovat i status sloupec (prototyp toggleDone).
+  const sts = await powerSync.getAll<{ id: string; is_done: number | null; position: number | null }>(
+    `SELECT s.id, s.is_done, s.position FROM statuses s
+     JOIN tasks t ON t.project_id = s.project_id WHERE t.id = ? ORDER BY s.position`,
+    [task.id],
+  );
+  const doneStatus = sts.find((s) => s.is_done)?.id ?? null;
+  const firstStatus = sts.find((s) => !s.is_done)?.id ?? sts[0]?.id ?? null;
+  const nextStatus = nowDone
+    ? (doneStatus ?? task.status_id)
+    : task.status_id === doneStatus
+      ? firstStatus
+      : task.status_id;
+  await powerSync.execute("UPDATE tasks SET completed_at = ?, status_id = ? WHERE id = ?", [
     nowDone ? new Date().toISOString() : null,
+    nextStatus,
     task.id,
   ]);
   await advanceChainForTask(task.id, nowDone);

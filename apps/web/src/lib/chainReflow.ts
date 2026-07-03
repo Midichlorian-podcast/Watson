@@ -89,7 +89,8 @@ export async function reflowChain(chainId: string, fromPos = 0): Promise<void> {
     } else {
       d = isoPlusDays(prev, st.gapDays);
     }
-    if (skip && pos > fromPos) d = nextWork(d);
+    // Víkendy se přeskakují jen v režimu Řetězec (prototyp _reflow — kotvené termíny jsou pevné).
+    if (skip && mode === "chain" && pos > fromPos) d = nextWork(d);
     prev = d;
     if (st.task_id && d !== (st.due ?? "").slice(0, 10)) {
       await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [d, st.task_id]);

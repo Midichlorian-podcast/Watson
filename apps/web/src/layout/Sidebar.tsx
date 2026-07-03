@@ -128,21 +128,25 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       projects.filter((p) => p.name === "Doručené" || p.name === "Inbox").map((p) => p.id),
     );
     const day = (d: string | null) => d?.slice(0, 10) ?? null;
+    // Stejné pravidlo viditelnosti podúkolů jako obrazovky: bez termínu žijí jen v rodiči.
+    const visible = tasks.filter((t) => !t.parent_id || t.due_date);
     return {
       "/schranka": tasks.filter(
         (t) => t.project_id && inbox.has(t.project_id) && !t.due_date && !t.parent_id,
       ).length,
-      "/": tasks.filter((t) => {
+      "/": visible.filter((t) => {
         const dd = day(t.due_date);
         return !dd || dd <= today;
       }).length,
-      "/nadchazejici": tasks.filter((t) => {
+      "/nadchazejici": visible.filter((t) => {
         const dd = day(t.due_date);
         return dd != null && dd > today;
       }).length,
-      "/ukoly": tasks.length,
-      "/oblibene/p1": tasks.filter((t) => t.priority === 1).length,
-      "/oblibene/me": tasks.filter((t) => t.created_by === userId || assigned.has(t.id)).length,
+      // Úkoly (seznam) skrývá podúkoly úplně — reprezentuje je ⚏ rodiče.
+      "/ukoly": tasks.filter((t) => !t.parent_id).length,
+      "/oblibene/p1": visible.filter((t) => t.priority === 1).length,
+      // Jen skutečně přiřazené (prototyp ř. 3150 — ne autor).
+      "/oblibene/me": visible.filter((t) => assigned.has(t.id)).length,
     };
   }, [openTasks, myAssignments, projects, userId]);
 

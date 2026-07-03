@@ -637,7 +637,8 @@ export function AddTaskModal({
       !!draft.time ||
       draft.duration > 0 ||
       draft.assignees.length > 0);
-  const cantSubmit = draft.name.trim().length === 0 && draft.rawName.trim().length === 0;
+  // Úkol nelze vytvořit s prázdným VYČIŠTĚNÝM názvem (README ř. 48 — po vytažení formulí).
+  const cantSubmit = draft.name.trim().length === 0;
   const disabled = cantSubmit || deadlineBad;
 
   const assignHint =
@@ -651,7 +652,7 @@ export function AddTaskModal({
 
   /* ── submit (submitTask prototypu → PowerSync insert) ── */
   async function submit() {
-    const name = draft.name.trim() || draft.rawName.trim();
+    const name = draft.name.trim();
     if (!name || !draft.project || disabled) return;
     const id = crypto.randomUUID();
     const dueISO = tISO;

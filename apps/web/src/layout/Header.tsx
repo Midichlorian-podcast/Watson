@@ -30,9 +30,8 @@ export function Header() {
     due_date: string | null;
     start_date: string | null;
     duration_min: number | null;
-  }>(
-    "SELECT due_date, start_date, duration_min FROM tasks WHERE completed_at IS NULL AND parent_id IS NULL",
-  );
+    parent_id: string | null;
+  }>("SELECT due_date, start_date, duration_min, parent_id FROM tasks WHERE completed_at IS NULL");
   const isWorkspace =
     path === "/" ||
     path.startsWith("/ukoly") ||
@@ -42,11 +41,12 @@ export function Header() {
     if (!isWorkspace) return null;
     const tdy = new Date();
     const tdyISO = `${tdy.getFullYear()}-${String(tdy.getMonth() + 1).padStart(2, "0")}-${String(tdy.getDate()).padStart(2, "0")}`;
+    // Stejné pravidlo viditelnosti podúkolů jako obrazovky (viz Sidebar/Today).
     const src = (openRows ?? []).filter((r) => {
       const d = r.due_date ? r.due_date.slice(0, 10) : null;
-      if (path === "/") return d === null || d <= tdyISO;
+      if (path === "/") return (r.parent_id ? d !== null : true) && (d === null || d <= tdyISO);
       if (path.startsWith("/nadchazejici")) return d !== null && d >= tdyISO;
-      return true;
+      return !r.parent_id; // Úkoly: jen top-level
     });
     const mins = src
       .filter((r) => r.start_date)

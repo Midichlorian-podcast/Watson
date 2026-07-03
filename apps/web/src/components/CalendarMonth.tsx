@@ -185,7 +185,7 @@ export function CalendarMonth({
                     onDragStart={(e) => e.dataTransfer.setData("text/plain", tk.id)}
                     onClick={(e) => {
                       e.stopPropagation();
-                      open(tk.id.split("@")[0] ?? tk.id);
+                      open(tk.id);
                     }}
                     title={`${tk.name ?? ""}${sm != null ? ` · ${pad(Math.floor(sm / 60))}:${pad(sm % 60)}` : ""}`}
                     className="flex cursor-pointer items-center gap-1 rounded-[4px]"

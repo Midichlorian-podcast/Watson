@@ -1,8 +1,8 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "@watson/i18n";
-import { Icon } from "@watson/ui";
 import { QuickAdd } from "../components/QuickAdd";
 import { TaskItem } from "../components/TaskItem";
 import { WorkspaceChips } from "../components/WorkspaceChips";
@@ -13,14 +13,18 @@ import {
   filterTasks,
   sortTasks,
 } from "../components/TasksToolbar";
+import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useFlowSteps } from "../lib/flowSteps";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
-import type { ChainRow, ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
+import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { useWatson } from "../lib/watson";
+import { useWorkspace } from "../lib/workspace";
+
+type Member = { id: string; name: string };
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const dayOf = (x: TaskRow) => (x.due_date ? x.due_date.slice(0, 10) : null);
@@ -48,17 +52,34 @@ export function Today() {
   const flowSteps = useFlowSteps();
   const navigate = useNavigate();
   const userId = session?.user?.id;
-  const { data: myAssignments } = usePsQuery<{ task_id: string | null }>(
-    "SELECT task_id FROM assignments WHERE user_id = ?",
-    [userId ?? ""],
+  const { activeWs } = useWorkspace();
+  const { data: allAsg } = usePsQuery<{ task_id: string | null; user_id: string | null }>(
+    "SELECT task_id, user_id FROM assignments ORDER BY created_at",
   );
-  const { data: chains } = usePsQuery<ChainRow>("SELECT id, name FROM chains");
+  const { data: allSteps } = usePsQuery<{
+    chain_id: string | null;
+    task_id: string | null;
+    position: number | null;
+  }>("SELECT chain_id, task_id, position FROM chain_steps ORDER BY position");
+  const { data: team } = useQuery({
+    queryKey: ["wsMembersFull", activeWs],
+    enabled: !!activeWs,
+    queryFn: async () => {
+      const r = await fetch(`${API_URL}/api/workspaces/${activeWs}/members`, {
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error("members");
+      return (await r.json()).members as Member[];
+    },
+  });
 
   const g = useMemo(() => {
     const tdy = todayISO();
     const all = tasks ?? [];
     // Spící kroky postupů se v Dnes nezobrazují (README ř. 73) + filtr dle workspace chipů.
+    // Podúkoly jen s VLASTNÍM termínem (bez termínu žijí v detailu rodiče, ne v Dnes).
     const awake = all.filter((x) => {
+      if (x.parent_id && !x.due_date) return false;
       const fs = flowSteps.get(x.id);
       if (fs && (fs.state === "dormant" || fs.state === "waiting")) return false;
       if (wsFilter) {
@@ -87,19 +108,35 @@ export function Today() {
     setNavIds([...g.overdue, ...g.today].map((x) => x.id));
   }, [g.overdue, g.today, setNavIds]);
 
-  /** „Tvůj další krok" — aktivní krok postupu přiřazený mně (prototyp myFlowSteps, ř. 3156). */
-  const myNextStep = useMemo(() => {
-    const mine = new Set((myAssignments ?? []).map((a) => a.task_id).filter(Boolean));
+  /** „Tvůj další krok v postupech" — VŠECHNY aktivní kroky přiřazené mně (prototyp myFlowSteps, ř. 396–406). */
+  const myFlowSteps = useMemo(() => {
+    const mine = new Set(
+      (allAsg ?? []).filter((a) => a.user_id === userId).map((a) => a.task_id),
+    );
+    const asgFirst = new Map<string, string>();
+    for (const a of allAsg ?? []) {
+      if (a.task_id && a.user_id && !asgFirst.has(a.task_id)) asgFirst.set(a.task_id, a.user_id);
+    }
+    const nameOf = new Map((team ?? []).map((m) => [m.id, m.name] as const));
+    const byChain = new Map<string, { task_id: string | null; position: number | null }[]>();
+    for (const s of allSteps ?? []) {
+      if (!s.chain_id) continue;
+      const arr = byChain.get(s.chain_id) ?? [];
+      arr.push(s);
+      byChain.set(s.chain_id, arr);
+    }
+    const out: { task: TaskRow; fs: NonNullable<ReturnType<typeof flowSteps.get>>; blocking?: string }[] = [];
     for (const tk of tasks ?? []) {
       if (tk.completed_at || !mine.has(tk.id)) continue;
       const fs = flowSteps.get(tk.id);
-      if (fs?.state === "active") {
-        const chain = (chains ?? []).find((c) => c.id === fs.chainId);
-        return { task: tk, fs, chainName: chain?.name ?? "" };
-      }
+      if (fs?.state !== "active") continue;
+      // „pak předáš → {jméno}" = přiřazený člověk NÁSLEDUJÍCÍHO kroku (prototyp f.blocking).
+      const next = (byChain.get(fs.chainId) ?? []).find((s) => (s.position ?? 0) + 1 === fs.pos + 1);
+      const nextUid = next?.task_id ? asgFirst.get(next.task_id) : undefined;
+      out.push({ task: tk, fs, blocking: nextUid ? nameOf.get(nextUid) : undefined });
     }
-    return null;
-  }, [tasks, myAssignments, flowSteps, chains]);
+    return out;
+  }, [tasks, allAsg, allSteps, team, flowSteps, userId]);
 
   async function rescheduleOverdue() {
     const now = new Date().toISOString();
@@ -129,7 +166,7 @@ export function Today() {
       <TaskItem
         key={task.id}
         task={task}
-        project={p ? { name: p.name, color: p.color } : undefined}
+        project={p ? { name: p.name, color: p.color, workspace_id: p.workspace_id } : undefined}
         flow={flowSteps.get(task.id)}
       />
     );
@@ -182,37 +219,75 @@ export function Today() {
         {/* Chytré přidání úkolu (parser, #7) */}
         <QuickAdd
           projects={projects.map((p: ProjectRow) => ({ id: p.id, name: p.name ?? "" }))}
+          people={(team ?? []).map((m) => ({
+            id: m.id,
+            name: m.name,
+            initials: m.name
+              .split(/\s+/)
+              .filter(Boolean)
+              .slice(0, 2)
+              .map((w) => w[0] ?? "")
+              .join("")
+              .toUpperCase(),
+          }))}
           inboxId={inboxId}
         />
 
-        {/* Tvůj další krok v postupu (prototyp myFlowSteps) */}
-        {myNextStep && (
-          <button
-            type="button"
-            onClick={() =>
-              void navigate({ to: "/postupy", search: { postup: myNextStep.fs.chainId } })
-            }
-            className="mt-3 flex w-full items-center gap-2.5 rounded-[13px] border border-brass bg-card text-left hover:shadow-md"
-            style={{ padding: "12px 15px", boxShadow: "var(--w-shadow-sm)" }}
-          >
-            <span
-              className="flex shrink-0 items-center justify-center rounded-lg"
-              style={{ width: 26, height: 26, background: "var(--w-brass-soft)", color: "var(--w-brass-text)" }}
+        {/* Tvůj další krok v postupech (prototyp ř. 396–406) */}
+        {myFlowSteps.length > 0 && (
+          <>
+            <div
+              className="flex items-center gap-2 font-display font-bold text-ink"
+              style={{ margin: "16px 0 8px", padding: "0 4px", fontSize: 13 }}
             >
-              <Icon name="postup" size={14} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="font-display font-bold text-ink" style={{ fontSize: 13.5 }}>
-                {myNextStep.task.name}
-              </div>
-              <div className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
-                {myNextStep.chainName} · krok {myNextStep.fs.pos}/{myNextStep.fs.total}
-              </div>
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 16 16"
+                fill="none"
+                className="shrink-0"
+                style={{ color: "var(--w-brass)" }}
+                aria-hidden
+              >
+                <path
+                  d="M2 5h7l-2-2M14 11H7l2 2"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {t("today.flowNextTitle")}
             </div>
-            <span className="shrink-0 font-display font-semibold text-brass-text" style={{ fontSize: 12 }}>
-              →
-            </span>
-          </button>
+            {myFlowSteps.map((f) => (
+              <button
+                key={f.task.id}
+                type="button"
+                onClick={() =>
+                  void navigate({ to: "/postupy", search: { postup: f.fs.chainId } })
+                }
+                className="flex w-full items-center rounded-[11px] border border-line text-left hover:border-brass"
+                style={{ gap: 11, padding: "11px 13px", marginBottom: 8, background: "var(--w-brass-soft)" }}
+              >
+                <span
+                  className="shrink-0 rounded-full"
+                  style={{ width: 7, height: 7, background: "var(--w-brass)" }}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-display font-bold text-ink" style={{ fontSize: 13.5 }}>
+                    {f.task.name}
+                  </div>
+                  <div className="truncate font-body text-ink-3" style={{ fontSize: 11.5 }}>
+                    {f.fs.name}
+                    {f.blocking ? ` · ${t("today.thenHandOff")} → ${f.blocking}` : ""}
+                  </div>
+                </div>
+                <span className="shrink-0 font-mono text-brass-text" style={{ fontSize: 11.5 }}>
+                  {f.fs.pos}/{f.fs.total}
+                </span>
+              </button>
+            ))}
+          </>
         )}
 
         {/* toolbar (filtr+řazení; Dokončené sekce má vlastní toggle) */}

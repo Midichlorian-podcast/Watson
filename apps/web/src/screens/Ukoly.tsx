@@ -29,7 +29,7 @@ import { useViewMode } from "../lib/viewMode";
  */
 export function Ukoly() {
   const { t } = useTranslation();
-  const search = useSearch({ strict: false }) as { projekt?: string };
+  const search = useSearch({ strict: false }) as { projekt?: string; ukol?: string };
   const projektId = search.projekt;
   const projects = useProjects();
   const { open, openId } = useTaskDetail();
@@ -48,8 +48,20 @@ export function Ukoly() {
     [allTasks, projektId],
   );
   const { q: searchQ } = useListSearch();
+  // Seznam/Nástěnka: podúkoly skrýt — reprezentuje je ⚏ rodiče + vrstvený detail
+  // (pravidlo viditelnosti podúkolů; kalendář dole dostává scoped vč. podúkolů s termínem).
   const shown = useMemo(
-    () => filterByQuery(sortTasks(filterTasks(scoped, tb), tb), searchQ),
+    () =>
+      filterByQuery(
+        sortTasks(
+          filterTasks(
+            scoped.filter((x) => !x.parent_id),
+            tb,
+          ),
+          tb,
+        ),
+        searchQ,
+      ),
     [scoped, tb, searchQ],
   );
 
@@ -67,6 +79,11 @@ export function Ukoly() {
   const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
   const projName = (id: string) => projMap.get(id)?.name ?? "—";
   const activeProject = projektId ? projMap.get(projektId) : undefined;
+
+  // Deep-link ?ukol= (z „Kopírovat odkaz") → otevřít detail (funguje i pro výskyty id@ISO).
+  useEffect(() => {
+    if (search.ukol) open(search.ukol);
+  }, [search.ukol, open]);
 
   // ── Seznamová klávesová navigace (kbSel — port ř. 2263-2276) ────────────────
   const navIds = useMemo(() => shown.map((tk) => tk.id), [shown]);

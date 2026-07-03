@@ -74,35 +74,56 @@ const reinsert = async (table: string, rows: Row[]) => {
   }
 };
 
+/** Id úkolu + VŠECH potomků do hloubky (R1 = max 3 úrovně; CTE zvládne libovolnou). */
+async function descendantIds(taskId: string): Promise<string[]> {
+  const rows = await powerSync.getAll<{ id: string }>(
+    `WITH RECURSIVE des(id) AS (
+       SELECT id FROM tasks WHERE id = ?
+       UNION ALL SELECT t.id FROM tasks t JOIN des ON t.parent_id = des.id
+     ) SELECT id FROM des`,
+    [taskId],
+  );
+  return rows.map((r) => r.id);
+}
+
+const CHILD_TABLES = [
+  "chain_steps",
+  "assignments",
+  "checklist_items",
+  "comments",
+  "reminders",
+  "task_occurrence_overrides",
+] as const;
+
 /**
- * Smazání úkolu s undo (tahák: „Smazat (s undo) ⌫"): snapshot úkolu + podřízených řádků,
- * DELETE, a undo = re-INSERT všeho.
+ * Smazání úkolu s undo (tahák: „Smazat (s undo) ⌫"): rekurzivní snapshot úkolu + VŠECH
+ * potomků (vnuci, R1 hloubka 3) a jejich podřízených dat, DELETE, undo = re-INSERT všeho.
  */
 export async function deleteTaskWithUndo(taskId: string): Promise<void> {
-  const tasks = await snapshotRows("SELECT * FROM tasks WHERE id = ? OR parent_id = ?", [
-    taskId,
-    taskId,
-  ]);
-  if (!tasks.length) return;
-  const asg = await snapshotRows("SELECT * FROM assignments WHERE task_id = ?", [taskId]);
-  const chk = await snapshotRows("SELECT * FROM checklist_items WHERE task_id = ?", [taskId]);
-  const cmt = await snapshotRows("SELECT * FROM comments WHERE task_id = ?", [taskId]);
-  const step = await snapshotRows("SELECT * FROM chain_steps WHERE task_id = ?", [taskId]);
+  const ids = await descendantIds(taskId);
+  if (!ids.length) return;
+  const ph = ids.map(() => "?").join(", ");
+  const tasks = await snapshotRows(`SELECT * FROM tasks WHERE id IN (${ph})`, ids);
+  const children: Record<string, Row[]> = {};
+  for (const table of CHILD_TABLES) {
+    children[table] = await snapshotRows(
+      `SELECT * FROM ${table} WHERE task_id IN (${ph})`,
+      ids,
+    );
+  }
   const doDelete = async () => {
-    await powerSync.execute("DELETE FROM chain_steps WHERE task_id = ?", [taskId]);
-    await powerSync.execute("DELETE FROM assignments WHERE task_id = ?", [taskId]);
-    await powerSync.execute("DELETE FROM checklist_items WHERE task_id = ?", [taskId]);
-    await powerSync.execute("DELETE FROM comments WHERE task_id = ?", [taskId]);
-    await powerSync.execute("DELETE FROM tasks WHERE id = ? OR parent_id = ?", [taskId, taskId]);
+    for (const table of CHILD_TABLES) {
+      await powerSync.execute(`DELETE FROM ${table} WHERE task_id IN (${ph})`, ids);
+    }
+    await powerSync.execute(`DELETE FROM tasks WHERE id IN (${ph})`, ids);
   };
   await doDelete();
   pushUndo({
     undo: async () => {
       await reinsert("tasks", tasks);
-      await reinsert("assignments", asg);
-      await reinsert("checklist_items", chk);
-      await reinsert("comments", cmt);
-      await reinsert("chain_steps", step);
+      for (const table of CHILD_TABLES) {
+        await reinsert(table, children[table] ?? []);
+      }
     },
     redo: doDelete,
   });

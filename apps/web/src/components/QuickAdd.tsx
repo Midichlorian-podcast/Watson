@@ -97,9 +97,12 @@ export function QuickAdd({
       const mm = String(parsed.startMin % 60).padStart(2, "0");
       startDate = `${base}T${hh}:${mm}:00`;
     }
+    const taskId = crypto.randomUUID();
+    const now = new Date().toISOString();
     await powerSync.execute(
-      "INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, deadline, duration_min, recurrence, recurrence_rule, recurrence_basis, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, deadline, duration_min, recurrence, recurrence_rule, recurrence_basis, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
+        taskId,
         parsed.projectId ?? inboxId,
         name,
         parsed.priority ?? 2,
@@ -110,9 +113,24 @@ export function QuickAdd({
         parsed.recurrence?.label ?? null,
         parsed.recurrence ? JSON.stringify(parsed.recurrence) : null,
         parsed.recurrence ? "due_date" : null,
-        new Date().toISOString(),
+        now,
       ],
     );
+    // @osoby z parseru → reálná přiřazení (prototyp quickAdd, personQueries).
+    const assigned = new Set<string>();
+    for (const q of parsed.personQueries ?? []) {
+      const ql = q.toLowerCase();
+      const person = people.find(
+        (p) => p.name.toLowerCase().includes(ql) || p.initials.toLowerCase().startsWith(ql),
+      );
+      if (person && !assigned.has(person.id)) {
+        assigned.add(person.id);
+        await powerSync.execute(
+          "INSERT INTO assignments (id, task_id, user_id, created_at) VALUES (uuid(), ?, ?, ?)",
+          [taskId, person.id, now],
+        );
+      }
+    }
     setRaw("");
     setSugIdx(0);
     onDone?.();

@@ -36,7 +36,8 @@ export function Projekty() {
 
   const { data: workspaces } = useWorkspaces();
   const { activeWs } = useWorkspace();
-  const wsName = workspaces?.find((w) => w.id === activeWs)?.name ?? "";
+  const activeWsRow = workspaces?.find((w) => w.id === activeWs);
+  const wsName = activeWsRow?.name ?? "";
   const shown = useMemo(
     () => projects.filter((p) => !activeWs || p.workspace_id === activeWs),
     [projects, activeWs],
@@ -131,7 +132,14 @@ export function Projekty() {
         </h1>
         {wsName && (
           <>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--w-brass)" }} />
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 2,
+                background: activeWsRow?.color ?? "var(--w-brass)",
+              }}
+            />
             <span className="font-display font-semibold text-ink-3" style={{ fontSize: 13 }}>
               {wsName}
             </span>
@@ -140,8 +148,8 @@ export function Projekty() {
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="ml-auto flex items-center gap-1.5 rounded-[9px] border border-brass font-display font-bold text-brass-text hover:bg-brass hover:text-white"
-          style={{ background: "var(--w-brass-soft)", padding: "7px 13px", fontSize: 12.5 }}
+          className="ml-auto flex items-center gap-1.5 rounded-[9px] font-display font-bold text-white hover:brightness-105"
+          style={{ background: "var(--w-brass)", padding: "7px 13px", fontSize: 12.5 }}
         >
           <Icon name="pridat" size={14} />
           {t("projects.new")}

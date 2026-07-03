@@ -19,6 +19,8 @@ export interface RowMeta {
   assigneeIds: string[];
   assignAll?: { done: number; total: number };
   status?: { label: string; kind: "success" | "muted" };
+  /** Název rodiče (kontext vrstveného podúkolu v seznamech). */
+  parentName?: string;
 }
 
 const EMPTY: RowMeta = { avatars: [], assigneeIds: [] };
@@ -64,6 +66,10 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
     is_done: number | null;
     position: number | null;
   }>("SELECT id, name, is_done, position FROM statuses");
+  // Jména rodičů (kontext podúkolů v seznamech).
+  const { data: parents } = usePsQuery<{ id: string; name: string | null }>(
+    "SELECT id, name FROM tasks WHERE id IN (SELECT DISTINCT parent_id FROM tasks WHERE parent_id IS NOT NULL)",
+  );
   const { data: team } = useQuery({
     queryKey: ["wsMembersFull", activeWs],
     enabled: !!activeWs,
@@ -89,6 +95,7 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
       asgMap.set(a.task_id, arr);
     }
     const stsMap = new Map((sts ?? []).map((s) => [s.id, s] as const));
+    const parentMap = new Map((parents ?? []).map((p) => [p.id, p.name ?? ""] as const));
 
     return {
       metaOf: (task: TaskRow) => {
@@ -105,6 +112,7 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
             brass: isAll && i === 0 ? true : undefined,
           })),
           assigneeIds: people.map((p) => p.id),
+          parentName: task.parent_id ? parentMap.get(task.parent_id) : undefined,
           assignAll: isAll
             ? { done: people.filter((p) => p.done).length, total: people.length }
             : undefined,
@@ -119,7 +127,7 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
         };
       },
     };
-  }, [chk, cmt, rem, asg, sts, team]);
+  }, [chk, cmt, rem, asg, sts, parents, team]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

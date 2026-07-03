@@ -71,7 +71,6 @@ const endMin = (t: TaskRow): number => {
   return Math.min(1440, s + (t.duration_min ?? 60));
 };
 const isVirtual = (t: TaskRow) => t.id.includes("@");
-const baseId = (t: TaskRow) => t.id.split("@")[0] ?? t.id;
 
 /** České genitivy měsíců + dny (verbatim prototyp ř. 3109-3110). */
 const MNG = ["ledna", "února", "března", "dubna", "května", "června", "července", "srpna", "září", "října", "listopadu", "prosince"];
@@ -113,7 +112,7 @@ function CalCheck({ t: tk, size, style }: { t: TaskRow; size: number; style?: CS
       aria-label={done ? "Označit jako nehotové" : "Dokončit"}
       onClick={(e) => {
         e.stopPropagation();
-        if (!isVirtual(tk)) void toggleTask(tk);
+        void toggleTask(tk); // virtuální výskyt → per-výskyt override (tasks.ts)
       }}
       onPointerDown={(e) => e.stopPropagation()}
       className="grid shrink-0 place-items-center rounded-full"
@@ -551,7 +550,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
               todayIso={todayIso}
               borderColorOf={borderColorOf}
               projColor={projColor}
-              onOpen={(tk) => open(baseId(tk))}
+              onOpen={(tk) => open(tk.id)}
               onDrop={(id, iso) => void moveTask(id, iso, null)}
             />
           ) : (
@@ -565,7 +564,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
               projColor={projColor}
               projName={projName}
               scrollRef={gridScrollRef}
-              onOpen={(tk) => open(baseId(tk))}
+              onOpen={(tk) => open(tk.id)}
               onAdd={(iso, min, dur) =>
                 openAdd({ date: iso, time: min != null ? fmtMin(min) : undefined, duration: dur })
               }
@@ -839,19 +838,16 @@ function TimeGrid({
   const isos = days.map(isoOf);
   const snap = (m: number) => Math.max(0, Math.min(1425, Math.round(m / 15) * 15));
 
-  /** Sloupec dle clientX (cross-day drag, ř. 2691). */
+  /** Sloupec dle clientX (cross-day drag, ř. 2691) — POZOR na 46px hodinovou osu vlevo. */
+  const GUTTER = 46;
   const colAt = (clientX: number): string | null => {
     const el = weekGridRef.current;
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    const idx = Math.floor(((clientX - r.left) / r.width) * isos.length);
+    const usable = r.width - GUTTER;
+    if (usable <= 0) return null;
+    const idx = Math.floor(((clientX - r.left - GUTTER) / usable) * isos.length);
     return isos[Math.max(0, Math.min(isos.length - 1, idx))] ?? null;
-  };
-  const minAt = (clientY: number): number => {
-    const el = weekGridRef.current;
-    if (!el) return 0;
-    const r = el.getBoundingClientRect();
-    return snap((clientY - r.top + (scrollRef.current?.scrollTop ?? 0) - (r.top - r.top)) / PPM);
   };
 
   // ── blok: move/resize (port calBlockDown/_calMove/_calUp) ──

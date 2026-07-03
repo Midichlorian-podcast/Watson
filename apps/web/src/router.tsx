@@ -19,8 +19,10 @@ const ukolyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/ukoly",
   component: Ukoly,
-  validateSearch: (s: Record<string, unknown>): { projekt?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { projekt?: string; ukol?: string } => ({
     projekt: typeof s.projekt === "string" ? s.projekt : undefined,
+    // deep-link z „Kopírovat odkaz" — otevře detail úkolu
+    ukol: typeof s.ukol === "string" ? s.ukol : undefined,
   }),
 });
 const projektyRoute = createRoute({

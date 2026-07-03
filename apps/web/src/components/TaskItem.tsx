@@ -7,9 +7,10 @@ import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
 import { deadlineLabel, rowDue, toggleTask } from "../lib/tasks";
+import { useWorkspaces } from "../lib/workspace";
 
 type Pri = 1 | 2 | 3 | 4;
-export type TaskProject = { name: string | null; color: string | null };
+export type TaskProject = { name: string | null; color: string | null; workspace_id?: string | null };
 
 /**
  * Sdílená položka seznamu úkolů — plná anatomie řádku dle prototypu: meta ikony
@@ -33,9 +34,16 @@ export function TaskItem({
   const { open } = useTaskDetail();
   const { metaOf } = useRowMeta();
   const { data: session } = useSession();
+  const { data: workspaces } = useWorkspaces();
   const navigate = useNavigate();
   const meta = metaOf(task);
   const myId = session?.user?.id;
+  // wsdot — čtvereček barvy prostoru před názvem projektu (prototyp ř. 422 + CSS 105).
+  const resolvedWsColor =
+    wsColor ??
+    (project?.workspace_id
+      ? ((workspaces ?? []).find((w) => w.id === project.workspace_id)?.color ?? undefined)
+      : undefined);
   // „→ Přišlo na tebe" — aktivní krok štafety přiřazený mně (prototyp handedOff).
   const handedOff =
     flow?.state === "active" && !!myId && meta.assigneeIds.includes(myId) && !task.completed_at;
@@ -46,7 +54,8 @@ export function TaskItem({
         priority={(task.priority ?? 4) as Pri}
         projectName={project?.name ?? undefined}
         projectColor={project?.color ?? undefined}
-        wsColor={wsColor}
+        wsColor={resolvedWsColor}
+        parentName={meta.parentName}
         color={task.color ?? undefined}
         due={rowDue(task, t)}
         deadline={deadlineLabel(task.deadline)}
