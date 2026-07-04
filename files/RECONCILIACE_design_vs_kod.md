@@ -864,3 +864,48 @@ jednorázově převedeny na tasks s parent_id (7 položek) a tabulka se přestal
   (metrika, stepper cílové úrovně, reálná hodnota, Počítá se z N úkolů) + „Úkoly v hledáčku".
 - Vědomě mimo: transfer vlastnictví workspace (role menu bez „Vlastník"), reálné pozvánky
   (mail #8), per-výskyt override názvu/priority (shodně s prototypem).
+
+
+## §33 — Re-audit v3: kompletní uzavření (2026-07-03/04, #51)
+
+Ověřovací re-audit (files/AUDIT_v3.md + AUDIT_v3_dodatky.md, 10 modulů ~79 % → uzavřeno)
+po modulech; klíčová rozhodnutí a hotové opravy:
+
+**Parita podúkolů + criticaly**
+- Rekurzivní mazání (CTE potomci + child tabulky) — nic neosiří; rekurzivní duplikace vč. přiřazení.
+- Pravidlo viditelnosti podúkolů: Úkoly/Nástěnka skrývají `parent_id` řádky (⚏ rodiče je zastupuje),
+  datumové pohledy (Dnes/Nadcházející/Kalendář) je ukazují JEN s vlastním termínem.
+  Sdílená utilita `lib/inbox.isInboxTask` + jednotné počty sidebar/header/obrazovka.
+- Podúkol = plnohodnotný úkol (čas/trvání v editaci detailu; toggleTask sémantika všude; guard
+  `!parent_id` u opakování zrušen).
+
+**R6 — per-uživatelská barva úkolu (README ř. 108) — DOPLNĚNO**
+- Nová tabulka `task_user_colors` (migrace 0012) + samostatný per-user sync bucket `user_own`
+  (`request.user_id()` smí být JEN v parameter query, ne v data query — jinak fatální chyba replikátoru).
+- Zápis: color picker upsertuje vlastní barvu (dotaz na existenci až při kliku → idempotentní).
+  Čtení: `rowMeta.color` + `lib/userColors`; má přednost před sdílenou `tasks.color` (legacy fallback).
+- Ověřeno živě: barva → `task_user_colors` (per-user), sdílená `tasks.color` netknutá.
+
+**Toolbar 1:1** — split-button řazení (6 klíčů vč. Projekt/Stav), Filtr popover
+(Priorita/Stav/Projekt/Osoba + Vymazat), aktivní chipy; `useToolbarCtx` nad reálnými daty.
+
+**Průřezové** — sdílený `useKbNav` (j/k/Enter/Space/1–4/⌫) na všech listech + guard na `[data-esc-layer]`;
+occurrence konec `until/count/showAll` (parseRecurrenceRule) v Dnes/Nadcházející/Kalendář;
+undo rozšířeno (toggle, reschedule, výskyty, kalendář drag, board drop, priorita, delete);
+`created_by` na všech klientských INSERTech; g+u/g+k respektují zámek pohledu; ⌘K + Kalendář a ws filtr.
+
+**Cíle** — šablony (6×), filtry osoba/klíčové slovo, období, progress ring, obnova období
+(migrace 0011: period/period_start/filter_person_id/filter_keyword).
+
+**EN i18n** — kalendář (MNG/WD/WD2 → Intl(i18n.language), CZ genitivy zachovány), Reporty WD_LABELS,
+Postupy GATE_SHORT, „Celý den", pluralizace počtu výsledků → i18next count.
+
+**Mobil** — Watson strip (Dnes) + kalendářní gear/Plánování skryté (`useIsMobile`, prototyp show*).
+
+**PWA** — workbox runtimeCaching Google Fonts (offline-first typografie).
+
+**Nastavení** — ws tečka barvou prostoru, invite modal 1:1 + optimistický roster „Pozván(a)",
+bez volby „Kompaktní" (README ř. 111).
+
+**Vědomě mimo (beze změny):** saveTemplate neukládá `who` (účty se liší mezi prostory);
+reálné pozvánky = mail #8; per-výskyt override názvu/priority.
