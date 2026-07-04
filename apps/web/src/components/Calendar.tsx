@@ -16,6 +16,7 @@ import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
 import { rowDue, todayISO, toggleTask } from "../lib/tasks";
+import { pushUndo } from "../lib/undo";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useUserColors } from "../lib/userColors";
 import { CalendarMonth } from "./CalendarMonth";
@@ -435,10 +436,20 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 			else if (startMin(tk) != null && tk.start_date)
 				start = `${iso}T${tk.start_date.slice(11)}`;
 		}
-		await powerSync.execute(
-			"UPDATE tasks SET due_date = ?, start_date = ? WHERE id = ?",
-			[iso, start, id],
-		);
+		const prevDue = tk.due_date;
+		const prevStart = tk.start_date;
+		const write = async (d: string | null, s: string | null) => {
+			await powerSync.execute(
+				"UPDATE tasks SET due_date = ?, start_date = ? WHERE id = ?",
+				[d, s, id],
+			);
+		};
+		await write(iso, start);
+		// ⌘Z vrátí přesun v kalendáři (prototyp verzuje každou změnu tasks, ř. 2239).
+		pushUndo({
+			undo: () => write(prevDue, prevStart),
+			redo: () => write(iso, start),
+		});
 	};
 
 	const chevron = (dir: -1 | 1) => (

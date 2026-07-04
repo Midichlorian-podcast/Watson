@@ -9,6 +9,7 @@ import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
 import { deadlineLabel, rowDue } from "../lib/tasks";
+import { pushUndo } from "../lib/undo";
 
 /**
  * Nástěnka — sloupce dle `statuses` (R9: drop do sloupce s is_done ⇄ completed_at).
@@ -87,14 +88,23 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 		if (!tk) return;
 		const wasDone = !!tk.completed_at;
 		// R9: is_done sloupec ⇄ completed_at (provázané se zaškrtnutím)
-		await powerSync.execute(
-			"UPDATE tasks SET status_id = ?, completed_at = ? WHERE id = ?",
-			[
-				statusId,
-				isDone ? (tk.completed_at ?? new Date().toISOString()) : null,
-				tk.id,
-			],
-		);
+		const prevStatus = tk.status_id;
+		const prevDone = tk.completed_at;
+		const newDone = isDone
+			? (tk.completed_at ?? new Date().toISOString())
+			: null;
+		const writeStatus = async (st: string | null, done: string | null) => {
+			await powerSync.execute(
+				"UPDATE tasks SET status_id = ?, completed_at = ? WHERE id = ?",
+				[st, done, tk.id],
+			);
+		};
+		await writeStatus(statusId, newDone);
+		// ⌘Z vrátí přesun sloupce/stavu na nástěnce (prototyp verzuje každou změnu tasks).
+		pushUndo({
+			undo: () => writeStatus(prevStatus, prevDone),
+			redo: () => writeStatus(statusId, newDone),
+		});
 		// Reorder v rámci sloupce (prototyp boardOrder splice, ř. 2569–2573).
 		const col = columns.find((c) => c.st.id === statusId);
 		if (col) {
