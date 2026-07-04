@@ -33,7 +33,13 @@ const initials = (name: string) =>
 		.join("")
 		.toUpperCase() || "?";
 
-const WD_LABELS = ["Po", "Út", "St", "Čt", "Pá", "So", "Ne"];
+// Krátké názvy dní Po–Ne dle jazyka (2024-01-01 je pondělí).
+const wdLabels = (lang: string): string[] =>
+	Array.from({ length: 7 }, (_, i) =>
+		new Intl.DateTimeFormat(lang, { weekday: "short" }).format(
+			new Date(2024, 0, 1 + i),
+		),
+	);
 
 /** ISO data aktuálního týdne Po–Ne. */
 function weekDays(): string[] {
@@ -49,7 +55,8 @@ function weekDays(): string[] {
 
 /** Reporty — Přehled (KPI + týdenní graf + podle projektu + cíle) a Lidé (roster + member detail). */
 export function Reporty() {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
+	const WD_LABELS = wdLabels(i18n.language);
 	const navigate = useNavigate();
 	const search = useSearch({ from: "/reporty" });
 	const projects = useProjects();

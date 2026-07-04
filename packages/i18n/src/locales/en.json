@@ -542,7 +542,10 @@
 		"stepProjectTitle": "Step project — hand-off between projects",
 		"thenHandOff": "then you hand off →",
 		"myStepsHead": "Your next step in flows",
-		"remindSent": "Reminder sent"
+		"remindSent": "Reminder sent",
+		"gateShortAuto": "Auto →",
+		"gateShortParallel": "Parallel ⇉",
+		"gateShortManual": "Manual ✋"
 	},
 	"toolbar": {
 		"filter": "Filter",

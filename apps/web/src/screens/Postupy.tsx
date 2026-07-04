@@ -1289,9 +1289,9 @@ function FlowModal({
 		schedFrom === "deadline" ? addDays(anchor, -maxOff) : anchor;
 	const GATE_CYCLE = ["after_previous", "with_previous", "manual"];
 	const GATE_SHORT: Record<string, string> = {
-		after_previous: "Auto →",
-		with_previous: "Souběh ⇉",
-		manual: "Ruční ✋",
+		after_previous: t("flows.gateShortAuto"),
+		with_previous: t("flows.gateShortParallel"),
+		manual: t("flows.gateShortManual"),
 	};
 
 	const create = async () => {

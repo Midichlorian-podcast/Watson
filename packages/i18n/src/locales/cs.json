@@ -544,7 +544,10 @@
 		"stepProjectTitle": "Projekt kroku — předání mezi projekty",
 		"thenHandOff": "pak předáš →",
 		"myStepsHead": "Tvůj další krok v postupech",
-		"remindSent": "Připomínka odeslána"
+		"remindSent": "Připomínka odeslána",
+		"gateShortAuto": "Auto →",
+		"gateShortParallel": "Souběh ⇉",
+		"gateShortManual": "Ruční ✋"
 	},
 	"toolbar": {
 		"filter": "Filtr",

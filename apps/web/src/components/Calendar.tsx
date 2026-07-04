@@ -1,5 +1,5 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useTranslation } from "@watson/i18n";
+import i18n, { useTranslation } from "@watson/i18n";
 import {
 	type CSSProperties,
 	type PointerEvent as ReactPointerEvent,
@@ -16,6 +16,7 @@ import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
 import { rowDue, todayISO, toggleTask } from "../lib/tasks";
+import { useIsMobile } from "../lib/useIsMobile";
 import { useUserColors } from "../lib/userColors";
 import { CalendarMonth } from "./CalendarMonth";
 
@@ -76,31 +77,9 @@ const endMin = (t: TaskRow): number => {
 };
 const isVirtual = (t: TaskRow) => t.id.includes("@");
 
-/** České genitivy měsíců + dny (verbatim prototyp ř. 3109-3110). */
-const MNG = [
-	"ledna",
-	"února",
-	"března",
-	"dubna",
-	"května",
-	"června",
-	"července",
-	"srpna",
-	"září",
-	"října",
-	"listopadu",
-	"prosince",
-];
-const WD = [
-	"neděle",
-	"pondělí",
-	"úterý",
-	"středa",
-	"čtvrtek",
-	"pátek",
-	"sobota",
-];
-const WD2 = ["Ne", "Po", "Út", "St", "Čt", "Pá", "So"];
+/** Krátký název dne dle jazyka (Po/Út… / Mon/Tue…). */
+const wdShort = (d: Date) =>
+	new Intl.DateTimeFormat(i18n.language, { weekday: "short" }).format(d);
 
 /** Světlý tint z hex barvy úkolu (data-tc prototypu). */
 const tcTint = (hex: string) => `color-mix(in srgb, ${hex} 12%, var(--w-card))`;
@@ -222,6 +201,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 		() => localStorage.getItem(PLANNING_LS) === "1",
 	);
 	const [gearOpen, setGearOpen] = useState(false);
+	const isMobile = useIsMobile();
 	// Kotevní datum (calCur) — týden je „rolující" od kotvy bez snapu (prototyp weekDates, ř. 2658);
 	// při startu v týdnu kotvíme na pondělí (ekvivalent calToday, ř. 2661).
 	const [cur, setCur] = useState<Date>(() => {
@@ -286,10 +266,21 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 		}
 	};
 
-	/** Dny zobrazeného období. */
+	/** Dny zobrazeného období. Popisky přes Intl(i18n.language) — CS genitivy měsíců i EN. */
 	const { days, rangeLabel, monthBase } = useMemo(() => {
+		const lang = i18n.language;
+		const dayMonth = (d: Date) =>
+			new Intl.DateTimeFormat(lang, { day: "numeric", month: "long" }).format(
+				d,
+			);
+		const monthYear = (d: Date) =>
+			new Intl.DateTimeFormat(lang, { month: "long", year: "numeric" }).format(
+				d,
+			);
+		const weekdayLong = (d: Date) =>
+			new Intl.DateTimeFormat(lang, { weekday: "long" }).format(d);
 		if (mode === "day") {
-			const label = `${cur.getDate()}. ${MNG[cur.getMonth()]} · ${WD[cur.getDay()]}`;
+			const label = `${dayMonth(cur)} · ${weekdayLong(cur)}`;
 			return { days: [new Date(cur)], rangeLabel: label, monthBase: cur };
 		}
 		if (mode === "week") {
@@ -303,14 +294,13 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 			const last = list[6] ?? first;
 			const label =
 				first.getMonth() === last.getMonth()
-					? `${first.getDate()}.–${last.getDate()}. ${MNG[last.getMonth()]} ${last.getFullYear()}`
-					: `${first.getDate()}. ${MNG[first.getMonth()]} – ${last.getDate()}. ${MNG[last.getMonth()]} ${last.getFullYear()}`;
+					? `${first.getDate()}.–${last.getDate()}. ${monthYear(last)}`
+					: `${dayMonth(first)} – ${dayMonth(last)} ${last.getFullYear()}`;
 			return { days: list, rangeLabel: label, monthBase: first };
 		}
 		const base = new Date(cur.getFullYear(), cur.getMonth(), 1);
-		const label = `${["Leden", "Únor", "Březen", "Duben", "Květen", "Červen", "Červenec", "Srpen", "Září", "Říjen", "Listopad", "Prosinec"][base.getMonth()]} ${base.getFullYear()}`;
-		return { days: [], rangeLabel: label, monthBase: base };
-	}, [mode, cur]);
+		return { days: [], rangeLabel: monthYear(base), monthBase: base };
+	}, [mode, cur, i18n.language]);
 
 	// Per-výskyt výjimky (R4): skipped výskyty se nekreslí, done se propíše.
 	const { data: ovr } = usePsQuery<{
@@ -562,7 +552,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 						))}
 					</div>
 				)}
-				{mode !== "month" && (
+				{mode !== "month" && !isMobile && (
 					<div className="relative">
 						<button
 							type="button"
@@ -751,7 +741,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 						/>
 					)}
 				</div>
-				{planningOn && mode !== "month" && (
+				{planningOn && mode !== "month" && !isMobile && (
 					<PlanningPanel
 						tasks={tasks}
 						todayIso={todayIso}
@@ -863,6 +853,7 @@ function WeekColumns({
 	onOpen: (t: TaskRow) => void;
 	onDrop: (id: string, iso: string) => void;
 }) {
+	const { t } = useTranslation();
 	const uc = useUserColors();
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
@@ -888,7 +879,7 @@ function WeekColumns({
 									color: isToday ? "var(--w-brass-text)" : "var(--w-ink-3)",
 								}}
 							>
-								{WD2[d.getDay()]}
+								{wdShort(d)}
 							</div>
 							<div
 								className="font-mono"
@@ -1013,7 +1004,7 @@ function WeekColumns({
 											}}
 										>
 											{sm == null
-												? "Celý den"
+												? t("calendar.allDay")
 												: `${fmtMin(sm)}–${fmtMin(endMin(tk))}`}
 										</div>
 									</div>
@@ -1297,7 +1288,7 @@ function TimeGrid({
 										color: isToday ? "var(--w-brass-text)" : "var(--w-ink-3)",
 									}}
 								>
-									{WD2[d.getDay()]}
+									{wdShort(d)}
 								</div>
 								<div
 									className="font-mono"
