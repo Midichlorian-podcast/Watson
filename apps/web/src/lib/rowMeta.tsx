@@ -21,6 +21,8 @@ export interface RowMeta {
 	status?: { label: string; kind: "success" | "muted" };
 	/** Název rodiče (kontext vrstveného podúkolu v seznamech). */
 	parentName?: string;
+	/** R6 — vlastní barva úkolu přihlášeného uživatele (per-user overlay). */
+	color?: string;
 }
 
 const EMPTY: RowMeta = { avatars: [], assigneeIds: [] };
@@ -76,6 +78,11 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 	const { data: parents } = usePsQuery<{ id: string; name: string | null }>(
 		"SELECT id, name FROM tasks WHERE id IN (SELECT DISTINCT parent_id FROM tasks WHERE parent_id IS NOT NULL)",
 	);
+	// R6 — per-uživatelské barvy úkolů (syncuje se jen vlastní, viz sync-config).
+	const { data: userColors } = usePsQuery<{
+		task_id: string;
+		color: string | null;
+	}>("SELECT task_id, color FROM task_user_colors");
 	const { data: team } = useQuery({
 		queryKey: ["wsMembersFull", activeWs],
 		enabled: !!activeWs,
@@ -113,6 +120,11 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 		const parentMap = new Map(
 			(parents ?? []).map((p) => [p.id, p.name ?? ""] as const),
 		);
+		const colorMap = new Map(
+			(userColors ?? [])
+				.filter((c) => c.color)
+				.map((c) => [c.task_id, c.color as string] as const),
+		);
 
 		return {
 			metaOf: (task: TaskRow) => {
@@ -134,6 +146,7 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 					parentName: task.parent_id
 						? parentMap.get(task.parent_id)
 						: undefined,
+					color: colorMap.get(task.id),
 					assignAll: isAll
 						? {
 								done: people.filter((p) => p.done).length,
@@ -153,7 +166,7 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 				};
 			},
 		};
-	}, [chk, cmt, rem, asg, sts, parents, team]);
+	}, [chk, cmt, rem, asg, sts, parents, userColors, team]);
 
 	return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

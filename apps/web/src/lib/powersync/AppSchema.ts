@@ -132,6 +132,18 @@ const task_occurrence_overrides = new Table(
 	{ indexes: { by_task: ["task_id"], by_project: ["project_id"] } },
 );
 
+/** R6 — per-uživatelská barva úkolu (syncuje se jen vlastní barva). */
+const task_user_colors = new Table(
+	{
+		task_id: column.text,
+		project_id: column.text,
+		user_id: column.text,
+		color: column.text,
+		created_at: column.text,
+	},
+	{ indexes: { by_task: ["task_id"] } },
+);
+
 const reminders = new Table(
 	{
 		task_id: column.text,
@@ -230,6 +242,7 @@ export const AppSchema = new Schema({
 	checklist_items,
 	comments,
 	task_occurrence_overrides,
+	task_user_colors,
 	reminders,
 	chains,
 	chain_steps,
@@ -248,6 +261,7 @@ export type AssignmentRow = Database["assignments"];
 export type ChecklistItemRow = Database["checklist_items"];
 export type CommentRow = Database["comments"];
 export type ReminderRow = Database["reminders"];
+export type TaskUserColorRow = Database["task_user_colors"];
 export type ChainRow = Database["chains"];
 export type ChainStepRow = Database["chain_steps"];
 export type GoalRow = Database["goals"];

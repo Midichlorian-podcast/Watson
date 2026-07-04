@@ -168,6 +168,33 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		[realId],
 	);
 	const task = rows?.[0];
+	// R6 — vlastní barva úkolu (per-user overlay; syncuje se jen moje barva).
+	const { data: colorRows } = usePsQuery<{ id: string; color: string | null }>(
+		"SELECT id, color FROM task_user_colors WHERE task_id = ? LIMIT 1",
+		[realId],
+	);
+	const userColor = colorRows?.[0]?.color ?? null;
+	const setUserColor = async (color: string | null) => {
+		const uid = session?.user?.id;
+		if (!uid || !task) return;
+		// Ptáme se na existující řádek AŽ TEĎ (ne ze stavu) — jinak rychlé překliky
+		// vloží duplikát, který server odmítne na unique (task_id, user_id).
+		const existing = await powerSync.getAll<{ id: string }>(
+			"SELECT id FROM task_user_colors WHERE task_id = ? AND user_id = ? LIMIT 1",
+			[realId, uid],
+		);
+		if (existing[0]) {
+			await powerSync.execute(
+				"UPDATE task_user_colors SET color = ?, updated_at = ? WHERE id = ?",
+				[color, new Date().toISOString(), existing[0].id],
+			);
+		} else {
+			await powerSync.execute(
+				"INSERT INTO task_user_colors (id, task_id, project_id, user_id, color, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
+				[realId, task.project_id, uid, color, new Date().toISOString()],
+			);
+		}
+	};
 	const { data: subs } = usePsQuery<TaskRow>(
 		"SELECT * FROM tasks WHERE parent_id = ? ORDER BY created_at",
 		[realId],
@@ -861,7 +888,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								>
 									<button
 										type="button"
-										onClick={() => void patch(realId, { color: null })}
+										onClick={() => void setUserColor(null)}
 										aria-label="—"
 										className="grid place-items-center border border-line bg-card"
 										style={{ width: 20, height: 20, borderRadius: 6 }}
@@ -881,7 +908,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										<button
 											key={c}
 											type="button"
-											onClick={() => void patch(realId, { color: c })}
+											onClick={() => void setUserColor(c)}
 											aria-label={c}
 											style={{
 												width: 20,
@@ -889,7 +916,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 												borderRadius: 6,
 												background: c,
 												boxShadow:
-													task.color === c
+													userColor === c
 														? "0 0 0 2px var(--w-card), 0 0 0 4px var(--w-brass)"
 														: undefined,
 											}}

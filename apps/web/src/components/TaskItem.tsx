@@ -64,7 +64,7 @@ export function TaskItem({
 				projectColor={project?.color ?? undefined}
 				wsColor={resolvedWsColor}
 				parentName={meta.parentName}
-				color={task.color ?? undefined}
+				color={meta.color ?? task.color ?? undefined}
 				due={rowDue(task, t)}
 				deadline={deadlineLabel(task.deadline)}
 				status={meta.status}

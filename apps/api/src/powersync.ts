@@ -212,6 +212,17 @@ const TABLES: Record<string, TableDef> = {
 		hasUpdatedAt: false,
 		projectVia: { kind: "task", col: "task_id" },
 	},
+	// R6 — per-uživatelská barva úkolu (overlay nad tasks; syncuje se jen vlastní barva).
+	task_user_colors: {
+		columns: {
+			task_id: "text",
+			project_id: "text",
+			user_id: "text",
+			color: "text",
+		},
+		hasUpdatedAt: true,
+		projectVia: { kind: "task", col: "task_id" },
+	},
 	reminders: {
 		columns: {
 			task_id: "text",

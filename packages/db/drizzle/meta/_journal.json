@@ -85,6 +85,13 @@
 			"when": 1783062414602,
 			"tag": "0011_giant_the_stranger",
 			"breakpoints": true
+		},
+		{
+			"idx": 12,
+			"version": "7",
+			"when": 1783189942179,
+			"tag": "0012_adorable_gressill",
+			"breakpoints": true
 		}
 	]
 }

@@ -90,6 +90,31 @@ export const tasks = pgTable(
 	],
 );
 
+/**
+ * R6 — PER-UŽIVATELSKÁ barva úkolu (README ř. 108: „barvu vidí jen ten, kdo ji nastavil").
+ * Overlay nad tasks: každý uživatel má vlastní řádek; sync jen vlastní barvy (per-user bucket).
+ * `project_id` denormalizace pro scoping mazání při odebrání z projektu.
+ */
+export const taskUserColors = pgTable(
+	"task_user_colors",
+	{
+		id: pk(),
+		taskId: uuid("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		userId: uuid("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		color: varchar("color", { length: 9 }),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [uniqueIndex("task_user_colors_uq").on(t.taskId, t.userId)],
+);
+
 /** R2 — per-osoba přiřazení; `completedAt` se u `shared_all` nastavuje zvlášť. */
 export const assignments = pgTable(
 	"assignments",
@@ -187,6 +212,7 @@ export const taskLabels = pgTable(
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type Assignment = typeof assignments.$inferSelect;
+export type TaskUserColor = typeof taskUserColors.$inferSelect;
 export type ChecklistItem = typeof checklistItems.$inferSelect;
 export type Label = typeof labels.$inferSelect;
 export type TaskLabel = typeof taskLabels.$inferSelect;

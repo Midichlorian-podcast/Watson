@@ -18,7 +18,6 @@ import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useFlowSteps } from "../lib/flowSteps";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
-import { useIsMobile } from "../lib/useIsMobile";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
 import { expandOccurrences, parseRecurrenceRule } from "../lib/occurrences";
@@ -27,6 +26,7 @@ import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { pushUndo } from "../lib/undo";
+import { useIsMobile } from "../lib/useIsMobile";
 import { useWatson } from "../lib/watson";
 import { useWorkspace } from "../lib/workspace";
 
@@ -279,45 +279,45 @@ export function Today() {
 		<>
 			{/* WATSON strip — na mobilu skrytý (prototyp showWatsonStrip, ř. 3243) */}
 			{!isMobile && (
-			<div
-				className="flex items-center gap-2.5 border-line border-b"
-				style={{ padding: "10px 20px", background: "var(--w-brass-soft)" }}
-			>
-				<span
-					className="shrink-0 rounded-full"
-					style={{ width: 6, height: 6, background: "var(--w-brass)" }}
-				/>
-				<span
-					className="shrink-0 font-display font-bold text-brass-text"
-					style={{ fontSize: 11.5, letterSpacing: ".04em" }}
+				<div
+					className="flex items-center gap-2.5 border-line border-b"
+					style={{ padding: "10px 20px", background: "var(--w-brass-soft)" }}
 				>
-					WATSON
-				</span>
-				<span
-					className="min-w-0 flex-1 truncate font-body text-ink-2"
-					style={{ fontSize: 13 }}
-				>
-					{greet}
-				</span>
-				{g.overdue.length > 0 && (
+					<span
+						className="shrink-0 rounded-full"
+						style={{ width: 6, height: 6, background: "var(--w-brass)" }}
+					/>
+					<span
+						className="shrink-0 font-display font-bold text-brass-text"
+						style={{ fontSize: 11.5, letterSpacing: ".04em" }}
+					>
+						WATSON
+					</span>
+					<span
+						className="min-w-0 flex-1 truncate font-body text-ink-2"
+						style={{ fontSize: 13 }}
+					>
+						{greet}
+					</span>
+					{g.overdue.length > 0 && (
+						<button
+							type="button"
+							onClick={() => void rescheduleOverdue()}
+							className="shrink-0 font-display font-semibold text-brass-text hover:underline"
+							style={{ fontSize: 12 }}
+						>
+							{t("today.rescheduleOverdue")}
+						</button>
+					)}
 					<button
 						type="button"
-						onClick={() => void rescheduleOverdue()}
-						className="shrink-0 font-display font-semibold text-brass-text hover:underline"
+						onClick={toggleWatson}
+						className="shrink-0 font-display font-semibold text-ink-3 hover:text-brass-text"
 						style={{ fontSize: 12 }}
 					>
-						{t("today.rescheduleOverdue")}
+						{t("today.watsonMore")}
 					</button>
-				)}
-				<button
-					type="button"
-					onClick={toggleWatson}
-					className="shrink-0 font-display font-semibold text-ink-3 hover:text-brass-text"
-					style={{ fontSize: 12 }}
-				>
-					{t("today.watsonMore")}
-				</button>
-			</div>
+				</div>
 			)}
 
 			<div

@@ -16,6 +16,7 @@ import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
 import { rowDue, todayISO, toggleTask } from "../lib/tasks";
+import { useUserColors } from "../lib/userColors";
 import { CalendarMonth } from "./CalendarMonth";
 
 type Mode = "day" | "week" | "month";
@@ -862,6 +863,7 @@ function WeekColumns({
 	onOpen: (t: TaskRow) => void;
 	onDrop: (id: string, iso: string) => void;
 }) {
+	const uc = useUserColors();
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			{/* hlavičková lišta */}
@@ -958,7 +960,9 @@ function WeekColumns({
 											boxShadow: "var(--w-shadow-sm)",
 											opacity: done ? 0.55 : 1,
 											background:
-												!done && tk.color ? tcTint(tk.color) : undefined,
+												!done && uc(tk.id, tk.color)
+													? tcTint(uc(tk.id, tk.color) as string)
+													: undefined,
 										}}
 									>
 										<CalCheck
@@ -1059,6 +1063,7 @@ function TimeGrid({
 }) {
 	const { t } = useTranslation();
 	const { metaOf } = useRowMeta();
+	const uc = useUserColors();
 	const H = 1440 * PPM;
 	const weekGridRef = useRef<HTMLDivElement>(null);
 	const allDayRef = useRef<HTMLDivElement>(null);
@@ -1376,7 +1381,9 @@ function TimeGrid({
 												boxShadow: "var(--w-shadow-sm)",
 												opacity: done ? 0.55 : 1,
 												background:
-													!done && tk.color ? tcTint(tk.color) : undefined,
+													!done && uc(tk.id, tk.color)
+														? tcTint(uc(tk.id, tk.color) as string)
+														: undefined,
 												zIndex: 3,
 											}}
 										>
@@ -1461,7 +1468,9 @@ function TimeGrid({
 													borderLeft: `3px solid ${done ? "var(--w-line)" : borderColorOf(tk)}`,
 													opacity: done ? 0.55 : 1,
 													background:
-														!done && tk.color ? tcTint(tk.color) : undefined,
+														!done && uc(tk.id, tk.color)
+															? tcTint(uc(tk.id, tk.color) as string)
+															: undefined,
 												}}
 											>
 												<CalCheck t={tk} size={13} />
@@ -1700,7 +1709,9 @@ function TimeGrid({
 												boxShadow: "var(--w-shadow-sm)",
 												cursor: isDragging ? "grabbing" : "grab",
 												background:
-													!done && tk.color ? tcTint(tk.color) : undefined,
+													!done && uc(tk.id, tk.color)
+														? tcTint(uc(tk.id, tk.color) as string)
+														: undefined,
 												touchAction: "none",
 											}}
 										>

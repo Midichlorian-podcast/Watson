@@ -218,7 +218,9 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 										// CSS ř. 57 + 115: okraj karty = barva priority, done → line; ř. 114 done opacity .55, data-dim .4.
 										borderColor: done ? "var(--w-line)" : `var(--w-p${pri})`,
 										background:
-											!done && tk.color ? tcTint(tk.color) : undefined,
+											!done && (meta.color ?? tk.color)
+												? tcTint((meta.color ?? tk.color) as string)
+												: undefined,
 										opacity: dragId === tk.id ? 0.4 : done ? 0.55 : 1,
 									}}
 								>
