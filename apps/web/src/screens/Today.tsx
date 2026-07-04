@@ -18,6 +18,7 @@ import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useFlowSteps } from "../lib/flowSteps";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
+import { useIsMobile } from "../lib/useIsMobile";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
 import { expandOccurrences, parseRecurrenceRule } from "../lib/occurrences";
@@ -47,6 +48,7 @@ export function Today() {
 	const { t, i18n } = useTranslation();
 	const { data: session } = useSession();
 	const { toggleWatson } = useWatson();
+	const isMobile = useIsMobile();
 
 	const projects = useProjects();
 	const projMap = useMemo(
@@ -275,7 +277,8 @@ export function Today() {
 
 	return (
 		<>
-			{/* WATSON strip */}
+			{/* WATSON strip — na mobilu skrytý (prototyp showWatsonStrip, ř. 3243) */}
+			{!isMobile && (
 			<div
 				className="flex items-center gap-2.5 border-line border-b"
 				style={{ padding: "10px 20px", background: "var(--w-brass-soft)" }}
@@ -315,6 +318,7 @@ export function Today() {
 					{t("today.watsonMore")}
 				</button>
 			</div>
+			)}
 
 			<div
 				className="mx-auto max-w-[1080px]"
