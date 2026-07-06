@@ -216,15 +216,6 @@ const TEMPLATES: {
 	},
 ];
 
-/** Role pro kroky builderu (prototyp FLOW_ROLES, ř. 2500) — člověk se dosadí při založení.
- *  Konstanta drží i18n klíče; label se renderuje přes t(). */
-const FLOW_ROLE_KEYS = [
-	"flows.roleGrafik",
-	"flows.roleProdukce",
-	"flows.roleUcetni",
-	"flows.roleVedouci",
-] as const;
-
 /** Šablony uložené z běžících postupů (localStorage, prototyp saveFlowAsTemplate). */
 function savedTemplates(): typeof TEMPLATES {
 	try {
@@ -1044,7 +1035,6 @@ function FlowModal({
 	const [name, setName] = useState("");
 	const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
 	const [anchor, setAnchor] = useState(addDays(todayISO(), 7));
-	const [schedFrom, setSchedFrom] = useState<"start" | "deadline">("start");
 	const [tpl, setTpl] = useState<string | null>(null);
 	const [rows, setRows] = useState<
 		{
@@ -1101,15 +1091,8 @@ function FlowModal({
 		);
 	};
 
-	const maxOff = rows.reduce((m, r) => Math.max(m, r.offset), 0);
-	const effAnchor =
-		schedFrom === "deadline" ? addDays(anchor, -maxOff) : anchor;
-	const GATE_CYCLE = ["after_previous", "with_previous", "manual"];
-	const GATE_SHORT: Record<string, string> = {
-		after_previous: t("flows.gateShortAuto"),
-		with_previous: t("flows.gateShortParallel"),
-		manual: t("flows.gateShortManual"),
-	};
+	// jeden model = od data startu (deadline-mode zrušen)
+	const effAnchor = anchor;
 
 	const create = async () => {
 		const nm = name.trim();
@@ -1267,11 +1250,7 @@ function FlowModal({
 								</select>
 							</div>
 							<div style={{ width: 190 }}>
-								<ModalLabel>
-									{schedFrom === "deadline"
-										? t("flows.anchorDeadline")
-										: t("flows.anchorStart")}
-								</ModalLabel>
+								<ModalLabel>{t("flows.anchorStart")}</ModalLabel>
 								<input
 									type="date"
 									value={anchor}
@@ -1281,51 +1260,6 @@ function FlowModal({
 								/>
 							</div>
 						</div>
-
-						<div className="mt-2.5 flex flex-wrap items-center gap-2">
-							<span
-								className="font-display font-bold text-ink-3 uppercase"
-								style={{ fontSize: 10.5, letterSpacing: ".05em" }}
-							>
-								{t("flows.schedule")}
-							</span>
-							<div className="inline-flex overflow-hidden rounded-lg border border-line">
-								{(
-									[
-										["start", t("flows.fromStart")],
-										["deadline", t("flows.toDeadline")],
-									] as const
-								).map(([k, l], i) => (
-									<button
-										key={k}
-										type="button"
-										onClick={() => setSchedFrom(k)}
-										className="font-display font-semibold"
-										style={{
-											fontSize: 11.5,
-											padding: "6px 12px",
-											borderLeft: i > 0 ? "1px solid var(--w-line)" : "none",
-											background:
-												schedFrom === k ? "var(--w-brass-soft)" : "transparent",
-											color:
-												schedFrom === k
-													? "var(--w-brass-text)"
-													: "var(--w-ink-2)",
-										}}
-									>
-										{l}
-									</button>
-								))}
-							</div>
-						</div>
-						<p
-							className="mt-1.5 font-body text-ink-3"
-							style={{ fontSize: 11.5 }}
-						>
-							{schedFrom === "deadline"
-								? t("flows.hintDeadline")
-								: t("flows.hintStart")}
-						</p>
 
 						{/* šablony */}
 						<ModalLabel style={{ margin: "18px 0 8px" }}>
@@ -1520,84 +1454,6 @@ function FlowModal({
 													);
 												})}
 											</span>
-											{/* role (prototyp FLOW_ROLES — člověk se dosadí při založení) */}
-											{FLOW_ROLE_KEYS.map((roleKey) => {
-												const roleLabel = t(roleKey);
-												const on = r.role === roleLabel;
-												return (
-													<button
-														key={roleKey}
-														type="button"
-														title={t("flows.roleTitle")}
-														onClick={() =>
-															setRow(i, { role: on ? "" : roleLabel, who: "" })
-														}
-														className="rounded-full font-display font-semibold"
-														style={{
-															fontSize: 10.5,
-															padding: "4px 9px",
-															border: `1px dashed ${on ? "var(--w-brass)" : "var(--w-line)"}`,
-															background: on
-																? "var(--w-brass-soft)"
-																: "transparent",
-															color: on
-																? "var(--w-brass-text)"
-																: "var(--w-ink-3)",
-														}}
-													>
-														{roleLabel}
-													</button>
-												);
-											})}
-											{/* režim R2 (prototyp toggleFlowStepMode) */}
-											<button
-												type="button"
-												title={t("flows.modeR2Title")}
-												onClick={() =>
-													setRow(i, { mode: r.mode === "all" ? "any" : "all" })
-												}
-												className="rounded-full border border-line font-display font-semibold text-ink-2 hover:border-brass"
-												style={{ padding: "5px 9px", fontSize: 11 }}
-											>
-												{r.mode === "all"
-													? t("addmodal.modeAll")
-													: t("addmodal.modeAny")}
-											</button>
-											{/* projekt kroku — předání mezi projekty (prototyp ř. 1577) */}
-											<select
-												value={r.project}
-												onChange={(e) => setRow(i, { project: e.target.value })}
-												title={t("flows.stepProjectTitle")}
-												className="rounded-full border border-line bg-panel-2 font-display font-semibold text-ink-2 outline-none"
-												style={{
-													padding: "5px 8px",
-													fontSize: 11,
-													maxWidth: 130,
-												}}
-											>
-												<option value="">{t("flows.project")}</option>
-												{projects.map((p) => (
-													<option key={p.id} value={p.id}>
-														{p.name}
-													</option>
-												))}
-											</select>
-											<button
-												type="button"
-												onClick={() =>
-													setRow(i, {
-														gate: GATE_CYCLE[
-															(GATE_CYCLE.indexOf(r.gate) + 1) %
-																GATE_CYCLE.length
-														],
-													})
-												}
-												title={t("flows.gateActivationTitle")}
-												className="rounded-full border border-line font-display font-semibold text-ink-2 hover:border-brass"
-												style={{ padding: "5px 9px", fontSize: 11 }}
-											>
-												{GATE_SHORT[r.gate]}
-											</button>
 											<span className="ml-auto inline-flex items-center gap-1.5">
 												<span
 													className="font-body text-ink-3"

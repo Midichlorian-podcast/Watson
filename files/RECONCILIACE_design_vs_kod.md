@@ -931,3 +931,23 @@ Na přání uživatele (přehlednost, kompletnost):
   místo holé spodní linky (`TaskCard`).
 - **Kalendář**: `overflow-wrap: break-word` u názvů bloků/chipů — dlouhé slovo se v úzkém
   sloupci zalomí v sobě (ukáže celé) místo useknutého začátku.
+
+## §30 — Postupy zjednodušeny (varianta B)
+
+Uživatel: systém postupů byl moc složitý, málokdo by ho použil. Zvolena varianta B
+(zeštíhlit, ne slučovat s podúkoly). Zachováno jádro: štafeta úkolů, jeden aktivní
+krok, auto handoff, samoléčení dat (kaskáda), „kde jsem na řadě", indikátor „Vázne".
+
+Odstraněno (oproti Cloud Design / prototypu):
+- **Plánovací režimy** Řetězec/Kotva → jediný model = kaskáda (anchor mode zrušen
+  v reflow i UI). Builder: pryč „Od začátku/Do termínu", jen „Datum startu".
+- **Brány** (auto/souběžně/ručně) → vše auto; „Aktivovat krok" pryč, advance
+  ignoruje manual (legacy se nezasekne).
+- **Builder per-krok**: pryč role-chipy (Grafik/…), R2 Kdokoli/Všichni, per-krok
+  projekt, gate toggle. Zůstává jméno + osoba + offset + priorita.
+- **localStorage cruft**: „Uložit jako šablonu", „Připomenout" pryč (nesynced).
+- **Bug fix**: AddTaskModal psal step_state='waiting' (neplatný enum) → 'dormant'.
+
+Mrtvé schéma (chain_due_basis, canceled/on_hold, skipped, template_id, anchor_offset)
+zatím ponecháno (odstranění chce migraci) — kandidát na následný úklid.
+Sloučení s podúkoly (varianta C) = možný budoucí směr.
