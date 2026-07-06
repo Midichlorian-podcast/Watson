@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useAddTask } from "../lib/addTask";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
@@ -157,6 +158,7 @@ export function TaskDetailPanel() {
 function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const { t } = useTranslation();
 	const { open, navIds } = useTaskDetail();
+	const { openAdd } = useAddTask();
 	const { metaOf } = useRowMeta();
 	const { data: session } = useSession();
 
@@ -426,11 +428,18 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			[a.completed_at ? null : new Date().toISOString(), a.id],
 		);
 
+	// Rychlé přidání (checklist styl) — dědí prioritu z rodiče, Enter přidá a nechá focus.
 	const addSub = async () => {
 		if (!subText.trim() || depth >= 3) return;
 		await powerSync.execute(
-			"INSERT INTO tasks (id, project_id, parent_id, name, priority, created_at) VALUES (uuid(), ?, ?, ?, 4, ?)",
-			[task.project_id, realId, subText.trim(), new Date().toISOString()],
+			"INSERT INTO tasks (id, project_id, parent_id, name, priority, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
+			[
+				task.project_id,
+				realId,
+				subText.trim(),
+				task.priority ?? 4,
+				new Date().toISOString(),
+			],
 		);
 		setSubText("");
 	};
@@ -1205,13 +1214,45 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							})}
 						</ul>
 						{depth < 3 ? (
-							<input
-								value={subText}
-								onChange={(e) => setSubText(e.target.value)}
-								onKeyDown={(e) => e.key === "Enter" && void addSub()}
-								placeholder={t("detail.addSubtask")}
-								className="mt-2 w-full rounded-lg border border-line border-dashed bg-transparent px-3 py-1.5 text-sm outline-none focus:border-brass"
-							/>
+							<div className="mt-2 flex items-center" style={{ gap: 8 }}>
+								{/* rychlé přidání (checklist) — Enter přidá další, dědí prioritu rodiče */}
+								<input
+									value={subText}
+									onChange={(e) => setSubText(e.target.value)}
+									onKeyDown={(e) => e.key === "Enter" && void addSub()}
+									placeholder={t("detail.addSubtask")}
+									className="min-w-0 flex-1 rounded-lg border border-line border-dashed bg-transparent px-3 py-1.5 text-sm outline-none focus:border-brass"
+								/>
+								{/* plné přidání s atributy — otevře modal s parent_id (termín/deadline/…) */}
+								<button
+									type="button"
+									onClick={() =>
+										openAdd({
+											parentId: realId,
+											projectId: task.project_id ?? undefined,
+											parentName: task.name ?? undefined,
+										})
+									}
+									title={t("detail.addSubtaskFull")}
+									aria-label={t("detail.addSubtaskFull")}
+									className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line text-ink-3 hover:border-brass hover:text-brass-text"
+								>
+									<svg
+										width="16"
+										height="16"
+										viewBox="0 0 16 16"
+										fill="none"
+										aria-hidden
+									>
+										<path
+											d="M8 3.5 V12.5 M3.5 8 H12.5"
+											stroke="currentColor"
+											strokeWidth="1.6"
+											strokeLinecap="round"
+										/>
+									</svg>
+								</button>
+							</div>
 						) : (
 							<p className="mt-2 text-ink-3 text-xs">{t("detail.maxDepth")}</p>
 						)}

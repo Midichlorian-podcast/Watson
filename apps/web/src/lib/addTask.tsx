@@ -13,6 +13,10 @@ export interface AddPrefill {
 	days?: number;
 	/** Předvyplněný projekt (CTA „+ Přidat úkol" ve filtrovaném projektu). */
 	projectId?: string;
+	/** Rodičovský úkol — plné přidání podúkolu (s atributy) z detailu. */
+	parentId?: string;
+	/** Název rodiče pro hint v hlavičce modalu (jen zobrazení). */
+	parentName?: string;
 }
 
 interface AddTaskCtx {

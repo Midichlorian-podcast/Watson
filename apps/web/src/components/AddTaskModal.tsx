@@ -282,6 +282,8 @@ export function AddTaskModal({
 		duration?: number;
 		days?: number;
 		projectId?: string;
+		parentId?: string;
+		parentName?: string;
 	};
 }) {
 	const { t } = useTranslation();
@@ -744,12 +746,13 @@ export function AddTaskModal({
 			recurrenceLabel = draft.repeatLabel || repLbl[draft.repeat];
 		}
 		await powerSync.execute(
-			`INSERT INTO tasks (id, project_id, name, description, priority, color, due_date, start_date,
+			`INSERT INTO tasks (id, project_id, parent_id, name, description, priority, color, due_date, start_date,
         deadline, duration_min, days, recurrence, recurrence_rule, recurrence_basis, assignment_mode, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				id,
 				draft.project,
+				initial?.parentId ?? null,
 				name,
 				draft.desc || null,
 				draft.priority,
@@ -838,6 +841,22 @@ export function AddTaskModal({
 					padding: 18,
 				}}
 			>
+				{/* dílčí úkol — kontext rodiče (plné přidání podúkolu z detailu) */}
+				{initial?.parentId && (
+					<div
+						className="mb-2 inline-flex items-center font-display font-semibold text-brass-text"
+						style={{
+							gap: 6,
+							fontSize: 12,
+							padding: "3px 10px",
+							borderRadius: 999,
+							background: "var(--w-brass-soft)",
+						}}
+					>
+						↳ {t("detail.subtaskOf")}
+						{initial.parentName ? `: ${initial.parentName}` : ""}
+					</div>
+				)}
 				{/* titulek s overlay zvýrazněním tokenů */}
 				<div className="flex items-start" style={{ gap: 9 }}>
 					<span
