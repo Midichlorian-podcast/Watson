@@ -7,21 +7,15 @@ import { useEffect, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import {
-	activateStepManually,
 	advanceChainForTask,
 	type ChainStepLite,
 	rewindToStep,
 } from "../lib/chainAdvance";
-import {
-	setChainSchedMode,
-	shiftChain,
-	toggleChainWeekend,
-} from "../lib/chainReflow";
+import { shiftChain, toggleChainWeekend } from "../lib/chainReflow";
 import { initials } from "../lib/format";
 import type { ChainRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
-import { showToast } from "../lib/toast";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
@@ -635,27 +629,7 @@ function FlowDetail({
 	const { t } = useTranslation();
 	const { ch, chSteps, total, done, now } = data;
 	const [pendingRewind, setPendingRewind] = useState<string | null>(null);
-	const isChainMode = (ch.sched_mode ?? "chain") !== "anchor";
 	const skipWk = !!ch.skip_weekend;
-
-	// „Připomenout, až na mě přijde řada" — per-user flag v localStorage (prototyp remindStep, ř. 2496).
-	const remindKey = `watson.stepReminds.${meId ?? "anon"}`;
-	const [reminds, setReminds] = useState<string[]>(() => {
-		try {
-			return JSON.parse(localStorage.getItem(remindKey) ?? "[]") as string[];
-		} catch {
-			return [];
-		}
-	});
-	const toggleRemind = (stepId: string) => {
-		const on = !reminds.includes(stepId);
-		const next = on
-			? [...reminds, stepId]
-			: reminds.filter((x) => x !== stepId);
-		localStorage.setItem(remindKey, JSON.stringify(next));
-		setReminds(next);
-		if (on) showToast(t("flows.remindSent"));
-	};
 
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
@@ -680,58 +654,12 @@ function FlowDetail({
 	}, [onClose, now]);
 
 	/** Uložit jako šablonu (prototyp saveFlowAsTemplate, ř. 2495) — per-user do localStorage. */
-	const saveTemplate = () => {
-		const dues = chSteps.map((s) =>
-			s.task_id ? taskById.get(s.task_id)?.due_date?.slice(0, 10) : null,
-		);
-		const base = dues.find(Boolean) ?? todayISO();
-		const dayDiff = (a: string) =>
-			Math.round(
-				(new Date(`${a}T00:00:00`).getTime() -
-					new Date(`${base}T00:00:00`).getTime()) /
-					86_400_000,
-			);
-		const tpl = {
-			id: `tpl${Date.now()}`,
-			label: ch.name ?? t("flows.flowFallback"),
-			desc: `${chSteps.length} ${t("flows.stepsFromRunning")}`,
-			// Prototyp (ř. 2495) ukládá i who — vědomě vynecháno: šablona se sdílí mezi prostory s jinými reálnými účty.
-			steps: chSteps.map((s, i) => {
-				const tk = s.task_id ? taskById.get(s.task_id) : undefined;
-				return {
-					name: tk?.name ?? t("flows.stepFallback", { n: i + 1 }),
-					offset: dayDiff(tk?.due_date?.slice(0, 10) ?? base),
-					priority: tk?.priority ?? 3,
-					gate: s.gate ?? "after_previous",
-					mode: (tk?.assignment_mode === "shared_all" ? "all" : "any") as
-						| "any"
-						| "all",
-				};
-			}),
-		};
-		const saved = JSON.parse(
-			localStorage.getItem("watson.flowTemplates") ?? "[]",
-		) as unknown[];
-		localStorage.setItem(
-			"watson.flowTemplates",
-			JSON.stringify([tpl, ...saved]),
-		);
-		showToast(`${t("flows.templateSaved")} ${tpl.label}`);
-	};
-
-	const GATE_LABEL: Record<string, string> = {
-		after_previous: t("flows.gateAuto"),
-		with_previous: t("flows.gateParallel"),
-		manual: t("flows.gateManual"),
-	};
 	const STATE_LABEL: Record<string, string> = {
 		dormant: t("flows.stepWaiting"),
 		active: t("flows.stepNow"),
 		done: t("flows.stepDone"),
 		skipped: t("flows.stepSkipped"),
 	};
-	const isClosed = (s: StepFull) =>
-		s.step_state === "done" || s.step_state === "skipped";
 	const dues = chSteps
 		.map((s) => (s.task_id ? taskById.get(s.task_id)?.due_date : null))
 		.filter(Boolean) as string[];
@@ -842,23 +770,7 @@ function FlowDetail({
 						</div>
 					)}
 
-					{/* Uložit jako šablonu — NAD blokem Plánování (prototyp ř. 1101–1102) */}
-					<button
-						type="button"
-						onClick={saveTemplate}
-						className="inline-flex cursor-pointer items-center rounded-[8px] border border-line font-display font-semibold text-ink-2 hover:border-brass"
-						style={{
-							gap: 6,
-							fontSize: 11.5,
-							padding: "5px 10px",
-							marginTop: 11,
-						}}
-					>
-						<Icon name="duplikovat" size={13} />
-						{t("flows.saveTemplate")}
-					</button>
-
-					{/* PLÁNOVÁNÍ — Řetězec/Kotva + ±1d + Bez víkendů (prototyp ř. 1102–1113) */}
+					{/* PLÁNOVÁNÍ — jen posun celé štafety ±1d + Bez víkendů (jeden model: kaskáda) */}
 					<div className="mt-3 flex flex-wrap items-center" style={{ gap: 7 }}>
 						<span
 							className="font-display font-bold text-ink-3 uppercase"
@@ -866,43 +778,7 @@ function FlowDetail({
 						>
 							{t("flows.planning")}
 						</span>
-						<span className="inline-flex overflow-hidden rounded-[8px] border border-line">
-							<button
-								type="button"
-								title={t("flows.chainTitle")}
-								onClick={() => void setChainSchedMode(ch.id, "chain")}
-								className="cursor-pointer font-display font-semibold"
-								style={{
-									fontSize: 11.5,
-									padding: "5px 11px",
-									background: isChainMode
-										? "var(--w-brass-soft)"
-										: "transparent",
-									color: isChainMode ? "var(--w-brass-text)" : "var(--w-ink-2)",
-								}}
-							>
-								{t("flows.modeChain")}
-							</button>
-							<button
-								type="button"
-								title={t("flows.anchorTitle")}
-								onClick={() => void setChainSchedMode(ch.id, "anchor")}
-								className="cursor-pointer border-line border-l font-display font-semibold"
-								style={{
-									fontSize: 11.5,
-									padding: "5px 11px",
-									background: !isChainMode
-										? "var(--w-brass-soft)"
-										: "transparent",
-									color: !isChainMode
-										? "var(--w-brass-text)"
-										: "var(--w-ink-2)",
-								}}
-							>
-								{t("flows.modeAnchor")}
-							</button>
-						</span>
-						{/* ±1d — font-display 700 12px (prototyp ř. 1108–1109), ne mono */}
+						{/* ±1d — posun celé štafety */}
 						<button
 							type="button"
 							title={t("flows.shiftEarlier")}
@@ -940,7 +816,7 @@ function FlowDetail({
 						className="font-body text-ink-3"
 						style={{ fontSize: 11, marginTop: 6, lineHeight: 1.4 }}
 					>
-						{isChainMode ? t("flows.chainHint") : t("flows.anchorHint")}
+						{t("flows.chainHint")}
 					</div>
 				</div>
 
@@ -960,9 +836,6 @@ function FlowDetail({
 									: "var(--w-panel-2)";
 						const dotFg =
 							sk === "dormant" || sk === "skipped" ? "var(--w-ink-3)" : "#fff";
-						const priorClosed = chSteps.slice(0, i).every(isClosed);
-						const canActivate =
-							sk === "dormant" && st.gate === "manual" && priorClosed;
 						const next = chSteps[i + 1];
 						return (
 							<div key={st.id} className="flex" style={{ gap: 13 }}>
@@ -1093,52 +966,7 @@ function FlowDetail({
 											{STATE_LABEL[sk]}
 										</span>
 									</div>
-									<div className="mt-2.5 flex items-center gap-2">
-										<span
-											className="flex-1 font-mono text-ink-3"
-											style={{ fontSize: 10.5 }}
-										>
-											{t("flows.gateLabel")}{" "}
-											{GATE_LABEL[st.gate ?? "after_previous"]}
-										</span>
-										{/* chip „Připomenout" — čekající krok přiřazený mně (prototyp ř. 1136, data-chip data-on) */}
-										{sk === "dormant" && isMine(st) && (
-											<button
-												type="button"
-												title={t("flows.remindTitle")}
-												onClick={() => toggleRemind(st.id)}
-												className="inline-flex cursor-pointer items-center rounded-[8px] font-display font-semibold hover:border-brass"
-												style={{
-													gap: 5,
-													fontSize: 11.5,
-													padding: "5px 10px",
-													border: `1px solid ${reminds.includes(st.id) ? "var(--w-brass)" : "var(--w-line)"}`,
-													background: reminds.includes(st.id)
-														? "var(--w-brass-soft)"
-														: "transparent",
-													color: reminds.includes(st.id)
-														? "var(--w-brass-text)"
-														: "var(--w-ink-2)",
-												}}
-											>
-												{/* zvoneček (prototyp SVG ř. 1136) */}
-												<svg
-													width="12"
-													height="12"
-													viewBox="0 0 14 14"
-													fill="none"
-													aria-hidden="true"
-												>
-													<path
-														d="M3.5 6a3.5 3.5 0 0 1 7 0c0 3 1.2 4 1.2 4H2.3s1.2-1 1.2-4Z M5.8 12a1.4 1.4 0 0 0 2.4 0"
-														stroke="currentColor"
-														strokeWidth="1.2"
-														strokeLinejoin="round"
-													/>
-												</svg>
-												{t("flows.remind")}
-											</button>
-										)}
+									<div className="mt-2.5 flex items-center justify-end gap-2">
 										{sk === "active" && (
 											<button
 												type="button"
@@ -1151,16 +979,6 @@ function FlowDetail({
 												}}
 											>
 												{t("flows.completeStep")}
-											</button>
-										)}
-										{canActivate && (
-											<button
-												type="button"
-												onClick={() => void activateStepManually(st)}
-												className="rounded-lg border border-brass font-display font-semibold text-brass-text hover:bg-brass-soft"
-												style={{ padding: "5px 11px", fontSize: 12 }}
-											>
-												{t("flows.activateStep")}
 											</button>
 										)}
 										{sk === "done" &&

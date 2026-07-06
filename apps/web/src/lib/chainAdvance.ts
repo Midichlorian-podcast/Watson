@@ -165,7 +165,7 @@ export async function advanceChainForTask(
 			const priorDone = steps.slice(0, i).every(isClosed);
 			if (!priorDone) break;
 			if (st.step_state === "dormant") {
-				if (st.gate === "manual") break; // čeká na ruční aktivaci
+				// zjednodušeno (varianta B): všechny brány = auto (i legacy manual)
 				await activateRun(steps, i);
 				// „Předáno → X" + kaskádové přitažení zpožděného kroku (prototyp ř. 2482–2483)
 				void handoffName(st.task_id).then((who) =>

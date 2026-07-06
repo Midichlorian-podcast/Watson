@@ -798,7 +798,8 @@ export function AddTaskModal({
 					id,
 					draft.project,
 					maxPos + 1,
-					allDone ? "active" : "waiting",
+					// bug fix: platný enum je dormant (ne "waiting" — tam se štafeta zasekla)
+					allDone ? "active" : "dormant",
 					new Date().toISOString(),
 				],
 			);

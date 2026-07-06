@@ -73,7 +73,7 @@ export async function reflowChain(chainId: string, fromPos = 0): Promise<void> {
 		steps[0]?.due ??
 		isoOf(new Date())
 	).slice(0, 10);
-	const mode = chain.sched_mode === "anchor" ? "anchor" : "chain";
+	// Zjednodušeno (varianta B): jediný model = Řetězec (kaskáda). Anchor mode zrušen.
 	const skip = !!chain.skip_weekend;
 	const dayDiff = (a: string, b: string) =>
 		Math.round((fromISO(a).getTime() - fromISO(b).getTime()) / 86_400_000);
@@ -91,15 +91,12 @@ export async function reflowChain(chainId: string, fromPos = 0): Promise<void> {
 	for (const st of norm) {
 		const pos = st.position ?? 0;
 		let d: string;
-		if (mode === "anchor") {
-			d = isoPlusDays(anchor, st.anchorOffset);
-		} else if (pos <= fromPos || prev == null) {
+		if (pos <= fromPos || prev == null) {
 			d = (st.due ?? isoPlusDays(anchor, st.anchorOffset)).slice(0, 10);
 		} else {
 			d = isoPlusDays(prev, st.gapDays);
 		}
-		// Víkendy se přeskakují jen v režimu Řetězec (prototyp _reflow — kotvené termíny jsou pevné).
-		if (skip && mode === "chain" && pos > fromPos) d = nextWork(d);
+		if (skip && pos > fromPos) d = nextWork(d);
 		prev = d;
 		if (st.task_id && d !== (st.due ?? "").slice(0, 10)) {
 			await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [
