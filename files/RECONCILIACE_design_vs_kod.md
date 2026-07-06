@@ -920,3 +920,14 @@ Uživatel chtěl víc karet na obrazovku (~15 místo ~10) a míň plýtvání. Z
 
 Výsledek: řádek 74 → **50 px** (~15 řádků/obrazovku). Sdílený TaskCard → Dnes i Úkoly
 konzistentní. Vědomá odchylka od Cloud Design defaultu.
+
+## §29 — Detail: VLASTNOSTI vždy viditelné, orámované karty, kalendář zalamování
+
+Na přání uživatele (přehlednost, kompletnost):
+- **Detail úkolu i podúkolu**: sekce „VLASTNOSTI" (priorita P1–P4 / termín / deadline /
+  čas / trvání / barva) je rovnou viditelná (dřív schovaná za klikem na chip „Priorita").
+  Podúkol sdílí panel → má stejné kompletní menu, zařazený pod vrstvu („↑ V úkolu").
+- **Seznam úkolů**: karty orámované jemnou linkou + zaoblení + lehký stín (à la Nástěnka),
+  místo holé spodní linky (`TaskCard`).
+- **Kalendář**: `overflow-wrap: break-word` u názvů bloků/chipů — dlouhé slovo se v úzkém
+  sloupci zalomí v sobě (ukáže celé) místo useknutého začátku.

@@ -55,6 +55,7 @@
     "writeRejected": "Change not saved — you didn't have permission. Reverted."
   },
   "detail": {
+    "properties": "Properties",
     "saved": "Saved",
     "undo": "Undo",
     "history": "Edit history",

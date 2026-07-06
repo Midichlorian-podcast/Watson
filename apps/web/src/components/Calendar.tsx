@@ -1015,6 +1015,8 @@ function WeekColumns({
 													WebkitLineClamp: 3,
 													WebkitBoxOrient: "vertical",
 													overflow: "hidden",
+													overflowWrap: "break-word",
+													wordBreak: "break-word",
 												}}
 											>
 												{tk.name}
@@ -1775,6 +1777,8 @@ function TimeGrid({
 														WebkitLineClamp: 2,
 														WebkitBoxOrient: "vertical",
 														overflow: "hidden",
+														overflowWrap: "break-word",
+														wordBreak: "break-word",
 													}}
 												>
 													{tk.name}
@@ -2203,6 +2207,10 @@ function TimeGrid({
 													WebkitLineClamp: nameLines,
 													WebkitBoxOrient: "vertical",
 													overflow: "hidden",
+													// úzký sloupec: dlouhé slovo zalom v sobě (ukázat celé napříč řádky,
+													// ne useknutý začátek); krátká slova zůstanou vcelku
+													overflowWrap: "break-word",
+													wordBreak: "break-word",
 												}}
 											>
 												{tk.name}

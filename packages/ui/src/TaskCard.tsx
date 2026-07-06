@@ -119,15 +119,18 @@ export function TaskCard({
 		<div
 			onClick={onOpen}
 			className={cn(
-				"flex cursor-pointer items-center border-line border-b",
+				"flex cursor-pointer items-center rounded-[10px] border border-line transition-shadow",
 				!rowBg && "hover:bg-panel-2",
+				"hover:shadow-md",
 			)}
 			style={{
 				gap: 11,
-				padding: "var(--w-row-py, 8px) 4px var(--w-row-py, 8px) 11px",
-				borderRadius: "0 6px 6px 0",
+				padding: "var(--w-row-py, 8px) 10px var(--w-row-py, 8px) 12px",
+				marginBottom: 5,
 				boxShadow:
-					done || dormant ? undefined : `inset 3px 0 0 ${PRI[priority]}`,
+					done || dormant
+						? "var(--w-shadow-sm)"
+						: `inset 3px 0 0 ${PRI[priority]}, var(--w-shadow-sm)`,
 				opacity: done ? 0.5 : dormant ? 0.6 : 1,
 				background: rowBg,
 			}}

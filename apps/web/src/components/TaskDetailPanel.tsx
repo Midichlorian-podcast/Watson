@@ -312,7 +312,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const [cmtText, setCmtText] = useState("");
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [assignOpen, setAssignOpen] = useState(false);
-	const [editOpen, setEditOpen] = useState(false);
+	// Vlastnosti (priorita/termín/deadline/čas/trvání/barva) rovnou viditelné —
+	// kompletní přehledné menu i pro podúkoly (dřív schované za klikem na chip).
+	const [editOpen, setEditOpen] = useState(true);
 	const [histOpen, setHistOpen] = useState(false);
 	// V3 save-UX: čas posledního uložení (zpětná vazba „Uloženo ✓ HH:MM").
 	const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -858,175 +860,190 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 
 						{/* rozbalená editace polí (aditivní — klik na chip) */}
 						{editOpen && !occ && (
-							<div
-								className="border border-line bg-panel-2"
-								style={{
-									marginTop: 10,
-									borderRadius: 11,
-									padding: "10px 12px",
-								}}
-							>
-								<div className="flex items-center" style={{ gap: 6 }}>
-									{([1, 2, 3, 4] as Pri[]).map((p) => (
-										<button
-											key={p}
-											type="button"
-											onClick={() => void patchLog({ priority: p })}
-											className="font-display font-semibold"
-											style={{
-												fontSize: 12,
-												padding: "5px 13px",
-												borderRadius: 9,
-												border: `1px solid ${task.priority === p ? "var(--w-brass)" : "var(--w-line)"}`,
-												background:
-													task.priority === p
-														? "var(--w-brass-soft)"
-														: "transparent",
-												color:
-													task.priority === p
-														? "var(--w-brass-text)"
-														: "var(--w-ink-2)",
-											}}
-										>
-											P{p}
-										</button>
-									))}
-								</div>
+							<>
+								<SectionLabel>{t("detail.properties")}</SectionLabel>
 								<div
-									className="flex flex-wrap items-center"
-									style={{ gap: 8, marginTop: 9 }}
+									className="border border-line bg-panel-2"
+									style={{
+										borderRadius: 11,
+										padding: "11px 13px",
+									}}
 								>
-									{(
-										[
-											["due_date", t("detail.due")],
-											["deadline", t("detail.deadline")],
-										] as const
-									).map(([col, label]) => (
-										<label
-											key={col}
-											className="flex items-center"
-											style={{ gap: 6 }}
+									<div className="flex items-center" style={{ gap: 8 }}>
+										<span
+											className="w-14 shrink-0 font-body text-ink-3"
+											style={{ fontSize: 11.5 }}
 										>
+											{t("detail.priority")}
+										</span>
+										{([1, 2, 3, 4] as Pri[]).map((p) => (
+											<button
+												key={p}
+												type="button"
+												onClick={() => void patchLog({ priority: p })}
+												className="font-display font-semibold"
+												style={{
+													fontSize: 12,
+													padding: "5px 13px",
+													borderRadius: 9,
+													border: `1px solid ${task.priority === p ? "var(--w-brass)" : "var(--w-line)"}`,
+													background:
+														task.priority === p
+															? "var(--w-brass-soft)"
+															: "transparent",
+													color:
+														task.priority === p
+															? "var(--w-brass-text)"
+															: "var(--w-ink-2)",
+												}}
+											>
+												P{p}
+											</button>
+										))}
+									</div>
+									<div
+										className="flex flex-wrap items-center"
+										style={{ gap: 8, marginTop: 9 }}
+									>
+										{(
+											[
+												["due_date", t("detail.due")],
+												["deadline", t("detail.deadline")],
+											] as const
+										).map(([col, label]) => (
+											<label
+												key={col}
+												className="flex items-center"
+												style={{ gap: 6 }}
+											>
+												<span
+													className="font-body text-ink-3"
+													style={{ fontSize: 11.5 }}
+												>
+													{label}
+												</span>
+												<input
+													type="date"
+													value={
+														task[col] ? (task[col] ?? "").slice(0, 10) : ""
+													}
+													onChange={(e) =>
+														void patchLog({ [col]: e.target.value || null })
+													}
+													className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-ink-2 text-xs outline-none focus:border-brass"
+												/>
+											</label>
+										))}
+										{/* čas + trvání (parita s AddTask — funguje i pro podúkoly) */}
+										<label className="flex items-center" style={{ gap: 6 }}>
 											<span
 												className="font-body text-ink-3"
 												style={{ fontSize: 11.5 }}
 											>
-												{label}
+												{t("detail.time")}
 											</span>
 											<input
-												type="date"
-												value={task[col] ? (task[col] ?? "").slice(0, 10) : ""}
-												onChange={(e) =>
-													void patchLog({ [col]: e.target.value || null })
+												type="time"
+												value={
+													task.start_date && task.start_date.length >= 16
+														? task.start_date.slice(11, 16)
+														: ""
 												}
+												onChange={(e) => {
+													const base =
+														task.due_date?.slice(0, 10) ??
+														new Date().toISOString().slice(0, 10);
+													void patchLog({
+														start_date: e.target.value
+															? `${base}T${e.target.value}:00`
+															: null,
+														// čas bez termínu → nastavit i termín (jinak by blok neměl den)
+														...(e.target.value && !task.due_date
+															? { due_date: base }
+															: {}),
+													});
+												}}
 												className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-ink-2 text-xs outline-none focus:border-brass"
 											/>
 										</label>
-									))}
-									{/* čas + trvání (parita s AddTask — funguje i pro podúkoly) */}
-									<label className="flex items-center" style={{ gap: 6 }}>
-										<span
-											className="font-body text-ink-3"
-											style={{ fontSize: 11.5 }}
-										>
-											{t("detail.time")}
-										</span>
-										<input
-											type="time"
-											value={
-												task.start_date && task.start_date.length >= 16
-													? task.start_date.slice(11, 16)
-													: ""
-											}
-											onChange={(e) => {
-												const base =
-													task.due_date?.slice(0, 10) ??
-													new Date().toISOString().slice(0, 10);
-												void patchLog({
-													start_date: e.target.value
-														? `${base}T${e.target.value}:00`
-														: null,
-													// čas bez termínu → nastavit i termín (jinak by blok neměl den)
-													...(e.target.value && !task.due_date
-														? { due_date: base }
-														: {}),
-												});
-											}}
-											className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-ink-2 text-xs outline-none focus:border-brass"
-										/>
-									</label>
-									<label className="flex items-center" style={{ gap: 6 }}>
-										<span
-											className="font-body text-ink-3"
-											style={{ fontSize: 11.5 }}
-										>
-											{t("detail.duration")}
-										</span>
-										<input
-											type="number"
-											min={0}
-											max={10080}
-											step={5}
-											value={task.duration_min ?? ""}
-											onChange={(e) => {
-												const n = Number.parseInt(e.target.value, 10);
-												void patchLog({
-													duration_min: Number.isNaN(n) ? null : n,
-												});
-											}}
-											className="rounded-lg border border-line bg-card px-2 py-1 text-right font-mono text-ink-2 text-xs outline-none focus:border-brass"
-											style={{ width: 64 }}
-										/>
-										<span
-											className="font-body text-ink-3"
-											style={{ fontSize: 11 }}
-										>
-											{t("addmodal.min")}
-										</span>
-									</label>
-								</div>
-								<div
-									className="flex flex-wrap items-center"
-									style={{ gap: 6, marginTop: 9 }}
-								>
-									<button
-										type="button"
-										onClick={() => void setUserColor(null)}
-										aria-label={t("detail.clearColor")}
-										className="grid place-items-center border border-line bg-card"
-										style={{ width: 20, height: 20, borderRadius: 6 }}
-									>
-										<svg width="12" height="12" viewBox="0 0 14 14" aria-hidden>
-											<line
-												x1="3"
-												y1="11"
-												x2="11"
-												y2="3"
-												stroke="var(--w-ink-3)"
-												strokeWidth="1.3"
+										<label className="flex items-center" style={{ gap: 6 }}>
+											<span
+												className="font-body text-ink-3"
+												style={{ fontSize: 11.5 }}
+											>
+												{t("detail.duration")}
+											</span>
+											<input
+												type="number"
+												min={0}
+												max={10080}
+												step={5}
+												value={task.duration_min ?? ""}
+												onChange={(e) => {
+													const n = Number.parseInt(e.target.value, 10);
+													void patchLog({
+														duration_min: Number.isNaN(n) ? null : n,
+													});
+												}}
+												className="rounded-lg border border-line bg-card px-2 py-1 text-right font-mono text-ink-2 text-xs outline-none focus:border-brass"
+												style={{ width: 64 }}
 											/>
-										</svg>
-									</button>
-									{USER_COLORS.map((c) => (
+											<span
+												className="font-body text-ink-3"
+												style={{ fontSize: 11 }}
+											>
+												{t("addmodal.min")}
+											</span>
+										</label>
+									</div>
+									<div
+										className="flex flex-wrap items-center"
+										style={{ gap: 6, marginTop: 9 }}
+									>
 										<button
-											key={c}
 											type="button"
-											onClick={() => void setUserColor(c)}
-											aria-label={c}
-											style={{
-												width: 20,
-												height: 20,
-												borderRadius: 6,
-												background: c,
-												boxShadow:
-													userColor === c
-														? "0 0 0 2px var(--w-card), 0 0 0 4px var(--w-brass)"
-														: undefined,
-											}}
-										/>
-									))}
+											onClick={() => void setUserColor(null)}
+											aria-label={t("detail.clearColor")}
+											className="grid place-items-center border border-line bg-card"
+											style={{ width: 20, height: 20, borderRadius: 6 }}
+										>
+											<svg
+												width="12"
+												height="12"
+												viewBox="0 0 14 14"
+												aria-hidden
+											>
+												<line
+													x1="3"
+													y1="11"
+													x2="11"
+													y2="3"
+													stroke="var(--w-ink-3)"
+													strokeWidth="1.3"
+												/>
+											</svg>
+										</button>
+										{USER_COLORS.map((c) => (
+											<button
+												key={c}
+												type="button"
+												onClick={() => void setUserColor(c)}
+												aria-label={c}
+												style={{
+													width: 20,
+													height: 20,
+													borderRadius: 6,
+													background: c,
+													boxShadow:
+														userColor === c
+															? "0 0 0 2px var(--w-card), 0 0 0 4px var(--w-brass)"
+															: undefined,
+												}}
+											/>
+										))}
+									</div>
 								</div>
-							</div>
+							</>
 						)}
 
 						{/* Watson hint (ř. 1018–1021) */}

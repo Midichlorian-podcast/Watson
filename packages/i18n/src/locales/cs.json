@@ -55,6 +55,7 @@
     "writeRejected": "Změna se neuložila — neměl(a) jsi oprávnění. Vrácena zpět."
   },
   "detail": {
+    "properties": "Vlastnosti",
     "saved": "Uloženo",
     "undo": "Zpět",
     "history": "Historie úprav",
