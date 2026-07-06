@@ -225,6 +225,19 @@ const TABLES: Record<string, TableDef> = {
 		hasUpdatedAt: false,
 		projectVia: { kind: "task", col: "task_id" },
 	},
+	// Historie úprav úkolu (audit log). Neměnný záznam; user_id je explicitní (kdo změnil).
+	task_activity: {
+		columns: {
+			task_id: "text",
+			project_id: "text",
+			user_id: "text",
+			field: "text",
+			old_value: "text",
+			new_value: "text",
+		},
+		hasUpdatedAt: false,
+		projectVia: { kind: "task", col: "task_id" },
+	},
 	// Postupy (štafeta). Pozn.: server-authored advance (překlopení step_state) přijde s #27;
 	// zde je generický zápis pro založení/úpravu řetězce členem projektu.
 	chains: {

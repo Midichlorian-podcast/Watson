@@ -41,6 +41,34 @@ export const comments = pgTable(
 	(t) => [index("comments_task_idx").on(t.taskId)],
 );
 
+/**
+ * Historie úprav úkolu (audit log) — kdo kdy jaké pole změnil.
+ * Neměnný záznam (bez updated_at). project_id denormalizace pro PowerSync scoping.
+ */
+export const taskActivity = pgTable(
+	"task_activity",
+	{
+		id: pk(),
+		taskId: uuid("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		/** Denormalizace pro PowerSync scoping (stejný projekt jako úkol). */
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		/** Kdo změnu provedl (zachovat historii i po smazání uživatele). */
+		userId: uuid("user_id").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		/** Které pole se změnilo (name/description/due_date/priority/…) nebo akce (created/completed). */
+		field: varchar("field", { length: 100 }).notNull(),
+		oldValue: text("old_value"),
+		newValue: text("new_value"),
+		createdAt: createdAt(),
+	},
+	(t) => [index("task_activity_task_idx").on(t.taskId)],
+);
+
 export const mentions = pgTable(
 	"mentions",
 	{

@@ -41,6 +41,10 @@ bucket_definitions:
       - SELECT id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at
         FROM reminders
         WHERE project_id = bucket.project_id
+      # Historie úprav úkolu (audit log, project-scoped).
+      - SELECT id, task_id, project_id, user_id, field, old_value, new_value, created_at
+        FROM task_activity
+        WHERE project_id = bucket.project_id
       # Postupy (štafeta) — chains + chain_steps (project-scoped).
       - SELECT id, project_id, workspace_id, template_id, name, description, anchor_date,
                state, sched_mode, skip_weekend, created_by, completed_at, created_at

@@ -8,7 +8,7 @@ import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
 import { initials } from "../lib/format";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
-import type { TaskRow } from "../lib/powersync/AppSchema";
+import type { TaskActivityRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProject } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
@@ -36,6 +36,42 @@ function whenLabel(iso: string | null, t: (k: string) => string) {
 	if (d.toDateString() === now.toDateString())
 		return `${t("today.todayLower")} ${hm}`;
 	return `${d.getDate()}. ${d.getMonth() + 1}.`;
+}
+
+/** Historie úprav — mapa DB sloupce → i18n popisek pole. */
+const ACT_FIELD_KEY: Record<string, string> = {
+	name: "detail.actName",
+	description: "detail.actDesc",
+	due_date: "detail.actDue",
+	start_date: "detail.actTime",
+	duration_min: "detail.actTime",
+	deadline: "detail.actDeadline",
+	priority: "detail.actPriority",
+	assignment_mode: "detail.actAssign",
+	status_id: "detail.actStatus",
+	project_id: "detail.actProject",
+	completed: "detail.actCompleted",
+	created: "detail.actCreated",
+};
+function actFieldLabel(field: string, t: (k: string) => string) {
+	return t(ACT_FIELD_KEY[field] ?? "detail.actField");
+}
+/** Lidsky čitelná hodnota pole pro log (priorita → P2, datum → 8.7. 14:00…). */
+function fmtActVal(field: string, val: unknown): string | null {
+	if (val == null || val === "") return null;
+	if (field === "priority") return `P${val}`;
+	if (field === "duration_min") return `${val} min`;
+	if (field === "due_date" || field === "start_date" || field === "deadline") {
+		const d = new Date(String(val));
+		if (Number.isNaN(d.getTime())) return String(val);
+		const date = `${d.getDate()}. ${d.getMonth() + 1}.`;
+		const hm =
+			d.getHours() || d.getMinutes()
+				? ` ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`
+				: "";
+		return date + hm;
+	}
+	return String(val);
 }
 
 /** Patch sloupců úkolu lokálně (PowerSync upload → generický write-path). */
@@ -233,6 +269,11 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		"SELECT id FROM reminders WHERE task_id = ?",
 		[realId],
 	);
+	// Historie úprav (audit log) — newest-first.
+	const { data: activity } = usePsQuery<TaskActivityRow>(
+		"SELECT * FROM task_activity WHERE task_id = ? ORDER BY created_at DESC",
+		[realId],
+	);
 	const { data: statusRows } = usePsQuery<{
 		name: string | null;
 		is_done: number | null;
@@ -272,6 +313,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [assignOpen, setAssignOpen] = useState(false);
 	const [editOpen, setEditOpen] = useState(false);
+	const [histOpen, setHistOpen] = useState(false);
+	// V3 save-UX: čas posledního uložení (zpětná vazba „Uloženo ✓ HH:MM").
+	const [savedAt, setSavedAt] = useState<number | null>(null);
 	const nameRef = useRef<HTMLInputElement>(null);
 	useEffect(() => {
 		if (task) {
@@ -286,6 +330,52 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const asg = assignRows ?? [];
 	const members = team ?? [];
 	const memberOf = (uid: string | null) => members.find((m) => m.id === uid);
+	const acts = activity ?? [];
+
+	// Zápis jednoho záznamu do historie úprav.
+	const logActivity = async (
+		field: string,
+		oldVal: string | null,
+		newVal: string | null,
+	) => {
+		const uid = session?.user?.id;
+		if (!task || !uid) return;
+		await powerSync.execute(
+			"INSERT INTO task_activity (id, task_id, project_id, user_id, field, old_value, new_value, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?)",
+			[
+				realId,
+				task.project_id,
+				uid,
+				field,
+				oldVal,
+				newVal,
+				new Date().toISOString(),
+			],
+		);
+	};
+
+	// V3: patch úkolu + zápis do historie + „Uloženo ✓" + cílené Zpět (revert bez logu).
+	const patchLog = async (data: Record<string, unknown>) => {
+		if (!task) return;
+		const cur = task as unknown as Record<string, unknown>;
+		const changed = Object.entries(data).filter(
+			([k, v]) => String(cur[k] ?? "") !== String(v ?? ""),
+		);
+		if (changed.length === 0) return;
+		const oldData = Object.fromEntries(
+			changed.map(([k]) => [k, cur[k] ?? null]),
+		);
+		for (const [k, v] of changed)
+			await logActivity(k, fmtActVal(k, cur[k]), fmtActVal(k, v));
+		await patch(realId, data);
+		setSavedAt(Date.now());
+		const first = changed[0]?.[0] ?? "";
+		showToast(`${actFieldLabel(first, t)} · ${t("detail.saved")}`, {
+			label: t("detail.undo"),
+			onClick: () => void patch(realId, oldData),
+		});
+	};
+
 	const mode = (task.assignment_mode ?? "single") as AssignMode;
 	const assignedDone = asg.filter((a) => a.completed_at).length;
 	const hasReminder = (reminders?.length ?? 0) > 0;
@@ -302,6 +392,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			});
 			return;
 		}
+		// historie: zaznamenej dokončení / obnovení (bez toastu/Zpět — má vlastní akci)
+		void logActivity("completed", done ? "1" : null, done ? null : "1");
 		void toggleTask(task);
 	};
 	const skipOcc = () => {
@@ -482,6 +574,19 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						>
 							{project?.name ?? ""}
 						</span>
+						{/* V3: nenápadná zpětná vazba „Uloženo ✓ HH:MM" po úpravě */}
+						{savedAt && (
+							<span
+								className="shrink-0 font-body"
+								style={{ fontSize: 11, color: "var(--w-success-ink)" }}
+							>
+								{t("detail.saved")} ✓{" "}
+								{new Date(savedAt).toLocaleTimeString("cs", {
+									hour: "2-digit",
+									minute: "2-digit",
+								})}
+							</span>
+						)}
 						<div className="relative">
 							<button
 								type="button"
@@ -605,7 +710,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								onBlur={() =>
 									name.trim() &&
 									name !== task.name &&
-									void patch(realId, { name: name.trim() })
+									void patchLog({ name: name.trim() })
 								}
 								className="w-full bg-transparent font-display text-ink outline-none"
 								style={{ fontWeight: 700, fontSize: 19, lineHeight: 1.25 }}
@@ -766,7 +871,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										<button
 											key={p}
 											type="button"
-											onClick={() => void patch(realId, { priority: p })}
+											onClick={() => void patchLog({ priority: p })}
 											className="font-display font-semibold"
 											style={{
 												fontSize: 12,
@@ -812,7 +917,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 												type="date"
 												value={task[col] ? (task[col] ?? "").slice(0, 10) : ""}
 												onChange={(e) =>
-													void patch(realId, { [col]: e.target.value || null })
+													void patchLog({ [col]: e.target.value || null })
 												}
 												className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-ink-2 text-xs outline-none focus:border-brass"
 											/>
@@ -837,7 +942,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 												const base =
 													task.due_date?.slice(0, 10) ??
 													new Date().toISOString().slice(0, 10);
-												void patch(realId, {
+												void patchLog({
 													start_date: e.target.value
 														? `${base}T${e.target.value}:00`
 														: null,
@@ -865,7 +970,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											value={task.duration_min ?? ""}
 											onChange={(e) => {
 												const n = Number.parseInt(e.target.value, 10);
-												void patch(realId, {
+												void patchLog({
 													duration_min: Number.isNaN(n) ? null : n,
 												});
 											}}
@@ -973,7 +1078,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										onBlur={() => {
 											setDescOpen(false);
 											if (desc !== (task.description ?? ""))
-												void patch(realId, { description: desc || null });
+												void patchLog({ description: desc || null });
 										}}
 										rows={3}
 										className="w-full resize-none rounded-lg border border-line bg-panel-2 px-3 py-2 text-ink text-sm outline-none focus:border-brass"
@@ -1250,9 +1355,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 												<button
 													key={m2}
 													type="button"
-													onClick={() =>
-														void patch(realId, { assignment_mode: m2 })
-													}
+													onClick={() => void patchLog({ assignment_mode: m2 })}
 													className="font-display font-semibold"
 													style={{
 														fontSize: 11.5,
@@ -1336,6 +1439,97 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							className="w-full border border-line bg-panel-2 font-body text-ink outline-none focus:border-brass"
 							style={{ borderRadius: 9, padding: "8px 11px", fontSize: 13 }}
 						/>
+						{/* HISTORIE ÚPRAV · N — sbalitelné, nenápadné, na rozkliknutí (audit) */}
+						{acts.length > 0 && (
+							<div style={{ marginTop: 22 }}>
+								<button
+									type="button"
+									onClick={() => setHistOpen((o) => !o)}
+									className="flex w-full items-center font-display font-bold text-ink-3 uppercase hover:text-ink-2"
+									style={{ fontSize: 11, letterSpacing: ".06em", gap: 6 }}
+								>
+									<span
+										style={{
+											display: "inline-block",
+											transform: histOpen ? "rotate(90deg)" : "none",
+											transition: "transform .15s",
+										}}
+									>
+										›
+									</span>
+									{t("detail.history")} · {acts.length}
+								</button>
+								{histOpen && (
+									<div style={{ marginTop: 11 }}>
+										{acts.map((a) => {
+											const m = memberOf(a.user_id);
+											const field = a.field ?? "";
+											const verb =
+												field === "completed"
+													? a.new_value
+														? t("detail.actMarkedDone")
+														: t("detail.actMarkedUndone")
+													: `${t("detail.actChanged")} ${actFieldLabel(field, t)}`;
+											const diff =
+												field !== "completed" && a.new_value
+													? a.old_value
+														? `${a.old_value} → ${a.new_value}`
+														: `→ ${a.new_value}`
+													: null;
+											return (
+												<div
+													key={a.id}
+													className="flex"
+													style={{ gap: 8, marginBottom: 10 }}
+												>
+													<span
+														className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
+														style={{
+															width: 21,
+															height: 21,
+															fontSize: 8.5,
+															color: "#fff",
+															background: "var(--w-avatar)",
+														}}
+													>
+														{initials(m?.name ?? "?")}
+													</span>
+													<div className="min-w-0" style={{ fontSize: 12 }}>
+														<span
+															className="font-display font-semibold text-ink"
+															style={{ fontSize: 12 }}
+														>
+															{m?.name ?? "—"}
+														</span>{" "}
+														<span
+															className="font-body text-ink-2"
+															style={{ fontSize: 12 }}
+														>
+															{verb}
+														</span>
+														<span
+															className="font-body text-ink-3"
+															style={{ fontSize: 11 }}
+														>
+															{" · "}
+															{whenLabel(a.created_at, t)}
+														</span>
+														{diff && (
+															<div
+																className="truncate font-mono text-ink-3"
+																style={{ fontSize: 11, marginTop: 1 }}
+															>
+																{diff}
+															</div>
+														)}
+													</div>
+												</div>
+											);
+										})}
+									</div>
+								)}
+							</div>
+						)}
 					</div>
 
 					{/* footer akce (ř. 1073–1077) */}

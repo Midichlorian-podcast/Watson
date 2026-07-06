@@ -146,6 +146,20 @@ const reminders = new Table(
 	{ indexes: { by_task: ["task_id"] } },
 );
 
+/** Historie úprav úkolu (audit log) — kdo kdy jaké pole změnil. */
+const task_activity = new Table(
+	{
+		task_id: column.text,
+		project_id: column.text,
+		user_id: column.text,
+		field: column.text,
+		old_value: column.text,
+		new_value: column.text,
+		created_at: column.text,
+	},
+	{ indexes: { by_task: ["task_id"] } },
+);
+
 /** Postupy (štafeta) — chains + chain_steps (project-scoped). */
 const chains = new Table(
 	{
@@ -231,6 +245,7 @@ export const AppSchema = new Schema({
 	task_occurrence_overrides,
 	task_user_colors,
 	reminders,
+	task_activity,
 	chains,
 	chain_steps,
 	goals,
@@ -248,6 +263,7 @@ export type AssignmentRow = Database["assignments"];
 export type CommentRow = Database["comments"];
 export type ReminderRow = Database["reminders"];
 export type TaskUserColorRow = Database["task_user_colors"];
+export type TaskActivityRow = Database["task_activity"];
 export type ChainRow = Database["chains"];
 export type ChainStepRow = Database["chain_steps"];
 export type GoalRow = Database["goals"];

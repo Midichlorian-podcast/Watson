@@ -3,21 +3,35 @@ import { useEffect, useState } from "react";
 /**
  * Sdílený akční toast (flowToast prototypu, ř. 1082–1084): navy pilulka dole uprostřed
  * s brass tečkou, ~2,8 s. Event-based, ať jde volat i mimo React strom (lib/tasks.ts).
+ * Volitelná akce (např. „Zpět") — cílené vrácení poslední změny (V3 save-UX).
  */
 const EVT = "watson:toast";
 
-export function showToast(message: string) {
-	window.dispatchEvent(new CustomEvent(EVT, { detail: message }));
+export interface ToastAction {
+	label: string;
+	onClick: () => void;
+}
+interface ToastDetail {
+	message: string;
+	action?: ToastAction;
+}
+
+export function showToast(message: string, action?: ToastAction) {
+	window.dispatchEvent(
+		new CustomEvent<ToastDetail>(EVT, { detail: { message, action } }),
+	);
 }
 
 export function ActionToast() {
-	const [msg, setMsg] = useState<string | null>(null);
+	const [toast, setToast] = useState<ToastDetail | null>(null);
 	useEffect(() => {
 		let timer: ReturnType<typeof setTimeout>;
 		const h = (e: Event) => {
-			setMsg((e as CustomEvent<string>).detail);
+			setToast((e as CustomEvent<ToastDetail>).detail);
 			clearTimeout(timer);
-			timer = setTimeout(() => setMsg(null), 2800);
+			// s akcí necháme déle (5 s), ať se dá kliknout na „Zpět"
+			const ttl = (e as CustomEvent<ToastDetail>).detail.action ? 5000 : 2800;
+			timer = setTimeout(() => setToast(null), ttl);
 		};
 		window.addEventListener(EVT, h);
 		return () => {
@@ -25,7 +39,7 @@ export function ActionToast() {
 			clearTimeout(timer);
 		};
 	}, []);
-	if (!msg) return null;
+	if (!toast) return null;
 	return (
 		<div
 			className="-translate-x-1/2 fixed bottom-6 left-1/2 z-[60] flex items-center font-display font-semibold"
@@ -44,7 +58,20 @@ export function ActionToast() {
 				className="shrink-0 rounded-full"
 				style={{ width: 6, height: 6, background: "var(--w-brass)" }}
 			/>
-			{msg}
+			{toast.message}
+			{toast.action && (
+				<button
+					type="button"
+					onClick={() => {
+						toast.action?.onClick();
+						setToast(null);
+					}}
+					className="font-display font-bold"
+					style={{ marginLeft: 4, color: "var(--w-brass)" }}
+				>
+					{toast.action.label}
+				</button>
+			)}
 		</div>
 	);
 }
