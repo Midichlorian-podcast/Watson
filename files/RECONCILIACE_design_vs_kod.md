@@ -909,3 +909,14 @@ bez volby „Kompaktní" (README ř. 111).
 
 **Vědomě mimo (beze změny):** saveTemplate neukládá `who` (účty se liší mezi prostory);
 reálné pozvánky = mail #8; per-výskyt override názvu/priority.
+
+## §28 — Hustota řádků zhuštěna (na přání uživatele)
+
+Cloud Design měl density scale 15/11/8 px (`--w-row-py`, README ř. 111), default „Vzdušné".
+Uživatel chtěl víc karet na obrazovku (~15 místo ~10) a míň plýtvání. Zhuštěno:
+- density scale **8 / 6 / 4 px** (vzdusne/vyvazene/kompaktni),
+- TaskCard: `line-height` názvu 1.3, podřádek 1.2, `gap` 12→11,
+- flush řádky (odebrán `gap-2` mezi kartami ve filtrovaném pohledu Úkoly).
+
+Výsledek: řádek 74 → **50 px** (~15 řádků/obrazovku). Sdílený TaskCard → Dnes i Úkoly
+konzistentní. Vědomá odchylka od Cloud Design defaultu.

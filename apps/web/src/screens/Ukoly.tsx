@@ -205,7 +205,7 @@ export function Ukoly() {
 							</p>
 						))}
 					{projektId ? (
-						<ul className="flex flex-col gap-2">
+						<ul>
 							{shown.map((tk) => (
 								<KbRow key={tk.id} selected={kbSel === tk.id}>
 									<TaskItem

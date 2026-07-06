@@ -123,8 +123,8 @@ export function TaskCard({
 				!rowBg && "hover:bg-panel-2",
 			)}
 			style={{
-				gap: 12,
-				padding: "var(--w-row-py, 10px) 4px var(--w-row-py, 10px) 11px",
+				gap: 11,
+				padding: "var(--w-row-py, 8px) 4px var(--w-row-py, 8px) 11px",
 				borderRadius: "0 6px 6px 0",
 				boxShadow:
 					done || dormant ? undefined : `inset 3px 0 0 ${PRI[priority]}`,
@@ -189,12 +189,15 @@ export function TaskCard({
 						"truncate font-display font-semibold",
 						done ? "text-ink-3 line-through" : "text-ink",
 					)}
-					style={{ fontSize: "var(--w-row-font, 13.5px)" }}
+					style={{ fontSize: "var(--w-row-font, 13.5px)", lineHeight: 1.3 }}
 				>
 					{name}
 				</div>
 				{hasSub && (
-					<div className="flex items-center" style={{ gap: 10, marginTop: 2 }}>
+					<div
+						className="flex items-center"
+						style={{ gap: 10, marginTop: 1, lineHeight: 1.2 }}
+					>
 						{parentName && (
 							<span
 								className="min-w-0 truncate font-body text-ink-3"
