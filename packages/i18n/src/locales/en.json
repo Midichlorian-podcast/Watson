@@ -185,7 +185,11 @@
     "colsTitle": "Column overview — readable names",
     "gridTitle": "Time grid — exact times",
     "openDayN": "Show all {{n}} tasks on this day",
-    "moreInTime": "more tasks at this time — open day"
+    "moreInTime": "more tasks at this time — open day",
+    "moreCount_one": "more",
+    "moreCount_few": "more",
+    "moreCount_many": "more",
+    "moreCount_other": "more"
   },
   "today": {
     "heading": "What to handle today",

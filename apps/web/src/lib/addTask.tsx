@@ -9,6 +9,8 @@ export interface AddPrefill {
 	time?: string;
 	/** Trvání v minutách. */
 	duration?: number;
+	/** Počet dní (vícedenní úkol) — z tažení přes dny v kalendáři. */
+	days?: number;
 	/** Předvyplněný projekt (CTA „+ Přidat úkol" ve filtrovaném projektu). */
 	projectId?: string;
 }

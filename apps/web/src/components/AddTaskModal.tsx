@@ -280,6 +280,7 @@ export function AddTaskModal({
 		date?: string;
 		time?: string;
 		duration?: number;
+		days?: number;
 		projectId?: string;
 	};
 }) {
@@ -341,6 +342,7 @@ export function AddTaskModal({
 		}
 		if (initial?.time) d.time = initial.time;
 		if (initial?.duration) d.duration = initial.duration;
+		if (initial?.days && initial.days > 1) d.days = initial.days;
 		if (initial?.projectId) d.project = initial.projectId;
 		return d;
 	});

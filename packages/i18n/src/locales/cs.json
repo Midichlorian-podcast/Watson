@@ -185,7 +185,11 @@
     "colsTitle": "Sloupcový přehled — čitelné názvy",
     "gridTitle": "Časová mřížka — přesné časy",
     "openDayN": "Zobrazit všech {{n}} úkolů v tomto dni",
-    "moreInTime": "dalších úkolů v tomto čase — otevřít den"
+    "moreInTime": "dalších úkolů v tomto čase — otevřít den",
+    "moreCount_one": "další",
+    "moreCount_few": "další",
+    "moreCount_many": "dalších",
+    "moreCount_other": "dalších"
   },
   "today": {
     "heading": "Co dnes řešit",

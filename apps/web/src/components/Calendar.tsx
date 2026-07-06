@@ -39,6 +39,10 @@ const PLANNING_LS = "watson.calPlanning";
 /** Pixely/minuta (prototyp PPMOPT, ř. 1912). */
 const PPMOPT = { comfortable: 0.62, spacious: 0.95 } as const;
 const MAX_LANES = 3;
+// Limit celodenního pásu — aby přeplněné celodenní úkoly nevytlačily časovou mřížku.
+const ALLDAY_MAX_H = 132; // strop výšky pásu (px); přebytek → scroll (pojistka)
+const MAX_BARS = 2; // max řádků vícedenních pruhů (nad rámec „+N")
+const ALLDAY_PER_COL = 2; // max celodenních chipů na sloupec (nad rámec „+N → den")
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) =>
@@ -158,6 +162,8 @@ interface DragCreate {
 	iso: string;
 	start: number;
 	end: number;
+	/** Cílový den při tažení přes dny (vícedenní create). */
+	isoEnd?: string;
 }
 interface BlockDrag {
 	id: string;
@@ -742,11 +748,12 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 							projName={projName}
 							scrollRef={gridScrollRef}
 							onOpen={(tk) => open(tk.id)}
-							onAdd={(iso, min, dur) =>
+							onAdd={(iso, min, dur, days) =>
 								openAdd({
 									date: iso,
 									time: min != null ? fmtMin(min) : undefined,
 									duration: dur,
+									days,
 								})
 							}
 							onMove={moveTask}
@@ -1059,7 +1066,7 @@ function TimeGrid({
 	projName: (id: string | null) => string;
 	scrollRef: React.RefObject<HTMLDivElement | null>;
 	onOpen: (t: TaskRow) => void;
-	onAdd: (iso: string, min: number | null, dur?: number) => void;
+	onAdd: (iso: string, min: number | null, dur?: number, days?: number) => void;
 	onMove: (
 		id: string,
 		iso: string,
@@ -1206,38 +1213,98 @@ function TimeGrid({
 			window.addEventListener("pointerup", onUp);
 		};
 
-	// ── drag-create v prázdném sloupci (port _calCreateDown, ř. 2667) ──
+	// ── drag-create: svisle = časový úkol; táhnutím přes dny = vícedenní ──
+	// (port _calCreateDown, ř. 2667 + rozšíření o cross-day multi-day create)
+	const dayCount = (a: string, b: string) =>
+		Math.round(
+			(new Date(`${b}T00:00:00`).getTime() -
+				new Date(`${a}T00:00:00`).getTime()) /
+				86_400_000,
+		) + 1;
 	const createDown = (iso: string) => (e: ReactPointerEvent) => {
 		if ((e.target as HTMLElement).closest("[data-evblock]")) return;
 		const colEl = e.currentTarget as HTMLElement;
 		const rect = colEl.getBoundingClientRect();
 		const anchor = snap((e.clientY - rect.top) / PPM);
 		let moved = false;
-		const st = { iso, start: anchor, end: anchor + 30 };
-		setCreate(st);
+		setCreate({ iso, start: anchor, end: anchor + 30 });
 		const onMoveEv = (ev: PointerEvent) => {
 			moved = true;
+			// Sloupce sdílí stejný horní okraj mřížky → clientY-rect.top platí pro každý sloupec.
 			const m = snap((ev.clientY - rect.top) / PPM);
-			setCreate({
-				iso,
-				start: Math.min(anchor, m),
-				end: Math.max(Math.min(anchor, m) + 15, Math.max(anchor, m)),
-			});
+			const curIso = isos.length > 1 ? (colAt(ev.clientX) ?? iso) : iso;
+			if (curIso === iso) {
+				setCreate({
+					iso,
+					start: Math.min(anchor, m),
+					end: Math.max(Math.min(anchor, m) + 15, Math.max(anchor, m)),
+				});
+			} else {
+				// tažení do jiného dne → vícedenní span (drží se čas začátku)
+				setCreate({ iso, isoEnd: curIso, start: anchor, end: anchor + 30 });
+			}
 		};
 		const onUp = (ev: PointerEvent) => {
 			window.removeEventListener("pointermove", onMoveEv);
 			window.removeEventListener("pointerup", onUp);
 			setCreate(null);
-			if (moved) {
+			if (!moved) return;
+			suppressClick.current = true;
+			setTimeout(() => {
+				suppressClick.current = false;
+			}, 80);
+			const curIso = isos.length > 1 ? (colAt(ev.clientX) ?? iso) : iso;
+			if (curIso === iso) {
 				const m = snap((ev.clientY - rect.top) / PPM);
 				const s = Math.min(anchor, m);
 				const e2 = Math.max(Math.min(anchor, m) + 15, Math.max(anchor, m));
-				suppressClick.current = true;
-				setTimeout(() => {
-					suppressClick.current = false;
-				}, 80);
 				onAdd(iso, s, e2 - s);
+			} else {
+				// vícedenní úkol: první den + počet dní + čas začátku (otevře modal předvyplněný)
+				const a = iso < curIso ? iso : curIso;
+				const b = iso < curIso ? curIso : iso;
+				onAdd(a, anchor, undefined, dayCount(a, b));
 			}
+		};
+		window.addEventListener("pointermove", onMoveEv);
+		window.addEventListener("pointerup", onUp);
+	};
+
+	// ── celodenní chip: pointer-drag → do mřížky = časový úkol, nad pásem = přesun dne ──
+	const allDayChipDown = (tk: TaskRow) => (e: ReactPointerEvent) => {
+		if (isVirtual(tk)) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const x0 = e.clientX;
+		const y0 = e.clientY;
+		let moved = false;
+		const onMoveEv = (ev: PointerEvent) => {
+			if (Math.abs(ev.clientY - y0) > 4 || Math.abs(ev.clientX - x0) > 4)
+				moved = true;
+		};
+		const onUp = async (ev: PointerEvent) => {
+			window.removeEventListener("pointermove", onMoveEv);
+			window.removeEventListener("pointerup", onUp);
+			if (!moved) {
+				onOpen(tk);
+				return;
+			}
+			suppressClick.current = true;
+			setTimeout(() => {
+				suppressClick.current = false;
+			}, 80);
+			const targetIso = colAt(ev.clientX) ?? tIso(tk) ?? todayIso;
+			const band = allDayRef.current?.getBoundingClientRect();
+			// puštění zpět nad pásem CELÝ DEN → zůstane celodenní (jen případný přesun dne)
+			if (band && ev.clientY >= band.top && ev.clientY <= band.bottom) {
+				await onMove(tk.id, targetIso, null, true);
+				return;
+			}
+			// puštění v časové mřížce → nastavit čas dle Y (mřížka scrolluje → přes weekGridRef top)
+			const grid = weekGridRef.current?.getBoundingClientRect();
+			if (!grid) return;
+			const min = snap((ev.clientY - grid.top) / PPM);
+			await onMove(tk.id, targetIso, Math.max(0, Math.min(1425, min)));
 		};
 		window.addEventListener("pointermove", onMoveEv);
 		window.addEventListener("pointerup", onUp);
@@ -1342,14 +1409,17 @@ function TimeGrid({
 				>
 					{t("calendar.allDayBand")}
 				</div>
-				<div className="relative min-w-0 flex-1">
-					{/* vícedenní pruhy */}
+				<div
+					className="relative min-w-0 flex-1"
+					style={{ maxHeight: ALLDAY_MAX_H, overflowY: "auto" }}
+				>
+					{/* vícedenní pruhy (strop MAX_BARS řádků + „+N" indikátor) */}
 					{barRows.length > 0 && (
 						<div
 							className="relative"
-							style={{ height: barRows.length * 23 + 2 }}
+							style={{ height: Math.min(barRows.length, MAX_BARS) * 23 + 2 }}
 						>
-							{barRows.map((row, ri) =>
+							{barRows.slice(0, MAX_BARS).map((row, ri) =>
 								row.map((tk) => {
 									const s = tIso(tk) ?? "";
 									const e2 = tIsoEnd(tk) ?? "";
@@ -1414,18 +1484,34 @@ function TimeGrid({
 									);
 								}),
 							)}
+							{barRows.length > MAX_BARS && (
+								<span
+									className="absolute font-mono"
+									style={{
+										top: MAX_BARS * 23 - 14,
+										right: 4,
+										fontSize: 9,
+										color: "var(--w-ink-3)",
+									}}
+								>
+									+{barRows.length - MAX_BARS}
+								</span>
+							)}
 						</div>
 					)}
 					{/* celodenní chipy per sloupec — v týdnu jen jednodenní, v Dni všechny přes hit (ř. 2798) */}
 					<div className="flex">
 						{isos.map((iso) => {
-							const list = calTasks.filter(
+							const listAll = calTasks.filter(
 								(tk) =>
 									startMin(tk) == null &&
 									(isWeekBand
 										? (tk.days ?? 1) <= 1 && tIso(tk) === iso
 										: hit(tk, iso)),
 							);
+							// Limit chipů na sloupec — přebytek přes „+N" do denního pohledu.
+							const list = listAll.slice(0, ALLDAY_PER_COL);
+							const overflowN = listAll.length - list.length;
 							const isToday = iso === todayIso;
 							return (
 								// biome-ignore lint/a11y/useKeyWithClickEvents: klik do prázdna = nový úkol
@@ -1460,14 +1546,7 @@ function TimeGrid({
 											<div
 												key={tk.id}
 												data-adchip
-												draggable={!isVirtual(tk)}
-												onDragStart={(e) =>
-													e.dataTransfer.setData("text/plain", tk.id)
-												}
-												onClick={(e) => {
-													e.stopPropagation();
-													onOpen(tk);
-												}}
+												onPointerDown={allDayChipDown(tk)}
 												className="flex cursor-grab items-center rounded-[6px] border border-line bg-card"
 												style={{
 													gap: 5,
@@ -1507,6 +1586,21 @@ function TimeGrid({
 											</div>
 										);
 									})}
+									{overflowN > 0 && (
+										<button
+											type="button"
+											data-adchip
+											onClick={(e) => {
+												e.stopPropagation();
+												onOpenDay(iso);
+											}}
+											className="rounded-[6px] text-left font-display font-semibold text-brass-text hover:bg-brass-soft"
+											style={{ fontSize: 10.5, padding: "2px 8px" }}
+										>
+											+{overflowN}{" "}
+											{t("calendar.moreCount", { count: overflowN })}
+										</button>
+									)}
 									{isos.length === 1 && list.length === 0 && (
 										<span
 											className="font-body"
@@ -1641,32 +1735,76 @@ function TimeGrid({
 										</span>
 									</div>
 								)}
-								{/* drag-create ghost (ř. 2670) */}
-								{create && create.iso === iso && (
-									<div
-										className="pointer-events-none absolute right-1 left-1"
-										style={{
-											top: create.start * PPM,
-											height: (create.end - create.start) * PPM,
-											background: "var(--w-brass-soft)",
-											border: "1.5px dashed var(--w-brass)",
-											borderRadius: 6,
-											zIndex: 8,
-										}}
-									>
-										<span
-											className="font-mono font-bold"
+								{/* drag-create ghost — jeden den (časový blok) nebo vícedenní (sloupcový pruh) */}
+								{create &&
+									(create.isoEnd && create.isoEnd !== create.iso ? (
+										// vícedenní span: zvýrazni každý sloupec v rozsahu
+										(() => {
+											const a =
+												create.iso < create.isoEnd ? create.iso : create.isoEnd;
+											const b =
+												create.iso < create.isoEnd ? create.isoEnd : create.iso;
+											if (iso < a || iso > b) return null;
+											const n = dayCount(a, b);
+											return (
+												<div
+													className="pointer-events-none absolute inset-0"
+													style={{
+														background: "var(--w-brass-soft)",
+														borderTop: "1.5px dashed var(--w-brass)",
+														borderBottom: "1.5px dashed var(--w-brass)",
+														borderLeft:
+															iso === a
+																? "1.5px dashed var(--w-brass)"
+																: undefined,
+														borderRight:
+															iso === b
+																? "1.5px dashed var(--w-brass)"
+																: undefined,
+														zIndex: 8,
+													}}
+												>
+													{iso === a && (
+														<span
+															className="font-mono font-bold"
+															style={{
+																fontSize: 9.5,
+																color: "var(--w-brass-text)",
+																padding: "2px 5px",
+																display: "inline-block",
+															}}
+														>
+															{n} {t("today.daysUnit")}
+														</span>
+													)}
+												</div>
+											);
+										})()
+									) : create.iso === iso ? (
+										<div
+											className="pointer-events-none absolute right-1 left-1"
 											style={{
-												fontSize: 9.5,
-												color: "var(--w-brass-text)",
-												padding: "2px 5px",
-												display: "inline-block",
+												top: create.start * PPM,
+												height: (create.end - create.start) * PPM,
+												background: "var(--w-brass-soft)",
+												border: "1.5px dashed var(--w-brass)",
+												borderRadius: 6,
+												zIndex: 8,
 											}}
 										>
-											{fmtMin(create.start)}–{fmtMin(create.end)}
-										</span>
-									</div>
-								)}
+											<span
+												className="font-mono font-bold"
+												style={{
+													fontSize: 9.5,
+													color: "var(--w-brass-text)",
+													padding: "2px 5px",
+													display: "inline-block",
+												}}
+											>
+												{fmtMin(create.start)}–{fmtMin(create.end)}
+											</span>
+										</div>
+									) : null)}
 								{/* bloky */}
 								{timed.map((tk) => {
 									const lay = lanes.get(tk.id) ?? { lane: 0, cols: 1 };
