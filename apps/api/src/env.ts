@@ -10,9 +10,19 @@ if (existsSync(envPath)) {
 	process.loadEnvFile(envPath);
 }
 
+// Povolené originy webu (CORS + trustedOrigins). WEB_ORIGIN může být čárkou oddělený seznam;
+// dev default zahrnuje běžné Vite porty (5173 primární, 5180 fallback při kolizi portů).
+const webOrigins = (
+	process.env.WEB_ORIGIN ?? "http://localhost:5173,http://localhost:5180"
+)
+	.split(",")
+	.map((s) => s.trim())
+	.filter(Boolean);
+
 export const env = {
 	apiPort: Number(process.env.API_PORT ?? 8787),
-	webOrigin: process.env.WEB_ORIGIN ?? "http://localhost:5173",
+	webOrigin: webOrigins[0] ?? "http://localhost:5173",
+	webOrigins,
 	databaseUrl: process.env.DATABASE_URL,
 	authSecret: process.env.BETTER_AUTH_SECRET,
 	authUrl: process.env.BETTER_AUTH_URL ?? "http://localhost:8787",

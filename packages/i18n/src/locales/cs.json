@@ -37,7 +37,16 @@
 		"searchClose": "Zavřít hledání"
 	},
 	"quickadd": {
-		"placeholder": "Přidat úkol… (např. zavolat Petře zítra v 15 p1 #Obchod)"
+		"placeholder": "Přidat úkol… (např. zavolat Petře zítra v 15 p1 #Obchod)",
+		"unitMin": "min",
+		"unitHour": "h",
+		"repDaily": "denně",
+		"repWeekly": "týdně",
+		"repBiweekly": "po 14 dnech",
+		"repMonthly": "měsíčně",
+		"repYearly": "ročně",
+		"deadlinePill": "do {{date}}",
+		"daysPill": "{{n}} dní"
 	},
 	"sync": {
 		"writeRejected": "Změna se neuložila — neměl(a) jsi oprávnění. Vrácena zpět."
@@ -92,7 +101,11 @@
 		"repeatsWeekly": "Opakuje se týdně",
 		"repeatsBiweekly": "Opakuje se po 14 dnech",
 		"repeatsMonthly": "Opakuje se měsíčně",
-		"repeatsYearly": "Opakuje se ročně"
+		"repeatsYearly": "Opakuje se ročně",
+		"ariaComplete": "Dokončit",
+		"ariaMarkUndone": "Označit jako nehotové",
+		"clearColor": "Bez barvy",
+		"moreActions": "Další akce"
 	},
 	"projects": {
 		"heading": "Projekty",
@@ -135,7 +148,9 @@
 		"newUnit": "nové",
 		"editProject": "Upravit projekt",
 		"emptyProject": "V tomto projektu zatím nejsou žádné úkoly.",
-		"nameLabel": "Název"
+		"nameLabel": "Název",
+		"newError": "Projekt se nepodařilo vytvořit. Zkus to znovu.",
+		"newForbidden": "Na vytvoření projektu nemáš oprávnění."
 	},
 	"calendar": {
 		"prev": "Předchozí",
@@ -467,7 +482,19 @@
 		"byProjectLabel": "Podle projektu",
 		"goalsLabel": "Cíle",
 		"showTasks": "Zobrazit úkoly",
-		"overdueChip": "{{count}} po termínu"
+		"overdueChip": "{{count}} po termínu",
+		"openTasks_one": "{{count}} otevřený",
+		"openTasks_few": "{{count}} otevřené",
+		"openTasks_many": "{{count}} otevřeného",
+		"openTasks_other": "{{count}} otevřených",
+		"peopleHint_one": "{{count}} člověk · klikni na kartu pro detail a vytížení",
+		"peopleHint_few": "{{count}} lidé · klikni na kartu pro detail a vytížení",
+		"peopleHint_many": "{{count}} lidí · klikni na kartu pro detail a vytížení",
+		"peopleHint_other": "{{count}} lidí · klikni na kartu pro detail a vytížení",
+		"overdueChip_one": "{{count}} po termínu",
+		"overdueChip_few": "{{count}} po termínu",
+		"overdueChip_many": "{{count}} po termínu",
+		"overdueChip_other": "{{count}} po termínu"
 	},
 	"flows": {
 		"heading": "Postupy",
@@ -547,7 +574,14 @@
 		"remindSent": "Připomínka odeslána",
 		"gateShortAuto": "Auto →",
 		"gateShortParallel": "Souběh ⇉",
-		"gateShortManual": "Ruční ✋"
+		"gateShortManual": "Ruční ✋",
+		"gateActivationTitle": "Brána aktivace",
+		"stepFallback": "Krok {{n}}",
+		"flowFallback": "Postup",
+		"roleGrafik": "Grafik",
+		"roleProdukce": "Produkce",
+		"roleUcetni": "Účetní",
+		"roleVedouci": "Vedoucí"
 	},
 	"toolbar": {
 		"filter": "Filtr",
@@ -650,5 +684,15 @@
 		"sugProject": "projekt ↵",
 		"min": "min",
 		"durNone": "—"
+	},
+	"auth": {
+		"genericError": "Přihlášení se nezdařilo. Zkontroluj údaje.",
+		"name": "Jméno",
+		"email": "E-mail",
+		"password": "Heslo",
+		"signIn": "Přihlásit se",
+		"createAccount": "Vytvořit účet",
+		"switchToSignUp": "Nemáš účet? Zaregistruj se",
+		"switchToSignIn": "Už máš účet? Přihlas se"
 	}
 }

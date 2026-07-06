@@ -48,6 +48,10 @@ export interface TaskCardProps {
 	/** Kontext vrstveného podúkolu — „↑ {rodič}" v podřádku. */
 	parentName?: string;
 	done?: boolean;
+	/** aria pro zaškrtávátko když je hotovo (klik → odškrtne). Lokalizuje konzument. */
+	doneLabel?: string;
+	/** aria pro zaškrtávátko když není hotovo (klik → dokončí). Lokalizuje konzument. */
+	undoneLabel?: string;
 	onToggle?: () => void;
 	onOpen?: () => void;
 }
@@ -90,6 +94,9 @@ export function TaskCard({
 	dormant,
 	parentName,
 	done,
+	// packages/ui nemá i18n → EN neutrální fallback; konzument (TaskItem) předává lokalizované.
+	doneLabel = "Mark as not done",
+	undoneLabel = "Complete",
 	onToggle,
 	onOpen,
 }: TaskCardProps) {
@@ -132,7 +139,7 @@ export function TaskCard({
 					e.stopPropagation();
 					onToggle?.();
 				}}
-				aria-label={done ? "Označit jako nehotové" : "Dokončit"}
+				aria-label={done ? doneLabel : undoneLabel}
 				className={cn(
 					"grid shrink-0 place-items-center rounded-full",
 					!done && "hover:border-brass",
@@ -230,7 +237,7 @@ export function TaskCard({
 									color: "var(--w-brass-text)",
 								}}
 							>
-								{handedOffLabel ?? "→ Přišlo na tebe"}
+								{handedOffLabel}
 							</span>
 						)}
 						{checklist && (

@@ -6,6 +6,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
+import { initials } from "../lib/format";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
@@ -25,15 +26,6 @@ import { deleteTaskWithUndo } from "../lib/undo";
 type Pri = 1 | 2 | 3 | 4;
 type Member = { id: string; name: string; email: string; image: string | null };
 type AssignMode = "single" | "shared_any" | "shared_all";
-
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 
 /** Relativní čas komentáře („dnes 8:05" / „12. 6."). */
 function whenLabel(iso: string | null, t: (k: string) => string) {
@@ -75,16 +67,22 @@ function BrassCheck({
 	onClick,
 	round,
 	size = 17,
+	doneLabel,
+	undoneLabel,
 }: {
 	done: boolean;
 	onClick: () => void;
 	round?: boolean;
 	size?: number;
+	/** aria pro „hotovo" (klik → odškrtne). Lokalizované, předává konzument. */
+	doneLabel: string;
+	/** aria pro „nehotovo" (klik → dokončí). */
+	undoneLabel: string;
 }) {
 	return (
 		<button
 			type="button"
-			aria-label={done ? "Označit jako nehotové" : "Dokončit"}
+			aria-label={done ? doneLabel : undoneLabel}
 			onClick={(e) => {
 				e.stopPropagation();
 				onClick();
@@ -488,7 +486,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							<button
 								type="button"
 								onClick={() => setMenuOpen((o) => !o)}
-								aria-label="⋯"
+								aria-label={t("detail.moreActions")}
 								className="grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 							>
 								<svg
@@ -889,7 +887,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									<button
 										type="button"
 										onClick={() => void setUserColor(null)}
-										aria-label="—"
+										aria-label={t("detail.clearColor")}
 										className="grid place-items-center border border-line bg-card"
 										style={{ width: 20, height: 20, borderRadius: 6 }}
 									>
@@ -1038,6 +1036,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											round
 											size={18}
 											done={sd}
+											doneLabel={t("detail.ariaMarkUndone")}
+											undoneLabel={t("detail.ariaComplete")}
 											// toggleTask = jednotná sémantika R9/advance/opakování (ne přímý patch)
 											onClick={() => void toggleTask(s)}
 										/>
@@ -1125,6 +1125,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 												round
 												size={18}
 												done={pdone}
+												doneLabel={t("detail.ariaMarkUndone")}
+												undoneLabel={t("detail.ariaComplete")}
 												onClick={() => togglePersonDone(a)}
 											/>
 										)}

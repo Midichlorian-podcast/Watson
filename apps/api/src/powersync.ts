@@ -184,17 +184,6 @@ const TABLES: Record<string, TableDef> = {
 		projectVia: { kind: "task", col: "task_id" },
 		memberCols: ["user_id"],
 	},
-	checklist_items: {
-		columns: {
-			task_id: "text",
-			project_id: "text",
-			text: "text",
-			checked: "bool",
-			position: "int",
-		},
-		hasUpdatedAt: false,
-		projectVia: { kind: "task", col: "task_id" },
-	},
 	comments: {
 		columns: { task_id: "text", project_id: "text", body: "text" },
 		hasUpdatedAt: true,
@@ -263,6 +252,9 @@ const TABLES: Record<string, TableDef> = {
 			position: "int",
 			gate: "text",
 			step_state: "text",
+			// Plánovací offsety (Kotva/Řetězec) — builder je zapisuje, musí projít do Postgresu.
+			anchor_offset: "int",
+			gap_days: "int",
 			activated_at: "ts",
 		},
 		hasUpdatedAt: false,

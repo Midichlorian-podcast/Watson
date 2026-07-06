@@ -11,7 +11,7 @@ import {
 	users,
 	workspaces,
 } from "@watson/db";
-import { DEFAULT_LOCALE } from "@watson/shared";
+import { DEFAULT_LOCALE, WORKSPACE_ROLES } from "@watson/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { auth } from "./auth";
@@ -23,7 +23,7 @@ const app = new Hono();
 app.use(
 	"/*",
 	cors({
-		origin: env.webOrigin,
+		origin: env.webOrigins,
 		credentials: true,
 		allowHeaders: ["Content-Type", "Authorization"],
 		allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -233,7 +233,8 @@ app.patch("/api/workspaces/:id/members/:userId/role", async (c) => {
 	const targetId = c.req.param("userId");
 	const role = ((await c.req.json().catch(() => ({}))) as { role?: string })
 		.role;
-	if (role !== "admin" && role !== "member" && role !== "guest")
+	// Validace proti sdílenému enumu WORKSPACE_ROLES (admin/manager/member/guest) — dřív odmítal 'manager'.
+	if (!role || !(WORKSPACE_ROLES as readonly string[]).includes(role))
 		return c.json({ error: "invalid role" }, 400);
 
 	const db = getDb();

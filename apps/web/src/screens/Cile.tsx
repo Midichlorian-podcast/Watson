@@ -4,6 +4,7 @@ import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
+import { initials } from "../lib/format";
 import {
 	type GoalStatusKind,
 	GSTAT,
@@ -29,14 +30,6 @@ type MilestoneRow = {
 };
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 
 const PERIODIC_KEY: Record<string, string> = {
 	week: "goals.perWeek",

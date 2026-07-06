@@ -9,7 +9,12 @@ import {
 	useState,
 } from "react";
 import { useAddTask } from "../lib/addTask";
-import { expandOccurrences, occId, recurrenceKind } from "../lib/occurrences";
+import {
+	expandOccurrences,
+	occId,
+	parseOccId,
+	recurrenceKind,
+} from "../lib/occurrences";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
@@ -1688,7 +1693,7 @@ function TimeGrid({
 									);
 									const who = metaOf(
 										isVirtual(tk)
-											? { ...tk, id: tk.id.slice(0, tk.id.indexOf("@")) }
+											? { ...tk, id: parseOccId(tk.id)?.taskId ?? tk.id }
 											: tk,
 									).avatars[0]?.initials;
 									return (

@@ -1,5 +1,6 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useMemo } from "react";
+import { parseOccId } from "./occurrences";
 
 /**
  * R6 — per-uživatelské barvy úkolů (task_user_colors; syncuje se jen vlastní barva).
@@ -17,9 +18,7 @@ export function useUserColors() {
 				.map((c) => [c.task_id, c.color as string] as const),
 		);
 		return (taskId: string, fallback?: string | null): string | null => {
-			const base = taskId.includes("@")
-				? (taskId.split("@")[0] ?? taskId)
-				: taskId;
+			const base = parseOccId(taskId)?.taskId ?? taskId;
 			return map.get(base) ?? fallback ?? null;
 		};
 	}, [data]);

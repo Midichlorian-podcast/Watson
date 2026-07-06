@@ -6,6 +6,7 @@ import { Icon } from "@watson/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
+import { initials } from "../lib/format";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjectDetail } from "../lib/projectDetail";
@@ -22,15 +23,6 @@ const STATUSES = [
 	["archive", "statusArchived"],
 	["done", "statusDone"],
 ] as const;
-
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 
 /** Patch sloupců projektu (write-path: tabulka `projects`, self-členství). */
 async function patchProject(id: string, data: Record<string, unknown>) {

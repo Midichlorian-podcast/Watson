@@ -96,18 +96,6 @@ const assignments = new Table(
 	{ indexes: { by_task: ["task_id"], by_project: ["project_id"] } },
 );
 
-const checklist_items = new Table(
-	{
-		task_id: column.text,
-		project_id: column.text,
-		text: column.text,
-		checked: column.integer,
-		position: column.integer,
-		created_at: column.text,
-	},
-	{ indexes: { by_task: ["task_id"] } },
-);
-
 const comments = new Table(
 	{
 		task_id: column.text,
@@ -239,7 +227,6 @@ export const AppSchema = new Schema({
 	statuses,
 	project_members,
 	assignments,
-	checklist_items,
 	comments,
 	task_occurrence_overrides,
 	task_user_colors,
@@ -258,7 +245,6 @@ export type SectionRow = Database["sections"];
 export type StatusRow = Database["statuses"];
 export type ProjectMemberRow = Database["project_members"];
 export type AssignmentRow = Database["assignments"];
-export type ChecklistItemRow = Database["checklist_items"];
 export type CommentRow = Database["comments"];
 export type ReminderRow = Database["reminders"];
 export type TaskUserColorRow = Database["task_user_colors"];

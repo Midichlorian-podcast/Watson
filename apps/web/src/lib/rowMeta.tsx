@@ -2,6 +2,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { API_URL } from "./api";
+import { initials } from "./format";
 import type { TaskRow } from "./powersync/AppSchema";
 import { useWorkspace } from "./workspace";
 
@@ -26,15 +27,6 @@ export interface RowMeta {
 }
 
 const EMPTY: RowMeta = { avatars: [], assigneeIds: [] };
-
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 
 type Member = { id: string; name: string };
 

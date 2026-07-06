@@ -36,7 +36,7 @@ export const auth = betterAuth({
 	appName: "Watson",
 	secret: env.authSecret ?? DEV_SECRET,
 	baseURL: env.authUrl,
-	trustedOrigins: [env.webOrigin],
+	trustedOrigins: env.webOrigins,
 
 	database: drizzleAdapter(getDb(), {
 		provider: "pg",

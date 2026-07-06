@@ -97,7 +97,6 @@ async function descendantIds(taskId: string): Promise<string[]> {
 const CHILD_TABLES = [
 	"chain_steps",
 	"assignments",
-	"checklist_items",
 	"comments",
 	"reminders",
 	"task_occurrence_overrides",

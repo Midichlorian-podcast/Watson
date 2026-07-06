@@ -5,6 +5,7 @@ import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
 import { signOut, useSession } from "../lib/auth-client";
+import { initials } from "../lib/format";
 import { disconnectPowerSync } from "../lib/powersync/db";
 import {
 	type Accent,
@@ -32,15 +33,6 @@ type Member = {
 	role: string;
 	isOwner: boolean;
 };
-
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 
 /** Mapuje DB roli + vlastnictví na CS popisek dle design taxonomie (Vlastník/Admin/Člen/Host). */
 function roleLabel(m: Member, t: (k: string) => string) {

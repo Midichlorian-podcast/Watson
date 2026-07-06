@@ -6,6 +6,7 @@ import { Icon } from "@watson/ui";
 import { useMemo } from "react";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
+import { initials } from "../lib/format";
 import { GSTAT, goalElapsed, goalProgress, goalStatus } from "../lib/goals";
 import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
@@ -24,14 +25,6 @@ type Member = {
 };
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 
 // Krátké názvy dní Po–Ne dle jazyka (2024-01-01 je pondělí).
 const wdLabels = (lang: string): string[] =>
@@ -573,7 +566,7 @@ export function Reporty() {
 										className="mt-1 font-mono text-ink-3"
 										style={{ fontSize: 11 }}
 									>
-										{st.open.length} {t("reports.openTasks")}
+										{t("reports.openTasks", { count: st.open.length })}
 									</div>
 								</div>
 							</button>

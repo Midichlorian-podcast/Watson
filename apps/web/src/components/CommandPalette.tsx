@@ -135,7 +135,6 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 		return (
 			query ? all.filter((it) => it.label.toLowerCase().includes(query)) : all
 		).slice(0, 14);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [q, projects, activeWs, team, chains, t]);
 
 	const activeIdx = Math.min(idx, Math.max(0, items.length - 1));

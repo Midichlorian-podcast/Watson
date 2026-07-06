@@ -11,14 +11,6 @@ export const MAX_TASK_DEPTH = 3;
 export const PRIORITIES = [1, 2, 3, 4] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
-/** Sémantika priorit (P1 nejvyšší, P4 = default/nejnižší). */
-export const PRIORITY_LABELS: Record<Priority, string> = {
-	1: "priority.acute", // Akutní
-	2: "priority.soon", // Co nejdřív
-	3: "priority.notAcute", // Neakutní
-	4: "priority.future", // Budoucnost
-};
-
 /**
  * R2 — režimy přiřazení.
  * - single:      jeden řešitel; dokončí on → hotovo.

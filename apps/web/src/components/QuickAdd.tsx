@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useSession } from "../lib/auth-client";
 import { powerSync } from "../lib/powersync/db";
-import type { Highlight } from "../lib/quickadd";
+import type { Highlight, RecurrenceRule } from "../lib/quickadd";
 import { parseQuick } from "../lib/quickadd";
 import { todayISO } from "../lib/tasks";
 
@@ -18,7 +18,6 @@ type Person = { id: string; name: string; initials: string };
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const hhmm = (min: number) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
-const durLabel = (min: number) => (min < 60 ? `${min} min` : `${min / 60} h`);
 
 /** Segmenty rawName pro overlay zvýraznění (z highlights rozsahů). */
 function segments(raw: string, hl: Highlight[]) {
@@ -221,6 +220,31 @@ export function QuickAdd({
 
 	const segs = segments(raw, parsed.highlights);
 
+	// Trvání pilulky: základní jednotky z i18n (min/h).
+	const durLabel = (min: number) =>
+		min < 60
+			? `${min} ${t("quickadd.unitMin")}`
+			: `${min / 60} ${t("quickadd.unitHour")}`;
+	// Opakování: základní druhy → i18n; bohatší pravidla (nth/day/parity) nechají
+	// lidský label parseru, aby se neztratila konkrétnost (např. „Každou středu").
+	const recLabel = (r: RecurrenceRule) => {
+		const base: Partial<Record<RecurrenceRule["kind"], string>> = {
+			daily: t("quickadd.repDaily"),
+			weekly: t("quickadd.repWeekly"),
+			biweekly: t("quickadd.repBiweekly"),
+			monthly: t("quickadd.repMonthly"),
+			yearly: t("quickadd.repYearly"),
+		};
+		const isRich =
+			r.weekday != null ||
+			r.day != null ||
+			r.nth != null ||
+			r.parity != null ||
+			r.kind === "monthly-nth" ||
+			r.kind === "monthly-day";
+		return (isRich ? undefined : base[r.kind]) ?? r.label;
+	};
+
 	// Pilulky rozpoznaných atributů
 	const pills: { icon: IconName; label: string }[] = [];
 	if (parsed.priority)
@@ -231,10 +255,17 @@ export function QuickAdd({
 	if (parsed.durationMin != null)
 		pills.push({ icon: "trvani", label: durLabel(parsed.durationMin) });
 	if (parsed.recurrence)
-		pills.push({ icon: "opakovani", label: parsed.recurrence.label });
+		pills.push({ icon: "opakovani", label: recLabel(parsed.recurrence) });
 	if (parsed.deadline)
-		pills.push({ icon: "deadline", label: `do ${parsed.deadline}` });
-	if (parsed.days) pills.push({ icon: "termin", label: `${parsed.days} dní` });
+		pills.push({
+			icon: "deadline",
+			label: t("quickadd.deadlinePill", { date: parsed.deadline }),
+		});
+	if (parsed.days)
+		pills.push({
+			icon: "termin",
+			label: t("quickadd.daysPill", { n: parsed.days }),
+		});
 	const pillProj =
 		pickedProj ?? projects.find((x) => x.id === parsed.projectId);
 	if (pillProj) pills.push({ icon: "projekt", label: pillProj.name });

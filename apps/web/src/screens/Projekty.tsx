@@ -5,21 +5,13 @@ import { Icon } from "@watson/ui";
 import { useEffect, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
+import { initials } from "../lib/format";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
-
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 
 type Counts = { open: number; done: number; total: number };
 const ZERO: Counts = { open: 0, done: 0, total: 0 };
@@ -230,6 +222,7 @@ function NewProjectModal({
 	const [color, setColor] = useState<string | null>(null);
 	const [kind, setKind] = useState("flow");
 	const [busy, setBusy] = useState(false);
+	const [err, setErr] = useState<string | null>(null);
 
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
@@ -242,14 +235,27 @@ function NewProjectModal({
 	const create = async () => {
 		if (!name.trim() || busy) return;
 		setBusy(true);
-		const r = await fetch(`${API_URL}/api/projects`, {
-			method: "POST",
-			credentials: "include",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ name: name.trim(), workspaceId, color, kind }),
-		});
-		setBusy(false);
-		if (r.ok) onClose();
+		try {
+			const r = await fetch(`${API_URL}/api/projects`, {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: name.trim(), workspaceId, color, kind }),
+			});
+			if (r.ok) {
+				onClose();
+				return;
+			}
+			// HTTP chyba (403 host, 400, 500) — modal zůstane otevřený s hláškou.
+			setErr(
+				r.status === 403 ? t("projects.newForbidden") : t("projects.newError"),
+			);
+		} catch {
+			// Síť/offline výjimka — nezaseknout busy, ukázat hlášku.
+			setErr(t("projects.newError"));
+		} finally {
+			setBusy(false);
+		}
 	};
 
 	return (
@@ -365,6 +371,19 @@ function NewProjectModal({
 							</button>
 						))}
 					</div>
+					{err && (
+						<p
+							className="mt-3 rounded-[9px] font-body"
+							style={{
+								fontSize: 12.5,
+								padding: "8px 12px",
+								background: "var(--w-overdue-soft, rgba(194,71,60,.12))",
+								color: "var(--w-overdue)",
+							}}
+						>
+							{err}
+						</p>
+					)}
 					<div className="mt-4 flex justify-end gap-2.5 border-line border-t pt-3.5">
 						<button
 							type="button"

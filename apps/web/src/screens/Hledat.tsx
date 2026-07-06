@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { type ReactNode, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
+import { initials } from "../lib/format";
 import type { ChainRow, GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
@@ -18,15 +19,6 @@ type Member = {
 	image: string | null;
 	job: string | null;
 };
-
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 
 /** Pluralizace počtu výsledků — i18next count (cs má 3 tvary, en 2). */
 function totalLabel(

@@ -4,8 +4,8 @@
     {
       "name": "web",
       "runtimeExecutable": "/bin/zsh",
-      "runtimeArgs": ["-lc", "pnpm --filter @watson/web dev"],
-      "port": 5173,
+      "runtimeArgs": ["-lc", "pnpm --filter @watson/web exec vite --port 5180 --strictPort"],
+      "port": 5180,
       "autoPort": false
     }
   ]

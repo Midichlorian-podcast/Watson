@@ -14,6 +14,7 @@ import {
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
+import { initials } from "../lib/format";
 import type { ChainRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
@@ -180,15 +181,6 @@ function segments(raw: string, hl: Highlight[]) {
 	if (segs.length === 0) segs.push({ text: raw, mark: false });
 	return segs;
 }
-
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 
 type Member = { id: string; name: string };
 

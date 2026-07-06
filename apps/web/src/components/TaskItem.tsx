@@ -85,6 +85,8 @@ export function TaskItem({
 				}
 				handedOff={handedOff}
 				handedOffLabel={t("today.handedOff")}
+				doneLabel={t("detail.ariaMarkUndone")}
+				undoneLabel={t("detail.ariaComplete")}
 				checklist={meta.checklist}
 				recurring={Boolean(task.recurrence)}
 				reminder={meta.reminder}

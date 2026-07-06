@@ -17,6 +17,7 @@ import {
 	shiftChain,
 	toggleChainWeekend,
 } from "../lib/chainReflow";
+import { initials } from "../lib/format";
 import type { ChainRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
@@ -26,14 +27,6 @@ import { useWorkspace, useWorkspaces } from "../lib/workspace";
 type Member = { id: string; name: string; email: string };
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 const addDays = (iso: string, n: number) => {
 	const d = new Date(`${iso}T00:00:00`);
 	d.setDate(d.getDate() + n);
@@ -229,8 +222,14 @@ const TEMPLATES: {
 	},
 ];
 
-/** Role pro kroky builderu (prototyp FLOW_ROLES, ř. 2500) — člověk se dosadí při založení. */
-const FLOW_ROLES = ["Grafik", "Produkce", "Účetní", "Vedoucí"];
+/** Role pro kroky builderu (prototyp FLOW_ROLES, ř. 2500) — člověk se dosadí při založení.
+ *  Konstanta drží i18n klíče; label se renderuje přes t(). */
+const FLOW_ROLE_KEYS = [
+	"flows.roleGrafik",
+	"flows.roleProdukce",
+	"flows.roleUcetni",
+	"flows.roleVedouci",
+] as const;
 
 /** Šablony uložené z běžících postupů (localStorage, prototyp saveFlowAsTemplate). */
 function savedTemplates(): typeof TEMPLATES {
@@ -694,13 +693,13 @@ function FlowDetail({
 			);
 		const tpl = {
 			id: `tpl${Date.now()}`,
-			label: ch.name ?? "Postup",
+			label: ch.name ?? t("flows.flowFallback"),
 			desc: `${chSteps.length} ${t("flows.stepsFromRunning")}`,
 			// Prototyp (ř. 2495) ukládá i who — vědomě vynecháno: šablona se sdílí mezi prostory s jinými reálnými účty.
 			steps: chSteps.map((s, i) => {
 				const tk = s.task_id ? taskById.get(s.task_id) : undefined;
 				return {
-					name: tk?.name ?? `Krok ${i + 1}`,
+					name: tk?.name ?? t("flows.stepFallback", { n: i + 1 }),
 					offset: dayDiff(tk?.due_date?.slice(0, 10) ?? base),
 					priority: tk?.priority ?? 3,
 					gate: s.gate ?? "after_previous",
@@ -1334,7 +1333,7 @@ function FlowModal({
 				[
 					taskId,
 					stepProject,
-					r.name.trim() || `Krok ${i + 1}`,
+					r.name.trim() || t("flows.stepFallback", { n: i + 1 }),
 					r.role ? `Role: ${r.role}` : null,
 					r.priority,
 					due,
@@ -1704,15 +1703,16 @@ function FlowModal({
 												})}
 											</span>
 											{/* role (prototyp FLOW_ROLES — člověk se dosadí při založení) */}
-											{FLOW_ROLES.map((role) => {
-												const on = r.role === role;
+											{FLOW_ROLE_KEYS.map((roleKey) => {
+												const roleLabel = t(roleKey);
+												const on = r.role === roleLabel;
 												return (
 													<button
-														key={role}
+														key={roleKey}
 														type="button"
 														title={t("flows.roleTitle")}
 														onClick={() =>
-															setRow(i, { role: on ? "" : role, who: "" })
+															setRow(i, { role: on ? "" : roleLabel, who: "" })
 														}
 														className="rounded-full font-display font-semibold"
 														style={{
@@ -1727,7 +1727,7 @@ function FlowModal({
 																: "var(--w-ink-3)",
 														}}
 													>
-														{role}
+														{roleLabel}
 													</button>
 												);
 											})}
@@ -1774,7 +1774,7 @@ function FlowModal({
 														],
 													})
 												}
-												title="Brána aktivace"
+												title={t("flows.gateActivationTitle")}
 												className="rounded-full border border-line font-display font-semibold text-ink-2 hover:border-brass"
 												style={{ padding: "5px 9px", fontSize: 11 }}
 											>

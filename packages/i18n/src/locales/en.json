@@ -37,7 +37,16 @@
 		"searchClose": "Close search"
 	},
 	"quickadd": {
-		"placeholder": "Add task… (e.g. call Petra tomorrow at 3pm p1 #Sales)"
+		"placeholder": "Add task… (e.g. call Petra tomorrow at 3pm p1 #Sales)",
+		"unitMin": "min",
+		"unitHour": "h",
+		"repDaily": "daily",
+		"repWeekly": "weekly",
+		"repBiweekly": "every 2 weeks",
+		"repMonthly": "monthly",
+		"repYearly": "yearly",
+		"deadlinePill": "by {{date}}",
+		"daysPill": "{{n}} days"
 	},
 	"sync": {
 		"writeRejected": "Change not saved — you didn't have permission. Reverted."
@@ -92,7 +101,11 @@
 		"repeatsWeekly": "Repeats weekly",
 		"repeatsBiweekly": "Repeats every 14 days",
 		"repeatsMonthly": "Repeats monthly",
-		"repeatsYearly": "Repeats yearly"
+		"repeatsYearly": "Repeats yearly",
+		"ariaComplete": "Complete",
+		"ariaMarkUndone": "Mark as not done",
+		"clearColor": "No color",
+		"moreActions": "More actions"
 	},
 	"projects": {
 		"heading": "Projects",
@@ -135,7 +148,9 @@
 		"newUnit": "new",
 		"editProject": "Edit project",
 		"emptyProject": "No tasks in this project yet.",
-		"nameLabel": "Name"
+		"nameLabel": "Name",
+		"newError": "Couldn't create the project. Try again.",
+		"newForbidden": "You don't have permission to create a project."
 	},
 	"calendar": {
 		"prev": "Previous",
@@ -465,7 +480,19 @@
 		"byProjectLabel": "By project",
 		"goalsLabel": "Goals",
 		"showTasks": "Show tasks",
-		"overdueChip": "{{count}} overdue"
+		"overdueChip": "{{count}} overdue",
+		"openTasks_one": "{{count}} open",
+		"openTasks_few": "{{count}} open",
+		"openTasks_many": "{{count}} open",
+		"openTasks_other": "{{count}} open",
+		"peopleHint_one": "{{count}} person · click a card for detail and load",
+		"peopleHint_few": "{{count}} people · click a card for detail and load",
+		"peopleHint_many": "{{count}} people · click a card for detail and load",
+		"peopleHint_other": "{{count}} people · click a card for detail and load",
+		"overdueChip_one": "{{count}} overdue",
+		"overdueChip_few": "{{count}} overdue",
+		"overdueChip_many": "{{count}} overdue",
+		"overdueChip_other": "{{count}} overdue"
 	},
 	"flows": {
 		"heading": "Flows",
@@ -545,7 +572,14 @@
 		"remindSent": "Reminder sent",
 		"gateShortAuto": "Auto →",
 		"gateShortParallel": "Parallel ⇉",
-		"gateShortManual": "Manual ✋"
+		"gateShortManual": "Manual ✋",
+		"gateActivationTitle": "Activation gate",
+		"stepFallback": "Step {{n}}",
+		"flowFallback": "Flow",
+		"roleGrafik": "Designer",
+		"roleProdukce": "Production",
+		"roleUcetni": "Accountant",
+		"roleVedouci": "Manager"
 	},
 	"toolbar": {
 		"filter": "Filter",
@@ -648,5 +682,15 @@
 		"sugProject": "project ↵",
 		"min": "min",
 		"durNone": "—"
+	},
+	"auth": {
+		"genericError": "Sign-in failed. Check your details.",
+		"name": "Name",
+		"email": "E-mail",
+		"password": "Password",
+		"signIn": "Sign in",
+		"createAccount": "Create account",
+		"switchToSignUp": "No account? Sign up",
+		"switchToSignIn": "Already have an account? Sign in"
 	}
 }

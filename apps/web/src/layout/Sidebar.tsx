@@ -5,6 +5,7 @@ import { Icon } from "@watson/ui";
 import { type CSSProperties, useMemo } from "react";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
+import { initials } from "../lib/format";
 import { useProjects } from "../lib/projects";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 import { MAIN_NAV, type NavItem } from "./nav";
@@ -14,15 +15,6 @@ const todayIso = () => {
 	const d = new Date();
 	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
-
-const initials = (name: string) =>
-	name
-		.split(/\s+/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((w) => w[0] ?? "")
-		.join("")
-		.toUpperCase() || "?";
 
 const NAV_BASE: CSSProperties = {
 	display: "flex",

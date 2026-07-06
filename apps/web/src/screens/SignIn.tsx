@@ -20,7 +20,7 @@ export function SignIn() {
 				? await signIn.email({ email, password })
 				: await signUp.email({ email, password, name });
 		setBusy(false);
-		if (res.error) setError(res.error.message ?? "Něco se nepovedlo");
+		if (res.error) setError(res.error.message ?? t("auth.genericError"));
 	}
 
 	return (
@@ -42,7 +42,7 @@ export function SignIn() {
 				{mode === "up" && (
 					<input
 						className="mb-2 w-full rounded-lg border border-line px-3 py-2 text-sm"
-						placeholder="Jméno"
+						placeholder={t("auth.name")}
 						value={name}
 						onChange={(e) => setName(e.target.value)}
 						required
@@ -51,7 +51,7 @@ export function SignIn() {
 				<input
 					className="mb-2 w-full rounded-lg border border-line px-3 py-2 text-sm"
 					type="email"
-					placeholder="E-mail"
+					placeholder={t("auth.email")}
 					value={email}
 					onChange={(e) => setEmail(e.target.value)}
 					required
@@ -59,7 +59,7 @@ export function SignIn() {
 				<input
 					className="mb-3 w-full rounded-lg border border-line px-3 py-2 text-sm"
 					type="password"
-					placeholder="Heslo"
+					placeholder={t("auth.password")}
 					value={password}
 					onChange={(e) => setPassword(e.target.value)}
 					required
@@ -72,7 +72,7 @@ export function SignIn() {
 					disabled={busy}
 					className="w-full rounded-lg bg-navy py-2 font-display text-sm font-semibold text-white disabled:opacity-50"
 				>
-					{mode === "in" ? "Přihlásit se" : "Vytvořit účet"}
+					{mode === "in" ? t("auth.signIn") : t("auth.createAccount")}
 				</button>
 
 				<button
@@ -80,9 +80,7 @@ export function SignIn() {
 					onClick={() => setMode(mode === "in" ? "up" : "in")}
 					className="mt-3 w-full text-center text-xs text-ink-3 hover:text-brass-text"
 				>
-					{mode === "in"
-						? "Nemáš účet? Zaregistruj se"
-						: "Už máš účet? Přihlas se"}
+					{mode === "in" ? t("auth.switchToSignUp") : t("auth.switchToSignIn")}
 				</button>
 			</form>
 		</div>

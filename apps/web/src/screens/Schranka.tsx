@@ -154,7 +154,7 @@ export function Schranka() {
 									{tk.project_id && inboxIds.has(tk.project_id) && (
 										<option value={tk.project_id}>
 											{projects.find((p) => p.id === tk.project_id)?.name ??
-												"Inbox"}
+												t("nav.inbox")}
 										</option>
 									)}
 									{targetProjects.map((p) => (

@@ -32,9 +32,6 @@ bucket_definitions:
       - SELECT id, task_id, project_id, user_id, completed_at, created_at
         FROM assignments
         WHERE project_id = bucket.project_id
-      - SELECT id, task_id, project_id, text, checked, position, created_at
-        FROM checklist_items
-        WHERE project_id = bucket.project_id
       - SELECT id, task_id, project_id, author_id, body, created_at
         FROM comments
         WHERE project_id = bucket.project_id
