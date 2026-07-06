@@ -39,10 +39,9 @@ const PLANNING_LS = "watson.calPlanning";
 /** Pixely/minuta (prototyp PPMOPT, ř. 1912). */
 const PPMOPT = { comfortable: 0.62, spacious: 0.95 } as const;
 const MAX_LANES = 3;
-// Limit celodenního pásu — aby přeplněné celodenní úkoly nevytlačily časovou mřížku.
-const ALLDAY_MAX_H = 132; // strop výšky pásu (px); přebytek → scroll (pojistka)
+// Limit celodenního pásu — přeplněné úkoly se kapují na „+N", pás nikdy nescrolluje.
 const MAX_BARS = 2; // max řádků vícedenních pruhů (nad rámec „+N")
-const ALLDAY_PER_COL = 2; // max celodenních chipů na sloupec (nad rámec „+N → den")
+const ALLDAY_PER_COL = 3; // max celodenních chipů na sloupec (nad rámec „+N → den")
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) =>
@@ -85,6 +84,14 @@ const endMin = (t: TaskRow): number => {
 	const s = startMin(t) ?? 0;
 	return Math.min(1440, s + (t.duration_min ?? 60));
 };
+/** Absolutní konec časovaného úkolu v minutách od půlnoci DNE ZAČÁTKU (může přesáhnout 1440). */
+const endAbs = (t: TaskRow): number =>
+	(startMin(t) ?? 0) + (t.duration_min ?? 60);
+/** Poslední den-offset, na který úkol zasahuje (0 = jen den začátku). */
+const lastOffsetOf = (t: TaskRow): number => Math.floor((endAbs(t) - 1) / 1440);
+/** Rozdíl dnů mezi dvěma ISO dny (b - a), celé dny. */
+const dayOffsetISO = (a: string, b: string): number =>
+	Math.round((fromISO(b).getTime() - fromISO(a).getTime()) / 86_400_000);
 const isVirtual = (t: TaskRow) => t.id.includes("@");
 
 /** Krátký název dne dle jazyka (Po/Út… / Mon/Tue…). */
@@ -174,6 +181,8 @@ interface BlockDrag {
 	e0: number;
 	iso0: string;
 	iso: string;
+	/** Cílový den konce při resize „bottom" přes sloupce (den, kde je kurzor). */
+	endIso: string;
 	s: number;
 	e: number;
 	moved: boolean;
@@ -1150,6 +1159,7 @@ function TimeGrid({
 				e0: endMin(tk),
 				iso0: tIso(tk) ?? todayIso,
 				iso: tIso(tk) ?? todayIso,
+				endIso: tIso(tk) ?? todayIso,
 				s: s0,
 				e: endMin(tk),
 				moved: false,
@@ -1181,9 +1191,18 @@ function TimeGrid({
 						s: Math.max(0, Math.min(cur.e0 - 15, cur.s0 + dmin)),
 					};
 				} else {
+					// bottom: konec může přejet do dalších dnů → endIso + minuta dle kurzoru
+					const endIso = colAt(ev.clientX) ?? cur.iso0;
+					const off = Math.max(0, dayOffsetISO(cur.iso0, endIso));
+					const grid = weekGridRef.current?.getBoundingClientRect();
+					const rawEnd = grid
+						? snap((ev.clientY - grid.top) / PPM)
+						: Math.min(1440, cur.e0 + dmin);
+					const em = off === 0 ? Math.max(cur.s0 + 15, rawEnd) : rawEnd;
 					next = {
 						...next,
-						e: Math.min(1440, Math.max(cur.s0 + 15, cur.e0 + dmin)),
+						endIso: off === 0 ? cur.iso0 : endIso,
+						e: em,
 					};
 				}
 				dragRef.current = next;
@@ -1212,12 +1231,19 @@ function TimeGrid({
 				}
 				if (cur.mode === "move") {
 					await onMove(cur.id, cur.iso, cur.s);
+				} else if (cur.mode === "bottom") {
+					// bottom může přejet přes dny → přesné trvání + počet dní
+					const off = Math.max(0, dayOffsetISO(cur.iso0, cur.endIso));
+					const dur = Math.max(15, off * 1440 + cur.e - cur.s0);
+					await powerSync.execute(
+						"UPDATE tasks SET start_date = ?, duration_min = ?, days = ? WHERE id = ?",
+						[`${cur.iso0}T${fmtMin(cur.s0)}:00`, dur, off + 1, cur.id],
+					);
 				} else {
-					const s = cur.mode === "top" ? cur.s : cur.s0;
-					const e2 = cur.mode === "bottom" ? cur.e : cur.e0;
+					// top: posun začátku v rámci dne (konec beze změny)
 					await powerSync.execute(
 						"UPDATE tasks SET start_date = ?, duration_min = ? WHERE id = ?",
-						[`${cur.iso0}T${fmtMin(s)}:00`, e2 - s, cur.id],
+						[`${cur.iso0}T${fmtMin(cur.s)}:00`, cur.e0 - cur.s, cur.id],
 					);
 				}
 			};
@@ -1342,9 +1368,10 @@ function TimeGrid({
 	const multiDay = !isWeekBand
 		? []
 		: calTasks.filter((tk) => {
+				// pás = jen CELODENNÍ vícedenní (bez času). Časované multi-day → mřížka (segmenty).
+				if (startMin(tk) != null) return false;
 				const s = tIso(tk);
 				const e2 = tIsoEnd(tk);
-				// pruh = úkol zasahující víc dní (celodenní i časovaný s přesným koncem)
 				return (
 					!!s && !!e2 && e2 > s && isos.some((iso) => iso >= s && iso <= e2)
 				);
@@ -1397,9 +1424,7 @@ function TimeGrid({
 			{adPopover &&
 				(() => {
 					const list = calTasks.filter(
-						(tk) =>
-							hit(tk, adPopover.iso) &&
-							(startMin(tk) == null || (tk.days ?? 1) > 1),
+						(tk) => hit(tk, adPopover.iso) && startMin(tk) == null,
 					);
 					return (
 						<>
@@ -1435,14 +1460,35 @@ function TimeGrid({
 								{list.map((tk) => {
 									const done = Boolean(tk.completed_at);
 									return (
-										// biome-ignore lint/a11y/useKeyWithClickEvents: řádek triage, klik = detail
+										// biome-ignore lint/a11y/useKeyWithClickEvents: tažení/klik řeší allDayChipDown
 										<div
 											key={tk.id}
-											onClick={() => {
-												onOpen(tk);
-												setAdPopover(null);
+											onPointerDown={(e) => {
+												// Zavři popover, jakmile se rozjede skutečný drag (>4px) —
+												// tap řeší allDayChipDown (!moved → onOpen), pak popover zavřeme.
+												const sx = e.clientX;
+												const sy = e.clientY;
+												let moved = false;
+												const onMv = (ev: PointerEvent) => {
+													if (
+														Math.abs(ev.clientX - sx) > 4 ||
+														Math.abs(ev.clientY - sy) > 4
+													) {
+														moved = true;
+														setAdPopover(null);
+														window.removeEventListener("pointermove", onMv);
+													}
+												};
+												const onUpW = () => {
+													window.removeEventListener("pointermove", onMv);
+													window.removeEventListener("pointerup", onUpW);
+													if (!moved) setAdPopover(null);
+												};
+												window.addEventListener("pointermove", onMv);
+												window.addEventListener("pointerup", onUpW);
+												allDayChipDown(tk)(e);
 											}}
-											className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"
+											className="flex cursor-grab items-center rounded-lg hover:bg-panel-2"
 											style={{ gap: 8, padding: "6px 8px" }}
 										>
 											<CalCheck t={tk} size={15} />
@@ -1540,10 +1586,7 @@ function TimeGrid({
 				>
 					{t("calendar.allDayBand")}
 				</div>
-				<div
-					className="relative min-w-0 flex-1"
-					style={{ maxHeight: ALLDAY_MAX_H, overflowY: "auto" }}
-				>
+				<div className="relative min-w-0 flex-1">
 					{/* vícedenní pruhy (strop MAX_BARS řádků + „+N" indikátor) */}
 					{barRows.length > 0 && (
 						<div
@@ -1570,18 +1613,14 @@ function TimeGrid({
 									const wPct = ((riIdx - li + 1) / isos.length) * 100;
 									const done = Boolean(tk.completed_at);
 									const daysN = tk.days ?? 1;
-									const sm = startMin(tk);
-									// časovaný vícedenní úkol → ukaž přesný rozsah (8:00–10:18), jinak počet dní
-									const rangeLabel =
-										sm != null
-											? `${fmtMin(sm)}–${fmtMin((sm + (tk.duration_min ?? 60)) % 1440 || 1440)}`
-											: `${daysN} ${t("today.daysUnit")}`;
+									// pás = jen celodenní vícedenní → počet dní (časované jdou do mřížky)
+									const rangeLabel = `${daysN} ${t("today.daysUnit")}`;
 									return (
 										// biome-ignore lint/a11y/useKeyWithClickEvents: kalendářní pruh, klik = detail
 										<div
 											key={tk.id}
 											onClick={() => onOpen(tk)}
-											title={`${tk.name ?? ""} · ${daysN} ${t("today.daysUnit")}${sm != null ? ` · ${rangeLabel}` : ""}`}
+											title={`${tk.name ?? ""} · ${rangeLabel}`}
 											className="absolute flex cursor-pointer items-center bg-card"
 											style={{
 												top: ri * 23 + 2,
@@ -1644,9 +1683,8 @@ function TimeGrid({
 									? startMin(tk) == null &&
 										(tk.days ?? 1) <= 1 &&
 										tIso(tk) === iso
-									: // den: celodenní bez času NEBO vícedenní (i časovaný) zasahující den
-										hit(tk, iso) &&
-										(startMin(tk) == null || (tk.days ?? 1) > 1),
+									: // den: jen celodenní (bez času). Časované (i multi-day) → mřížka.
+										hit(tk, iso) && startMin(tk) == null,
 							);
 							// Limit chipů na sloupec — přebytek přes „+N" do denního pohledu.
 							const list = listAll.slice(0, ALLDAY_PER_COL);
@@ -1785,11 +1823,39 @@ function TimeGrid({
 						const iso = isoOf(d);
 						const isToday = iso === todayIso;
 						const wknd = d.getDay() === 0 || d.getDay() === 6;
-						let timed = calTasks.filter(
-							(tk) =>
-								startMin(tk) != null && (tk.days ?? 1) <= 1 && hit(tk, iso),
-						);
-						// Tažený blok se živě kreslí v cílovém sloupci (prototyp _calMove ř. 2696 přepisuje date).
+						// segment [segS, segE) úkolu v TOMTO sloupci (min od půlnoci sloupce).
+						// Vícedenní časovaný úkol = spojité segmenty: start→půlnoc, plné dny, půlnoc→konec.
+						// Při resize „bottom" použij živý konec z dragu (přes sloupce).
+						const segOf = (tk: TaskRow) => {
+							const sm = startMin(tk) ?? 0;
+							const s = tIso(tk) as string;
+							const k = dayOffsetISO(s, iso);
+							if (drag?.id === tk.id && drag.mode === "bottom") {
+								const endOff = dayOffsetISO(drag.iso0, drag.endIso);
+								return {
+									k,
+									last: endOff,
+									segS: k === 0 ? drag.s0 : 0,
+									segE: k === endOff ? drag.e : 1440,
+								};
+							}
+							const last = lastOffsetOf(tk);
+							return {
+								k,
+								last,
+								segS: k === 0 ? sm : 0,
+								segE: k === last ? endAbs(tk) - last * 1440 : 1440,
+							};
+						};
+						// úkol patří do sloupce, když je časovaný a jeho span protíná tento den
+						let timed = calTasks.filter((tk) => {
+							if (startMin(tk) == null) return false; // celodenní → pás
+							const s = tIso(tk);
+							if (!s) return false;
+							const k = dayOffsetISO(s, iso);
+							return k >= 0 && k <= lastOffsetOf(tk);
+						});
+						// Tažený blok (move) se živě kreslí v cílovém sloupci (přepisuje date).
 						if (
 							drag?.mode === "move" &&
 							drag.iso === iso &&
@@ -1798,12 +1864,26 @@ function TimeGrid({
 							const dt = calTasks.find((x) => x.id === drag.id);
 							if (dt) timed = [...timed, dt];
 						}
+						// Live ghost při resize „bottom" přes sloupce — vlož úkol do sloupců ve spanu tažení.
+						if (drag?.mode === "bottom") {
+							const off = dayOffsetISO(drag.iso0, iso);
+							const endOff = dayOffsetISO(drag.iso0, drag.endIso);
+							if (
+								off >= 0 &&
+								off <= endOff &&
+								!timed.some((x) => x.id === drag.id)
+							) {
+								const dt = calTasks.find((x) => x.id === drag.id);
+								if (dt) timed = [...timed, dt];
+							}
+						}
 						const lanes = layoutDay(
-							timed.map((tk) =>
-								drag && drag.mode === "move" && drag.id === tk.id
-									? { id: tk.id, s: drag.s, e: drag.e }
-									: { id: tk.id, s: startMin(tk) ?? 0, e: endMin(tk) },
-							),
+							timed.map((tk) => {
+								if (drag && drag.mode === "move" && drag.id === tk.id)
+									return { id: tk.id, s: drag.s, e: drag.e };
+								const seg = segOf(tk);
+								return { id: tk.id, s: seg.segS, e: seg.segE };
+							}),
 						);
 						const hiddenByLane = timed.filter(
 							(tk) => (lanes.get(tk.id)?.lane ?? 0) >= MAX_LANES,
@@ -1953,11 +2033,23 @@ function TimeGrid({
 									const lay = lanes.get(tk.id) ?? { lane: 0, cols: 1 };
 									if (lay.lane >= MAX_LANES) return null;
 									const isDragging = drag?.id === tk.id;
-									const s = isDragging && drag ? drag.s : (startMin(tk) ?? 0);
-									const e2 = isDragging && drag ? drag.e : endMin(tk);
-									// při cross-day tažení se blok kreslí jen v cílovém sloupci (drag.iso)
+									const seg = segOf(tk);
+									// geometrie ze segmentu; move/top mají živý override (jednodenní)
+									let s = seg.segS;
+									let e2 = seg.segE;
+									if (isDragging && drag && drag.mode === "move") {
+										s = drag.s;
+										e2 = drag.e;
+									} else if (isDragging && drag && drag.mode === "top") {
+										s = drag.s;
+									}
+									// při move se blok kreslí jen v cílovém sloupci (drag.iso)
 									if (isDragging && drag?.mode === "move" && drag.iso !== iso)
 										return null;
+									// napojení segmentů: potlač zaoblení na řezaných hranách (půlnoc)
+									const cutTop = seg.segS === 0 && seg.k > 0;
+									const cutBottom = seg.segE === 1440 && seg.k < seg.last;
+									const spanLabel = `${fmtMin(startMin(tk) ?? 0)}–${fmtMin(endAbs(tk) % 1440 || 1440)}${seg.last > 0 ? ` (+${seg.last}d)` : ""}`;
 									const cols = Math.min(lay.cols, MAX_LANES);
 									const wPct = lay.cols > MAX_LANES ? 100 / 3.8 : 100 / cols;
 									const leftPct = lay.lane * wPct;
@@ -1983,7 +2075,7 @@ function TimeGrid({
 											key={tk.id}
 											data-evblock={tk.id}
 											onPointerDown={blockDown(tk, "move")}
-											title={`${tk.name ?? ""} · ${fmtMin(s)}–${fmtMin(e2)} · ${projName(tk.project_id)}`}
+											title={`${tk.name ?? ""} · ${spanLabel} · ${projName(tk.project_id)}`}
 											className="absolute overflow-hidden rounded-md border border-line bg-card"
 											style={{
 												left: `calc(${leftPct}% + 2px)`,
@@ -1991,6 +2083,10 @@ function TimeGrid({
 												top: s * PPM,
 												height: hPx,
 												borderLeft: `3px solid ${done ? "var(--w-line)" : borderColorOf(tk)}`,
+												borderTopLeftRadius: cutTop ? 0 : undefined,
+												borderTopRightRadius: cutTop ? 0 : undefined,
+												borderBottomLeftRadius: cutBottom ? 0 : undefined,
+												borderBottomRightRadius: cutBottom ? 0 : undefined,
 												padding: "3px 5px",
 												zIndex: isDragging ? 9 : 5,
 												opacity: done ? 0.58 : 1,
@@ -2003,31 +2099,35 @@ function TimeGrid({
 												touchAction: "none",
 											}}
 										>
-											{/* resize úchyty */}
-											<div
-												onPointerDown={blockDown(tk, "top")}
-												style={{
-													position: "absolute",
-													top: 0,
-													left: 0,
-													right: 0,
-													height: 5,
-													cursor: "ns-resize",
-													zIndex: 4,
-												}}
-											/>
-											<div
-												onPointerDown={blockDown(tk, "bottom")}
-												style={{
-													position: "absolute",
-													bottom: 0,
-													left: 0,
-													right: 0,
-													height: 5,
-													cursor: "ns-resize",
-													zIndex: 4,
-												}}
-											/>
+											{/* resize úchyty — horní jen u jednodenního, dolní na posledním dni spanu */}
+											{seg.last === 0 && (
+												<div
+													onPointerDown={blockDown(tk, "top")}
+													style={{
+														position: "absolute",
+														top: 0,
+														left: 0,
+														right: 0,
+														height: 5,
+														cursor: "ns-resize",
+														zIndex: 4,
+													}}
+												/>
+											)}
+											{seg.k === seg.last && (
+												<div
+													onPointerDown={blockDown(tk, "bottom")}
+													style={{
+														position: "absolute",
+														bottom: 0,
+														left: 0,
+														right: 0,
+														height: 5,
+														cursor: "ns-resize",
+														zIndex: 4,
+													}}
+												/>
+											)}
 											{isDragging && drag?.moved && (
 												<span
 													className="absolute font-mono"
@@ -2042,7 +2142,7 @@ function TimeGrid({
 														zIndex: 10,
 													}}
 												>
-													{fmtMin(s)}
+													{drag?.mode === "bottom" ? fmtMin(e2) : fmtMin(s)}
 												</span>
 											)}
 											<CalCheck
@@ -2113,7 +2213,10 @@ function TimeGrid({
 								{(() => {
 									if (hiddenByLane.length === 0) return null;
 									const hs = hiddenByLane
-										.map((tk) => ({ s: startMin(tk) ?? 0, e: endMin(tk) }))
+										.map((tk) => {
+											const g = segOf(tk);
+											return { s: g.segS, e: g.segE };
+										})
 										.sort((a, b) => a.s - b.s);
 									const subs: { s: number; e: number; n: number }[] = [];
 									for (const x of hs) {
