@@ -1342,7 +1342,9 @@ function FlowModal({
 								</div>
 								{rows.map((r, i) => (
 									<div
-										key={`step-${i}-${r.name}`}
+										// stabilní key (index) — dřív obsahoval r.name → input se při psaní
+										// remountoval a ztrácel focus po jednom písmenu
+										key={i}
 										className="mb-2 rounded-xl border border-line bg-card"
 										style={{ padding: "12px 13px" }}
 									>
