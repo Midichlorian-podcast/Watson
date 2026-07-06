@@ -11,6 +11,7 @@ import { initials } from "../lib/format";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
 import type { TaskActivityRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
+import { enablePush, notificationPermission } from "../lib/push";
 import { useProject } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
@@ -267,9 +268,15 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	}>("SELECT id, user_id, completed_at FROM assignments WHERE task_id = ?", [
 		realId,
 	]);
-	const { data: reminders } = usePsQuery<{ id: string }>(
-		"SELECT id FROM reminders WHERE task_id = ?",
-		[realId],
+	const { data: reminders } = usePsQuery<{
+		id: string;
+		type: string;
+		remind_at: string | null;
+		offset_min: number | null;
+		channel: string;
+	}>(
+		"SELECT id, type, remind_at, offset_min, channel FROM reminders WHERE task_id = ? AND user_id = ? ORDER BY created_at",
+		[realId, session?.user?.id ?? ""],
 	);
 	// Historie úprav (audit log) — newest-first.
 	const { data: activity } = usePsQuery<TaskActivityRow>(
@@ -293,6 +300,40 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		[realId, occ?.iso ?? ""],
 	);
 	const occOverride = occ ? occRows?.[0] : undefined;
+
+	/** Popisek offsetu připomínky (10 min / 1 h / 1 den). */
+	const fmtOffset = (min: number) =>
+		min % 1440 === 0
+			? `${min / 1440} ${t("detail.remDayUnit")}`
+			: min % 60 === 0
+				? `${min / 60} ${t("quickadd.unitHour")}`
+				: `${min} ${t("quickadd.unitMin")}`;
+
+	const addReminder = async (opts: {
+		type: "relative" | "time";
+		offsetMin?: number;
+		remindAt?: string;
+	}) => {
+		if (!task) return;
+		const uid = session?.user?.id;
+		if (!uid) return;
+		await powerSync.execute(
+			"INSERT INTO reminders (id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, 'push', ?)",
+			[
+				realId,
+				task.project_id,
+				uid,
+				opts.type,
+				opts.remindAt ?? null,
+				opts.offsetMin ?? null,
+				new Date().toISOString(),
+			],
+		);
+		void enablePush(); // vyžádá povolení notifikací v momentě záměru
+	};
+
+	const removeReminder = (rid: string) =>
+		powerSync.execute("DELETE FROM reminders WHERE id = ?", [rid]);
 
 	const projectId = task?.project_id ?? undefined;
 	const { data: team } = useQuery({
@@ -1433,6 +1474,94 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								</div>
 							)}
 						</div>
+						{/* PŘIPOMÍNKY — relativní (před termínem) / absolutní; doručení Web Push. */}
+						<SectionLabel>{t("detail.reminders")}</SectionLabel>
+						<div style={{ marginBottom: 4 }}>
+							{(reminders ?? []).map((r) => (
+								<div
+									key={r.id}
+									className="flex items-center justify-between"
+									style={{ padding: "4px 0", fontSize: 12.5 }}
+								>
+									<span
+										className="inline-flex items-center"
+										style={{ gap: 6, color: "var(--w-ink-2)" }}
+									>
+										<span aria-hidden>🔔</span>
+										{r.type === "relative" && r.offset_min != null
+											? `${fmtOffset(r.offset_min)} ${t("detail.remBefore")}`
+											: r.remind_at
+												? `${t("detail.remAt")} ${new Date(r.remind_at).toLocaleString()}`
+												: t("detail.reminder")}
+									</span>
+									<button
+										type="button"
+										onClick={() => void removeReminder(r.id)}
+										aria-label={t("common.cancel")}
+										className="text-ink-3 hover:text-overdue"
+										style={{ fontSize: 13 }}
+									>
+										✕
+									</button>
+								</div>
+							))}
+							<div
+								className="flex flex-wrap items-center"
+								style={{
+									gap: 6,
+									marginTop: (reminders?.length ?? 0) > 0 ? 6 : 2,
+								}}
+							>
+								{[10, 30, 60, 1440].map((min) => {
+									const noBase = !task.due_date && !task.start_date;
+									return (
+										<button
+											key={min}
+											type="button"
+											disabled={noBase}
+											onClick={() =>
+												void addReminder({ type: "relative", offsetMin: min })
+											}
+											title={noBase ? t("detail.remNoDue") : undefined}
+											className="font-display font-semibold text-ink-2 hover:border-brass hover:text-brass-text"
+											style={{
+												fontSize: 11.5,
+												padding: "5px 9px",
+												borderRadius: 8,
+												border: "1px solid var(--w-line)",
+												opacity: noBase ? 0.45 : 1,
+												cursor: noBase ? "not-allowed" : "pointer",
+											}}
+										>
+											{fmtOffset(min)} {t("detail.remBefore")}
+										</button>
+									);
+								})}
+								<input
+									type="datetime-local"
+									onChange={(e) => {
+										if (e.target.value)
+											void addReminder({
+												type: "time",
+												remindAt: new Date(e.target.value).toISOString(),
+											});
+										e.target.value = "";
+									}}
+									aria-label={t("detail.remAt")}
+									className="rounded-[7px] border border-line bg-panel-2 font-mono text-ink outline-none"
+									style={{ fontSize: 11, padding: "4px 6px" }}
+								/>
+							</div>
+							{notificationPermission() === "denied" && (
+								<div
+									className="font-body text-overdue"
+									style={{ fontSize: 11, marginTop: 6 }}
+								>
+									{t("detail.remPushDenied")}
+								</div>
+							)}
+						</div>
+
 						{/* KOMENTÁŘE · N (ř. 1062–1071) */}
 						<SectionLabel>
 							{t("detail.comments")} · {cmts.length}

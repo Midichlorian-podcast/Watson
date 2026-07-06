@@ -1005,3 +1005,35 @@ Oprava (bez migrace — data už v pravidle jsou):
 
 Vedlejší nálezy (odloženo, nahlášeno): parser corpus má 18/320 předexistujících selhání
 (quick-add, ne engine); seed „Týmová porada" má due v sobotu vs pravidlo středa (kosmetika dat).
+
+## §36 — Připomínky end-to-end (Web Push) — dořešení „tvrdé MVP laťky"
+
+Sken odhalil, že připomínky byly jen read-only odznak: nešlo je vytvořit ani doručit,
+delivery stack nula. Postavena celá pipeline (uživatel zvolil „plnou pipeline"):
+
+**Data (migrace 0014):** `reminders.sent_at` (worker značí odeslané) + nová server-only tabulka
+`push_subscriptions` (user_id, endpoint unikátní, p256dh, auth, user_agent) — NEsynchronizuje se
+do klienta (žádné sync rule), odběry drží jen server.
+
+**Server (`apps/api/src/push.ts`):**
+- Web Push přes `web-push` + VAPID (klíče v `.env`, `env.pushEnabled`; `.env` je gitignored).
+- REST: `GET /api/push/vapid`, `POST /api/push/subscribe` (upsert dle endpointu), `unsubscribe`,
+  `test`. Expirované odběry (404/410) se mažou.
+- Worker `startReminderWorker` (interval 30 s): projde `reminders` s `sent_at IS NULL` a
+  nedokončeným úkolem, spočte čas spuštění (relative = start/due − offset, time = remind_at),
+  splatné doručí přes Web Push všem zařízením uživatele a označí `sent_at`. Kanál `email` je
+  **gated na `RESEND_API_KEY`** (zatím no-op — RECONCILIACE odloženo).
+
+**Klient:**
+- Vlastní service worker `src/sw.ts` (vite-plugin-pwa `injectManifest`, **bez workboxu** —
+  self-contained precache + font cache + `push`/`notificationclick`). `devOptions.enabled` =
+  SW běží i v dev, aby šlo ověřit lokálně. `dev-dist/` přidán do .gitignore.
+- `lib/push.ts` — `enablePush()` (permission → subscribe → uložení na server), `disablePush`.
+- Editor v detailu úkolu (sekce PŘIPOMÍNKY): presety „10 min / 30 min / 1 h / 1 den před
+  termínem" (relative) + `datetime-local` (absolutní). Přidání vyvolá `enablePush()`. Query je
+  per-uživatel. i18n `detail.reminders/remBefore/remAt/remNoDue/remPushDenied`.
+
+**Ověřeno živě** (Adam Demo, dev): editor se renderuje; klik na preset zapsal reminder přes
+PowerSync do postgres; worker do 30 s odpálil + nastavil `sent_at` (log „doručeno 1");
+`/api/push/subscribe` uložil odběr. **Neověřitelné v automatizovaném prohlížeči**: reálné
+zobrazení OS notifikace (headless blokuje Notification permission) — ověří se v běžném Chrome.

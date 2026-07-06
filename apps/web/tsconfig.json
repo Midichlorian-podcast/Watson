@@ -11,5 +11,7 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts"],
+  "//": "sw.ts = service worker (webworker lib + workbox), kompiluje ho vite-plugin-pwa (injectManifest), ne app tsc.",
+  "exclude": ["src/sw.ts"]
 }

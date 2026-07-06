@@ -30,9 +30,21 @@ export const env = {
 		clientId: process.env.GOOGLE_CLIENT_ID,
 		clientSecret: process.env.GOOGLE_CLIENT_SECRET,
 	},
+	vapid: {
+		subject: process.env.VAPID_SUBJECT ?? "mailto:dev@watson.test",
+		publicKey: process.env.VAPID_PUBLIC_KEY,
+		privateKey: process.env.VAPID_PRIVATE_KEY,
+	},
+	resendApiKey: process.env.RESEND_API_KEY,
 };
 
 /** Google login se zapne sám, jakmile jsou v .env oba klíče. */
 export const googleEnabled = Boolean(
 	env.google.clientId && env.google.clientSecret,
 );
+
+/** Web Push se zapne, jakmile jsou v .env oba VAPID klíče. */
+export const pushEnabled = Boolean(env.vapid.publicKey && env.vapid.privateKey);
+
+/** E-mailové notifikace (Resend) — jen když je klíč. */
+export const emailEnabled = Boolean(env.resendApiKey);

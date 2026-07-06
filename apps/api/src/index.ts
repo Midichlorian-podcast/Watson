@@ -15,8 +15,9 @@ import { DEFAULT_LOCALE, WORKSPACE_ROLES } from "@watson/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { auth } from "./auth";
-import { env, googleEnabled } from "./env";
+import { env, googleEnabled, pushEnabled } from "./env";
 import { powersyncRoutes } from "./powersync";
+import { pushRoutes, startReminderWorker } from "./push";
 
 const app = new Hono();
 
@@ -50,6 +51,9 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 /** PowerSync — JWKS, token, write upload. */
 app.route("/", powersyncRoutes);
+
+/** Web Push — VAPID klíč, (od)hlášení odběru, test. */
+app.route("/", pushRoutes);
 
 /** Aktuální uživatel + session. */
 app.get("/api/me", async (c) => {
@@ -384,6 +388,10 @@ serve({ fetch: app.fetch, port: env.apiPort }, (info) => {
 	console.log(
 		`[watson-api] Google login: ${googleEnabled ? "zapnut" : "vypnut (chybí klíče)"}`,
 	);
+	console.log(
+		`[watson-api] Web Push: ${pushEnabled ? "zapnut" : "vypnut (chybí VAPID klíče)"}`,
+	);
+	startReminderWorker();
 });
 
 export type AppType = typeof app;

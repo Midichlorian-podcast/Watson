@@ -119,6 +119,25 @@ export const reminders = pgTable("reminders", {
 	/** Relativní offset v minutách vůči termínu (type=relative). */
 	offsetMin: integer("offset_min"),
 	channel: notificationChannelEnum("channel").notNull().default("push"),
+	/** Kdy worker připomínku odeslal (null = čeká na doručení). Píše jen server. */
+	sentAt: timestamp("sent_at", { withTimezone: true }),
+	createdAt: createdAt(),
+});
+
+/**
+ * Web Push odběry — server-only, NEsynchronizuje se do klienta (žádné sync rule).
+ * Jeden uživatel může mít víc zařízení/prohlížečů; `endpoint` je unikátní, klíče
+ * p256dh/auth slouží k šifrování payloadu (RFC 8291).
+ */
+export const pushSubscriptions = pgTable("push_subscriptions", {
+	id: pk(),
+	userId: uuid("user_id")
+		.notNull()
+		.references(() => users.id, { onDelete: "cascade" }),
+	endpoint: text("endpoint").notNull().unique(),
+	p256dh: text("p256dh").notNull(),
+	auth: text("auth").notNull(),
+	userAgent: text("user_agent"),
 	createdAt: createdAt(),
 });
 
@@ -126,3 +145,4 @@ export type Comment = typeof comments.$inferSelect;
 export type Mention = typeof mentions.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type Reminder = typeof reminders.$inferSelect;
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;

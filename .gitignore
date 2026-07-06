@@ -4,6 +4,7 @@ node_modules/
 
 # build outputs
 dist/
+dev-dist/
 .output/
 .turbo/
 *.tsbuildinfo
