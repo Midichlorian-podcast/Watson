@@ -125,6 +125,13 @@ export async function toggleTask(task: TaskRow) {
 		const [next] = expandOccurrences({
 			baseISO: due,
 			kind,
+			weekday: typeof rule.weekday === "number" ? rule.weekday : undefined,
+			nth: typeof rule.nth === "number" ? rule.nth : undefined,
+			day: typeof rule.day === "number" ? rule.day : undefined,
+			parity:
+				rule.parity === "even" || rule.parity === "odd"
+					? rule.parity
+					: undefined,
 			fromISO: isoPlus(due, 1),
 			toISO: isoPlus(due, 800),
 			cap: 1,

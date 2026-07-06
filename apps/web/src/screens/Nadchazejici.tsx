@@ -140,6 +140,10 @@ export function Nadchazejici() {
 				for (const od of expandOccurrences({
 					baseISO: d,
 					kind: rule.kind,
+					weekday: rule.weekday,
+					nth: rule.nth,
+					day: rule.day,
+					parity: rule.parity,
 					fromISO: tdy,
 					toISO: horizon,
 					cap: 40,

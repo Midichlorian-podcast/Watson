@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "echo \"(lint: TODO)\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx src/lib/runOccurrences.ts",
+    "test:corpus": "tsx src/lib/quickadd/runCorpus.ts"
   },
   "dependencies": {
     "@journeyapps/wa-sqlite": "^1.7.0",

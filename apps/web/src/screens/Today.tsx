@@ -118,6 +118,10 @@ export function Today() {
 				const [next] = expandOccurrences({
 					baseISO: d,
 					kind: rule.kind,
+					weekday: rule.weekday,
+					nth: rule.nth,
+					day: rule.day,
+					parity: rule.parity,
 					fromISO: tdy,
 					toISO: plusDays(tdy, 800),
 					cap: 1,

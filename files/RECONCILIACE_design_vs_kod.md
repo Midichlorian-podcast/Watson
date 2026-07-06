@@ -978,3 +978,30 @@ Po zjednodušení §30 uživatel doplnil tři požadavky:
 
 Pozn.: i18n JSON se udržují **2-space** (biome bez configu by je jinak přepsal na taby →
 formátujeme přes biome jen TS/TSX, JSON se needituje biomem).
+
+## §35 — Engine opakování: skutečná projekce nth/monthly-day/parity (dořešení §3.2)
+
+Roadmapový sken odhalil, že `lib/occurrences.ts` `advance()` krokoval čistě po kalendáři
+(`+7d`/`+1měsíc` od kotvy) a **ignoroval strukturovaná pravidla**, která už `recurrence_rule`
+ukládá (`weekday`/`nth`/`day`/`parity`). Důsledek: „3. úterý v měsíci" / „poslední pátek" /
+„31." se po pár měsících rozjely na špatné dny — a bylo to vidět živě v Dnes/Nadcházející/
+Kalendáři. Bylo to zdokumentované zjednodušení (§3.1), ale produkce chtěla §3.2.
+
+Oprava (bez migrace — data už v pravidle jsou):
+- **`occurrenceAt(anchor, kind, k)`** místo in-place `advance`: pro `monthly-nth` počítá
+  `nthWeekday(rok, měsíc+k, nth, wd)` (nth=-1 = poslední; null když 5. výskyt neexistuje →
+  přeskočí), pro `monthly-day` reálný `(rok, měsíc+k, day)` (přeskočí měsíce bez daného dne,
+  RRULE BYMONTHDAY). `daily/weekly/biweekly/monthly/yearly` krokují od kotvy jako dřív →
+  **první výskyt zůstává `=== base`** (kontrakt callerů `od===base` filtr).
+- **`seriesAnchor`**: pro weekly/biweekly srovná kotvu na `weekday` (a biweekly na paritu ISO
+  týdne), takže „každou středu" padá na středu i když `due_date` leží jinde (seed „Týmová
+  porada" má due v sobotu → výskyty se teď promítají na středy).
+- **`parseRecurrenceRule`** vrací i `weekday/nth/day/parity`; **Calendar** přešel z
+  `recurrenceKind` na `parseRecurrenceRule` → nově respektuje i `until/count/showAll` (dřív je
+  ignoroval). Všechny 4 callery (Today/Nadcházející/Calendar/tasks.advance) předávají pole.
+- **Testy**: `lib/runOccurrences.ts` (zero-dep tsx runner jako `runCorpus.ts`), 14 případů vč.
+  1./poslední/5. výskytu a skipů; `pnpm --filter @watson/web test`. Přidán `tsx` jako root
+  devDep + `test`/`test:corpus` skripty (dřív apps/web žádný test script neměl).
+
+Vedlejší nálezy (odloženo, nahlášeno): parser corpus má 18/320 předexistujících selhání
+(quick-add, ne engine); seed „Týmová porada" má due v sobotu vs pravidlo středa (kosmetika dat).

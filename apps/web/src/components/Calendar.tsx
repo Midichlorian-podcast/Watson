@@ -13,7 +13,7 @@ import {
 	expandOccurrences,
 	occId,
 	parseOccId,
-	recurrenceKind,
+	parseRecurrenceRule,
 } from "../lib/occurrences";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
@@ -357,15 +357,22 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 		}
 		const out: TaskRow[] = [...tasks];
 		for (const tk of tasks) {
-			const kind = recurrenceKind(tk.recurrence_rule);
+			const rule = parseRecurrenceRule(tk.recurrence_rule);
 			const base = tIso(tk);
-			if (!kind || !base || tk.completed_at) continue;
+			if (!rule || !base || tk.completed_at) continue;
 			for (const od of expandOccurrences({
 				baseISO: base,
-				kind,
+				kind: rule.kind,
+				weekday: rule.weekday,
+				nth: rule.nth,
+				day: rule.day,
+				parity: rule.parity,
 				fromISO: fromI,
 				toISO: toI,
 				cap: 62,
+				until: rule.until,
+				count: rule.count,
+				doneCount: rule.doneCount,
 			})) {
 				if (od === base) continue;
 				const vid = occId(tk.id, od);
