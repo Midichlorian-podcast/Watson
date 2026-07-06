@@ -428,18 +428,13 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			[a.completed_at ? null : new Date().toISOString(), a.id],
 		);
 
-	// Rychlé přidání (checklist styl) — dědí prioritu z rodiče, Enter přidá a nechá focus.
+	// Rychlé přidání (checklist styl) — dědí JEN projekt (žádné atributy rodiče),
+	// priorita základní P4; Enter přidá a nechá focus.
 	const addSub = async () => {
 		if (!subText.trim() || depth >= 3) return;
 		await powerSync.execute(
-			"INSERT INTO tasks (id, project_id, parent_id, name, priority, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
-			[
-				task.project_id,
-				realId,
-				subText.trim(),
-				task.priority ?? 4,
-				new Date().toISOString(),
-			],
+			"INSERT INTO tasks (id, project_id, parent_id, name, priority, created_at) VALUES (uuid(), ?, ?, ?, 4, ?)",
+			[task.project_id, realId, subText.trim(), new Date().toISOString()],
 		);
 		setSubText("");
 	};
