@@ -162,7 +162,7 @@ export function Ukoly() {
 						className="ml-auto font-display font-semibold text-brass-text hover:underline"
 						style={{ fontSize: 12.5 }}
 					>
-						← {t("projects.allTasks")}
+						{t("projects.allTasks")}
 					</Link>
 				</div>
 			)}
