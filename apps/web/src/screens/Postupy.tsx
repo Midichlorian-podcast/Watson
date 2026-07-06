@@ -16,6 +16,7 @@ import { initials } from "../lib/format";
 import type { ChainRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
+import { useTaskDetail } from "../lib/taskDetail";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
@@ -618,6 +619,7 @@ function FlowDetail({
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
+	const { open: openTask } = useTaskDetail();
 	const { ch, chSteps, total, done, now } = data;
 	const [pendingRewind, setPendingRewind] = useState<string | null>(null);
 	const skipWk = !!ch.skip_weekend;
@@ -893,12 +895,17 @@ function FlowDetail({
 								>
 									<div className="flex items-start gap-2">
 										<div className="min-w-0 flex-1">
-											<div
-												className="font-display font-bold text-ink"
+											{/* název kroku = odkaz do plného detailu úkolu (všechny atributy: priorita/termín/přiřazení/štítky/podúkoly) */}
+											<button
+												type="button"
+												onClick={() => tk && openTask(tk.id)}
+												disabled={!tk}
+												title={t("flows.openTaskDetail")}
+												className="block max-w-full truncate text-left font-display font-bold text-ink hover:text-brass-text"
 												style={{ fontSize: 14.5 }}
 											>
 												{tk?.name ?? ""}
-											</div>
+											</button>
 											<div className="mt-1 flex flex-wrap items-center gap-2">
 												<span
 													className="inline-flex items-center gap-1.5 font-body text-ink-3"
@@ -1042,7 +1049,7 @@ function FlowModal({
 			offset: number;
 			priority: number;
 			gate: string;
-			who: string;
+			who: string[];
 			role: string;
 			mode: "any" | "all";
 			project: string;
@@ -1083,7 +1090,7 @@ function FlowModal({
 		setRows(
 			tp.steps.map((s) => ({
 				...s,
-				who: "",
+				who: [],
 				role: "",
 				mode: s.mode ?? "any",
 				project: "",
@@ -1127,7 +1134,13 @@ function FlowModal({
 					.every((x, j) => j + 1 <= i && x.gate === "with_previous")
 			)
 				state = "active";
-			const assignMode = r.mode === "all" && r.who ? "shared_all" : "single";
+			// 1 osoba = single; víc osob = Kdokoli (shared_any) / Všichni (shared_all)
+			const assignMode =
+				r.who.length <= 1
+					? "single"
+					: r.mode === "all"
+						? "shared_all"
+						: "shared_any";
 			await powerSync.execute(
 				`INSERT INTO tasks (id, project_id, name, description, priority, due_date, assignment_mode, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1160,10 +1173,10 @@ function FlowModal({
 					new Date().toISOString(),
 				],
 			);
-			if (r.who) {
+			for (const uid of r.who) {
 				await powerSync.execute(
 					"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
-					[taskId, stepProject, r.who, new Date().toISOString()],
+					[taskId, stepProject, uid, new Date().toISOString()],
 				);
 			}
 		}
@@ -1306,7 +1319,7 @@ function FlowModal({
 											offset: 0,
 											priority: 3,
 											gate: "after_previous",
-											who: "",
+											who: [],
 											role: "",
 											mode: "any",
 											project: "",
@@ -1428,14 +1441,18 @@ function FlowModal({
 												style={{ gap: 5 }}
 											>
 												{members.map((m) => {
-													const on = r.who === m.id;
+													const on = r.who.includes(m.id);
 													return (
 														<button
 															key={m.id}
 															type="button"
 															title={m.name}
 															onClick={() =>
-																setRow(i, { who: on ? "" : m.id, role: "" })
+																setRow(i, {
+																	who: on
+																		? r.who.filter((x) => x !== m.id)
+																		: [...r.who, m.id],
+																})
 															}
 															className="flex items-center justify-center rounded-full font-display font-semibold"
 															style={{
@@ -1456,6 +1473,24 @@ function FlowModal({
 													);
 												})}
 											</span>
+											{/* Kdokoli/Všichni — jen když je vybráno víc osob (R2 režim) */}
+											{r.who.length > 1 && (
+												<button
+													type="button"
+													title={t("flows.modeR2Title")}
+													onClick={() =>
+														setRow(i, {
+															mode: r.mode === "all" ? "any" : "all",
+														})
+													}
+													className="rounded-full border border-line font-display font-semibold text-ink-2 hover:border-brass"
+													style={{ padding: "5px 10px", fontSize: 11 }}
+												>
+													{r.mode === "all"
+														? t("addmodal.modeAll")
+														: t("addmodal.modeAny")}
+												</button>
+											)}
 											<span className="ml-auto inline-flex items-center gap-1.5">
 												<span
 													className="font-body text-ink-3"
@@ -1516,7 +1551,7 @@ function FlowModal({
 												offset: (rs[rs.length - 1]?.offset ?? 0) + 1,
 												priority: 3,
 												gate: "after_previous",
-												who: "",
+												who: [],
 												role: "",
 												mode: "any",
 												project: "",

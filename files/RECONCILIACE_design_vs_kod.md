@@ -951,3 +951,30 @@ Odstraněno (oproti Cloud Design / prototypu):
 Mrtvé schéma (chain_due_basis, canceled/on_hold, skipped, template_id, anchor_offset)
 zatím ponecháno (odstranění chce migraci) — kandidát na následný úklid.
 Sloučení s podúkoly (varianta C) = možný budoucí směr.
+
+## §34 — Postupy: handoff notifikace + multi-přiřazení zpět + krok = plný úkol (na přání uživatele)
+
+Po zjednodušení §30 uživatel doplnil tři požadavky:
+
+1. **Notifikace „Čeká na tebe"** (stačí in-app, žádná mailová infra — ta je #8). Header zvonek
+   → dropdown odvozený čistě ze synced dat: aktivní kroky řetězců přiřazené mně
+   (`chain_steps.step_state='active'` JOIN `assignments a.user_id = me`, chain `state='active'`,
+   úkol nedokončený). Badge = počet; klik na položku → `/postupy?postup=<chainId>`. Žádná nová
+   tabulka. i18n `shell.notifTitle/notifEmpty/notifWaiting`.
+
+2. **Kdokoli/Všichni (R2) zpět do builderu** — v §30 jsem ho omylem odstranil, ale R2 je
+   invariant. Model kroku: `who: string` → `who: string[]` (multi-select avatary), + přepínač
+   „Stačí kdokoli / Každý zvlášť" se ukáže **až při >1 přiřazeném**. `create()` mapuje:
+   `who.length<=1 → single`, jinak `mode==='all' → shared_all` / `shared_any`; insert assignment
+   ve smyčce přes všechny `who`. Ověřeno end-to-end (DB: krok se 2 osobami → `shared_all` + 2
+   `assignments`; krok s ≤1 → `single`).
+
+3. **Každý krok = plnohodnotný úkol se všemi atributy.** Kroky **jsou** reálné `tasks` řádky,
+   takže místo bobtnání builderu je název kroku v detailu řetězce (`FlowDetail`) **odkaz do
+   sdíleného `TaskDetailPanel`** (`useTaskDetail().open(taskId)` — panel je namontovaný na app
+   rootu). Otevře vycentrovaný detail s celým menu VLASTNOSTI (priorita, termín, deadline, čas,
+   trvání, barva), popisem, PODÚKOLY, PŘIŘAZENÍM (vč. R2 režimu) i KOMENTÁŘI — vrstveno nad
+   relayem řetězce. i18n `flows.openTaskDetail`.
+
+Pozn.: i18n JSON se udržují **2-space** (biome bez configu by je jinak přepsal na taby →
+formátujeme přes biome jen TS/TSX, JSON se needituje biomem).
