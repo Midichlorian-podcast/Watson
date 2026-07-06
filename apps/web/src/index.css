@@ -92,3 +92,19 @@ body {
 		opacity: 1;
 	}
 }
+
+/* Spinner (Loading.tsx) — respektuje prefers-reduced-motion. */
+@keyframes watson-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+.watson-spin {
+	transform-origin: center;
+	animation: watson-spin 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.watson-spin {
+		animation-duration: 2s;
+	}
+}

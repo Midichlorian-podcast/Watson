@@ -148,7 +148,7 @@ export function Cile() {
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
 	const { data: team } = useQuery({
-		queryKey: ["wsMembers", activeWs],
+		queryKey: ["wsMembersFull", activeWs],
 		enabled: !!activeWs,
 		queryFn: async () => {
 			const r = await fetch(`${API_URL}/api/workspaces/${activeWs}/members`, {

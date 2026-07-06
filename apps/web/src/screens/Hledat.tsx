@@ -56,7 +56,7 @@ export function Hledat() {
 	// Lidé napříč všemi prostory (dedup podle id).
 	const memberQueries = useQueries({
 		queries: (workspaces ?? []).map((w) => ({
-			queryKey: ["wsMembers", w.id],
+			queryKey: ["wsMembersFull", w.id],
 			queryFn: async () => {
 				const r = await fetch(`${API_URL}/api/workspaces/${w.id}/members`, {
 					credentials: "include",

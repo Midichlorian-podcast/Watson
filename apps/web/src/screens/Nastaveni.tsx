@@ -7,6 +7,7 @@ import { API_URL } from "../lib/api";
 import { signOut, useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
 import { disconnectPowerSync } from "../lib/powersync/db";
+import { showToast } from "../lib/toast";
 import {
 	type Accent,
 	type Density,
@@ -109,7 +110,7 @@ export function Nastaveni() {
 	const accountWsName = activeWorkspace?.name ?? workspaces?.[0]?.name ?? "";
 
 	const { data: team, refetch } = useQuery({
-		queryKey: ["wsMembers", teamWs?.id],
+		queryKey: ["wsMembersFull", teamWs?.id],
 		enabled: !!teamWs,
 		queryFn: async () => {
 			const r = await fetch(`${API_URL}/api/workspaces/${teamWs?.id}/members`, {
@@ -130,16 +131,21 @@ export function Nastaveni() {
 
 	async function setRole(userId: string, role: "admin" | "member" | "guest") {
 		setOpenRoleId(null);
-		await fetch(
-			`${API_URL}/api/workspaces/${teamWs?.id}/members/${userId}/role`,
-			{
-				method: "PATCH",
-				credentials: "include",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ role }),
-			},
-		);
-		void refetch();
+		try {
+			const r = await fetch(
+				`${API_URL}/api/workspaces/${teamWs?.id}/members/${userId}/role`,
+				{
+					method: "PATCH",
+					credentials: "include",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ role }),
+				},
+			);
+			if (!r.ok) throw new Error("role");
+			void refetch();
+		} catch {
+			showToast(t("settings.roleChangeError"));
+		}
 	}
 
 	const user = session?.user;

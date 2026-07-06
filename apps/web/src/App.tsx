@@ -1,6 +1,7 @@
 import { PowerSyncContext } from "@powersync/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useSession } from "./lib/auth-client";
 import { connectPowerSync, powerSync } from "./lib/powersync/db";
 import { router } from "./router";
@@ -23,8 +24,10 @@ export function App() {
 	if (!session) return <SignIn />;
 
 	return (
-		<PowerSyncContext.Provider value={powerSync}>
-			<RouterProvider router={router} />
-		</PowerSyncContext.Provider>
+		<ErrorBoundary>
+			<PowerSyncContext.Provider value={powerSync}>
+				<RouterProvider router={router} />
+			</PowerSyncContext.Provider>
+		</ErrorBoundary>
 	);
 }

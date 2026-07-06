@@ -1,5 +1,6 @@
 import { Outlet } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { SyncGate } from "../components/Loading";
 import { ProjectDetailPanel } from "../components/ProjectDetailPanel";
 import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WriteRejectedToast } from "../components/WriteRejectedToast";
@@ -55,7 +56,9 @@ export function AppLayout() {
 														className="flex-1 overflow-auto"
 														style={isMobile ? { paddingBottom: 58 } : undefined}
 													>
-														<Outlet />
+														<SyncGate>
+															<Outlet />
+														</SyncGate>
 													</main>
 												</div>
 												{isMobile && <MobileTabBar />}

@@ -10,6 +10,7 @@ import { initials } from "../lib/format";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjectDetail } from "../lib/projectDetail";
+import { showToast } from "../lib/toast";
 
 type Member = { id: string; name: string; email: string; image: string | null };
 const KINDS = [
@@ -74,7 +75,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	// roster prostoru — Vlastník i Členové nabízejí VŠECHNY lidi prostoru (prototyp ř. 3134/3138)
 	const wsId = project?.workspace_id ?? null;
 	const { data: roster } = useQuery({
-		queryKey: ["wsMembers", wsId],
+		queryKey: ["wsMembersFull", wsId],
 		enabled: !!wsId,
 		queryFn: async () => {
 			const r = await fetch(`${API_URL}/api/workspaces/${wsId}/members`, {
@@ -111,6 +112,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		},
 		onSuccess: () =>
 			void qc.invalidateQueries({ queryKey: ["projMembers", id] }),
+		onError: () => showToast(t("projects.memberChangeError")),
 	});
 
 	const [name, setName] = useState("");

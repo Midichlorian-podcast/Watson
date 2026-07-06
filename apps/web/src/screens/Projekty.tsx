@@ -47,7 +47,7 @@ export function Projekty() {
 	}>("SELECT project_id, user_id FROM project_members");
 	// jména členů aktivního prostoru (avataři karet, #18)
 	const { data: team } = useQuery({
-		queryKey: ["wsMembers", activeWs],
+		queryKey: ["wsMembersFull", activeWs],
 		enabled: !!activeWs,
 		queryFn: async () => {
 			const r = await fetch(`${API_URL}/api/workspaces/${activeWs}/members`, {

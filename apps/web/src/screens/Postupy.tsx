@@ -300,7 +300,7 @@ export function Postupy() {
 	// Jména členů všech ws projektů (avatar/kdo je na řadě) — members API per projekt by bylo N dotazů;
 	// stačí členové aktivního prostoru (kroky žijí v jeho projektech).
 	const { data: team } = useQuery({
-		queryKey: ["wsMembers", activeWs],
+		queryKey: ["wsMembersFull", activeWs],
 		enabled: !!activeWs,
 		queryFn: async () => {
 			const r = await fetch(`${API_URL}/api/workspaces/${activeWs}/members`, {

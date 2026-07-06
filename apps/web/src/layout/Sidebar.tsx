@@ -199,7 +199,7 @@ export function Sidebar({
 				}}
 			>
 				<span
-					title={status?.connected ? "Synced" : "Offline"}
+					title={status?.connected ? t("shell.synced") : t("shell.offline")}
 					style={{
 						width: 9,
 						height: 9,
