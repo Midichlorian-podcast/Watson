@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { QuickAdd } from "../components/QuickAdd";
+import { RescheduleMenu } from "../components/RescheduleMenu";
 import { TaskItem } from "../components/TaskItem";
 import {
 	DEFAULT_TOOLBAR,
@@ -210,8 +211,9 @@ export function Today() {
 		return out;
 	}, [tasks, allAsg, allSteps, team, flowSteps, userId]);
 
-	async function rescheduleOverdue() {
-		const now = new Date().toISOString();
+	// Přeplánování zpožděných na zvolený den (menu: zítra/víkend/příští pondělí/za týden/…).
+	async function rescheduleOverdue(targetIso: string) {
+		const target = `${targetIso}T09:00:00`;
 		const moved = g.overdue.map((tk) => ({ id: tk.id, prev: tk.due_date }));
 		const apply =
 			(to: (m: { id: string; prev: string | null }) => string | null) =>
@@ -223,8 +225,8 @@ export function Today() {
 					);
 				}
 			};
-		await apply(() => now)();
-		pushUndo({ undo: apply((m) => m.prev), redo: apply(() => now) });
+		await apply(() => target)();
+		pushUndo({ undo: apply((m) => m.prev), redo: apply(() => target) });
 	}
 
 	const hour = new Date().getHours();
@@ -300,14 +302,12 @@ export function Today() {
 						{greet}
 					</span>
 					{g.overdue.length > 0 && (
-						<button
-							type="button"
-							onClick={() => void rescheduleOverdue()}
-							className="shrink-0 font-display font-semibold text-brass-text hover:underline"
-							style={{ fontSize: 12 }}
-						>
-							{t("today.rescheduleOverdue")}
-						</button>
+						<div className="shrink-0">
+							<RescheduleMenu
+								anchor={t("today.rescheduleOverdue")}
+								onPick={(d) => void rescheduleOverdue(d)}
+							/>
+						</div>
 					)}
 					<button
 						type="button"
@@ -432,8 +432,12 @@ export function Today() {
 						<SectionHead
 							label={t("today.overdue")}
 							count={g.overdue.length}
-							action={t("today.reschedule")}
-							onAction={() => void rescheduleOverdue()}
+							actionNode={
+								<RescheduleMenu
+									anchor={t("today.reschedule")}
+									onPick={(d) => void rescheduleOverdue(d)}
+								/>
+							}
 						/>
 						<ul>{g.overdue.map(card)}</ul>
 					</section>
@@ -461,13 +465,12 @@ export function Today() {
 function SectionHead({
 	label,
 	count,
-	action,
-	onAction,
+	actionNode,
 }: {
 	label: string;
 	count: number;
-	action?: string;
-	onAction?: () => void;
+	/** Volitelný akční prvek vpravo (např. RescheduleMenu). */
+	actionNode?: React.ReactNode;
 }) {
 	return (
 		<div
@@ -483,16 +486,7 @@ function SectionHead({
 			<span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
 				{count}
 			</span>
-			{action && onAction && (
-				<button
-					type="button"
-					onClick={onAction}
-					className="ml-auto font-display font-semibold text-brass-text hover:underline"
-					style={{ fontSize: 12 }}
-				>
-					{action}
-				</button>
-			)}
+			{actionNode && <div className="ml-auto">{actionNode}</div>}
 		</div>
 	);
 }

@@ -189,7 +189,8 @@
     "moreCount_one": "další",
     "moreCount_few": "další",
     "moreCount_many": "dalších",
-    "moreCount_other": "dalších"
+    "moreCount_other": "dalších",
+    "openDayView": "Otevřít denní pohled"
   },
   "today": {
     "heading": "Co dnes řešit",
@@ -708,5 +709,14 @@
     "title": "Něco se pokazilo",
     "body": "Obrazovku se nepodařilo vykreslit. Zkus ji prosím obnovit.",
     "reload": "Obnovit"
+  },
+  "reschedule": {
+    "tomorrow": "Zítra",
+    "weekend": "O víkendu",
+    "nextMonday": "Příští pondělí",
+    "inWeek": "Za týden",
+    "nextMonth": "Začátek příštího měsíce",
+    "customDate": "Vlastní datum",
+    "set": "Nastavit"
   }
 }

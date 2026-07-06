@@ -189,7 +189,8 @@
     "moreCount_one": "more",
     "moreCount_few": "more",
     "moreCount_many": "more",
-    "moreCount_other": "more"
+    "moreCount_other": "more",
+    "openDayView": "Open day view"
   },
   "today": {
     "heading": "What to handle today",
@@ -706,5 +707,14 @@
     "title": "Something went wrong",
     "body": "This screen failed to render. Please try reloading.",
     "reload": "Reload"
+  },
+  "reschedule": {
+    "tomorrow": "Tomorrow",
+    "weekend": "This weekend",
+    "nextMonday": "Next Monday",
+    "inWeek": "In a week",
+    "nextMonth": "Start of next month",
+    "customDate": "Custom date",
+    "set": "Set"
   }
 }

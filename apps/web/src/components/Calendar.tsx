@@ -1088,6 +1088,18 @@ function TimeGrid({
 	const [drag, setDrag] = useState<BlockDrag | null>(null);
 	const dragRef = useRef<BlockDrag | null>(null);
 	const suppressClick = useRef(false);
+	// Plovoucí náhled tažené karty (celodenní chip → mřížka) — vizuální feedback.
+	const [chipGhost, setChipGhost] = useState<{
+		name: string;
+		x: number;
+		y: number;
+	} | null>(null);
+	// Triage popover přetečených celodenních úkolů („+N") — odbav / otevři / přeplánuj.
+	const [adPopover, setAdPopover] = useState<{
+		iso: string;
+		x: number;
+		y: number;
+	} | null>(null);
 
 	// now-line refresh (60 s)
 	useEffect(() => {
@@ -1254,16 +1266,21 @@ function TimeGrid({
 				suppressClick.current = false;
 			}, 80);
 			const curIso = isos.length > 1 ? (colAt(ev.clientX) ?? iso) : iso;
+			const m = snap((ev.clientY - rect.top) / PPM);
 			if (curIso === iso) {
-				const m = snap((ev.clientY - rect.top) / PPM);
 				const s = Math.min(anchor, m);
 				const e2 = Math.max(Math.min(anchor, m) + 15, Math.max(anchor, m));
 				onAdd(iso, s, e2 - s);
 			} else {
-				// vícedenní úkol: první den + počet dní + čas začátku (otevře modal předvyplněný)
-				const a = iso < curIso ? iso : curIso;
-				const b = iso < curIso ? curIso : iso;
-				onAdd(a, anchor, undefined, dayCount(a, b));
+				// vícedenní: přesný čas začátku (den dolů) i konce (den puštění) → přesné trvání v minutách
+				const forward = iso <= curIso;
+				const startDay = forward ? iso : curIso;
+				const endDay = forward ? curIso : iso;
+				const startMinV = forward ? anchor : m;
+				const endMinV = forward ? m : anchor;
+				const days = dayCount(startDay, endDay);
+				const dur = Math.max(30, (days - 1) * 1440 + (endMinV - startMinV));
+				onAdd(startDay, startMinV, dur, days);
 			}
 		};
 		window.addEventListener("pointermove", onMoveEv);
@@ -1281,10 +1298,13 @@ function TimeGrid({
 		const onMoveEv = (ev: PointerEvent) => {
 			if (Math.abs(ev.clientY - y0) > 4 || Math.abs(ev.clientX - x0) > 4)
 				moved = true;
+			if (moved)
+				setChipGhost({ name: tk.name ?? "", x: ev.clientX, y: ev.clientY });
 		};
 		const onUp = async (ev: PointerEvent) => {
 			window.removeEventListener("pointermove", onMoveEv);
 			window.removeEventListener("pointerup", onUp);
+			setChipGhost(null);
 			if (!moved) {
 				onOpen(tk);
 				return;
@@ -1324,12 +1344,9 @@ function TimeGrid({
 		: calTasks.filter((tk) => {
 				const s = tIso(tk);
 				const e2 = tIsoEnd(tk);
+				// pruh = úkol zasahující víc dní (celodenní i časovaný s přesným koncem)
 				return (
-					startMin(tk) == null &&
-					s &&
-					e2 &&
-					e2 > s &&
-					isos.some((iso) => iso >= s && iso <= e2)
+					!!s && !!e2 && e2 > s && isos.some((iso) => iso >= s && iso <= e2)
 				);
 			});
 	// stack řádků pruhů
@@ -1351,6 +1368,120 @@ function TimeGrid({
 	return (
 		// full-bleed flex sloupec — bez rounded karty (prototyp buildWeek, ř. 2861)
 		<div className="flex min-h-0 flex-1 flex-col">
+			{/* plovoucí náhled tažené celodenní karty (vizuální feedback dragu) */}
+			{chipGhost && (
+				<div
+					className="pointer-events-none fixed flex items-center rounded-[6px] border border-brass bg-card"
+					style={{
+						left: chipGhost.x + 12,
+						top: chipGhost.y - 10,
+						gap: 6,
+						padding: "4px 9px",
+						maxWidth: 220,
+						fontSize: 11.5,
+						zIndex: 90,
+						boxShadow: "var(--w-shadow)",
+						opacity: 0.95,
+					}}
+				>
+					<span
+						className="shrink-0 rounded-full"
+						style={{ width: 6, height: 6, background: "var(--w-brass)" }}
+					/>
+					<span className="min-w-0 truncate font-display font-semibold text-ink">
+						{chipGhost.name}
+					</span>
+				</div>
+			)}
+			{/* triage popover přetečených celodenních úkolů — odškrtni / otevři / přeplánuj */}
+			{adPopover &&
+				(() => {
+					const list = calTasks.filter(
+						(tk) =>
+							hit(tk, adPopover.iso) &&
+							(startMin(tk) == null || (tk.days ?? 1) > 1),
+					);
+					return (
+						<>
+							{/* biome-ignore lint/a11y/useKeyWithClickEvents: overlay pro zavření */}
+							<div
+								className="fixed inset-0"
+								style={{ zIndex: 89 }}
+								onClick={() => setAdPopover(null)}
+							/>
+							<div
+								className="fixed flex flex-col rounded-xl border border-line bg-card"
+								style={{
+									left: Math.min(adPopover.x, window.innerWidth - 280),
+									top: adPopover.y,
+									width: 264,
+									maxHeight: 320,
+									overflowY: "auto",
+									padding: 6,
+									zIndex: 90,
+									boxShadow: "var(--w-shadow)",
+								}}
+							>
+								<div
+									className="font-display font-bold text-ink-3 uppercase"
+									style={{
+										fontSize: 9.5,
+										letterSpacing: ".05em",
+										padding: "4px 8px 6px",
+									}}
+								>
+									{t("calendar.allDay")} · {list.length}
+								</div>
+								{list.map((tk) => {
+									const done = Boolean(tk.completed_at);
+									return (
+										// biome-ignore lint/a11y/useKeyWithClickEvents: řádek triage, klik = detail
+										<div
+											key={tk.id}
+											onClick={() => {
+												onOpen(tk);
+												setAdPopover(null);
+											}}
+											className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"
+											style={{ gap: 8, padding: "6px 8px" }}
+										>
+											<CalCheck t={tk} size={15} />
+											<span
+												className="shrink-0 rounded-full"
+												style={{
+													width: 6,
+													height: 6,
+													background: projColor(tk.project_id),
+												}}
+											/>
+											<span
+												className="min-w-0 flex-1 truncate font-body"
+												style={{
+													fontSize: 12.5,
+													color: done ? "var(--w-ink-3)" : "var(--w-ink)",
+													textDecoration: done ? "line-through" : "none",
+												}}
+											>
+												{tk.name}
+											</span>
+										</div>
+									);
+								})}
+								<button
+									type="button"
+									onClick={() => {
+										onOpenDay(adPopover.iso);
+										setAdPopover(null);
+									}}
+									className="mt-1 rounded-lg border-line border-t pt-2 text-left font-display font-semibold text-brass-text hover:underline"
+									style={{ fontSize: 12, padding: "6px 8px" }}
+								>
+									{t("calendar.openDayView")}
+								</button>
+							</div>
+						</>
+					);
+				})()}
 			{/* hlavička dnů (jen týden; den view ji nemá — ř. 2846) */}
 			{isos.length > 1 && (
 				<div className="flex flex-none" style={{ marginLeft: 46 }}>
@@ -1439,12 +1570,18 @@ function TimeGrid({
 									const wPct = ((riIdx - li + 1) / isos.length) * 100;
 									const done = Boolean(tk.completed_at);
 									const daysN = tk.days ?? 1;
+									const sm = startMin(tk);
+									// časovaný vícedenní úkol → ukaž přesný rozsah (8:00–10:18), jinak počet dní
+									const rangeLabel =
+										sm != null
+											? `${fmtMin(sm)}–${fmtMin((sm + (tk.duration_min ?? 60)) % 1440 || 1440)}`
+											: `${daysN} ${t("today.daysUnit")}`;
 									return (
 										// biome-ignore lint/a11y/useKeyWithClickEvents: kalendářní pruh, klik = detail
 										<div
 											key={tk.id}
 											onClick={() => onOpen(tk)}
-											title={`${tk.name ?? ""} · ${daysN} ${t("today.daysUnit")}`}
+											title={`${tk.name ?? ""} · ${daysN} ${t("today.daysUnit")}${sm != null ? ` · ${rangeLabel}` : ""}`}
 											className="absolute flex cursor-pointer items-center bg-card"
 											style={{
 												top: ri * 23 + 2,
@@ -1478,7 +1615,7 @@ function TimeGrid({
 												className="ml-auto shrink-0 font-mono"
 												style={{ fontSize: 9, color: "var(--w-ink-3)" }}
 											>
-												{daysN} {t("today.daysUnit")}
+												{rangeLabel}
 											</span>
 										</div>
 									);
@@ -1502,12 +1639,14 @@ function TimeGrid({
 					{/* celodenní chipy per sloupec — v týdnu jen jednodenní, v Dni všechny přes hit (ř. 2798) */}
 					<div className="flex">
 						{isos.map((iso) => {
-							const listAll = calTasks.filter(
-								(tk) =>
-									startMin(tk) == null &&
-									(isWeekBand
-										? (tk.days ?? 1) <= 1 && tIso(tk) === iso
-										: hit(tk, iso)),
+							const listAll = calTasks.filter((tk) =>
+								isWeekBand
+									? startMin(tk) == null &&
+										(tk.days ?? 1) <= 1 &&
+										tIso(tk) === iso
+									: // den: celodenní bez času NEBO vícedenní (i časovaný) zasahující den
+										hit(tk, iso) &&
+										(startMin(tk) == null || (tk.days ?? 1) > 1),
 							);
 							// Limit chipů na sloupec — přebytek přes „+N" do denního pohledu.
 							const list = listAll.slice(0, ALLDAY_PER_COL);
@@ -1592,7 +1731,10 @@ function TimeGrid({
 											data-adchip
 											onClick={(e) => {
 												e.stopPropagation();
-												onOpenDay(iso);
+												const r = (
+													e.currentTarget as HTMLElement
+												).getBoundingClientRect();
+												setAdPopover({ iso, x: r.left, y: r.bottom + 4 });
 											}}
 											className="rounded-[6px] text-left font-display font-semibold text-brass-text hover:bg-brass-soft"
 											style={{ fontSize: 10.5, padding: "2px 8px" }}
@@ -1644,7 +1786,8 @@ function TimeGrid({
 						const isToday = iso === todayIso;
 						const wknd = d.getDay() === 0 || d.getDay() === 6;
 						let timed = calTasks.filter(
-							(tk) => startMin(tk) != null && hit(tk, iso),
+							(tk) =>
+								startMin(tk) != null && (tk.days ?? 1) <= 1 && hit(tk, iso),
 						);
 						// Tažený blok se živě kreslí v cílovém sloupci (prototyp _calMove ř. 2696 přepisuje date).
 						if (
