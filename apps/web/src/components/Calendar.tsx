@@ -41,7 +41,7 @@ const PPMOPT = { comfortable: 0.62, spacious: 0.95 } as const;
 const MAX_LANES = 3;
 // Limit celodenního pásu — přeplněné úkoly se kapují na „+N", pás nikdy nescrolluje.
 const MAX_BARS = 2; // max řádků vícedenních pruhů (nad rámec „+N")
-const ALLDAY_PER_COL = 3; // max celodenních chipů na sloupec (nad rámec „+N → den")
+const ALLDAY_PER_COL = 3; // celkový rozpočet CELÝ DEN na sloupec (pruhy + chipy), pak „+N"
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) =>
@@ -1278,8 +1278,17 @@ function TimeGrid({
 					end: Math.max(Math.min(anchor, m) + 15, Math.max(anchor, m)),
 				});
 			} else {
-				// tažení do jiného dne → vícedenní span (drží se čas začátku)
-				setCreate({ iso, isoEnd: curIso, start: anchor, end: anchor + 30 });
+				// tažení do jiného dne → vícedenní span; drží se čas začátku (den dolů)
+				// a živý čas konce (den, kde je kurzor) — pro dynamický náhled na minuty
+				const forward = iso <= curIso;
+				const startDay = forward ? iso : curIso;
+				const endDay = forward ? curIso : iso;
+				setCreate({
+					iso: startDay,
+					isoEnd: endDay,
+					start: forward ? anchor : m,
+					end: forward ? m : anchor,
+				});
 			}
 		};
 		const onUp = (ev: PointerEvent) => {
@@ -1686,8 +1695,19 @@ function TimeGrid({
 									: // den: jen celodenní (bez času). Časované (i multi-day) → mřížka.
 										hit(tk, iso) && startMin(tk) == null,
 							);
-							// Limit chipů na sloupec — přebytek přes „+N" do denního pohledu.
-							const list = listAll.slice(0, ALLDAY_PER_COL);
+							// Max 3 celkem VČETNĚ vícedenních pruhů protínajících tento den →
+							// chipy dostanou jen zbytek rozpočtu, přebytek přes „+N".
+							const barsInCol = isWeekBand
+								? barRows.slice(0, MAX_BARS).filter((row) =>
+										row.some((tk) => {
+											const bs = tIso(tk);
+											const be = tIsoEnd(tk);
+											return !!bs && !!be && bs <= iso && iso <= be;
+										}),
+									).length
+								: 0;
+							const chipCap = Math.max(0, ALLDAY_PER_COL - barsInCol);
+							const list = listAll.slice(0, chipCap);
 							const overflowN = listAll.length - list.length;
 							const isToday = iso === todayIso;
 							return (
@@ -1961,33 +1981,32 @@ function TimeGrid({
 								{/* drag-create ghost — jeden den (časový blok) nebo vícedenní (sloupcový pruh) */}
 								{create &&
 									(create.isoEnd && create.isoEnd !== create.iso ? (
-										// vícedenní span: zvýrazni každý sloupec v rozsahu
+										// vícedenní span: časově přesné segmenty (start→půlnoc, plné dny,
+										// půlnoc→živý konec) s dynamickým časem — jako u jednodenního tažení
 										(() => {
-											const a =
-												create.iso < create.isoEnd ? create.iso : create.isoEnd;
-											const b =
-												create.iso < create.isoEnd ? create.isoEnd : create.iso;
-											if (iso < a || iso > b) return null;
-											const n = dayCount(a, b);
+											const a = create.iso; // den začátku (chronologicky)
+											const b = create.isoEnd; // den konce
+											const k = dayOffsetISO(a, iso);
+											const last = dayOffsetISO(a, b);
+											if (k < 0 || k > last) return null;
+											const segS = k === 0 ? create.start : 0;
+											const segE = k === last ? create.end : 1440;
 											return (
 												<div
-													className="pointer-events-none absolute inset-0"
+													className="pointer-events-none absolute right-1 left-1"
 													style={{
+														top: segS * PPM,
+														height: Math.max(4, (segE - segS) * PPM),
 														background: "var(--w-brass-soft)",
-														borderTop: "1.5px dashed var(--w-brass)",
-														borderBottom: "1.5px dashed var(--w-brass)",
-														borderLeft:
-															iso === a
-																? "1.5px dashed var(--w-brass)"
-																: undefined,
-														borderRight:
-															iso === b
-																? "1.5px dashed var(--w-brass)"
-																: undefined,
+														border: "1.5px dashed var(--w-brass)",
+														borderTopLeftRadius: k === 0 ? 6 : 0,
+														borderTopRightRadius: k === 0 ? 6 : 0,
+														borderBottomLeftRadius: k === last ? 6 : 0,
+														borderBottomRightRadius: k === last ? 6 : 0,
 														zIndex: 8,
 													}}
 												>
-													{iso === a && (
+													{k === 0 && (
 														<span
 															className="font-mono font-bold"
 															style={{
@@ -1997,7 +2016,18 @@ function TimeGrid({
 																display: "inline-block",
 															}}
 														>
-															{n} {t("today.daysUnit")}
+															{fmtMin(create.start)}
+														</span>
+													)}
+													{k === last && (
+														<span
+															className="absolute right-1 bottom-0.5 font-mono font-bold"
+															style={{
+																fontSize: 9.5,
+																color: "var(--w-brass-text)",
+															}}
+														>
+															→ {fmtMin(create.end)}
 														</span>
 													)}
 												</div>
