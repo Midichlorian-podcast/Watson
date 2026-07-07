@@ -7,6 +7,7 @@ import {
 	memberships,
 	projectMembers,
 	projects,
+	sql,
 	statuses,
 	users,
 	workspaces,
@@ -274,6 +275,67 @@ app.patch("/api/workspaces/:id/members/:userId/role", async (c) => {
 			and(eq(memberships.workspaceId, wsId), eq(memberships.userId, targetId)),
 		);
 	return c.json({ ok: true });
+});
+
+/**
+ * Pozvat člena do workspace (jen owner/admin/manager): existujícího uživatele podle e-mailu
+ * přidá do memberships (roster se hned aktualizuje). Uživatel zatím neexistuje → added:false
+ * (skutečná e-mailová pozvánka nováčkovi = mail infra, blok #8).
+ */
+app.post("/api/workspaces/:id/invite", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const wsId = c.req.param("id");
+	const body = (await c.req.json().catch(() => ({}))) as {
+		email?: string;
+		role?: string;
+	};
+	const email = body.email?.trim().toLowerCase();
+	if (!email || !email.includes("@"))
+		return c.json({ error: "invalid email" }, 400);
+	const role =
+		body.role && (WORKSPACE_ROLES as readonly string[]).includes(body.role)
+			? body.role
+			: "member";
+
+	const db = getDb();
+	const ws = (
+		await db
+			.select({ ownerId: workspaces.ownerId })
+			.from(workspaces)
+			.where(eq(workspaces.id, wsId))
+	)[0];
+	const mine = (
+		await db
+			.select({ role: memberships.role })
+			.from(memberships)
+			.where(
+				and(
+					eq(memberships.workspaceId, wsId),
+					eq(memberships.userId, session.user.id),
+				),
+			)
+	)[0];
+	const canManage =
+		ws?.ownerId === session.user.id ||
+		mine?.role === "admin" ||
+		mine?.role === "manager";
+	if (!canManage) return c.json({ error: "forbidden" }, 403);
+
+	// Existující uživatel dle e-mailu (case-insensitive).
+	const user = (
+		await db
+			.select({ id: users.id, name: users.name, email: users.email })
+			.from(users)
+			.where(eq(sql`lower(${users.email})`, email))
+	)[0];
+	if (!user) return c.json({ ok: true, added: false, reason: "no_user" });
+
+	await db
+		.insert(memberships)
+		.values({ workspaceId: wsId, userId: user.id, role })
+		.onConflictDoNothing();
+	return c.json({ ok: true, added: true, member: user });
 });
 
 /** Členové projektu (jen pro člena) — Projekty detail (vlastník + avatary). */

@@ -2189,40 +2189,51 @@ function TimeGrid({
 											<CalCheck
 												t={tk}
 												size={narrow ? 12 : 13}
-												style={
-													narrow
-														? { position: "absolute", top: 3, right: 3 }
-														: { float: "right", marginLeft: 3 }
-												}
-											/>
-											<span
-												className="mt-0.5 mr-1 inline-block shrink-0 rounded-full align-middle"
 												style={{
-													width: 6,
-													height: 6,
-													background: projColor(tk.project_id),
+													position: "absolute",
+													top: 3,
+													right: 3,
+													zIndex: 3,
 												}}
 											/>
-											<span
-												className="font-display font-semibold"
+											{/* tečka projektu + název NA JEDNOM řádku (flex) — u nízkých karet se
+											    název neořízne pod tečku; víceřádkový název se zarovná nahoru */}
+											<div
+												className="flex min-w-0"
 												style={{
-													fontSize: narrow ? 10.5 : 11,
-													lineHeight: `${lineH}px`,
-													color: done ? "var(--w-ink-3)" : "var(--w-ink)",
-													textDecoration: done ? "line-through" : "none",
-													display: "-webkit-box",
-													WebkitLineClamp: nameLines,
-													WebkitBoxOrient: "vertical",
-													overflow: "hidden",
-													// úzký sloupec: dlouhé slovo zalom v sobě (ukázat celé napříč řádky,
-													// ne useknutý začátek); krátká slova zůstanou vcelku
-													overflowWrap: "break-word",
-													wordBreak: "break-word",
+													alignItems: nameLines > 1 ? "flex-start" : "center",
+													gap: 4,
+													paddingRight: 15,
 												}}
 											>
-												{tk.name}
-												{tk.recurrence ? " ↻" : ""}
-											</span>
+												<span
+													className="shrink-0 rounded-full"
+													style={{
+														width: 6,
+														height: 6,
+														marginTop: nameLines > 1 ? 4 : 0,
+														background: projColor(tk.project_id),
+													}}
+												/>
+												<span
+													className="min-w-0 flex-1 font-display font-semibold"
+													style={{
+														fontSize: narrow ? 10.5 : 11,
+														lineHeight: `${lineH}px`,
+														color: done ? "var(--w-ink-3)" : "var(--w-ink)",
+														textDecoration: done ? "line-through" : "none",
+														display: "-webkit-box",
+														WebkitLineClamp: nameLines,
+														WebkitBoxOrient: "vertical",
+														overflow: "hidden",
+														overflowWrap: "break-word",
+														wordBreak: "break-word",
+													}}
+												>
+													{tk.name}
+													{tk.recurrence ? " ↻" : ""}
+												</span>
+											</div>
 											{showMeta && (
 												<div
 													className="mt-0.5 flex items-center"

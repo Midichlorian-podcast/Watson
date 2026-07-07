@@ -61,14 +61,23 @@ export function CalendarMonth({
 	const year = base.getFullYear();
 	const month = base.getMonth();
 
-	/** Buňky: null pozice před 1. dnem, pak 1..dim (ř. 2869). */
+	/**
+	 * Plná mřížka: pondělí-first, doplněná o přesahové dny z předchozího/dalšího měsíce
+	 * (ztlumené), aby týdny na okrajích byly kompletní. Počet řádků = kolik týdnů měsíc zabírá.
+	 */
 	const cells = useMemo(() => {
-		const firstDow = (new Date(year, month, 1).getDay() + 6) % 7;
+		const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Po=0
 		const dim = new Date(year, month + 1, 0).getDate();
-		const out: (number | null)[] = [];
-		for (let i = 0; i < firstDow; i++) out.push(null);
-		for (let d = 1; d <= dim; d++) out.push(d);
-		return out;
+		const weeks = Math.ceil((firstDow + dim) / 7);
+		const start = new Date(year, month, 1 - firstDow); // pondělí prvního týdne
+		return Array.from({ length: weeks * 7 }, (_, i) => {
+			const dt = new Date(
+				start.getFullYear(),
+				start.getMonth(),
+				start.getDate() + i,
+			);
+			return { date: dt, iso: isoOf(dt), inMonth: dt.getMonth() === month };
+		});
 	}, [year, month]);
 
 	const byDay = useMemo(() => {
@@ -154,10 +163,8 @@ export function CalendarMonth({
 
 			{/* mřížka — fixní výška řádků 126px, overflow hidden (ř. 2871) */}
 			<div className="grid grid-cols-7 gap-1.5" style={{ gridAutoRows: 126 }}>
-				{cells.map((dayNum, i) => {
-					if (dayNum === null) return <div key={`x${i}`} />;
-					const d = new Date(year, month, dayNum);
-					const iso = isoOf(d);
+				{cells.map((cell) => {
+					const { date: d, iso, inMonth } = cell;
 					const isToday = iso === todayIso;
 					const list = byDay.get(iso) ?? [];
 					const shown = list.slice(0, 3);
@@ -178,8 +185,18 @@ export function CalendarMonth({
 							}}
 							className="flex cursor-pointer flex-col gap-[3px] overflow-hidden rounded-[10px] border p-1.5"
 							style={{
-								borderColor: isToday ? "var(--w-brass)" : "var(--w-line)",
-								background: isToday ? "var(--w-brass-soft)" : "var(--w-card)",
+								borderColor: isToday
+									? "var(--w-brass)"
+									: inMonth
+										? "var(--w-line)"
+										: "transparent",
+								// přesahové dny (jiný měsíc) ztlumené — patrné, ale nesplývají s aktuálním
+								background: isToday
+									? "var(--w-brass-soft)"
+									: inMonth
+										? "var(--w-card)"
+										: "var(--w-panel-2)",
+								opacity: inMonth ? 1 : 0.62,
 							}}
 						>
 							<span
@@ -187,10 +204,14 @@ export function CalendarMonth({
 								style={{
 									fontSize: 12,
 									fontWeight: isToday ? 700 : 400,
-									color: isToday ? "var(--w-brass-text)" : "var(--w-ink-2)",
+									color: isToday
+										? "var(--w-brass-text)"
+										: inMonth
+											? "var(--w-ink-2)"
+											: "var(--w-ink-3)",
 								}}
 							>
-								{dayNum}
+								{d.getDate()}
 							</span>
 							{shown.map((tk) => {
 								const done = Boolean(tk.completed_at);

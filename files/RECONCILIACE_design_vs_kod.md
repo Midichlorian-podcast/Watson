@@ -1037,3 +1037,24 @@ do klienta (žádné sync rule), odběry drží jen server.
 PowerSync do postgres; worker do 30 s odpálil + nastavil `sent_at` (log „doručeno 1");
 `/api/push/subscribe` uložil odběr. **Neověřitelné v automatizovaném prohlížeči**: reálné
 zobrazení OS notifikace (headless blokuje Notification permission) — ověří se v běžném Chrome.
+
+## §37 — Kalendář (měsíční přesah + krátké karty) + reálné pozvání člena (na přání uživatele)
+
+**Měsíc — přesahové dny.** `CalendarMonth` dřív vykresloval jen dny aktuálního měsíce (prázdné
+buňky před 1.). Teď plná mřížka (pondělí-first, `weeks*7` buněk) s přesahem do minulého/dalšího
+měsíce; přesahové buňky ztlumené (`opacity .62`, jiné pozadí, ink-3 číslo). Přesně: první řádek
+ukazuje konec předchozího měsíce, poslední začátek dalšího — i s jejich úkoly.
+
+**Den/týden — ořezaný text krátkých karet.** V `TimeGrid` byla projektová tečka `inline-block`
+a název `-webkit-box` (blok) → název padal na druhý řádek pod tečku a u nízkých karet se ořízl
+(„Souběžná schůzka A/B"). Oprava: tečka + název jsou teď ve **flex řádku** (jeden řádek,
+zarovnání center pro 1 řádek / nahoru pro víc), název čistě klampovaný. `WeekColumns` už flex
+měl. (Pozn.: stejnojmenné úkoly ve dvou prostorech nejsou duplikát — Úkoly kalendář ukazuje
+tasky napříč všemi prostory, není scoped na aktivní ws; ponecháno jako design.)
+
+**Pozvat člena — reálné.** Dřív jen toast + lokální state. Nový endpoint
+`POST /api/workspaces/:id/invite` (jen owner/admin/manager): existující uživatel dle e-mailu →
+přidán do `memberships` (roster se hned obnoví přes refetch); neexistující → `added:false`
+(skutečná e-mailová pozvánka nováčkovi = mail infra, blok #8). InviteModal volá endpoint
+async + chybová hláška. i18n `settings.inviteAdded/inviteNoUser/inviteError`. Ověřeno živě:
+existující e-mail přidal člena do rosteru (8→9→10 přes UI), neexistující vrátil `no_user`.

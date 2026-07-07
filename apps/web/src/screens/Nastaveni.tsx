@@ -625,15 +625,23 @@ export function Nastaveni() {
 
 			{inviteOpen && (
 				<InviteModal
+					wsId={teamWs?.id ?? ""}
 					onClose={() => setInviteOpen(false)}
-					onSent={(name, email) => {
-						setInvited((arr) =>
-							arr.some((x) => x.email === email)
-								? arr
-								: [...arr, { name, email }],
-						);
+					onDone={({ added, name, email }) => {
 						setInviteOpen(false);
-						setToast(t("settings.inviteSent"));
+						if (added) {
+							// reálně přidán do rosteru — obnovit seznam členů
+							void refetch();
+							setToast(t("settings.inviteAdded"));
+						} else {
+							// uživatel zatím neexistuje — pending (e-mailová pozvánka = mail infra #8)
+							setInvited((arr) =>
+								arr.some((x) => x.email === email)
+									? arr
+									: [...arr, { name, email }],
+							);
+							setToast(t("settings.inviteNoUser"));
+						}
 					}}
 				/>
 			)}
@@ -698,16 +706,49 @@ function Segments({
  * šířka 440 px / 14vh (mailová infrastruktura = Mail #8; zatím optimistický roster + toast).
  */
 function InviteModal({
+	wsId,
 	onClose,
-	onSent,
+	onDone,
 }: {
+	wsId: string;
 	onClose: () => void;
-	onSent: (name: string, email: string) => void;
+	onDone: (r: {
+		added: boolean;
+		reason?: string;
+		name: string;
+		email: string;
+	}) => void;
 }) {
 	const { t } = useTranslation();
 	const [name, setName] = useState("");
 	const [email, setEmail] = useState("");
-	const submit = () => email.trim() && onSent(name.trim(), email.trim());
+	const [busy, setBusy] = useState(false);
+	const [err, setErr] = useState<string | null>(null);
+	const submit = async () => {
+		const mail = email.trim();
+		if (!mail || busy) return;
+		setBusy(true);
+		setErr(null);
+		try {
+			const r = await fetch(`${API_URL}/api/workspaces/${wsId}/invite`, {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email: mail, role: "member" }),
+			});
+			if (!r.ok) throw new Error("invite");
+			const data = (await r.json()) as { added: boolean; reason?: string };
+			onDone({
+				added: data.added,
+				reason: data.reason,
+				name: name.trim(),
+				email: mail,
+			});
+		} catch {
+			setErr(t("settings.inviteError"));
+			setBusy(false);
+		}
+	};
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
 			if (e.key === "Escape") onClose();
@@ -764,12 +805,20 @@ function InviteModal({
 						<input
 							value={email}
 							onChange={(e) => setEmail(e.target.value)}
-							onKeyDown={(e) => e.key === "Enter" && submit()}
+							onKeyDown={(e) => e.key === "Enter" && void submit()}
 							placeholder={t("settings.inviteEmail")}
 							type="email"
 							className="w-full rounded-[10px] border border-line bg-panel-2 font-mono text-ink outline-none focus:border-brass"
 							style={{ padding: "10px 12px", fontSize: 13 }}
 						/>
+						{err && (
+							<div
+								className="mt-2 font-body text-overdue"
+								style={{ fontSize: 12 }}
+							>
+								{err}
+							</div>
+						)}
 					</div>
 					<div
 						className="flex items-center border-line border-t"
@@ -791,8 +840,8 @@ function InviteModal({
 						</button>
 						<button
 							type="button"
-							onClick={submit}
-							disabled={!email.trim()}
+							onClick={() => void submit()}
+							disabled={!email.trim() || busy}
 							className="rounded-[9px] font-display font-bold text-white hover:brightness-105 disabled:opacity-50"
 							style={{
 								background: "var(--w-brass)",
@@ -800,7 +849,7 @@ function InviteModal({
 								fontSize: 13,
 							}}
 						>
-							{t("settings.inviteBtn")}
+							{busy ? "…" : t("settings.inviteBtn")}
 						</button>
 					</div>
 				</div>
