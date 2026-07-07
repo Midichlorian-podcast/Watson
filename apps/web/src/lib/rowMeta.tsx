@@ -118,8 +118,12 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 				.map((c) => [c.task_id, c.color as string] as const),
 		);
 
-		return {
-			metaOf: (task: TaskRow) => {
+		// Cache per datový snapshot: metaOf(task) vrací STABILNÍ referenci (spočítá se jen jednou
+		// na task.id). Memo se přepočítá při každé změně sledovaných tabulek → cache se sama
+		// invaliduje. Zamezí přepočtu avatar/slice na každý render (virtualizace, scroll) a umožní
+		// downstream memoizaci řádků.
+		const cache = new Map<string, RowMeta>();
+		const compute = (task: TaskRow): RowMeta => {
 				const c = chkMap.get(task.id);
 				const people = asgMap.get(task.id) ?? [];
 				const isAll =
@@ -156,6 +160,14 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 								}
 							: undefined,
 				};
+		};
+		return {
+			metaOf: (task: TaskRow) => {
+				const hit = cache.get(task.id);
+				if (hit) return hit;
+				const meta = compute(task);
+				cache.set(task.id, meta);
+				return meta;
 			},
 		};
 	}, [chk, cmt, rem, asg, sts, parents, userColors, team]);

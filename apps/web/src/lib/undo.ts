@@ -70,12 +70,15 @@ async function snapshotRows(sql: string, params: unknown[]): Promise<Row[]> {
 	return (await powerSync.getAll<Row>(sql, params)) ?? [];
 }
 
-const reinsert = async (table: string, rows: Row[]) => {
+/** Kontext s .execute — buď globální powerSync, nebo transakce (tx). */
+type Exec = { execute: (sql: string, params?: unknown[]) => Promise<unknown> };
+
+const reinsert = async (db: Exec, table: string, rows: Row[]) => {
 	for (const r of rows) {
 		const cols = Object.keys(r).filter(
 			(c) => r[c] !== null && r[c] !== undefined,
 		);
-		await powerSync.execute(
+		await db.execute(
 			`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
 			cols.map((c) => r[c]),
 		);
@@ -121,23 +124,24 @@ export async function deleteTaskWithUndo(taskId: string): Promise<void> {
 			ids,
 		);
 	}
-	const doDelete = async () => {
-		for (const table of CHILD_TABLES) {
-			await powerSync.execute(
-				`DELETE FROM ${table} WHERE task_id IN (${ph})`,
-				ids,
-			);
-		}
-		await powerSync.execute(`DELETE FROM tasks WHERE id IN (${ph})`, ids);
-	};
+	// Lokální atomicita: smazání úkolu + všech podřízených dat v JEDNÉ transakci (pád uprostřed
+	// jinak nechá sirotky / half-deleted stav). Upload fronta to pošle jako jednu CRUD transakci.
+	const doDelete = () =>
+		powerSync.writeTransaction(async (tx) => {
+			for (const table of CHILD_TABLES) {
+				await tx.execute(`DELETE FROM ${table} WHERE task_id IN (${ph})`, ids);
+			}
+			await tx.execute(`DELETE FROM tasks WHERE id IN (${ph})`, ids);
+		});
 	await doDelete();
 	pushUndo({
-		undo: async () => {
-			await reinsert("tasks", tasks);
-			for (const table of CHILD_TABLES) {
-				await reinsert(table, children[table] ?? []);
-			}
-		},
+		undo: () =>
+			powerSync.writeTransaction(async (tx) => {
+				await reinsert(tx, "tasks", tasks);
+				for (const table of CHILD_TABLES) {
+					await reinsert(tx, table, children[table] ?? []);
+				}
+			}),
 		redo: doDelete,
 	});
 }

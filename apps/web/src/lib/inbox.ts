@@ -9,6 +9,23 @@ export const inboxProjectIds = (projects: ProjectRow[]) =>
 	);
 
 /**
+ * Cílový projekt pro quick-add bez `#projektu` = osobní Schránka aktivního prostoru (R8).
+ * NIKDY „první projekt v seznamu" (ten je řazený podle názvu → úkol by spadl do náhodného projektu).
+ */
+export const pickInboxId = (
+	projects: ProjectRow[],
+	activeWs?: string | null,
+): string | undefined => {
+	const inbox = projects.filter((p) => INBOX_NAMES.has(p.name ?? ""));
+	return (
+		inbox.find((p) => p.workspace_id === activeWs)?.id ??
+		inbox[0]?.id ??
+		projects.find((p) => p.workspace_id === activeWs)?.id ??
+		projects[0]?.id
+	);
+};
+
+/**
  * Netriážovaný úkol Schránky (bez termínu v inbox projektu) — do Dnes/Úkolů/počtů
  * nepatří, dokud ho uživatel nenaplánuje nebo nepřesune (prototyp inbox triage).
  */

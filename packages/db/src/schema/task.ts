@@ -112,7 +112,11 @@ export const taskUserColors = pgTable(
 		createdAt: createdAt(),
 		updatedAt: updatedAt(),
 	},
-	(t) => [uniqueIndex("task_user_colors_uq").on(t.taskId, t.userId)],
+	(t) => [
+		uniqueIndex("task_user_colors_uq").on(t.taskId, t.userId),
+		index("task_user_colors_project_idx").on(t.projectId),
+		index("task_user_colors_user_idx").on(t.userId),
+	],
 );
 
 /** R2 — per-osoba přiřazení; `completedAt` se u `shared_all` nastavuje zvlášť. */
@@ -133,7 +137,11 @@ export const assignments = pgTable(
 		completedAt: timestamp("completed_at", { withTimezone: true }),
 		createdAt: createdAt(),
 	},
-	(t) => [uniqueIndex("assignments_task_user_uq").on(t.taskId, t.userId)],
+	(t) => [
+		uniqueIndex("assignments_task_user_uq").on(t.taskId, t.userId),
+		index("assignments_project_idx").on(t.projectId),
+		index("assignments_user_idx").on(t.userId),
+	],
 );
 
 /**
@@ -156,7 +164,10 @@ export const taskOccurrenceOverrides = pgTable(
 		skipped: boolean("skipped").notNull().default(false),
 		createdAt: createdAt(),
 	},
-	(t) => [uniqueIndex("task_occ_overrides_uq").on(t.taskId, t.occDate)],
+	(t) => [
+		uniqueIndex("task_occ_overrides_uq").on(t.taskId, t.occDate),
+		index("task_occ_overrides_project_idx").on(t.projectId),
+	],
 );
 
 /** R1 — lehká položka (bez přiřazení/termínu), nezaměňovat s úkolem. */

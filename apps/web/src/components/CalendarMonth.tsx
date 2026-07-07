@@ -245,7 +245,7 @@ export function CalendarMonth({
 												e.stopPropagation();
 												if (!tk.id.includes("@")) void toggleTask(tk);
 											}}
-											aria-label={done ? "Označit jako nehotové" : "Dokončit"}
+											aria-label={t(done ? "detail.ariaMarkUndone" : "detail.ariaComplete")}
 											className="grid shrink-0 place-items-center rounded-full"
 											style={{
 												width: 11,

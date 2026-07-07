@@ -97,7 +97,8 @@ export function Projekty() {
 	const weekStats = useMemo(() => {
 		const now = Date.now();
 		const DAY = 86_400_000;
-		const tdy = new Date().toISOString().slice(0, 10);
+		const _t = new Date();
+		const tdy = `${_t.getFullYear()}-${String(_t.getMonth() + 1).padStart(2, "0")}-${String(_t.getDate()).padStart(2, "0")}`;
 		const m = new Map<
 			string,
 			{ weekDone: number; added: number; overdue: number; bars: number[] }

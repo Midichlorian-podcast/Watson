@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSession } from "./auth-client";
 import type { TaskRow } from "./powersync/AppSchema";
 import { powerSync } from "./powersync/db";
 import { useTaskDetail } from "./taskDetail";
@@ -12,9 +13,10 @@ import { deleteTaskWithUndo, pushColumnUndo } from "./undo";
  */
 export function useKbNav(list: TaskRow[], enabled: boolean) {
 	const { open, openId } = useTaskDetail();
+	const { data: session } = useSession();
 	const [kbSel, setKbSel] = useState<string | null>(null);
-	const ref = useRef({ list, kbSel });
-	ref.current = { list, kbSel };
+	const ref = useRef({ list, kbSel, actorId: session?.user?.id });
+	ref.current = { list, kbSel, actorId: session?.user?.id };
 
 	useEffect(() => {
 		if (!enabled) return;
@@ -54,7 +56,7 @@ export function useKbNav(list: TaskRow[], enabled: boolean) {
 			if (e.key === " " || e.key === "Spacebar") {
 				e.preventDefault();
 				const tk = rows.find((x) => x.id === cur);
-				if (tk) void toggleTask(tk);
+				if (tk) void toggleTask(tk, ref.current.actorId);
 				return;
 			}
 			if (["1", "2", "3", "4"].includes(e.key) && !virtual) {

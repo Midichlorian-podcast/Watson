@@ -24,7 +24,11 @@ type Member = {
 	isOwner: boolean;
 };
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Lokální dnešek (ne UTC) — konzistentní s lib/tasks, jinak po půlnoci posun o den.
+const todayISO = () => {
+	const d = new Date();
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 // Krátké názvy dní Po–Ne dle jazyka (2024-01-01 je pondělí).
 const wdLabels = (lang: string): string[] =>
@@ -194,6 +198,7 @@ export function Reporty() {
 				ts,
 				g.target ?? 0,
 				projectPct,
+				t,
 			);
 			const overdue = !!g.due_date && g.due_date.slice(0, 10) < tdy;
 			const st = goalStatus(

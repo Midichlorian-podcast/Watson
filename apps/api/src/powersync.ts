@@ -90,6 +90,17 @@ interface TableDef {
 	hasUpdatedAt: boolean;
 	/** Sloupec autora — na PUT se vyplní serverovým userId (atribuce, R10). */
 	creatorCol?: string;
+	/** Sloupec „vlastníka" (user_id) — server VŽDY přepíše na session userId (PUT i PATCH).
+	 *  Brání padělání identity: osobní připomínky / barvy / audit-log nelze zapsat cizím jménem. */
+	ownerCol?: string;
+	/** Append-only tabulka (audit log): PATCH a DELETE jsou zakázané. */
+	appendOnly?: boolean;
+	/** Minimální projektová role pro zápis (default „editor"). commenter smí jen komentáře/overlaye. */
+	minRole?: "commenter" | "editor" | "manager";
+	/** Sloupce, jejichž změna vyžaduje roli „manager" (owner_id/visibility/archivace projektu). */
+	managerCols?: string[];
+	/** PATCH/DELETE smí jen autor (creatorCol) nebo manager projektu (komentáře). */
+	authorEditOnly?: boolean;
 	/** Jak zjistit project_id pro membership kontrolu (R5). `self` = řádek JE projekt (id). */
 	projectVia?:
 		| { kind: "column"; col: string }
@@ -103,6 +114,13 @@ interface TableDef {
 	/** Sloupce s user_id, které musí být členem projektu řádku (assignments.user_id). */
 	memberCols?: string[];
 }
+
+/** Pořadí projektových rolí (R5) — vyšší číslo = víc práv. */
+const PROJECT_ROLE_RANK: Record<string, number> = {
+	commenter: 1,
+	editor: 2,
+	manager: 3,
+};
 
 const TABLES: Record<string, TableDef> = {
 	tasks: {
@@ -160,6 +178,8 @@ const TABLES: Record<string, TableDef> = {
 			archived_at: "ts",
 		},
 		hasUpdatedAt: true,
+		// Přejmenování/barvu smí editor; převod vlastnictví, viditelnost a archivaci jen manager.
+		managerCols: ["owner_id", "visibility", "status", "archived_at"],
 		projectVia: { kind: "self" },
 	},
 	statuses: {
@@ -188,6 +208,8 @@ const TABLES: Record<string, TableDef> = {
 		columns: { task_id: "text", project_id: "text", body: "text" },
 		hasUpdatedAt: true,
 		creatorCol: "author_id",
+		minRole: "commenter",
+		authorEditOnly: true,
 		projectVia: { kind: "task", col: "task_id" },
 	},
 	task_occurrence_overrides: {
@@ -210,6 +232,8 @@ const TABLES: Record<string, TableDef> = {
 			color: "text",
 		},
 		hasUpdatedAt: true,
+		minRole: "commenter",
+		ownerCol: "user_id", // barvu smí každý nastavit jen SOBĚ
 		projectVia: { kind: "task", col: "task_id" },
 	},
 	reminders: {
@@ -223,9 +247,11 @@ const TABLES: Record<string, TableDef> = {
 			channel: "text",
 		},
 		hasUpdatedAt: false,
+		minRole: "commenter",
+		ownerCol: "user_id", // připomínka je osobní → nelze injektovat push cizímu uživateli
 		projectVia: { kind: "task", col: "task_id" },
 	},
-	// Historie úprav úkolu (audit log). Neměnný záznam; user_id je explicitní (kdo změnil).
+	// Historie úprav úkolu (audit log). Neměnný append-only záznam; autora dosadí server.
 	task_activity: {
 		columns: {
 			task_id: "text",
@@ -236,6 +262,8 @@ const TABLES: Record<string, TableDef> = {
 			new_value: "text",
 		},
 		hasUpdatedAt: false,
+		appendOnly: true, // audit log nelze měnit ani mazat
+		ownerCol: "user_id", // „kdo změnil" = session uživatel, nepadělatelné
 		projectVia: { kind: "task", col: "task_id" },
 	},
 	// Postupy (štafeta). Pozn.: server-authored advance (překlopení step_state) přijde s #27;
@@ -317,6 +345,17 @@ type Db = ReturnType<typeof getDb>;
 // biome-ignore lint: drizzle execute vrací driver-specific řádky
 type Rows = any;
 
+/**
+ * Deterministická chyba dat/omezení Postgresu (class 22 = data exception, 23 = integrity
+ * constraint) → 400, ať klient op zahodí a NEblokuje upload frontu (500 = PowerSync retry forever).
+ * POZOR: SQLSTATE není jen 5 číslic — např. `22P02` (invalid_text_representation, neplatné UUID/enum)
+ * má písmeno. Dřívější `^(22|23)\d{3}$` ho minul → vracelo 500 → zaseklá fronta a ztráta offline dat.
+ */
+function isDeterministicDbError(err: unknown): boolean {
+	const code = (err as { code?: string }).code;
+	return typeof code === "string" && /^(22|23)[0-9A-Za-z]{3}$/.test(code);
+}
+
 function coerce(type: ColType, v: unknown): unknown {
 	if (v == null) return null;
 	if (type === "int") return typeof v === "number" ? v : Number(v);
@@ -393,6 +432,31 @@ async function isProjectMember(
 		sql`SELECT 1 AS ok FROM project_members WHERE project_id = ${projectId} AND user_id = ${userId} LIMIT 1`,
 	)) as Rows;
 	return rows.length > 0;
+}
+
+/** Projektová role uživatele (project_members) — null = není člen projektu. */
+async function projectRole(
+	db: Db,
+	projectId: string,
+	userId: string,
+): Promise<string | null> {
+	const rows = (await db.execute(
+		sql`SELECT role FROM project_members WHERE project_id = ${projectId} AND user_id = ${userId} LIMIT 1`,
+	)) as Rows;
+	return (rows[0]?.role as string) ?? null;
+}
+
+/** Hodnota creatorCol existujícího řádku (autor komentáře apod.) — pro authorEditOnly. */
+async function creatorOfRow(
+	db: Db,
+	table: string,
+	col: string,
+	id: string,
+): Promise<string | null> {
+	const rows = (await db.execute(
+		sql`SELECT ${sql.raw(col)} AS v FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
+	)) as Rows;
+	return (rows[0]?.v as string) ?? null;
 }
 
 /** Role uživatele v prostoru (memberships) — null = není člen. */
@@ -509,6 +573,15 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 	const data = body.data ?? {};
 	const db = getDb();
 
+	// Append-only tabulky (audit log): měnit ani mazat nelze.
+	if (def.appendOnly && body.op !== "PUT")
+		return c.json({ error: "append-only" }, 403);
+
+	// Vlastníkův sloupec (osobní připomínky/barvy/audit) — server VŽDY dosadí session userId.
+	// Klient nemůže padělat cizí identitu ani injektovat řádek do overlaye/pushe jiného uživatele.
+	if (def.ownerCol && (body.op === "PUT" || body.op === "PATCH"))
+		data[def.ownerCol] = userId;
+
 	// Workspace-scoped tabulky (cíle): membership + role kontrola přes memberships.
 	if (def.workspaceVia) {
 		const wsNeed = new Set<string>();
@@ -530,65 +603,93 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 			await applyWrite(db, body.table, def, body.op, body.id, data, userId);
 		} catch (err) {
 			console.error("[watson-api] write selhal:", err);
-			const code = (err as { code?: string }).code;
-			const deterministic =
-				typeof code === "string" && /^(22|23)\d{3}$/.test(code);
-			return c.json({ error: String(err) }, deterministic ? 400 : 500);
+			return c.json({ error: String(err) }, isDeterministicDbError(err) ? 400 : 500);
 		}
 		return c.json({ ok: true });
 	}
 
-	// R5 — uživatel musí být členem KAŽDÉHO projektu, kterého se řádek dotkne:
-	// cílový (z dat), současný (z DB — i u PUT kvůli upsert ON CONFLICT) a projekty FK referencí.
-	const need = new Set<string>();
-	if (body.op === "PUT" || body.op === "PATCH") {
-		const t = await projectFromData(db, def, data, body.id);
-		if (t) need.add(t);
-	}
-	if (body.op === "PUT" || body.op === "PATCH" || body.op === "DELETE") {
-		const cur = await projectFromDb(db, body.table, def, body.id);
-		if (cur) need.add(cur);
-	}
-	// FK reference (parent_id/section_id/status_id) musí ukazovat do projektu, kde je útočník člen.
-	for (const ref of def.refProjectCols ?? []) {
-		const refId = data[ref.col] as string | undefined;
-		if (refId) {
-			const p = await projectOfRow(db, ref.table, refId);
-			if (p) need.add(p);
+	// Autorizace i zápis v JEDNOM try/catch — i chyba membership dotazu (např. neplatné UUID
+	// v project_id → 22P02) tak skončí jako 400, ne jako 500 zaseklé donekonečna.
+	try {
+		// R5 — uživatel musí být členem KAŽDÉHO projektu, kterého se řádek dotkne:
+		// cílový (z dat), současný (z DB — i u PUT kvůli upsert ON CONFLICT) a projekty FK referencí.
+		const need = new Set<string>();
+		if (body.op === "PUT" || body.op === "PATCH") {
+			const t = await projectFromData(db, def, data, body.id);
+			if (t) need.add(t);
+			// Anti-spoof: denormalizovaný project_id (řídí sync bucket) MUSÍ odpovídat projektu
+			// odvozenému z task_id — jinak by šel řádek podstrčit do cizího bucketu (#3).
+			if (t && def.projectVia?.kind === "task") data.project_id = t;
 		}
-	}
-	// DELETE neexistujícího řádku = no-op (idempotentní upload).
-	if (!(body.op === "DELETE" && need.size === 0)) {
-		if (need.size === 0) return c.json({ error: "forbidden" }, 403);
-		for (const p of need) {
-			if (!(await isProjectMember(db, p, userId)))
-				return c.json({ error: "forbidden" }, 403);
-			// Host (workspace guest) = read-only → odmítni jakýkoli zápis.
-			if (await isWorkspaceGuest(db, p, userId))
-				return c.json({ error: "read-only-host" }, 403);
+		if (body.op === "PUT" || body.op === "PATCH" || body.op === "DELETE") {
+			const cur = await projectFromDb(db, body.table, def, body.id);
+			if (cur) need.add(cur);
 		}
-	}
-	// member sloupce (assignments.user_id) musí být člen projektu řádku.
-	for (const col of def.memberCols ?? []) {
-		const uid = data[col] as string | undefined;
-		if (!uid) continue;
-		for (const p of need) {
-			if (!(await isProjectMember(db, p, uid))) {
-				return c.json({ error: "assignee not a project member" }, 403);
+		// FK reference (parent_id/section_id/status_id) musí ukazovat do projektu, kde je útočník člen.
+		for (const ref of def.refProjectCols ?? []) {
+			const refId = data[ref.col] as string | undefined;
+			if (refId) {
+				const p = await projectOfRow(db, ref.table, refId);
+				if (p) need.add(p);
 			}
 		}
-	}
+		// DELETE neexistujícího řádku = no-op (idempotentní upload).
+		if (!(body.op === "DELETE" && need.size === 0)) {
+			if (need.size === 0) return c.json({ error: "forbidden" }, 403);
+			const minRank = PROJECT_ROLE_RANK[def.minRole ?? "editor"] ?? 2;
+			for (const p of need) {
+				const role = await projectRole(db, p, userId);
+				if (!role) return c.json({ error: "forbidden" }, 403);
+				// Host (workspace guest) = read-only → odmítni jakýkoli zápis.
+				if (await isWorkspaceGuest(db, p, userId))
+					return c.json({ error: "read-only-host" }, 403);
+				// Projektová role musí stačit na daný typ zápisu (#1: commenter ≠ editor ≠ manager).
+				if ((PROJECT_ROLE_RANK[role] ?? 0) < minRank)
+					return c.json({ error: "insufficient-role" }, 403);
+				// Destruktivní operace na projektu (smazání, převod vlastnictví, viditelnost,
+				// archivace) smí jen manager — commenter/editor je nesmí (#1).
+				const touchesManagerCol =
+					body.op === "PATCH" &&
+					(def.managerCols ?? []).some((mc) => mc in data);
+				if (
+					(body.op === "DELETE" && def.projectVia?.kind === "self") ||
+					touchesManagerCol
+				) {
+					if (role !== "manager")
+						return c.json({ error: "manager-only" }, 403);
+				}
+			}
+		}
+		// PATCH/DELETE komentáře smí jen autor (nebo manager projektu) — #10.
+		if (
+			def.authorEditOnly &&
+			def.creatorCol &&
+			(body.op === "PATCH" || body.op === "DELETE")
+		) {
+			const author = await creatorOfRow(db, body.table, def.creatorCol, body.id);
+			if (author && author !== userId) {
+				let ok = false;
+				for (const p of need) {
+					if ((await projectRole(db, p, userId)) === "manager") ok = true;
+				}
+				if (!ok) return c.json({ error: "author-only" }, 403);
+			}
+		}
+		// member sloupce (assignments.user_id) musí být člen projektu řádku.
+		for (const col of def.memberCols ?? []) {
+			const uid = data[col] as string | undefined;
+			if (!uid) continue;
+			for (const p of need) {
+				if (!(await isProjectMember(db, p, uid))) {
+					return c.json({ error: "assignee not a project member" }, 403);
+				}
+			}
+		}
 
-	try {
 		await applyWrite(db, body.table, def, body.op, body.id, data, userId);
 	} catch (err) {
 		console.error("[watson-api] write selhal:", err);
-		// Deterministická data/constraint chyba (Postgres 22xxx/23xxx) → 400, ať klient op zahodí
-		// a neblokuje upload frontu donekonečna (500 = PowerSync retry forever).
-		const code = (err as { code?: string }).code;
-		const deterministic =
-			typeof code === "string" && /^(22|23)\d{3}$/.test(code);
-		return c.json({ error: String(err) }, deterministic ? 400 : 500);
+		return c.json({ error: String(err) }, isDeterministicDbError(err) ? 400 : 500);
 	}
 
 	return c.json({ ok: true });

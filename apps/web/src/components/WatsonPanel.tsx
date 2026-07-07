@@ -6,8 +6,13 @@ import { useEffect, useMemo } from "react";
 import { useSession } from "../lib/auth-client";
 import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Lokální dnešek (ne UTC) — konzistentní s lib/tasks, jinak po půlnoci posun o den.
+const todayISO = () => {
+	const d = new Date();
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 interface Insight {
 	id: string;
@@ -24,6 +29,7 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 	const { t } = useTranslation();
 	const { data: session } = useSession();
 	const navigate = useNavigate();
+	const trapRef = useFocusTrap<HTMLDivElement>(true);
 
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
@@ -121,7 +127,11 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 				style={{ background: "rgba(10,14,20,.3)", zIndex: 42 }}
 			/>
 			<div
-				className="fixed top-0 right-0 bottom-0 flex flex-col border-line border-l bg-card"
+				ref={trapRef}
+				tabIndex={-1}
+				role="dialog"
+				aria-modal="true"
+				className="fixed top-0 right-0 bottom-0 flex flex-col border-line border-l bg-card outline-none"
 				style={{
 					width: 384,
 					maxWidth: "92vw",

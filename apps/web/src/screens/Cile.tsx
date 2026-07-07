@@ -29,7 +29,11 @@ type MilestoneRow = {
 	position: number | null;
 };
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Lokální dnešek (ne UTC) — konzistentní s lib/tasks, jinak po půlnoci posun o den.
+const todayISO = () => {
+	const d = new Date();
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 const PERIODIC_KEY: Record<string, string> = {
 	week: "goals.perWeek",
@@ -237,6 +241,7 @@ export function Cile() {
 				ts,
 				g.target ?? 0,
 				projectPct,
+				t,
 			);
 			const overdue = !!g.due_date && g.due_date.slice(0, 10) < tdy;
 			const elapsed = goalElapsed(g.created_at, g.due_date, tdy);

@@ -51,6 +51,9 @@ export default defineConfig({
 				// PowerSync WASM (~2.5 MB) chceme v offline cache.
 				maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
 				globPatterns: ["**/*.{js,css,html,svg,wasm}"],
+				// mc-* = SQLite MultipleCiphers (šifrovaný build). Šifrování NEpoužíváme (žádný
+				// encryption key), PowerSync načítá standardní `wa-sqlite` → 3,8 MB pryč z precache.
+				globIgnores: ["**/mc-wa-sqlite*.wasm"],
 			},
 			// Dev: SW aktivní i v `vite dev`, aby šly Web Push notifikace ověřit lokálně.
 			devOptions: {

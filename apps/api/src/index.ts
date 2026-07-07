@@ -19,6 +19,17 @@ import { auth } from "./auth";
 import { env, googleEnabled, pushEnabled } from "./env";
 import { powersyncRoutes } from "./powersync";
 import { pushRoutes, startReminderWorker } from "./push";
+import { rateLimit } from "./rateLimit";
+
+/** Pořadí workspace rolí (R5) pro kontrolu eskalace práv — owner se řeší zvlášť (99). */
+const WS_ROLE_RANK: Record<string, number> = {
+	guest: 0,
+	member: 1,
+	manager: 2,
+	admin: 3,
+};
+const roleRank = (r?: string | null): number =>
+	(r ? WS_ROLE_RANK[r] : undefined) ?? 0;
 
 const app = new Hono();
 
@@ -31,6 +42,13 @@ app.use(
 		allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 	}),
 );
+
+// Rate-limit proti brute-force / spamu. Auth štědře (celý tým se ráno přihlašuje z jedné NAT IP,
+// ale 300/15 min přesto zastropuje uhádávání hesel); push subscribe umírněně.
+// POZN.: /api/sync/write ZÁMĚRNĚ NElimitujeme per-IP — tým za jednou IP dělá legitimně mnoho zápisů;
+// zneužití řeší row-level auth ve write-pathu, ne IP throttling.
+app.use("/api/auth/*", rateLimit({ name: "auth", windowMs: 15 * 60_000, max: 300 }));
+app.use("/api/push/*", rateLimit({ name: "push", windowMs: 60_000, max: 120 }));
 
 app.get("/health", (c) =>
 	c.json({
@@ -182,6 +200,29 @@ app.post("/api/projects", async (c) => {
 	return c.json({ project });
 });
 
+/**
+ * Historie úprav úkolu (audit log) — čte se on-demand z Postgresu (task_activity se NEsyncuje,
+ * je insert-only kvůli objemu). Vidí jen člen projektu úkolu; join na users doplní jména autorů.
+ */
+app.get("/api/tasks/:id/activity", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const taskId = c.req.param("id");
+	const db = getDb();
+	const rows = await db.execute(sql`
+		SELECT a.id, a.field, a.old_value, a.new_value, a.user_id, a.created_at,
+		       u.name AS user_name
+		FROM task_activity a
+		JOIN tasks t ON t.id = a.task_id
+		JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = ${session.user.id}
+		LEFT JOIN users u ON u.id = a.user_id
+		WHERE a.task_id = ${taskId}
+		ORDER BY a.created_at DESC
+		LIMIT 200
+	`);
+	return c.json({ activity: rows });
+});
+
 /** Členové workspace (jen pro člena) — Nastavení → Tým a role. */
 app.get("/api/workspaces/:id/members", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -260,13 +301,14 @@ app.patch("/api/workspaces/:id/members/:userId/role", async (c) => {
 				),
 			)
 	)[0];
-	const canManage =
-		ws?.ownerId === session.user.id ||
-		mine?.role === "admin" ||
-		mine?.role === "manager";
-	if (!canManage) return c.json({ error: "forbidden" }, 403);
+	const callerRank = ws?.ownerId === session.user.id ? 99 : roleRank(mine?.role);
+	if (callerRank < roleRank("manager"))
+		return c.json({ error: "forbidden" }, 403);
 	if (ws?.ownerId === targetId)
 		return c.json({ error: "cannot change owner role" }, 400);
+	// Eskalace práv (#5): nelze udělit roli VYŠŠÍ, než má sám volající (manager nesmí vyrobit admina).
+	if (roleRank(role) > callerRank)
+		return c.json({ error: "cannot grant role above your own" }, 403);
 
 	await db
 		.update(memberships)
@@ -316,11 +358,12 @@ app.post("/api/workspaces/:id/invite", async (c) => {
 				),
 			)
 	)[0];
-	const canManage =
-		ws?.ownerId === session.user.id ||
-		mine?.role === "admin" ||
-		mine?.role === "manager";
-	if (!canManage) return c.json({ error: "forbidden" }, 403);
+	const callerRank = ws?.ownerId === session.user.id ? 99 : roleRank(mine?.role);
+	if (callerRank < roleRank("manager"))
+		return c.json({ error: "forbidden" }, 403);
+	// Eskalace práv (#5): pozvat lze jen s rolí ≤ vlastní.
+	if (roleRank(role) > callerRank)
+		return c.json({ error: "cannot grant role above your own" }, 403);
 
 	// Existující uživatel dle e-mailu (case-insensitive).
 	const user = (

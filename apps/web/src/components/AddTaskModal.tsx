@@ -14,6 +14,7 @@ import {
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
+import { useFocusTrap } from "../lib/useFocusTrap";
 import { initials } from "../lib/format";
 import type { ChainRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
@@ -357,6 +358,7 @@ export function AddTaskModal({
 	const patch = (obj: Partial<Draft>) => setDraft((d) => ({ ...d, ...obj }));
 
 	const taRef = useRef<HTMLTextAreaElement>(null);
+	const trapRef = useFocusTrap<HTMLDivElement>(true);
 	useEffect(() => {
 		taRef.current?.focus();
 	}, []);
@@ -821,6 +823,7 @@ export function AddTaskModal({
 		<div
 			onClick={onClose}
 			data-esc-layer
+			data-add-layer
 			className="fixed inset-0 z-50 flex justify-center"
 			style={{
 				background: "rgba(10,14,20,.42)",
@@ -829,8 +832,12 @@ export function AddTaskModal({
 			}}
 		>
 			<div
+				ref={trapRef}
+				tabIndex={-1}
+				role="dialog"
+				aria-modal="true"
 				onClick={(e) => e.stopPropagation()}
-				className="border border-line bg-card"
+				className="border border-line bg-card outline-none"
 				style={{
 					width: 520,
 					maxWidth: "94vw",

@@ -5,6 +5,7 @@
  */
 import {
 	boolean,
+	index,
 	integer,
 	pgTable,
 	text,
@@ -88,7 +89,7 @@ export const projects = pgTable("projects", {
 	archivedAt: timestamp("archived_at", { withTimezone: true }),
 	createdAt: createdAt(),
 	updatedAt: updatedAt(),
-});
+}, (t) => [index("projects_workspace_idx").on(t.workspaceId)]);
 
 export const projectMembers = pgTable(
 	"project_members",
@@ -105,6 +106,8 @@ export const projectMembers = pgTable(
 	},
 	(t) => [
 		uniqueIndex("project_members_project_user_uq").on(t.projectId, t.userId),
+		// /api/projects dotazuje podle user_id (uq má project_id první → seq scan bez tohoto).
+		index("project_members_user_idx").on(t.userId),
 	],
 );
 

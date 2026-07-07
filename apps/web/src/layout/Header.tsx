@@ -6,6 +6,7 @@ import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
 import { INBOX_NAMES } from "../lib/inbox";
 import { useListSearch } from "../lib/listSearch";
+import { useIsMobile } from "../lib/useIsMobile";
 import { useViewMode, type ViewMode } from "../lib/viewMode";
 import { useWatson } from "../lib/watson";
 import { ALL_NAV } from "./nav";
@@ -30,6 +31,9 @@ export function Header() {
 	const title = active ? t(active.labelKey) : t("app.name");
 	const { theme, toggle } = useTheme();
 	const isDark = theme === "dark";
+	// Mobil: header nesmí přetékat 375px. Redundantní ovládání skryto (Watson = spodní lišta,
+	// motiv = Nastavení, zámek pohledu = pokročilé); zbytek se ve výjimečném případě odscrolluje.
+	const isMobile = useIsMobile();
 
 	// In-app notifikace: štafetové kroky, které jsou TEĎ aktivní a přiřazené mně
 	// („přišlo na tebe"). Odvozeno ze synced dat — bez extra tabulky.
@@ -115,10 +119,10 @@ export function Header() {
 
 	return (
 		<header
-			className="flex items-center gap-3 border-line border-b bg-card px-4"
+			className="flex items-center gap-3 overflow-x-auto border-line border-b bg-card px-4"
 			style={{ padding: "11px 16px", flex: "none" }}
 		>
-			<div style={{ flex: "none", minWidth: 0, maxWidth: "34vw" }}>
+			<div style={{ flex: "none", minWidth: 0, maxWidth: isMobile ? "40vw" : "34vw" }}>
 				<div
 					className="truncate font-display font-extrabold text-ink"
 					style={{ fontSize: 19, lineHeight: 1.1 }}
@@ -165,6 +169,7 @@ export function Header() {
 							</button>
 						))}
 					</div>
+					{!isMobile && (
 					<button
 						type="button"
 						onClick={toggleLock}
@@ -228,7 +233,8 @@ export function Header() {
 							</svg>
 						)}
 					</button>
-					{locked && (
+					)}
+					{!isMobile && locked && (
 						<span
 							className="inline-flex shrink-0 items-center font-display font-semibold"
 							style={{
@@ -471,6 +477,7 @@ export function Header() {
 					)}
 				</div>
 
+				{!isMobile && (
 				<button
 					type="button"
 					onClick={toggle}
@@ -515,7 +522,9 @@ export function Header() {
 						</svg>
 					)}
 				</button>
+				)}
 
+				{!isMobile && (
 				<button
 					type="button"
 					onClick={toggleWatson}
@@ -542,6 +551,7 @@ export function Header() {
 					</span>
 					{t("shell.assistant")}
 				</button>
+				)}
 
 				<button
 					type="button"
@@ -574,7 +584,7 @@ export function Header() {
 							strokeLinecap="round"
 						/>
 					</svg>
-					{t("shell.newTask")}
+					{!isMobile && t("shell.newTask")}
 				</button>
 			</div>
 		</header>

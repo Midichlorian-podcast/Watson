@@ -2,7 +2,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
 import { useMemo } from "react";
 import { Board } from "../components/Board";
-import { Calendar } from "../components/Calendar";
+import { Calendar } from "../components/CalendarLazy";
 import { TaskItem } from "../components/TaskItem";
 import { useSession } from "../lib/auth-client";
 import { useFlowSteps } from "../lib/flowSteps";

@@ -38,13 +38,8 @@ bucket_definitions:
       - SELECT id, task_id, project_id, occ_date, done, skipped, created_at
         FROM task_occurrence_overrides
         WHERE project_id = bucket.project_id
-      - SELECT id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at
-        FROM reminders
-        WHERE project_id = bucket.project_id
-      # Historie úprav úkolu (audit log, project-scoped).
-      - SELECT id, task_id, project_id, user_id, field, old_value, new_value, created_at
-        FROM task_activity
-        WHERE project_id = bucket.project_id
+      # task_activity (audit log) se ZÁMĚRNĚ NEsyncuje — je insert-only (klient jen nahrává),
+      # detail historie se čte přes GET /api/tasks/:id/activity. Jinak roste do stovek MB/zařízení.
       # Postupy (štafeta) — chains + chain_steps (project-scoped).
       - SELECT id, project_id, workspace_id, template_id, name, description, anchor_date,
                state, sched_mode, skip_weekend, created_by, completed_at, created_at
@@ -61,6 +56,11 @@ bucket_definitions:
     data:
       - SELECT id, task_id, project_id, user_id, color, created_at
         FROM task_user_colors
+        WHERE user_id = bucket.user_id
+      # Připomínky jsou OSOBNÍ (offset per uživatel) → syncovat jen vlastní, ne celý projekt.
+      # (Dřív v user_projects bez filtru user_id → každý člen viděl připomínky ostatních.)
+      - SELECT id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at
+        FROM reminders
         WHERE user_id = bucket.user_id
 
   # Workspace-scoped entity (cíle) — jeden bucket na každý prostor, kde je uživatel členem.

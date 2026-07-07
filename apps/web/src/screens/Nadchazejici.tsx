@@ -2,7 +2,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import i18n, { useTranslation } from "@watson/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Board } from "../components/Board";
-import { Calendar } from "../components/Calendar";
+import { Calendar } from "../components/CalendarLazy";
 import { TaskItem } from "../components/TaskItem";
 import {
 	DEFAULT_TOOLBAR,
@@ -29,7 +29,11 @@ import { useViewMode } from "../lib/viewMode";
 
 const HORIZON_DAYS = 16;
 const DAY = 86_400_000;
-const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+// Lokální datum instantu (ne UTC) — jinak se buckety/labely „Zítra" po půlnoci posunou o den.
+const iso = (ms: number) => {
+	const d = new Date(ms);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 type Bucket = "dnes" | "zitra" | "vikend" | "pristi" | "pmonth" | "later";
 const BUCKET_ORDER: Bucket[] = [
@@ -78,11 +82,15 @@ export function Nadchazejici() {
 		() => new Map(projects.map((p) => [p.id, p] as const)),
 		[projects],
 	);
-	const { data: allTasks } = usePsQuery<TaskRow>(
-		"SELECT * FROM tasks WHERE due_date IS NOT NULL ORDER BY due_date",
-	);
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
 	const [wsFilter, setWsFilter] = useState<string | null>(null);
+	// Výkon: bez „Dokončené" filtruj hotové v SQL (opakované úkoly mají completed_at vždy NULL —
+	// dokončení posouvá due_date, takže se neztratí žádná řada).
+	const { data: allTasks } = usePsQuery<TaskRow>(
+		tb.showDone
+			? "SELECT * FROM tasks WHERE due_date IS NOT NULL ORDER BY due_date"
+			: "SELECT * FROM tasks WHERE due_date IS NOT NULL AND completed_at IS NULL ORDER BY due_date",
+	);
 	const flowSteps = useFlowSteps();
 	const { setNavIds } = useTaskDetail();
 	const { q: searchQ } = useListSearch();

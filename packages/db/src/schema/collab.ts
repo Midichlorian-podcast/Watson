@@ -2,6 +2,7 @@
  * Spolupráce: komentáře (Markdown, BEZ CRDT v MVP), @zmínky, přílohy, připomínky.
  * §12 — verzování příloh a hlasovky až v2 (sloupec `version` ale držíme).
  */
+import { sql } from "drizzle-orm";
 import {
 	bigint,
 	index,
@@ -38,7 +39,10 @@ export const comments = pgTable(
 		createdAt: createdAt(),
 		updatedAt: updatedAt(),
 	},
-	(t) => [index("comments_task_idx").on(t.taskId)],
+	(t) => [
+		index("comments_task_idx").on(t.taskId),
+		index("comments_project_idx").on(t.projectId),
+	],
 );
 
 /**
@@ -66,7 +70,10 @@ export const taskActivity = pgTable(
 		newValue: text("new_value"),
 		createdAt: createdAt(),
 	},
-	(t) => [index("task_activity_task_idx").on(t.taskId)],
+	(t) => [
+		index("task_activity_task_idx").on(t.taskId),
+		index("task_activity_project_idx").on(t.projectId),
+	],
 );
 
 export const mentions = pgTable(
@@ -101,28 +108,37 @@ export const attachments = pgTable("attachments", {
 });
 
 /** E1 — připomínky; výchozí offset per uživatel (drženo na uživateli). */
-export const reminders = pgTable("reminders", {
-	id: pk(),
-	taskId: uuid("task_id")
-		.notNull()
-		.references(() => tasks.id, { onDelete: "cascade" }),
-	/** Denormalizace pro PowerSync scoping. */
-	projectId: uuid("project_id")
-		.notNull()
-		.references(() => projects.id, { onDelete: "cascade" }),
-	userId: uuid("user_id")
-		.notNull()
-		.references(() => users.id, { onDelete: "cascade" }),
-	type: reminderTypeEnum("type").notNull().default("time"),
-	/** Absolutní čas (type=time/recurring). */
-	remindAt: timestamp("remind_at", { withTimezone: true }),
-	/** Relativní offset v minutách vůči termínu (type=relative). */
-	offsetMin: integer("offset_min"),
-	channel: notificationChannelEnum("channel").notNull().default("push"),
-	/** Kdy worker připomínku odeslal (null = čeká na doručení). Píše jen server. */
-	sentAt: timestamp("sent_at", { withTimezone: true }),
-	createdAt: createdAt(),
-});
+export const reminders = pgTable(
+	"reminders",
+	{
+		id: pk(),
+		taskId: uuid("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		/** Denormalizace pro PowerSync scoping. */
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		userId: uuid("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		type: reminderTypeEnum("type").notNull().default("time"),
+		/** Absolutní čas (type=time/recurring). */
+		remindAt: timestamp("remind_at", { withTimezone: true }),
+		/** Relativní offset v minutách vůči termínu (type=relative). */
+		offsetMin: integer("offset_min"),
+		channel: notificationChannelEnum("channel").notNull().default("push"),
+		/** Kdy worker připomínku odeslal (null = čeká na doručení). Píše jen server. */
+		sentAt: timestamp("sent_at", { withTimezone: true }),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		index("reminders_task_idx").on(t.taskId),
+		index("reminders_user_idx").on(t.userId),
+		// Doručovací worker skenuje NEodeslané → parciální index drží frontu malou i s historií.
+		index("reminders_pending_idx").on(t.remindAt).where(sql`sent_at IS NULL`),
+	],
+);
 
 /**
  * Web Push odběry — server-only, NEsynchronizuje se do klienta (žádné sync rule).

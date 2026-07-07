@@ -1,6 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon, type IconName } from "@watson/ui";
+import { useState } from "react";
 import { useWatson } from "../lib/watson";
 
 const TABS: {
@@ -14,61 +15,146 @@ const TABS: {
 	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
 ];
 
-/** Mobilní spodní lišta (prototyp MOBILE BOTTOM BAR, ř. 961-975): 4 navigace + Watson. */
+/** Sekce dostupné přes „Více" (na mobilu není sidebar → jinak nedosažitelné). */
+const MORE: { to: string; icon: IconName; labelKey: string }[] = [
+	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
+	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox" },
+	{ to: "/cile", icon: "cile", labelKey: "nav.goals" },
+	{ to: "/reporty", icon: "reporty", labelKey: "nav.reports" },
+	{ to: "/postupy", icon: "postup", labelKey: "nav.flows" },
+	{ to: "/oblibene/p1", icon: "priorita", labelKey: "nav.priority1" },
+	{ to: "/oblibene/me", icon: "prirazeni", labelKey: "nav.assignedToMe" },
+	{ to: "/nastaveni", icon: "nastaveni", labelKey: "nav.settings" },
+];
+
+/** Mobilní spodní lišta: 4 hlavní navigace + „Více" (list ostatních sekcí) + Watson. */
 export function MobileTabBar() {
 	const { t } = useTranslation();
 	const { toggleWatson } = useWatson();
 	const path = useRouterState({ select: (s) => s.location.pathname });
+	const [moreOpen, setMoreOpen] = useState(false);
+
+	const moreActive = MORE.some((m) => path.startsWith(m.to));
 
 	return (
-		<div
-			className="fixed right-0 bottom-0 left-0 flex border-line border-t bg-card"
-			style={{ zIndex: 35 }}
-		>
-			{TABS.map((tab) => {
-				const active = tab.to === "/" ? path === "/" : path.startsWith(tab.to);
-				return (
-					<Link
-						key={tab.to}
-						to={tab.to}
-						className="flex flex-1 flex-col items-center"
-						style={{
-							gap: 3,
-							padding: "9px 0",
-							color: active ? "var(--w-brass-text)" : "var(--w-ink-3)",
-						}}
+		<>
+			{moreOpen && (
+				// Spodní sheet „Více" — sekce, které na mobilu nejsou v hlavních tabech.
+				<div
+					className="fixed inset-0"
+					style={{ zIndex: 40, background: "rgba(10,14,20,.42)" }}
+					onClick={() => setMoreOpen(false)}
+					data-esc-layer
+				>
+					<div
+						className="fixed right-0 bottom-0 left-0 rounded-t-2xl border-line border-t bg-card"
+						style={{ paddingBottom: "calc(58px + env(safe-area-inset-bottom))" }}
+						onClick={(e) => e.stopPropagation()}
 					>
-						<Icon name={tab.icon} size={20} />
-						<span
-							className="font-display font-semibold"
-							style={{ fontSize: 10 }}
-						>
-							{t(tab.labelKey)}
-						</span>
-					</Link>
-				);
-			})}
-			<button
-				type="button"
-				onClick={toggleWatson}
-				className="flex flex-1 flex-col items-center text-brass-text"
-				style={{ gap: 3, padding: "9px 0" }}
+						<div
+							className="mx-auto my-2 rounded-full"
+							style={{ width: 40, height: 4, background: "var(--w-line)" }}
+						/>
+						<nav className="grid grid-cols-2 gap-1 p-3">
+							{MORE.map((m) => {
+								const active = path.startsWith(m.to);
+								return (
+									<Link
+										key={m.to}
+										to={m.to}
+										onClick={() => setMoreOpen(false)}
+										className="flex items-center rounded-xl"
+										style={{
+											gap: 12,
+											padding: "12px 14px",
+											color: active
+												? "var(--w-brass-text)"
+												: "var(--w-ink)",
+											background: active ? "var(--w-panel-2)" : undefined,
+										}}
+									>
+										<Icon name={m.icon} size={20} />
+										<span
+											className="font-display font-semibold"
+											style={{ fontSize: 14 }}
+										>
+											{t(m.labelKey)}
+										</span>
+									</Link>
+								);
+							})}
+						</nav>
+					</div>
+				</div>
+			)}
+			<div
+				className="fixed right-0 bottom-0 left-0 flex border-line border-t bg-card"
+				style={{ zIndex: 41, paddingBottom: "env(safe-area-inset-bottom)" }}
 			>
-				<span
-					className="flex items-center justify-center rounded-full font-display font-extrabold"
+				{TABS.map((tab) => {
+					const active = tab.to === "/" ? path === "/" : path.startsWith(tab.to);
+					return (
+						<Link
+							key={tab.to}
+							to={tab.to}
+							onClick={() => setMoreOpen(false)}
+							className="flex flex-1 flex-col items-center"
+							style={{
+								gap: 3,
+								padding: "9px 0",
+								color: active ? "var(--w-brass-text)" : "var(--w-ink-3)",
+							}}
+						>
+							<Icon name={tab.icon} size={20} />
+							<span
+								className="font-display font-semibold"
+								style={{ fontSize: 10 }}
+							>
+								{t(tab.labelKey)}
+							</span>
+						</Link>
+					);
+				})}
+				<button
+					type="button"
+					onClick={() => setMoreOpen((o) => !o)}
+					className="flex flex-1 flex-col items-center"
 					style={{
-						width: 18,
-						height: 18,
-						border: "1.6px solid currentColor",
-						fontSize: 9,
+						gap: 3,
+						padding: "9px 0",
+						color:
+							moreOpen || moreActive
+								? "var(--w-brass-text)"
+								: "var(--w-ink-3)",
 					}}
 				>
-					W
-				</span>
-				<span className="font-display font-semibold" style={{ fontSize: 10 }}>
-					Watson
-				</span>
-			</button>
-		</div>
+					<Icon name="vice" size={20} />
+					<span className="font-display font-semibold" style={{ fontSize: 10 }}>
+						{t("nav.more")}
+					</span>
+				</button>
+				<button
+					type="button"
+					onClick={toggleWatson}
+					className="flex flex-1 flex-col items-center text-brass-text"
+					style={{ gap: 3, padding: "9px 0" }}
+				>
+					<span
+						className="flex items-center justify-center rounded-full font-display font-extrabold"
+						style={{
+							width: 18,
+							height: 18,
+							border: "1.6px solid currentColor",
+							fontSize: 9,
+						}}
+					>
+						W
+					</span>
+					<span className="font-display font-semibold" style={{ fontSize: 10 }}>
+						Watson
+					</span>
+				</button>
+			</div>
+		</>
 	);
 }

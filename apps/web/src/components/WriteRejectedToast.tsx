@@ -34,7 +34,7 @@ export function WriteRejectedToast() {
 			<button
 				type="button"
 				onClick={() => setShow(false)}
-				aria-label="Zavřít"
+				aria-label={t("common.close")}
 				className="font-semibold"
 			>
 				✕

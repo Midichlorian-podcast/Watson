@@ -1,5 +1,5 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -9,10 +9,22 @@ import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
 import { initials } from "../lib/format";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
-import type { TaskActivityRow, TaskRow } from "../lib/powersync/AppSchema";
+import type { TaskRow } from "../lib/powersync/AppSchema";
+
+/** Řádek historie z API /api/tasks/:id/activity (task_activity se nesyncuje). */
+type ActivityEntry = {
+	id: string;
+	field: string | null;
+	old_value: string | null;
+	new_value: string | null;
+	user_id: string | null;
+	created_at: string | null;
+	user_name?: string | null;
+};
 import { powerSync } from "../lib/powersync/db";
 import { enablePush, notificationPermission } from "../lib/push";
 import { useProject } from "../lib/projects";
+import { useFocusTrap } from "../lib/useFocusTrap";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
 import {
@@ -162,6 +174,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const { openAdd } = useAddTask();
 	const { metaOf } = useRowMeta();
 	const { data: session } = useSession();
+	const qc = useQueryClient();
 
 	// Výskyt řady: virtuální id `base@ISO` → base úkol + banner + per-výskyt akce.
 	const occ = parseOccId(id);
@@ -205,6 +218,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		[realId],
 	);
 	const task = rows?.[0];
+	// Přístupnost: uzamkni fokus do modalu, dokud je otevřený; vrať fokus po zavření.
+	const trapRef = useFocusTrap<HTMLDivElement>(!!task);
 	// R6 — vlastní barva úkolu (per-user overlay; syncuje se jen moje barva).
 	const { data: colorRows } = usePsQuery<{ id: string; color: string | null }>(
 		"SELECT id, color FROM task_user_colors WHERE task_id = ? LIMIT 1",
@@ -278,11 +293,18 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		"SELECT id, type, remind_at, offset_min, channel FROM reminders WHERE task_id = ? AND user_id = ? ORDER BY created_at",
 		[realId, session?.user?.id ?? ""],
 	);
-	// Historie úprav (audit log) — newest-first.
-	const { data: activity } = usePsQuery<TaskActivityRow>(
-		"SELECT * FROM task_activity WHERE task_id = ? ORDER BY created_at DESC",
-		[realId],
-	);
+	// Historie úprav (audit log) — čte se z API (task_activity je insert-only, nesyncuje se).
+	const { data: activity } = useQuery({
+		queryKey: ["taskActivity", realId],
+		enabled: !!realId,
+		queryFn: async () => {
+			const r = await fetch(`${API_URL}/api/tasks/${realId}/activity`, {
+				credentials: "include",
+			});
+			if (!r.ok) return [] as ActivityEntry[];
+			return ((await r.json()).activity ?? []) as ActivityEntry[];
+		},
+	});
 	const { data: statusRows } = usePsQuery<{
 		name: string | null;
 		is_done: number | null;
@@ -397,6 +419,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 				new Date().toISOString(),
 			],
 		);
+		// task_activity se nesyncuje (insert-only) → po zápisu refetchni historii z API.
+		void qc.invalidateQueries({ queryKey: ["taskActivity", realId] });
 	};
 
 	// V3: patch úkolu + zápis do historie + „Uloženo ✓" + cílené Zpět (revert bez logu).
@@ -439,7 +463,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		}
 		// historie: zaznamenej dokončení / obnovení (bez toastu/Zpět — má vlastní akci)
 		void logActivity("completed", done ? "1" : null, done ? null : "1");
-		void toggleTask(task);
+		void toggleTask(task, session?.user?.id);
 	};
 	const skipOcc = () => {
 		if (!occ) return;
@@ -585,15 +609,19 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 				type="button"
 				aria-label={t("common.cancel")}
 				onClick={onClose}
-				className="fixed inset-0 z-30"
+				className="fixed inset-0 z-[70]"
 				style={{ background: "rgba(10,14,20,.42)" }}
 			/>
 			<div
-				className="pointer-events-none fixed inset-0 z-40 flex items-start justify-center"
+				className="pointer-events-none fixed inset-0 z-[71] flex items-start justify-center"
 				style={{ paddingTop: "6vh" }}
 			>
 				<div
-					className="pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-line bg-card"
+					ref={trapRef}
+					tabIndex={-1}
+					role="dialog"
+					aria-modal="true"
+					className="pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-line bg-card outline-none"
 					style={{
 						width: 560,
 						maxWidth: "94vw",
@@ -995,9 +1023,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 														: ""
 												}
 												onChange={(e) => {
+													const _n = new Date();
 													const base =
 														task.due_date?.slice(0, 10) ??
-														new Date().toISOString().slice(0, 10);
+														`${_n.getFullYear()}-${String(_n.getMonth() + 1).padStart(2, "0")}-${String(_n.getDate()).padStart(2, "0")}`;
 													void patchLog({
 														start_date: e.target.value
 															? `${base}T${e.target.value}:00`

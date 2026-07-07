@@ -29,7 +29,17 @@ const tasks = new Table(
 		created_by: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_project: ["project_id"] } },
+	{
+		// Hot sloupce dotazované napříč obrazovkami (Dnes/Nadcházející/Sidebar/rowMeta/detail).
+		// Bez nich = full scan tasks při KAŽDÉ změně (i cizí došlé syncem) → jank s tisíci úkolů.
+		indexes: {
+			by_project: ["project_id"],
+			by_parent: ["parent_id"],
+			by_due: ["due_date"],
+			by_completed: ["completed_at"],
+			by_status: ["status_id"],
+		},
+	},
 );
 
 /** Projekt (barva = tělo karet úkolů, R6); kind=flow|goal|cycle, status 4-stavový. */
@@ -93,7 +103,13 @@ const assignments = new Table(
 		completed_at: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_task: ["task_id"], by_project: ["project_id"] } },
+	{
+		indexes: {
+			by_task: ["task_id"],
+			by_project: ["project_id"],
+			by_user: ["user_id"], // Sidebar „Přiřazeno mně" / rowMeta agregace
+		},
+	},
 );
 
 const comments = new Table(
@@ -146,7 +162,11 @@ const reminders = new Table(
 	{ indexes: { by_task: ["task_id"] } },
 );
 
-/** Historie úprav úkolu (audit log) — kdo kdy jaké pole změnil. */
+/**
+ * Historie úprav úkolu (audit log). `insertOnly` = řádky se jen NAHRÁVAJÍ do Postgresu (write-path),
+ * ale NEuchovávají se lokálně ani nesyncují dolů — audit log jinak roste do stovek MB na každém
+ * zařízení (hlavní strop škálovatelnosti). Detail historie se čte on-demand přes API.
+ */
 const task_activity = new Table(
 	{
 		task_id: column.text,
@@ -157,7 +177,7 @@ const task_activity = new Table(
 		new_value: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_task: ["task_id"] } },
+	{ insertOnly: true },
 );
 
 /** Postupy (štafeta) — chains + chain_steps (project-scoped). */

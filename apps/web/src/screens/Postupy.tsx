@@ -9,6 +9,7 @@ import { useSession } from "../lib/auth-client";
 import {
 	advanceChainForTask,
 	type ChainStepLite,
+	repairChain,
 	rewindToStep,
 } from "../lib/chainAdvance";
 import { shiftChain, toggleChainWeekend } from "../lib/chainReflow";
@@ -21,7 +22,11 @@ import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Lokální dnešek (ne UTC) — konzistentní s lib/tasks, jinak po půlnoci posun o den.
+const todayISO = () => {
+	const d = new Date();
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const addDays = (iso: string, n: number) => {
 	const d = new Date(`${iso}T00:00:00`);
 	d.setDate(d.getDate() + n);
@@ -624,6 +629,12 @@ function FlowDetail({
 	const [pendingRewind, setPendingRewind] = useState<string | null>(null);
 	const skipWk = !!ch.skip_weekend;
 
+	// Otevření detailu = idempotentní oprava stavu kroků z tasks.completed_at (napraví drift ze
+	// souběžných offline změn; zapisuje jen když se stav liší → obvykle no-op).
+	useEffect(() => {
+		void repairChain(ch.id);
+	}, [ch.id]);
+
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
@@ -1106,80 +1117,84 @@ function FlowModal({
 		if (!nm || rows.length === 0 || !projectId) return;
 		const proj = projects.find((p) => p.id === projectId);
 		const chainId = crypto.randomUUID();
-		await powerSync.execute(
-			`INSERT INTO chains (id, project_id, workspace_id, name, anchor_date, state, sched_mode, skip_weekend, created_at)
+		// Lokální atomicita: chain + úkoly kroků + chain_steps + přiřazení v JEDNÉ transakci.
+		// Pád uprostřed jinak nechá prázdný „aktivní" postup nebo úkoly-sirotky bez kroků (V6).
+		await powerSync.writeTransaction(async (tx) => {
+			await tx.execute(
+				`INSERT INTO chains (id, project_id, workspace_id, name, anchor_date, state, sched_mode, skip_weekend, created_at)
        VALUES (?, ?, ?, ?, ?, 'active', 'chain', 0, ?)`,
-			[
-				chainId,
-				projectId,
-				proj?.workspace_id ?? null,
-				nm,
-				effAnchor,
-				new Date().toISOString(),
-			],
-		);
-		for (let i = 0; i < rows.length; i++) {
-			const r = rows[i];
-			if (!r) continue;
-			const taskId = crypto.randomUUID();
-			const due = addDays(effAnchor, r.offset);
-			// per-krok projekt (předání mezi projekty) — default projekt řetězce
-			const stepProject = r.project || projectId;
-			// první krok active; souvislé with_previous za ním taky
-			let state = "dormant";
-			if (i === 0) state = "active";
-			else if (
-				rows
-					.slice(1, i + 1)
-					.every((x, j) => j + 1 <= i && x.gate === "with_previous")
-			)
-				state = "active";
-			// 1 osoba = single; víc osob = Kdokoli (shared_any) / Všichni (shared_all)
-			const assignMode =
-				r.who.length <= 1
-					? "single"
-					: r.mode === "all"
-						? "shared_all"
-						: "shared_any";
-			await powerSync.execute(
-				`INSERT INTO tasks (id, project_id, name, description, priority, due_date, assignment_mode, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				[
-					taskId,
-					stepProject,
-					r.name.trim() || t("flows.stepFallback", { n: i + 1 }),
-					r.role ? `Role: ${r.role}` : null,
-					r.priority,
-					due,
-					assignMode,
-					new Date().toISOString(),
-				],
-			);
-			const prevOffset = i > 0 ? (rows[i - 1]?.offset ?? 0) : 0;
-			await powerSync.execute(
-				`INSERT INTO chain_steps (id, chain_id, task_id, project_id, position, gate, step_state,
-          anchor_offset, gap_days, activated_at, created_at)
-         VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				[
 					chainId,
-					taskId,
-					stepProject,
-					i,
-					r.gate,
-					state,
-					r.offset,
-					i === 0 ? 0 : r.offset - prevOffset,
-					state === "active" ? new Date().toISOString() : null,
+					projectId,
+					proj?.workspace_id ?? null,
+					nm,
+					effAnchor,
 					new Date().toISOString(),
 				],
 			);
-			for (const uid of r.who) {
-				await powerSync.execute(
-					"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
-					[taskId, stepProject, uid, new Date().toISOString()],
+			for (let i = 0; i < rows.length; i++) {
+				const r = rows[i];
+				if (!r) continue;
+				const taskId = crypto.randomUUID();
+				const due = addDays(effAnchor, r.offset);
+				// per-krok projekt (předání mezi projekty) — default projekt řetězce
+				const stepProject = r.project || projectId;
+				// první krok active; souvislé with_previous za ním taky
+				let state = "dormant";
+				if (i === 0) state = "active";
+				else if (
+					rows
+						.slice(1, i + 1)
+						.every((x, j) => j + 1 <= i && x.gate === "with_previous")
+				)
+					state = "active";
+				// 1 osoba = single; víc osob = Kdokoli (shared_any) / Všichni (shared_all)
+				const assignMode =
+					r.who.length <= 1
+						? "single"
+						: r.mode === "all"
+							? "shared_all"
+							: "shared_any";
+				await tx.execute(
+					`INSERT INTO tasks (id, project_id, name, description, priority, due_date, assignment_mode, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+					[
+						taskId,
+						stepProject,
+						r.name.trim() || t("flows.stepFallback", { n: i + 1 }),
+						r.role ? `Role: ${r.role}` : null,
+						r.priority,
+						due,
+						assignMode,
+						new Date().toISOString(),
+					],
 				);
+				const prevOffset = i > 0 ? (rows[i - 1]?.offset ?? 0) : 0;
+				await tx.execute(
+					`INSERT INTO chain_steps (id, chain_id, task_id, project_id, position, gate, step_state,
+          anchor_offset, gap_days, activated_at, created_at)
+         VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					[
+						chainId,
+						taskId,
+						stepProject,
+						i,
+						r.gate,
+						state,
+						r.offset,
+						i === 0 ? 0 : r.offset - prevOffset,
+						state === "active" ? new Date().toISOString() : null,
+						new Date().toISOString(),
+					],
+				);
+				for (const uid of r.who) {
+					await tx.execute(
+						"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
+						[taskId, stepProject, uid, new Date().toISOString()],
+					);
+				}
 			}
-		}
+		});
 		onCreated(chainId);
 		onClose();
 	};

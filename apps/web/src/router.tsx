@@ -3,18 +3,30 @@ import {
 	createRoute,
 	createRouter,
 } from "@tanstack/react-router";
+import { lazy } from "react";
 import { AppLayout } from "./layout/AppLayout";
-import { Cile } from "./screens/Cile";
-import { Hledat } from "./screens/Hledat";
+// Core obrazovky (navštěvované pořád) = eager. Ostatní = code-split přes lazy() → menší main chunk
+// (Suspense boundary je kolem <Outlet/> v AppLayout).
 import { Nadchazejici } from "./screens/Nadchazejici";
-import { Nastaveni } from "./screens/Nastaveni";
-import { Oblibene } from "./screens/Oblibene";
-import { Postupy } from "./screens/Postupy";
-import { Projekty } from "./screens/Projekty";
-import { Reporty } from "./screens/Reporty";
-import { Schranka } from "./screens/Schranka";
 import { Today } from "./screens/Today";
 import { Ukoly } from "./screens/Ukoly";
+
+// biome-ignore lint/suspicious/noExplicitAny: obrazovky nemají props; any tu jen sjednotí lazy typ
+const named = <K extends string>(
+	loader: () => Promise<Record<K, React.ComponentType<any>>>,
+	key: K,
+) => lazy(() => loader().then((m) => ({ default: m[key] })));
+
+const Cile = named(() => import("./screens/Cile"), "Cile");
+const Hledat = named(() => import("./screens/Hledat"), "Hledat");
+const Nastaveni = named(() => import("./screens/Nastaveni"), "Nastaveni");
+const Postupy = named(() => import("./screens/Postupy"), "Postupy");
+const Projekty = named(() => import("./screens/Projekty"), "Projekty");
+const Reporty = named(() => import("./screens/Reporty"), "Reporty");
+const Schranka = named(() => import("./screens/Schranka"), "Schranka");
+const Oblibene = lazy(() =>
+	import("./screens/Oblibene").then((m) => ({ default: m.Oblibene })),
+);
 
 const rootRoute = createRootRoute({ component: AppLayout });
 

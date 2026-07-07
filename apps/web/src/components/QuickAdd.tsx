@@ -144,24 +144,7 @@ export function QuickAdd({
 		}
 		const taskId = crypto.randomUUID();
 		const now = new Date().toISOString();
-		await powerSync.execute(
-			"INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, deadline, duration_min, recurrence, recurrence_rule, recurrence_basis, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			[
-				taskId,
-				pickedProj?.id ?? parsed.projectId ?? inboxId,
-				name,
-				parsed.priority ?? 2,
-				parsed.due ?? null,
-				startDate,
-				parsed.deadline ?? null,
-				parsed.durationMin ?? null,
-				parsed.recurrence?.label ?? null,
-				parsed.recurrence ? JSON.stringify(parsed.recurrence) : null,
-				parsed.recurrence ? "due_date" : null,
-				session?.user?.id ?? null,
-				now,
-			],
-		);
+		const projId = pickedProj?.id ?? parsed.projectId ?? inboxId;
 		// @osoby: vybrané z našeptávače + rozpoznané parserem → reálná přiřazení.
 		const assigned = new Set<string>();
 		const resolved: Person[] = [...pickedPeople];
@@ -174,12 +157,38 @@ export function QuickAdd({
 			);
 			if (person) resolved.push(person);
 		}
-		for (const person of resolved) {
-			if (assigned.has(person.id)) continue;
-			assigned.add(person.id);
+		// R2 — u ≥2 přiřazených neinteraktivně `shared_all` (default), jinak `single`.
+		const uniqueAssignees = resolved.filter((p) => {
+			if (assigned.has(p.id)) return false;
+			assigned.add(p.id);
+			return true;
+		});
+		const assignmentMode = uniqueAssignees.length >= 2 ? "shared_all" : "single";
+		await powerSync.execute(
+			"INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, deadline, duration_min, recurrence, recurrence_rule, recurrence_basis, assignment_mode, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			[
+				taskId,
+				projId,
+				name,
+				parsed.priority ?? 2,
+				parsed.due ?? null,
+				startDate,
+				parsed.deadline ?? null,
+				parsed.durationMin ?? null,
+				parsed.recurrence?.label ?? null,
+				parsed.recurrence ? JSON.stringify(parsed.recurrence) : null,
+				parsed.recurrence ? "due_date" : null,
+				assignmentMode,
+				session?.user?.id ?? null,
+				now,
+			],
+		);
+		for (const person of uniqueAssignees) {
+			// project_id je NUTNÝ — sync bucket assignments je per projekt; bez něj se řádek nikdy
+			// nesyncne (kolegům se přiřazení nezobrazí, po resyncu zmizí i autorovi).
 			await powerSync.execute(
-				"INSERT INTO assignments (id, task_id, user_id, created_at) VALUES (uuid(), ?, ?, ?)",
-				[taskId, person.id, now],
+				"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
+				[taskId, projId, person.id, now],
 			);
 		}
 		setRaw("");

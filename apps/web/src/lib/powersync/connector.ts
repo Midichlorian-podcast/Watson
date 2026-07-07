@@ -1,13 +1,22 @@
 import {
 	type AbstractPowerSyncDatabase,
-	type CrudEntry,
 	type PowerSyncBackendConnector,
 	UpdateType,
 } from "@powersync/web";
 import { API_URL } from "../api";
 
-/** Postgres chyby (constraint/permission) → zahodit op, ať neblokuje frontu. */
-const FATAL = [/^22\d\d\d$/, /^23\d\d\d$/, /^42501$/, /^4\d\d$/];
+/**
+ * Které HTTP stavy jsou TRVALÉ (op zahodit) vs. PŘECHODNÉ (znovu zkusit).
+ * Trvalé = server op nikdy nepřijme: 400 (neplatná data/constraint), 403 (nemáš právo → rollback UX),
+ * 409 (konflikt), 422 (validace).
+ * Přechodné (NEzahazovat, jinak ztráta offline dat): 401 (vypršelá session → re-auth), 408 (timeout),
+ * 429 (rate limit), 5xx (výpadek serveru), síťová chyba. Ty se musí zkusit znovu.
+ */
+const PERMANENT_STATUS = new Set([400, 403, 409, 422]);
+function isPermanent(code?: string): boolean {
+	const n = Number(code);
+	return Number.isFinite(n) && PERMANENT_STATUS.has(n);
+}
 
 export class WatsonConnector implements PowerSyncBackendConnector {
 	/** Token + endpoint sync služby z našeho backendu (vyžaduje session cookie). */
@@ -28,17 +37,20 @@ export class WatsonConnector implements PowerSyncBackendConnector {
 		const tx = await database.getNextCrudTransaction();
 		if (!tx) return;
 
-		let last: CrudEntry | null = null;
-		try {
-			for (const op of tx.crud) {
-				last = op;
-				const method =
-					op.op === UpdateType.PUT
-						? "PUT"
-						: op.op === UpdateType.PATCH
-							? "PATCH"
-							: "DELETE";
-				const res = await fetch(`${API_URL}/api/sync/write`, {
+		// Každou op řešíme samostatně: TRVALE odmítnutou přeskočíme (a upozorníme), ale ve smyčce
+		// pokračujeme — jinak by jedna vadná op zahodila i ostatní NEODESLANÉ zápisy z téže
+		// transakce (ztráta dat). PŘECHODNÁ chyba (401/408/429/5xx/síť) → throw → PowerSync
+		// zopakuje CELOU transakci (PUT/PATCH/DELETE jsou idempotentní, takže re-send je bezpečný).
+		for (const op of tx.crud) {
+			const method =
+				op.op === UpdateType.PUT
+					? "PUT"
+					: op.op === UpdateType.PATCH
+						? "PATCH"
+						: "DELETE";
+			let res: Response;
+			try {
+				res = await fetch(`${API_URL}/api/sync/write`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					credentials: "include",
@@ -49,31 +61,31 @@ export class WatsonConnector implements PowerSyncBackendConnector {
 						data: op.opData,
 					}),
 				});
-				if (!res.ok) {
-					const e = new Error(`write HTTP ${res.status}`) as Error & {
-						code?: string;
-					};
-					e.code = String(res.status);
-					throw e;
-				}
+			} catch (netErr) {
+				throw netErr; // síťová chyba = přechodná → retry celé transakce
 			}
-			await tx.complete();
-		} catch (ex) {
-			const code = (ex as { code?: string }).code;
-			if (code && FATAL.some((r) => r.test(code))) {
-				console.error("[powersync] zahozuji nevratnou operaci", last, ex);
+			if (res.ok) continue;
+			const code = String(res.status);
+			if (isPermanent(code)) {
+				console.error("[powersync] zahozuji nevratnou operaci", op, code);
 				// S3 — op se zahodí (další sync vrátí lokální optimistickou změnu); upozorni uživatele.
 				if (typeof window !== "undefined") {
 					window.dispatchEvent(
 						new CustomEvent("watson:write-rejected", {
-							detail: { table: last?.table, op: last?.op, code },
+							detail: { table: op.table, op: op.op, code },
 						}),
 					);
 				}
-				await tx.complete();
+				// pokračuj dalšími op (tuhle jen přeskočíme)
 			} else {
-				throw ex; // dočasná chyba → PowerSync zkusí znovu
+				// Přechodná (401 vypršelá session, 408/429, 5xx) → NEZAHAZUJ, zkus znovu.
+				const e = new Error(`write HTTP ${res.status}`) as Error & {
+					code?: string;
+				};
+				e.code = code;
+				throw e;
 			}
 		}
+		await tx.complete();
 	}
 }

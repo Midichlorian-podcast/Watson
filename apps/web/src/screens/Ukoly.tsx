@@ -3,7 +3,7 @@ import { Link, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "../components/Board";
-import { Calendar } from "../components/Calendar";
+import { Calendar } from "../components/CalendarLazy";
 import { TaskItem } from "../components/TaskItem";
 import {
 	DEFAULT_TOOLBAR,
@@ -47,8 +47,11 @@ export function Ukoly() {
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
 	const flowSteps = useFlowSteps();
 
+	// Výkon: bez „Dokončené" filtruj hotové rovnou v SQL (méně řádků přes WASM bridge na každou změnu).
 	const { data: allTasks } = usePsQuery<TaskRow>(
-		"SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date",
+		tb.showDone
+			? "SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date"
+			: "SELECT * FROM tasks WHERE completed_at IS NULL ORDER BY priority, due_date IS NULL, due_date",
 	);
 
 	const scoped = useMemo(() => {
@@ -122,6 +125,26 @@ export function Ukoly() {
 		setNavIds(shown.map((tk) => tk.id));
 	}, [shown, setNavIds]);
 	const kbSel = useKbNav(shown, view === "list");
+
+	// Výkon: „Úkoly" je jediná obrazovka renderující VŠECHNY otevřené úkoly najednou. Nad prahem
+	// vykreslíme jen prvních CAP řádků (napříč skupinami) + patičku „zobrazit vše" — brání desítkám
+	// tisíc DOM uzlů. (Plná virtualizace je follow-up; seskupení + kbNav zůstávají zachované.)
+	const CAP = 400;
+	const [showAllRows, setShowAllRows] = useState(false);
+	const capped = !showAllRows && shown.length > CAP;
+	const shownCapped = capped ? shown.slice(0, CAP) : shown;
+	const groupsCapped = useMemo(() => {
+		if (!capped) return groups;
+		let budget = CAP;
+		const out: typeof groups = [];
+		for (const g of groups) {
+			if (budget <= 0) break;
+			const list = g.list.slice(0, budget);
+			budget -= list.length;
+			out.push({ ...g, list });
+		}
+		return out;
+	}, [groups, capped]);
 
 	return (
 		<div
@@ -206,7 +229,7 @@ export function Ukoly() {
 						))}
 					{projektId ? (
 						<ul>
-							{shown.map((tk) => (
+							{shownCapped.map((tk) => (
 								<KbRow key={tk.id} selected={kbSel === tk.id}>
 									<TaskItem
 										task={tk}
@@ -217,7 +240,7 @@ export function Ukoly() {
 							))}
 						</ul>
 					) : (
-						groups.map(({ pid, list, total }) => (
+						groupsCapped.map(({ pid, list, total }) => (
 							<section key={pid}>
 								<div
 									className="flex items-center gap-2.5"
@@ -249,6 +272,16 @@ export function Ukoly() {
 								</ul>
 							</section>
 						))
+					)}
+					{capped && (
+						<button
+							type="button"
+							onClick={() => setShowAllRows(true)}
+							className="mt-4 w-full rounded-[9px] border border-line border-dashed py-3 text-center font-display font-semibold text-ink-3 hover:text-brass-text"
+							style={{ fontSize: 12.5 }}
+						>
+							{t("toolbar.showAllCapped", { shown: CAP, total: shown.length })}
+						</button>
 					)}
 				</>
 			)}

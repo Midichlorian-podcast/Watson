@@ -1,5 +1,5 @@
 import { Outlet } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { SyncGate } from "../components/Loading";
 import { ProjectDetailPanel } from "../components/ProjectDetailPanel";
 import { TaskDetailPanel } from "../components/TaskDetailPanel";
@@ -57,7 +57,9 @@ export function AppLayout() {
 														style={isMobile ? { paddingBottom: 58 } : undefined}
 													>
 														<SyncGate>
-															<Outlet />
+															<Suspense fallback={null}>
+																<Outlet />
+															</Suspense>
 														</SyncGate>
 													</main>
 												</div>

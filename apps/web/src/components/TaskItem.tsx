@@ -99,7 +99,7 @@ export function TaskItem({
 				avatars={meta.avatars}
 				dormant={flow?.state === "dormant" || flow?.state === "waiting"}
 				done={Boolean(task.completed_at)}
-				onToggle={() => void toggleTask(task)}
+				onToggle={() => void toggleTask(task, myId)}
 				onOpen={() => open(task.id)}
 			/>
 		</li>

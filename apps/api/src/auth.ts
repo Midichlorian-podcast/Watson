@@ -25,7 +25,14 @@ import { magicLink, twoFactor } from "better-auth/plugins";
 import { env, googleEnabled } from "./env";
 
 const DEV_SECRET = "watson-dev-secret-change-me-in-prod-0000000000000000";
+// Fail-closed v produkci: bez silného secretu se session podpisují slabým dev klíčem → v prod
+// odmítni start. V dev jen upozorni.
 if (!env.authSecret) {
+	if (process.env.NODE_ENV === "production") {
+		throw new Error(
+			"[watson-api] BETTER_AUTH_SECRET musí být nastaven v produkci (fail-closed).",
+		);
+	}
 	console.warn(
 		"[watson-api] BETTER_AUTH_SECRET není nastaven — používám DEV secret. " +
 			"Pro produkci doplň silný secret do .env.",

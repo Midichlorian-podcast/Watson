@@ -140,7 +140,9 @@ function CalCheck({
 	return (
 		<button
 			type="button"
-			aria-label={done ? "Označit jako nehotové" : "Dokončit"}
+			aria-label={i18n.t(
+				done ? "detail.ariaMarkUndone" : "detail.ariaComplete",
+			)}
 			onClick={(e) => {
 				e.stopPropagation();
 				void toggleTask(tk); // virtuální výskyt → per-výskyt override (tasks.ts)
@@ -982,7 +984,7 @@ function WeekColumns({
 											e.dataTransfer.setData("text/plain", tk.id)
 										}
 										onClick={() => onOpen(tk)}
-										title={`${tk.name ?? ""} · ${sm != null ? `${fmtMin(sm)}–${fmtMin(endMin(tk))}` : "celý den"}`}
+										title={`${tk.name ?? ""} · ${sm != null ? `${fmtMin(sm)}–${fmtMin(endMin(tk))}` : t("calendar.allDay")}`}
 										className="relative cursor-grab rounded-[7px] bg-card"
 										style={{
 											borderLeft: `3px solid ${done ? "var(--w-line)" : borderColorOf(tk)}`,
@@ -1632,7 +1634,7 @@ function TimeGrid({
 									const done = Boolean(tk.completed_at);
 									const daysN = tk.days ?? 1;
 									// pás = jen celodenní vícedenní → počet dní (časované jdou do mřížky)
-									const rangeLabel = `${daysN} ${t("today.daysUnit")}`;
+									const rangeLabel = t("today.daysCount", { count: daysN });
 									return (
 										// biome-ignore lint/a11y/useKeyWithClickEvents: kalendářní pruh, klik = detail
 										<div

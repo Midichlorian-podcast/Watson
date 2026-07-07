@@ -32,15 +32,25 @@ export function taskOnTime(t: GoalTaskLite): boolean {
 	return (dayOf(t.completed_at) ?? "") <= due;
 }
 
+/** Minimální typ i18next překladače (bez závislosti goals.ts na react-i18next). */
+export type GoalTranslate = (
+	key: string,
+	opts?: Record<string, unknown>,
+) => string;
+
 export function goalProgress(
 	metric: string,
 	tasks: GoalTaskLite[],
 	target: number,
 	/** Jen pro metric=project: průměrné % dokončení propojených projektů (vážené počtem úkolů). */
 	projectPct?: { pct: number; count: number },
+	/** i18n překladač — label/sub se lokalizují (bez něj český fallback). */
+	t?: GoalTranslate,
 ): GoalProgress {
 	const total = tasks.length;
-	const done = tasks.filter((t) => t.completed_at).length;
+	const done = tasks.filter((task) => task.completed_at).length;
+	const tr = (key: string, cz: string, opts?: Record<string, unknown>) =>
+		t ? t(key, opts) : cz;
 
 	if (metric === "project") {
 		const real = projectPct?.pct ?? 0;
@@ -50,8 +60,8 @@ export function goalProgress(
 			real,
 			target: tgt,
 			met: real >= tgt,
-			label: `${real} % projektu`,
-			sub: `cíl ${tgt} %`,
+			label: tr("goals.progLabelProject", `${real} % projektu`, { real }),
+			sub: tr("goals.progSubTarget", `cíl ${tgt} %`, { tgt }),
 			matchCount: projectPct?.count ?? 0,
 		};
 	}
@@ -62,8 +72,13 @@ export function goalProgress(
 			real: done,
 			target: tgt,
 			met: done >= tgt,
-			label: `${done} / ${tgt} hotových`,
-			sub: `${total} úkolů v hledáčku`,
+			label: tr("goals.progLabelCount", `${done} / ${tgt} hotových`, {
+				done,
+				tgt,
+			}),
+			sub: tr("goals.progSubMatched", `${total} úkolů v hledáčku`, {
+				count: total,
+			}),
 			matchCount: total,
 		};
 	}
@@ -76,8 +91,11 @@ export function goalProgress(
 			real,
 			target: tgt,
 			met: done > 0 && real >= tgt,
-			label: `${real} % včas`,
-			sub: `${onT} z ${done} úkolů včas`,
+			label: tr("goals.progLabelOntime", `${real} % včas`, { real }),
+			sub: tr("goals.progSubOntime", `${onT} z ${done} úkolů včas`, {
+				onT,
+				done,
+			}),
 			matchCount: total,
 		};
 	}
@@ -89,8 +107,11 @@ export function goalProgress(
 		real,
 		target: tgt,
 		met: total > 0 && real >= tgt,
-		label: `${done} / ${total} hotovo`,
-		sub: `${real} % dokončeno`,
+		label: tr("goals.progLabelCompletion", `${done} / ${total} hotovo`, {
+			done,
+			total,
+		}),
+		sub: tr("goals.progSubCompletion", `${real} % dokončeno`, { real }),
 		matchCount: total,
 	};
 }

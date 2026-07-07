@@ -91,7 +91,38 @@ export const occLabel = (iso: string) => {
  * Virtuální výskyt (`id@ISO`) → jen per-výskyt výjimka. Opakovaný base úkol → posun řady
  * na další výskyt (prototyp toggleDone, ř. 2482) s respektem ke konci opakování.
  */
-export async function toggleTask(task: TaskRow) {
+/**
+ * R9 — dopočet status_id při přepnutí done (Board sloupce). done=true → is_done status,
+ * done=false z „Hotovo" → první ne-done status; jinak status nechat.
+ */
+async function resolveStatusForDone(
+	taskId: string,
+	done: boolean,
+	currentStatusId: string | null,
+): Promise<string | null> {
+	const sts = await powerSync.getAll<{
+		id: string;
+		is_done: number | null;
+		position: number | null;
+	}>(
+		`SELECT s.id, s.is_done, s.position FROM statuses s
+     JOIN tasks t ON t.project_id = s.project_id WHERE t.id = ? ORDER BY s.position`,
+		[taskId],
+	);
+	const doneStatus = sts.find((s) => s.is_done)?.id ?? null;
+	const firstStatus = sts.find((s) => !s.is_done)?.id ?? sts[0]?.id ?? null;
+	return done
+		? (doneStatus ?? currentStatusId)
+		: currentStatusId === doneStatus
+			? firstStatus
+			: currentStatusId;
+}
+
+/**
+ * Přepnutí dokončení úkolu. `actorId` = přihlášený uživatel (nutné pro R2 shared_all, kde hlavní
+ * checkbox přepíná JEN účast aktéra a `tasks.completed_at` je ODVOZENÉ až odškrtnou všichni).
+ */
+export async function toggleTask(task: TaskRow, actorId?: string) {
 	// Výskyt řady → přepnout done výjimky, řadu nechat být.
 	const occ = parseOccId(task.id);
 	if (occ) {
@@ -101,6 +132,59 @@ export async function toggleTask(task: TaskRow) {
 		});
 		return;
 	}
+
+	// R2 — shared_all: „každý zvlášť". Hlavní checkbox přepíná POUZE mou účast (assignments);
+	// úkol je hotový, až když jsou hotoví VŠICHNI přiřazení. Jediný člen tak nedokončí úkol všem
+	// a naopak — když odškrtnou všichni, úkol se odvozeně dokončí. (K1)
+	if (task.assignment_mode === "shared_all" && actorId) {
+		const asg = await powerSync.getAll<{
+			id: string;
+			user_id: string | null;
+			completed_at: string | null;
+		}>(
+			"SELECT id, user_id, completed_at FROM assignments WHERE task_id = ?",
+			[task.id],
+		);
+		const mine = asg.find((a) => a.user_id === actorId);
+		if (asg.length >= 2 && mine) {
+			const nowMineDone = !mine.completed_at;
+			const myTs = nowMineDone ? new Date().toISOString() : null;
+			const allDone = asg.every((a) =>
+				a.id === mine.id ? nowMineDone : !!a.completed_at,
+			);
+			const prevTaskDone = task.completed_at;
+			const prevStatus = task.status_id;
+			const newTaskDone = allDone ? new Date().toISOString() : null;
+			const nextStatus = await resolveStatusForDone(
+				task.id,
+				allDone,
+				task.status_id,
+			);
+			const apply = async (
+				myVal: string | null,
+				taskDone: string | null,
+				st: string | null,
+			) => {
+				await powerSync.execute(
+					"UPDATE assignments SET completed_at = ? WHERE id = ?",
+					[myVal, mine.id],
+				);
+				await powerSync.execute(
+					"UPDATE tasks SET completed_at = ?, status_id = ? WHERE id = ?",
+					[taskDone, st, task.id],
+				);
+			};
+			await apply(myTs, newTaskDone, nextStatus);
+			pushUndo({
+				undo: () => apply(mine.completed_at, prevTaskDone, prevStatus),
+				redo: () => apply(myTs, newTaskDone, nextStatus),
+			});
+			// Postup posune jen při skutečné změně hotovosti úkolu jako celku.
+			if (allDone !== !!prevTaskDone) await advanceChainForTask(task.id, allDone);
+			return;
+		}
+	}
+
 	const nowDone = !task.completed_at;
 	const kind = recurrenceKind(task.recurrence_rule);
 	const due = task.due_date?.slice(0, 10);
@@ -172,22 +256,11 @@ export async function toggleTask(task: TaskRow) {
 		}
 	}
 	// R9: zaškrtnutí ⇄ stav „Hotovo" — synchronizovat i status sloupec (prototyp toggleDone).
-	const sts = await powerSync.getAll<{
-		id: string;
-		is_done: number | null;
-		position: number | null;
-	}>(
-		`SELECT s.id, s.is_done, s.position FROM statuses s
-     JOIN tasks t ON t.project_id = s.project_id WHERE t.id = ? ORDER BY s.position`,
-		[task.id],
+	const nextStatus = await resolveStatusForDone(
+		task.id,
+		nowDone,
+		task.status_id,
 	);
-	const doneStatus = sts.find((s) => s.is_done)?.id ?? null;
-	const firstStatus = sts.find((s) => !s.is_done)?.id ?? sts[0]?.id ?? null;
-	const nextStatus = nowDone
-		? (doneStatus ?? task.status_id)
-		: task.status_id === doneStatus
-			? firstStatus
-			: task.status_id;
 	const prevDone = task.completed_at;
 	const prevStatus = task.status_id;
 	const newDone = nowDone ? new Date().toISOString() : null;
@@ -259,7 +332,10 @@ export function deadlineLabel(deadlineRaw: string | null) {
  * dnes s časem = „09:00–10:30" (konec = start + trvání), jiné dny s časem = „zítra · 13:00",
  * vícedenní = „N dní", datum v příštím týdnu = „{den} · příští týden".
  */
-export function rowDue(task: TaskRow, t: (k: string) => string) {
+export function rowDue(
+	task: TaskRow,
+	t: (k: string, o?: Record<string, unknown>) => string,
+) {
 	const dueRaw = task.due_date;
 	if (!dueRaw) return undefined;
 	const d = dueRaw.slice(0, 10);
@@ -275,7 +351,7 @@ export function rowDue(task: TaskRow, t: (k: string) => string) {
 		};
 	if (days > 1)
 		return {
-			label: `${time ? `${time} · ` : ""}${days} ${t("today.daysUnit")}`,
+			label: `${time ? `${time} · ` : ""}${t("today.daysCount", { count: days })}`,
 			overdue: false,
 		};
 	if (d === tdy) {

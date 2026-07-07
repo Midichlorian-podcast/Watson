@@ -181,6 +181,62 @@ export async function advanceChainForTask(
 	await syncChainState(me.chain_id);
 }
 
+/**
+ * Idempotentní OPRAVA stavu postupu z jediného zdroje pravdy = `tasks.completed_at`.
+ * Volá se při otevření detailu postupu. Napravuje drift ze souběžných offline změn (dva aktivní
+ * kroky, done úkol s active krokem, postup „zaseklý" bez aktivního kroku): krok je `done` právě
+ * když je jeho úkol hotový; `skipped` se zachovává; první neuzavřený krok s uzavřenými předchozími
+ * = `active` (+ souvislý with_previous běh), zbytek `dormant`. NEmodifikuje úkoly (jen step_state).
+ * Deterministické → dva klienti dopočítají STEJNÝ stav (konvergence přes LWW).
+ */
+export async function repairChain(chainId: string): Promise<void> {
+	const steps = await powerSync.getAll<ChainStepLite & { completed: number }>(
+		`SELECT cs.id, cs.chain_id, cs.task_id, cs.position, cs.gate, cs.step_state,
+            (t.completed_at IS NOT NULL) AS completed
+     FROM chain_steps cs LEFT JOIN tasks t ON t.id = cs.task_id
+     WHERE cs.chain_id = ? ORDER BY cs.position`,
+		[chainId],
+	);
+	if (steps.length === 0) return;
+	const desired = new Map<string, string>();
+	const closed = (s: ChainStepLite & { completed: number }) =>
+		s.step_state === "skipped" || desired.get(s.id) === "done";
+	for (const s of steps) {
+		if (s.step_state === "skipped") desired.set(s.id, "skipped");
+		else if (s.completed) desired.set(s.id, "done");
+	}
+	let activated = false;
+	for (let i = 0; i < steps.length; i++) {
+		const s = steps[i];
+		if (!s || desired.get(s.id) === "done" || s.step_state === "skipped")
+			continue;
+		const priorClosed = steps.slice(0, i).every((p) => closed(p));
+		if (priorClosed && !activated) {
+			desired.set(s.id, "active");
+			activated = true;
+			for (let j = i + 1; j < steps.length; j++) {
+				const st = steps[j];
+				if (!st || st.gate !== "with_previous" || closed(st)) break;
+				desired.set(st.id, "active");
+			}
+		}
+	}
+	for (const s of steps) if (!desired.has(s.id)) desired.set(s.id, "dormant");
+	const changes = steps.filter((s) => desired.get(s.id) !== s.step_state);
+	if (changes.length > 0) {
+		await powerSync.writeTransaction(async (tx) => {
+			for (const s of changes) {
+				const ns = desired.get(s.id) ?? "dormant";
+				await tx.execute(
+					"UPDATE chain_steps SET step_state = ?, activated_at = ? WHERE id = ?",
+					[ns, ns === "active" ? new Date().toISOString() : null, s.id],
+				);
+			}
+		});
+	}
+	await syncChainState(chainId);
+}
+
 /** Ruční aktivace dormant kroku (gate manual) — jen když jsou předchozí uzavřené. */
 export async function activateStepManually(step: ChainStepLite): Promise<void> {
 	if (!step.chain_id) return;

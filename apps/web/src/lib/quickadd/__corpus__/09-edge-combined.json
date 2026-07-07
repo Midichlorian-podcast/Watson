@@ -110,11 +110,11 @@
 	{
 		"input": "každou středu a každý pátek porada",
 		"expected": {
-			"name": "a porada",
+			"name": "a každý pátek porada",
 			"due": "2026-07-01",
 			"recurrence": { "kind": "weekly", "weekday": 3, "label": "Každou středu" }
 		},
-		"why": "Dva dny v opakování: parseRecurrence smyčka WD bere PRVNÍ matchnutý den v pořadí tabulky (pondělí..neděle). 'středu' (d=3) je v WD před 'pátek' (d=5)→wd=středa, weekly, start weekdayDate(3,0)=2026-07-01. 'pátek' se jako den NEzpracuje (jen první wd). RECVOCAB ale vyřízne 'každou'+'středu'+'každý'+'pátek'→zbude 'a porada'. Doloženo simulací."
+		"why": "Dva dny v opakování, ale engine modeluje JEN JEDEN weekday: parseRecurrence bere PRVNÍ 'každ' (kSpan='každou') a PRVNÍ den dle pořadí WD_RECUR — 'středu' (d=3) je před 'pátek' → weekly weekday3, start=weekdayDate(3,0)=2026-07-01→due. Konzumují se jen 'každou'+'středu' (#13). Druhé 'každý pátek' NENÍ spotřebováno (jiný výskyt 'každ' i druhý, nezpracovaný den) → zůstává v názvu → name 'a každý pátek porada'. Přesná konzumace (#13) — na rozdíl od dřívějšího globálního stripu — druhý výskyt nemaže."
 	},
 	{
 		"input": "Schůzka pozítří v 9:00 p1 #Obchod 45 min @Tomáš",
@@ -161,7 +161,7 @@
 	{
 		"input": "každého 31. v měsíci #Web inventura v 23:00 @Jana",
 		"expected": {
-			"name": "31. inventura",
+			"name": "inventura",
 			"due": "2026-06-30",
 			"startMin": 1380,
 			"recurrence": {
@@ -171,16 +171,16 @@
 			},
 			"personQueries": ["Jana"]
 		},
-		"why": "Monthly-day clamp + čas + projekt + osoba. §4a 'v 23:00'→23*60=1380 (time nastaveno §4, ale dateKind ZŮSTANE undefined). §10 '#Web'≠'Web redesign'→projectId undefined (cut). §11 C '31.' (negative lookahead, za tečkou není číslo)→day=31, label '31. v měsíci', start=nextMonthDayISO(31): 31 není<25→červen, Math.min(31,30)=30→2026-06-30. §8 nastaví dateKind=custom z startISO (čas due nezměnil)→due 2026-06-30. §14 @Jana→['Jana']. '31.' číselný token NEvyříznut (RECVOCAB ho nemá)→name '31. inventura'. 'v měsíci' vyříznuto."
+		"why": "Monthly-day clamp + čas + projekt + osoba. §4a 'v 23:00'→startMin=23*60=1380. §10 '#Web'≠'Web redesign'→projectId undefined (token cut). §11 C '31.' (negative lookahead, za tečkou není číslo)→day=31, label '31. v měsíci', start=nextMonthDayISO(31): 31 není<25→červen, Math.min(31,30)=30→2026-06-30→due. §14 @Jana→['Jana']. Konzumace (#13): '31.'+'každého'+'v měsíci' vyříznuty podle indexu → name 'inventura'."
 	},
 	{
 		"input": "úterý v úterý každé úterý",
 		"expected": {
-			"name": "v",
+			"name": "v úterý úterý",
 			"due": "2026-06-30",
 			"recurrence": { "kind": "weekly", "weekday": 2, "label": "Každé úterý" }
 		},
-		"why": "'úterý' jako holý den vs '@každé úterý' opakování: parseRecurrence vidí 'každé úterý'→§11 B weekly weekday2, start=weekdayDate(2,0)=2026-06-30→due (rec truthy, §9 holý den se NEspustí). RECVOCAB ('[úu]ter\\p{L}*' + 'každ\\p{L}*') vyřízne VŠECHNY výskyty 'úterý' i 'každé'. Zbude jen předložka 'v'→name 'v'. Demonstruje 'středa' vs 'každou středu' princip (opakování vyhrává a sebere i holé výskyty)."
+		"why": "Holý den vs opakování 'každé úterý': parseRecurrence najde 'každé' (kSpan) + PRVNÍ 'úterý' (wdSpan) → weekly weekday2, start=weekdayDate(2,0)=2026-06-30→due (rec truthy → §8 holý den se NEspustí). Konzumace (#13) vyřízne podle indexu JEN tyto dva rozsahy — první 'úterý' a 'každé'. Zbylé dva výskyty ('v úterý' + poslední 'úterý') NEjsou spotřebovány → name 'v úterý úterý'. Demonstruje přesnou konzumaci: opakování sebere jen svůj match, ne všechny stejně znějící výskyty."
 	},
 	{
 		"input": "Schůzka 1.5 h v 14:00",

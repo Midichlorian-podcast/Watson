@@ -18,7 +18,7 @@ import { WorkspaceChips } from "../components/WorkspaceChips";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useFlowSteps } from "../lib/flowSteps";
-import { inboxProjectIds, isInboxTask } from "../lib/inbox";
+import { inboxProjectIds, isInboxTask, pickInboxId } from "../lib/inbox";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
 import { expandOccurrences, parseRecurrenceRule } from "../lib/occurrences";
@@ -33,7 +33,13 @@ import { useWorkspace } from "../lib/workspace";
 
 type Member = { id: string; name: string };
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Lokální „dnešek" (ne UTC!) — jinak mezi půlnocí a ~02:00 v ČR spadne na včerejšek a úkoly
+// s dnešním termínem zmizí z Dnes (nespadnou ani do „Zpožděné", ani do „Dnes"). Sjednoceno s lib/tasks.
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const todayISO = () => {
+	const d = new Date();
+	return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
 const dayOf = (x: TaskRow) => (x.due_date ? x.due_date.slice(0, 10) : null);
 const plusDays = (iso: string, n: number) => {
 	const d = new Date(`${iso}T00:00:00`);
@@ -56,18 +62,22 @@ export function Today() {
 		() => new Map(projects.map((p) => [p.id, p] as const)),
 		[projects],
 	);
-	const inboxId = projects[0]?.id;
 
-	const { data: tasks } = usePsQuery<TaskRow>(
-		"SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date, created_at DESC",
-	);
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
+	// Výkon: v běžném případě (bez „Dokončené") filtruj hotové rovnou v SQL — méně řádků materializuje
+	// se přes WASM bridge při KAŽDÉ změně tabulky. Zapnutí „Dokončené" se re-subscribne na plný dotaz.
+	const { data: tasks } = usePsQuery<TaskRow>(
+		tb.showDone
+			? "SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date, created_at DESC"
+			: "SELECT * FROM tasks WHERE completed_at IS NULL ORDER BY priority, due_date IS NULL, due_date, created_at DESC",
+	);
 	const [wsFilter, setWsFilter] = useState<string | null>(null);
 	const { q: searchQ } = useListSearch();
 	const flowSteps = useFlowSteps();
 	const navigate = useNavigate();
 	const userId = session?.user?.id;
 	const { activeWs } = useWorkspace();
+	const inboxId = useMemo(() => pickInboxId(projects, activeWs), [projects, activeWs]);
 	const { data: allAsg } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
@@ -221,14 +231,16 @@ export function Today() {
 		const moved = g.overdue.map((tk) => ({ id: tk.id, prev: tk.due_date }));
 		const apply =
 			(to: (m: { id: string; prev: string | null }) => string | null) =>
-			async () => {
-				for (const m of moved) {
-					await powerSync.execute(
-						"UPDATE tasks SET due_date = ? WHERE id = ?",
-						[to(m), m.id],
-					);
-				}
-			};
+			() =>
+				// Lokální atomicita: hromadné přeplánování zpožděných v jedné transakci.
+				powerSync.writeTransaction(async (tx) => {
+					for (const m of moved) {
+						await tx.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [
+							to(m),
+							m.id,
+						]);
+					}
+				});
 		await apply(() => target)();
 		pushUndo({ undo: apply((m) => m.prev), redo: apply(() => target) });
 	}
