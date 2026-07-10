@@ -22,6 +22,7 @@ export const MAIN_NAV: NavItem[] = [
 	},
 	{ to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks", count: true },
 	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
+	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists", count: true },
 	{ to: "/cile", icon: "cile", labelKey: "nav.goals" },
 	{ to: "/reporty", icon: "reporty", labelKey: "nav.reports" },
 	{ to: "/postupy", icon: "postup", labelKey: "nav.flows" },

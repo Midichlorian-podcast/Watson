@@ -114,6 +114,10 @@ export function Sidebar({
 		"SELECT task_id FROM assignments WHERE user_id = ?",
 		[userId ?? ""],
 	);
+	// Seznamy — badge = aktivní (nearchivované) checklisty (prototyp navCount.seznamy).
+	const { data: activeLists } = usePsQuery<{ id: string }>(
+		"SELECT id FROM lists WHERE archived = 0 OR archived IS NULL",
+	);
 
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs, setActiveWs, isCollapsed, toggleCollapse } = useWorkspace();
@@ -170,8 +174,9 @@ export function Sidebar({
 			"/oblibene/p1": visible.filter((t) => t.priority === 1).length,
 			// Jen skutečně přiřazené (prototyp ř. 3150 — ne autor).
 			"/oblibene/me": visible.filter((t) => assigned.has(t.id)).length,
+			"/seznamy": (activeLists ?? []).length,
 		};
-	}, [openTasks, myAssignments, projects, userId]);
+	}, [openTasks, myAssignments, projects, userId, activeLists]);
 
 	const isActive = (to: string) =>
 		to === "/" ? path === "/" : path.startsWith(to);

@@ -254,6 +254,58 @@ const goal_milestones = new Table(
 	{ indexes: { by_goal: ["goal_id"] } },
 );
 
+// Seznamy — checklisty na akce (handoff 2026-07-10; šablona → instance).
+const lists = new Table(
+	{
+		workspace_id: column.text,
+		project_id: column.text,
+		template_id: column.text,
+		name: column.text,
+		/** „datum a místo akce" — volný text. */
+		event: column.text,
+		archived: column.integer,
+		created_by: column.text,
+		created_at: column.text,
+	},
+	{ indexes: { by_workspace: ["workspace_id"] } },
+);
+const list_sections = new Table(
+	{
+		list_id: column.text,
+		workspace_id: column.text,
+		name: column.text,
+		position: column.integer,
+		created_at: column.text,
+	},
+	{ indexes: { by_list: ["list_id"] } },
+);
+const list_items = new Table(
+	{
+		list_id: column.text,
+		section_id: column.text,
+		workspace_id: column.text,
+		text: column.text,
+		qty: column.text,
+		who_id: column.text,
+		done: column.integer,
+		position: column.integer,
+		created_at: column.text,
+	},
+	{ indexes: { by_list: ["list_id"], by_section: ["section_id"] } },
+);
+const list_templates = new Table(
+	{
+		workspace_id: column.text,
+		name: column.text,
+		description: column.text,
+		/** JSON text: [{ name, items: ["text|qty", …] }] (formát prototypu). */
+		sections: column.text,
+		created_by: column.text,
+		created_at: column.text,
+	},
+	{ indexes: { by_workspace: ["workspace_id"] } },
+);
+
 export const AppSchema = new Schema({
 	tasks,
 	projects,
@@ -271,6 +323,10 @@ export const AppSchema = new Schema({
 	goals,
 	goal_projects,
 	goal_milestones,
+	lists,
+	list_sections,
+	list_items,
+	list_templates,
 });
 
 export type Database = (typeof AppSchema)["types"];
@@ -289,3 +345,7 @@ export type ChainStepRow = Database["chain_steps"];
 export type GoalRow = Database["goals"];
 export type GoalProjectRow = Database["goal_projects"];
 export type GoalMilestoneRow = Database["goal_milestones"];
+export type ListRow = Database["lists"];
+export type ListSectionRow = Database["list_sections"];
+export type ListItemRow = Database["list_items"];
+export type ListTemplateRow = Database["list_templates"];

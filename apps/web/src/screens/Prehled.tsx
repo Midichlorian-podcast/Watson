@@ -6,7 +6,7 @@ import { useFlowSteps } from "../lib/flowSteps";
 import { initials } from "../lib/format";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import { useAllMembers, useFlowsOverview, useGoalsOverview } from "../lib/overview";
-import type { TaskRow } from "../lib/powersync/AppSchema";
+import type { ListItemRow, ListRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
@@ -90,6 +90,13 @@ export function Prehled() {
 	const [firm, setFirm] = useState<string | null>(null);
 
 	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks");
+	// Seznamy (checklisty) — karta „Nejbližší akce" (prototyp akce, ř. 3863).
+	const { data: allLists } = usePsQuery<ListRow>(
+		"SELECT * FROM lists WHERE archived = 0 OR archived IS NULL ORDER BY created_at DESC",
+	);
+	const { data: allListItems } = usePsQuery<ListItemRow>(
+		"SELECT id, list_id, done FROM list_items",
+	);
 
 	const projById = useMemo(
 		() => new Map(projects.map((p) => [p.id, p])),
@@ -171,6 +178,29 @@ export function Prehled() {
 			)
 			.slice(0, 2);
 
+		// Nejbližší akce — aktivní seznamy s progresem (prototyp akce, slice 3)
+		const itemsByList = new Map<string, { total: number; done: number }>();
+		for (const it of allListItems ?? []) {
+			if (!it.list_id) continue;
+			const s = itemsByList.get(it.list_id) ?? { total: 0, done: 0 };
+			s.total++;
+			if (it.done) s.done++;
+			itemsByList.set(it.list_id, s);
+		}
+		const akce = (allLists ?? [])
+			.filter((l) => !firm || l.workspace_id === firm)
+			.slice(0, 3)
+			.map((l) => {
+				const s = itemsByList.get(l.id) ?? { total: 0, done: 0 };
+				return {
+					id: l.id,
+					name: l.name ?? "",
+					event: l.event ?? "",
+					pct: s.total ? Math.round((s.done / s.total) * 100) : 0,
+					label: `${s.done}/${s.total}`,
+				};
+			});
+
 		// Dění týmu: dnes dokončené (kdo = první přiřazený, fallback tvůrce) + aktivní kroky postupů
 		const feed: { key: string; ini: string; txt: string; t: string }[] = [];
 		const hhmm = (iso: string | null) =>
@@ -232,6 +262,9 @@ export function Prehled() {
 					elapsed: r0.elapsed,
 				}),
 			);
+		const a0 = akce[0];
+		if (parts.length < 3 && a0)
+			parts.push(t("prehled.synChecklist", { name: a0.name, pct: a0.pct }));
 
 		return {
 			ovd,
@@ -239,11 +272,14 @@ export function Prehled() {
 			dnesMore,
 			risk,
 			stuck,
+			akce,
 			feed: feed.slice(0, 5),
 			syn: parts.slice(0, 3).join(" ") || t("prehled.synCalm"),
 		};
 	}, [
 		allTasks,
+		allLists,
+		allListItems,
 		projects,
 		projById,
 		flowSteps,
@@ -463,6 +499,65 @@ export function Prehled() {
 						</OvRow>
 					))}
 				</div>
+
+				{/* Nejbližší akce (Seznamy) */}
+				{view.akce.length > 0 && (
+					<div className={cardCls} style={cardStyle}>
+						<CardHead
+							title={t("prehled.cardEvents")}
+							footLabel={t("prehled.allLists")}
+							onFoot={() => void navigate({ to: "/seznamy", search: {} })}
+						/>
+						{view.akce.map((l) => (
+							<OvRow
+								key={l.id}
+								column
+								onClick={() =>
+									void navigate({ to: "/seznamy", search: { seznam: l.id } })
+								}
+							>
+								<div className="flex w-full items-center" style={{ gap: 8 }}>
+									<span
+										className="min-w-0 flex-1 truncate font-display font-semibold text-ink"
+										style={{ fontSize: 13 }}
+									>
+										{l.name}
+									</span>
+									<span
+										className="shrink-0 font-mono text-ink-3"
+										style={{ fontSize: 11 }}
+									>
+										{l.event}
+									</span>
+								</div>
+								<div
+									className="flex items-center"
+									style={{ gap: 9, marginTop: 7 }}
+								>
+									<div
+										className="flex-1 overflow-hidden rounded-full bg-panel-2"
+										style={{ height: 5 }}
+									>
+										<div
+											style={{
+												height: "100%",
+												width: `${Math.min(100, l.pct)}%`,
+												background: l.pct >= 100 ? "#2e9c6e" : "var(--w-brass)",
+												borderRadius: "inherit",
+											}}
+										/>
+									</div>
+									<span
+										className="shrink-0 font-mono text-ink-2"
+										style={{ fontSize: 11 }}
+									>
+										{l.label}
+									</span>
+								</div>
+							</OvRow>
+						))}
+					</div>
+				)}
 
 				{/* Cíle v ohrožení */}
 				{view.risk.length > 0 && (

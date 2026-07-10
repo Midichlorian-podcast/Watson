@@ -338,6 +338,55 @@ const TABLES: Record<string, TableDef> = {
 		hasUpdatedAt: false,
 		workspaceVia: { kind: "column", col: "workspace_id" },
 	},
+	// Seznamy — checklisty na akce (handoff 2026-07-10): instance + sekce + položky + šablony.
+	lists: {
+		columns: {
+			workspace_id: "text",
+			project_id: "text",
+			template_id: "text",
+			name: "text",
+			event: "text",
+			archived: "bool",
+		},
+		hasUpdatedAt: true,
+		creatorCol: "created_by",
+		workspaceVia: { kind: "column", col: "workspace_id" },
+	},
+	list_sections: {
+		columns: {
+			list_id: "text",
+			workspace_id: "text",
+			name: "text",
+			position: "int",
+		},
+		hasUpdatedAt: false,
+		workspaceVia: { kind: "column", col: "workspace_id" },
+	},
+	list_items: {
+		columns: {
+			list_id: "text",
+			section_id: "text",
+			workspace_id: "text",
+			text: "text",
+			qty: "text",
+			who_id: "text",
+			done: "bool",
+			position: "int",
+		},
+		hasUpdatedAt: false,
+		workspaceVia: { kind: "column", col: "workspace_id" },
+	},
+	list_templates: {
+		columns: {
+			workspace_id: "text",
+			name: "text",
+			description: "text",
+			sections: "text",
+		},
+		hasUpdatedAt: true,
+		creatorCol: "created_by",
+		workspaceVia: { kind: "column", col: "workspace_id" },
+	},
 };
 
 type Op = "PUT" | "PATCH" | "DELETE";

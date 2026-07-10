@@ -18,6 +18,7 @@ const TABS: {
 /** Sekce dostupné přes „Více" (na mobilu není sidebar → jinak nedosažitelné). */
 const MORE: { to: string; icon: IconName; labelKey: string }[] = [
 	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
+	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
 	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox" },
 	{ to: "/cile", icon: "cile", labelKey: "nav.goals" },

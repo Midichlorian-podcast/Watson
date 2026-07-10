@@ -77,3 +77,16 @@ bucket_definitions:
       - SELECT id, goal_id, workspace_id, label, done, position, created_at
         FROM goal_milestones
         WHERE workspace_id = bucket.workspace_id
+      # Seznamy — checklisty na akce (handoff 2026-07-10).
+      - SELECT id, workspace_id, project_id, template_id, name, event, archived, created_by, created_at
+        FROM lists
+        WHERE workspace_id = bucket.workspace_id
+      - SELECT id, list_id, workspace_id, name, position, created_at
+        FROM list_sections
+        WHERE workspace_id = bucket.workspace_id
+      - SELECT id, list_id, section_id, workspace_id, text, qty, who_id, done, position, created_at
+        FROM list_items
+        WHERE workspace_id = bucket.workspace_id
+      - SELECT id, workspace_id, name, description, sections, created_by, created_at
+        FROM list_templates
+        WHERE workspace_id = bucket.workspace_id

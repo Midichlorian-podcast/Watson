@@ -213,4 +213,14 @@ FROM (VALUES
 JOIN projects p ON p.name = g.pname
 WHERE NOT EXISTS (SELECT 1 FROM goal_projects gp WHERE gp.goal_id = g.gid::uuid AND gp.project_id = p.id);
 
+
+-- ── Seznamy — vestavěné šablony checklistů (handoff 2026-07-10, prototyp LIST_TEMPLATES) ──
+INSERT INTO list_templates (id, workspace_id, name, description, sections)
+SELECT t.tid::uuid, w.id, t.name, t.descr, t.sections
+FROM (VALUES
+ ('e5000000-0000-4000-8000-000000000001','MČR — balení a nakládka','Kostýmy · rekvizity · technika · bus','[{"name": "Před akcí", "items": ["Potvrdit soupisku a startovní listinu", "Vytisknout harmonogram pro trenéry", "Zkontrolovat kostýmy podle soupisky|12× kostým", "Nabít kamery a powerbanky", "Vyzvednout lékárničku"]}, {"name": "Nakládka do busu", "items": ["Kostýmy v obalech|12×", "Rekvizity — bedna A|2× bedna", "Zvuková aparatura + kabely", "Kufr první pomoci", "Občerstvení a voda|4× karton"]}, {"name": "Na místě", "items": ["Registrace výpravy u pořadatele", "Prostorové zkoušky — rozpis", "Předat hudbu zvukaři|USB + záloha"]}, {"name": "Po akci", "items": ["Spočítat a naložit vše zpět", "Vrátit klíče od šaten", "Poděkování rodičům + výběr fotek"]}]'), ('e5000000-0000-4000-8000-000000000002','Show — produkce','Sál · technika · propagace · večer','[{"name": "Měsíc předem", "items": ["Rezervovat sál a šatny", "Objednat techniku (zvuk, světla)", "Plakáty do tisku|60×", "Spustit prodej vstupenek"]}, {"name": "Týden předem", "items": ["Generálka s choreografiemi", "Rozpis rolí na večer (kdo co)", "Připomínka rodičům e-mailem", "Objednat květiny pro trenéry|8×"]}, {"name": "V den akce", "items": ["Stavba pódia a zvuková zkouška", "Pokladna a vstupenky|2× kasa", "Šatny — cedule a dozor", "Moderátor — podklady"]}, {"name": "Po akci", "items": ["Úklid sálu a vrácení techniky", "Vyúčtování vstupného", "Poděkování + fotky na web"]}]'), ('e5000000-0000-4000-8000-000000000003','Náborová akce','Stánek · letáky · přihlášky','[{"name": "Před akcí", "items": ["Letáky a QR na přihlášku|200×", "Roll-up a stánek", "Rozpis trenérů na směny", "Ukázková choreografie — hudba"]}, {"name": "Na místě", "items": ["Stánek postavený do 8:30", "Tablet s přihláškou|2×", "Drobnosti pro děti|1× krabice", "Sběr kontaktů — sešit"]}, {"name": "Po akci", "items": ["Přepsat kontakty do systému", "Poslat uvítací e-mail", "Vyhodnotit počet přihlášek"]}]'), ('e5000000-0000-4000-8000-000000000004','Soustředění','Ubytování · strava · program','[{"name": "Měsíc předem", "items": ["Potvrdit ubytování a stravu", "Vybrat zálohy od rodičů", "Zdravotní prohlášení|38×", "Program po dnech"]}, {"name": "Před odjezdem", "items": ["Seznam účastníků + kontakty", "Lékárnička a pojištění", "Naložit aparaturu a pomůcky", "Pokyny rodičům (sraz, návrat)"]}, {"name": "Po návratu", "items": ["Vyúčtování záloh", "Fotky a video rodičům", "Zpětná vazba trenérů"]}]')
+) AS t(tid, name, descr, sections)
+JOIN workspaces w ON w.name = 'TJ Sokol Praha'
+ON CONFLICT (id) DO NOTHING;
+
 COMMIT;
