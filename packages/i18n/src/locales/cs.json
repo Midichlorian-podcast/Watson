@@ -4,6 +4,7 @@
 		"tagline": "Drží tvou práci pohromadě a ukáže, co řešit."
 	},
 	"nav": {
+		"overview": "Přehled",
 		"search": "Hledat",
 		"inbox": "Schránka",
 		"today": "Dnes",
@@ -642,6 +643,35 @@
 		"roleProdukce": "Produkce",
 		"roleUcetni": "Účetní",
 		"roleVedouci": "Vedoucí"
+	},
+	"prehled": {
+		"chipAll": "Vše",
+		"synTitle": "Watsonova syntéza dne",
+		"synCalm": "Dnes je klid — žádné požáry. Dobrý den na hlubokou práci.",
+		"synOverdue_one": "1 věc je po termínu — nejdřív „{{name}}“.",
+		"synOverdue_few": "{{count}} věci jsou po termínu — nejdřív „{{name}}“.",
+		"synOverdue_other": "{{count}} věcí je po termínu — nejdřív „{{name}}“.",
+		"synRisk": "Cíl „{{name}}“ zaostává — {{label}}, uplynulo {{elapsed}} % času.",
+		"actReschedule": "Přeplánovat zpožděné",
+		"actGoals": "Cíle",
+		"rescheduledToast_one": "1 zpožděný úkol přeplánován na dnes",
+		"rescheduledToast_few": "{{count}} zpožděné úkoly přeplánovány na dnes",
+		"rescheduledToast_other": "{{count}} zpožděných úkolů přeplánováno na dnes",
+		"cardToday": "Dnes",
+		"moreInToday": "+ dalších {{count}} v Dnes",
+		"openToday": "Otevřít Dnes",
+		"emptyToday": "Vše odbaveno. Klidné ráno.",
+		"cardRisk": "Cíle v ohrožení",
+		"openGoals": "Otevřít cíle",
+		"elapsed": "uplynulo {{elapsed}} % času",
+		"cardStuck": "Vázne v postupech",
+		"openFlows": "Postupy",
+		"stuckNow": "Na řadě: {{name}} · {{who}}",
+		"cardFeed": "Dění týmu",
+		"openReports": "Reporty",
+		"emptyFeed": "Zatím ticho — žádné dnešní dokončené úkoly.",
+		"feedDone": "{{who}} dokončil(a) „{{name}}“",
+		"feedFlow": "Postup „{{flow}}“ je teď na: {{name}}"
 	},
 	"bulk": {
 		"selected": "{{count}} vybráno",

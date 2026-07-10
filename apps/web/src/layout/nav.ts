@@ -10,6 +10,7 @@ export interface NavItem {
 
 /** Hlavní navigace (dle Claude Design handoffu). Počty (badge): Schránka/Dnes/Nadcházející/Úkoly. */
 export const MAIN_NAV: NavItem[] = [
+	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
 	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox", count: true },
 	{ to: "/", icon: "dnes", labelKey: "nav.today", count: true },

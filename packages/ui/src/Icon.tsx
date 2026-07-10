@@ -5,6 +5,8 @@ import type { CSSProperties } from "react";
  * (design/handoff_watson/WatsonApp.dc.html). Brass akcent `#c68a3e` u vybraných.
  */
 export const ICONS = {
+	prehled:
+		'<path d="M4.2 10.8 L12 4.2 L19.8 10.8"/><path d="M6.3 9.4 V19.4 H17.7 V9.4"/><circle cx="12" cy="14.4" r="1.5" fill="#c68a3e" stroke="none"/>',
 	projekt: '<path d="M3 6.5 H9.2 L11.4 9 H21 V19 H3 Z"/>',
 	termin:
 		'<rect x="4" y="5.2" width="16" height="14.8" rx="1.4"/><line x1="4" y1="9.6" x2="20" y2="9.6"/><line x1="8.4" y1="3.2" x2="8.4" y2="6.6"/><line x1="15.6" y1="3.2" x2="15.6" y2="6.6"/><circle cx="9" cy="14" r="1.35" fill="#c68a3e" stroke="none"/>',

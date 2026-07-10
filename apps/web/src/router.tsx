@@ -19,6 +19,7 @@ const named = <K extends string>(
 
 const Cile = named(() => import("./screens/Cile"), "Cile");
 const Hledat = named(() => import("./screens/Hledat"), "Hledat");
+const Prehled = named(() => import("./screens/Prehled"), "Prehled");
 const Nastaveni = named(() => import("./screens/Nastaveni"), "Nastaveni");
 const Postupy = named(() => import("./screens/Postupy"), "Postupy");
 const Projekty = named(() => import("./screens/Projekty"), "Projekty");
@@ -30,6 +31,11 @@ const Oblibene = lazy(() =>
 
 const rootRoute = createRootRoute({ component: AppLayout });
 
+const prehledRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/prehled",
+	component: Prehled,
+});
 const indexRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/",
@@ -110,6 +116,7 @@ const oblMeRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
+	prehledRoute,
 	indexRoute,
 	ukolyRoute,
 	nadchRoute,

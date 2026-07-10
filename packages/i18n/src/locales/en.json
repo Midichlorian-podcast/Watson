@@ -4,6 +4,7 @@
 		"tagline": "Keeps your work together and shows what matters."
 	},
 	"nav": {
+		"overview": "Overview",
 		"search": "Search",
 		"inbox": "Inbox",
 		"today": "Today",
@@ -636,6 +637,33 @@
 		"roleProdukce": "Production",
 		"roleUcetni": "Accountant",
 		"roleVedouci": "Manager"
+	},
+	"prehled": {
+		"chipAll": "All",
+		"synTitle": "Watson's daily synthesis",
+		"synCalm": "All calm today — no fires. A good day for deep work.",
+		"synOverdue_one": "1 item is overdue — start with “{{name}}”.",
+		"synOverdue_other": "{{count}} items are overdue — start with “{{name}}”.",
+		"synRisk": "Goal “{{name}}” is falling behind — {{label}}, {{elapsed}} % of time elapsed.",
+		"actReschedule": "Reschedule overdue",
+		"actGoals": "Goals",
+		"rescheduledToast_one": "1 overdue task rescheduled to today",
+		"rescheduledToast_other": "{{count}} overdue tasks rescheduled to today",
+		"cardToday": "Today",
+		"moreInToday": "+ {{count}} more in Today",
+		"openToday": "Open Today",
+		"emptyToday": "All clear. A calm morning.",
+		"cardRisk": "Goals at risk",
+		"openGoals": "Open goals",
+		"elapsed": "{{elapsed}} % of time elapsed",
+		"cardStuck": "Stuck in flows",
+		"openFlows": "Flows",
+		"stuckNow": "Up next: {{name}} · {{who}}",
+		"cardFeed": "Team activity",
+		"openReports": "Reports",
+		"emptyFeed": "Quiet so far — no tasks finished today.",
+		"feedDone": "{{who}} finished “{{name}}”",
+		"feedFlow": "Flow “{{flow}}” is now at: {{name}}"
 	},
 	"bulk": {
 		"selected": "{{count}} selected",
