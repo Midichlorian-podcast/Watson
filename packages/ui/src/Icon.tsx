@@ -9,6 +9,8 @@ export const ICONS = {
 		'<path d="M4.2 10.8 L12 4.2 L19.8 10.8"/><path d="M6.3 9.4 V19.4 H17.7 V9.4"/><circle cx="12" cy="14.4" r="1.5" fill="#c68a3e" stroke="none"/>',
 	seznamy:
 		'<rect x="4" y="4" width="6.4" height="6.4" rx="1.2"/><path d="M5.7 7.2 L7 8.5 L9.3 5.8" stroke="#c68a3e"/><rect x="4" y="13.6" width="6.4" height="6.4" rx="1.2"/><line x1="13.6" y1="7.2" x2="20" y2="7.2"/><line x1="13.6" y1="16.8" x2="20" y2="16.8"/>',
+	velin:
+		'<path d="M12 3.6 L19.4 6.4 V11.4 C19.4 15.9 16.4 19.3 12 20.6 C7.6 19.3 4.6 15.9 4.6 11.4 V6.4 Z"/><circle cx="12" cy="11.4" r="2.1" fill="#c68a3e" stroke="none"/>',
 	projekt: '<path d="M3 6.5 H9.2 L11.4 9 H21 V19 H3 Z"/>',
 	termin:
 		'<rect x="4" y="5.2" width="16" height="14.8" rx="1.4"/><line x1="4" y1="9.6" x2="20" y2="9.6"/><line x1="8.4" y1="3.2" x2="8.4" y2="6.6"/><line x1="15.6" y1="3.2" x2="15.6" y2="6.6"/><circle cx="9" cy="14" r="1.35" fill="#c68a3e" stroke="none"/>',

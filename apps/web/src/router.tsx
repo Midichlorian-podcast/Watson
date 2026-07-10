@@ -21,6 +21,7 @@ const Cile = named(() => import("./screens/Cile"), "Cile");
 const Hledat = named(() => import("./screens/Hledat"), "Hledat");
 const Prehled = named(() => import("./screens/Prehled"), "Prehled");
 const Seznamy = named(() => import("./screens/Seznamy"), "Seznamy");
+const Velin = named(() => import("./screens/Velin"), "Velin");
 const Nastaveni = named(() => import("./screens/Nastaveni"), "Nastaveni");
 const Postupy = named(() => import("./screens/Postupy"), "Postupy");
 const Projekty = named(() => import("./screens/Projekty"), "Projekty");
@@ -44,6 +45,11 @@ const seznamyRoute = createRoute({
 	validateSearch: (s: Record<string, unknown>): { seznam?: string } => ({
 		seznam: typeof s.seznam === "string" ? s.seznam : undefined,
 	}),
+});
+const velinRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/velin",
+	component: Velin,
 });
 const indexRoute = createRoute({
 	getParentRoute: () => rootRoute,
@@ -127,6 +133,7 @@ const oblMeRoute = createRoute({
 const routeTree = rootRoute.addChildren([
 	prehledRoute,
 	seznamyRoute,
+	velinRoute,
 	indexRoute,
 	ukolyRoute,
 	nadchRoute,

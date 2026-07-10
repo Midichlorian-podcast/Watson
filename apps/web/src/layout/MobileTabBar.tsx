@@ -3,6 +3,7 @@ import { useTranslation } from "@watson/i18n";
 import { Icon, type IconName } from "@watson/ui";
 import { useState } from "react";
 import { useWatson } from "../lib/watson";
+import { isLeadership, useWorkspaces } from "../lib/workspace";
 
 const TABS: {
 	to: "/" | "/ukoly" | "/nadchazejici" | "/projekty";
@@ -35,8 +36,17 @@ export function MobileTabBar() {
 	const { toggleWatson } = useWatson();
 	const path = useRouterState({ select: (s) => s.location.pathname });
 	const [moreOpen, setMoreOpen] = useState(false);
+	const { data: workspaces } = useWorkspaces();
 
-	const moreActive = MORE.some((m) => path.startsWith(m.to));
+	// Velín jen pro vedení (Vlastník/Admin) — stejný gating jako sidebar.
+	const more = isLeadership(workspaces)
+		? [
+				...MORE.slice(0, 2),
+				{ to: "/velin", icon: "velin" as IconName, labelKey: "nav.velin" },
+				...MORE.slice(2),
+			]
+		: MORE;
+	const moreActive = more.some((m) => path.startsWith(m.to));
 
 	return (
 		<>
@@ -58,7 +68,7 @@ export function MobileTabBar() {
 							style={{ width: 40, height: 4, background: "var(--w-line)" }}
 						/>
 						<nav className="grid grid-cols-2 gap-1 p-3">
-							{MORE.map((m) => {
+							{more.map((m) => {
 								const active = path.startsWith(m.to);
 								return (
 									<Link

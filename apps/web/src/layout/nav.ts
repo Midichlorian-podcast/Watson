@@ -40,4 +40,16 @@ export const SETTINGS_NAV: NavItem = {
 	labelKey: "nav.settings",
 };
 
-export const ALL_NAV: NavItem[] = [...MAIN_NAV, ...FAV_NAV, SETTINGS_NAV];
+/** Velín — v sidebaru podmíněně (jen vedení), v ALL_NAV kvůli titulku headeru. */
+export const VELIN_NAV: NavItem = {
+	to: "/velin",
+	icon: "velin",
+	labelKey: "nav.velin",
+};
+
+export const ALL_NAV: NavItem[] = [
+	...MAIN_NAV,
+	...FAV_NAV,
+	SETTINGS_NAV,
+	VELIN_NAV,
+];

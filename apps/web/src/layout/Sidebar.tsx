@@ -7,8 +7,8 @@ import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
 import { useProjects } from "../lib/projects";
-import { useWorkspace, useWorkspaces } from "../lib/workspace";
-import { MAIN_NAV, type NavItem } from "./nav";
+import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
+import { MAIN_NAV, type NavItem, VELIN_NAV } from "./nav";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const todayIso = () => {
@@ -39,18 +39,23 @@ function NavRow({
 	collapsed,
 	count,
 	marker,
+	badge,
+	title,
 }: {
 	item: NavItem;
 	active: boolean;
 	collapsed: boolean;
 	count?: number;
 	marker?: CSSProperties;
+	/** Textový odznak místo počtu (Velín → „VEDENÍ", prototyp ř. 255). */
+	badge?: string;
+	title?: string;
 }) {
 	const { t } = useTranslation();
 	return (
 		<Link
 			to={item.to}
-			title={collapsed ? t(item.labelKey) : undefined}
+			title={title ?? (collapsed ? t(item.labelKey) : undefined)}
 			className={`font-display ${
 				active
 					? "text-[var(--w-sidebar-ink)]"
@@ -75,6 +80,22 @@ function NavRow({
 				<span style={{ flex: 1, minWidth: 0 }}>{t(item.labelKey)}</span>
 			)}
 			{!collapsed && count != null && <span style={BADGE}>{count}</span>}
+			{!collapsed && badge && (
+				<span
+					className="font-mono"
+					style={{
+						fontSize: 9,
+						letterSpacing: ".05em",
+						color: "var(--w-brass)",
+						border: "1px solid var(--w-brass)",
+						borderRadius: 5,
+						padding: "0 4px",
+						opacity: 0.85,
+					}}
+				>
+					{badge}
+				</span>
+			)}
 		</Link>
 	);
 }
@@ -316,6 +337,16 @@ export function Sidebar({
 						count={item.count ? counts[item.to] : undefined}
 					/>
 				))}
+				{/* Velín — jen pro vedení (Vlastník/Admin), odznak VEDENÍ (prototyp ř. 251–257) */}
+				{isLeadership(workspaces) && (
+					<NavRow
+						item={VELIN_NAV}
+						active={isActive("/velin")}
+						collapsed={collapsed}
+						badge={t("velin.badge")}
+						title={t("velin.navTitle")}
+					/>
+				)}
 
 				{!collapsed && (
 					<>

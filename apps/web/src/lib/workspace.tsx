@@ -13,6 +13,18 @@ export interface Workspace {
 	name: string;
 	isPersonal: boolean;
 	color: string | null;
+	/** Moje role v prostoru (memberships.role) — server ji posílá odjakživa. */
+	role?: string;
+}
+
+/**
+ * Vedení = admin/manager aspoň jednoho TÝMOVÉHO prostoru (K2: Vlastník/Admin;
+ * osobní prostory se nepočítají — tam je adminem každý). Gating Velína.
+ */
+export function isLeadership(workspaces: Workspace[] | undefined): boolean {
+	return (workspaces ?? []).some(
+		(w) => !w.isPersonal && (w.role === "admin" || w.role === "manager"),
+	);
 }
 
 /** Prostory přihlášeného uživatele (přes membership). Sdílený react-query klíč. */
