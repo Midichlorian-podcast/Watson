@@ -48,6 +48,12 @@ export interface TaskCardProps {
 	/** Kontext vrstveného podúkolu — „↑ {rodič}" v podřádku. */
 	parentName?: string;
 	done?: boolean;
+	/**
+	 * Výběr do hromadných akcí (prototyp data-selbox, ř. 550): čtvercový checkbox
+	 * vlevo — skrytý, objeví se na hover řádku nebo když je vybráno; shift-klik = rozsah.
+	 * Vybraný řádek má podklad brass-soft (data-selrow).
+	 */
+	sel?: { on: boolean; onToggle: (shiftKey: boolean) => void; title?: string };
 	/** aria pro zaškrtávátko když je hotovo (klik → odškrtne). Lokalizuje konzument. */
 	doneLabel?: string;
 	/** aria pro zaškrtávátko když není hotovo (klik → dokončí). Lokalizuje konzument. */
@@ -94,17 +100,21 @@ export function TaskCard({
 	dormant,
 	parentName,
 	done,
+	sel,
 	// packages/ui nemá i18n → EN neutrální fallback; konzument (TaskItem) předává lokalizované.
 	doneLabel = "Mark as not done",
 	undoneLabel = "Complete",
 	onToggle,
 	onOpen,
 }: TaskCardProps) {
-	const rowBg: CSSProperties["background"] = dormant
-		? "repeating-linear-gradient(135deg, transparent, transparent 7px, var(--w-panel-2) 7px, var(--w-panel-2) 8px)"
-		: !done && color
-			? tint(color)
-			: undefined;
+	// Vybraný řádek (hromadné akce) přebíjí tint barvy — prototyp data-selrow (CSS ř. 111).
+	const rowBg: CSSProperties["background"] = sel?.on
+		? "var(--w-brass-soft)"
+		: dormant
+			? "repeating-linear-gradient(135deg, transparent, transparent 7px, var(--w-panel-2) 7px, var(--w-panel-2) 8px)"
+			: !done && color
+				? tint(color)
+				: undefined;
 	const hasSub =
 		!!projectName ||
 		!!parentName ||
@@ -119,7 +129,7 @@ export function TaskCard({
 		<div
 			onClick={onOpen}
 			className={cn(
-				"flex cursor-pointer items-center rounded-[10px] border border-line transition-shadow",
+				"group flex cursor-pointer items-center rounded-[10px] border border-line transition-shadow",
 				!rowBg && "hover:bg-panel-2",
 				"hover:shadow-md",
 			)}
@@ -135,6 +145,37 @@ export function TaskCard({
 				background: rowBg,
 			}}
 		>
+			{/* výběr do hromadných akcí (prototyp data-selbox, ř. 550–551) */}
+			{sel && (
+				<button
+					type="button"
+					onClick={(e) => {
+						e.stopPropagation();
+						sel.onToggle(e.shiftKey);
+					}}
+					title={sel.title}
+					aria-pressed={sel.on}
+					className={cn(
+						"grid shrink-0 place-items-center border-[1.6px] border-line transition-opacity hover:border-brass",
+						sel.on
+							? "opacity-100"
+							: "opacity-0 focus-visible:opacity-100 group-hover:opacity-100",
+					)}
+					style={{ width: 16, height: 16, borderRadius: 5, marginRight: -4 }}
+				>
+					{sel.on && (
+						<span
+							style={{
+								width: 9,
+								height: 9,
+								borderRadius: 2.5,
+								background: "var(--w-brass)",
+							}}
+						/>
+					)}
+				</button>
+			)}
+
 			{/* zaškrtávátko */}
 			<button
 				type="button"

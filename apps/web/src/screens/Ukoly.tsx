@@ -120,11 +120,17 @@ export function Ukoly() {
 	}, [search.ukol, open]);
 
 	// Pořadí pro ↑/↓ v detailu (prototyp _navIds) + kbsel navigace (sdílený hook).
+	// VIZUÁLNÍ pořadí = po skupinách projektů (ne flat sort) — jinak shift-rozsah
+	// hromadného výběru a j/k skáčou mimo viditelné pořadí řádků.
+	const visualList = useMemo(
+		() => (projektId ? shown : groups.flatMap((g) => g.list)),
+		[projektId, shown, groups],
+	);
 	const { setNavIds } = useTaskDetail();
 	useEffect(() => {
-		setNavIds(shown.map((tk) => tk.id));
-	}, [shown, setNavIds]);
-	const kbSel = useKbNav(shown, view === "list");
+		setNavIds(visualList.map((tk) => tk.id));
+	}, [visualList, setNavIds]);
+	const kbSel = useKbNav(visualList, view === "list");
 
 	// Výkon: „Úkoly" je jediná obrazovka renderující VŠECHNY otevřené úkoly najednou. Nad prahem
 	// vykreslíme jen prvních CAP řádků (napříč skupinami) + patičku „zobrazit vše" — brání desítkám

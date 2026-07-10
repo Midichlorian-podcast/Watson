@@ -637,6 +637,28 @@
 		"roleUcetni": "Accountant",
 		"roleVedouci": "Manager"
 	},
+	"bulk": {
+		"selected": "{{count}} selected",
+		"selTitle": "Select for bulk actions · shift-click = range",
+		"done": "Done",
+		"term": "Due",
+		"project": "Project",
+		"priority": "Priority",
+		"assign": "Assign",
+		"delete": "Delete",
+		"clearTitle": "Clear selection",
+		"today": "Today",
+		"tomorrow": "Tomorrow",
+		"nextWeek": "Next week",
+		"doneToast_one": "1 task done",
+		"doneToast_other": "{{count}} tasks done",
+		"deletedToast_one": "1 task deleted — ⌘Z undoes",
+		"deletedToast_other": "{{count}} tasks deleted — ⌘Z undoes",
+		"movedToast": "Due · {{day}} ({{count}})",
+		"projToast": "Project · {{name}} ({{count}})",
+		"priToast": "Priority · P{{p}} ({{count}})",
+		"assignToast": "Assigned · {{name}} ({{count}})"
+	},
 	"toolbar": {
 		"filter": "Filter",
 		"sort": "Sort",

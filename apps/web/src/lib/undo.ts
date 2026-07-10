@@ -85,6 +85,31 @@ const reinsert = async (db: Exec, table: string, rows: Row[]) => {
 	}
 };
 
+/**
+ * Rodiče PŘED dětmi (parent_id FK): server aplikuje upload op-by-op — podúkol vložený
+ * před svým rodičem by spadl na FK (400) a op se zahodí → tichá ztráta podúkolu na
+ * serveru. Snapshot ze SELECT nemá zaručené pořadí, proto topologicky seřadit.
+ */
+const parentsFirst = (rows: Row[]): Row[] => {
+	const ids = new Set(rows.map((r) => r.id as string));
+	const inserted = new Set<string>();
+	const ordered: Row[] = [];
+	let remaining = [...rows];
+	while (remaining.length) {
+		const next = remaining.filter((r) => {
+			const pid = r.parent_id as string | null | undefined;
+			return !pid || !ids.has(pid) || inserted.has(pid);
+		});
+		if (!next.length) break; // cyklus — nemělo by nastat (R1), zbytek vlož jak je
+		for (const r of next) {
+			ordered.push(r);
+			inserted.add(r.id as string);
+		}
+		remaining = remaining.filter((r) => !inserted.has(r.id as string));
+	}
+	return [...ordered, ...remaining];
+};
+
 /** Id úkolu + VŠECH potomků do hloubky (R1 = max 3 úrovně; CTE zvládne libovolnou). */
 async function descendantIds(taskId: string): Promise<string[]> {
 	const rows = await powerSync.getAll<{ id: string }>(
@@ -110,7 +135,19 @@ const CHILD_TABLES = [
  * potomků (vnuci, R1 hloubka 3) a jejich podřízených dat, DELETE, undo = re-INSERT všeho.
  */
 export async function deleteTaskWithUndo(taskId: string): Promise<void> {
-	const ids = await descendantIds(taskId);
+	return deleteTasksWithUndo([taskId]);
+}
+
+/**
+ * Hromadné smazání s JEDNÍM undo záznamem (prototyp bulkDelete, ř. 3138 — celá dávka
+ * se vrací jedním ⌘Z). Sjednocuje snapshot všech úkolů + potomků do jedné transakce.
+ */
+export async function deleteTasksWithUndo(taskIds: string[]): Promise<void> {
+	const seen = new Set<string>();
+	for (const tid of taskIds) {
+		for (const id of await descendantIds(tid)) seen.add(id);
+	}
+	const ids = [...seen];
 	if (!ids.length) return;
 	const ph = ids.map(() => "?").join(", ");
 	const tasks = await snapshotRows(
@@ -137,7 +174,7 @@ export async function deleteTaskWithUndo(taskId: string): Promise<void> {
 	pushUndo({
 		undo: () =>
 			powerSync.writeTransaction(async (tx) => {
-				await reinsert(tx, "tasks", tasks);
+				await reinsert(tx, "tasks", parentsFirst(tasks));
 				for (const table of CHILD_TABLES) {
 					await reinsert(tx, table, children[table] ?? []);
 				}

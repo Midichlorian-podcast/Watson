@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { TaskCard } from "@watson/ui";
 import { useSession } from "../lib/auth-client";
+import { useBulkSelect } from "../lib/bulkSelect";
 import type { FlowStepInfo } from "../lib/flowSteps";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useRowMeta } from "../lib/rowMeta";
@@ -35,13 +36,16 @@ export function TaskItem({
 	flow?: FlowStepInfo;
 }) {
 	const { t } = useTranslation();
-	const { open } = useTaskDetail();
+	const { open, navIds } = useTaskDetail();
 	const { metaOf } = useRowMeta();
 	const { data: session } = useSession();
 	const { data: workspaces } = useWorkspaces();
 	const navigate = useNavigate();
+	const bulk = useBulkSelect();
 	const meta = metaOf(task);
 	const myId = session?.user?.id;
+	// Virtuální výskyty (id@ISO) do hromadných akcí nepatří — mutace cílí na base řadu.
+	const selectable = !task.id.includes("@");
 	// wsdot — čtvereček barvy prostoru před názvem projektu (prototyp ř. 422 + CSS 105).
 	const resolvedWsColor =
 		wsColor ??
@@ -99,6 +103,20 @@ export function TaskItem({
 				avatars={meta.avatars}
 				dormant={flow?.state === "dormant" || flow?.state === "waiting"}
 				done={Boolean(task.completed_at)}
+				sel={
+					selectable
+						? {
+								on: bulk.isSelected(task.id),
+								onToggle: (shiftKey) =>
+									bulk.toggle(
+										task.id,
+										shiftKey,
+										navIds.filter((id) => !id.includes("@")),
+									),
+								title: t("bulk.selTitle"),
+							}
+						: undefined
+				}
 				onToggle={() => void toggleTask(task, myId)}
 				onOpen={() => open(task.id)}
 			/>

@@ -1,10 +1,12 @@
 import { Outlet } from "@tanstack/react-router";
 import { Suspense, useEffect, useState } from "react";
+import { BulkBar } from "../components/BulkBar";
 import { SyncGate } from "../components/Loading";
 import { ProjectDetailPanel } from "../components/ProjectDetailPanel";
 import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WriteRejectedToast } from "../components/WriteRejectedToast";
 import { AddTaskProvider } from "../lib/addTask";
+import { BulkSelectProvider } from "../lib/bulkSelect";
 import { KeyboardProvider } from "../lib/keyboard";
 import { ListSearchProvider } from "../lib/listSearch";
 import { ProjectDetailProvider } from "../lib/projectDetail";
@@ -39,7 +41,8 @@ export function AppLayout() {
 							<AddTaskProvider>
 								<TaskDetailProvider>
 									<ProjectDetailProvider>
-										<KeyboardProvider>
+										<BulkSelectProvider>
+											<KeyboardProvider>
 											<div
 												className="flex h-full min-h-full"
 												style={{ background: "var(--w-paper)" }}
@@ -68,8 +71,10 @@ export function AppLayout() {
 												<ActionToast />
 												<TaskDetailPanel />
 												<ProjectDetailPanel />
+												<BulkBar />
 											</div>
-										</KeyboardProvider>
+											</KeyboardProvider>
+										</BulkSelectProvider>
 									</ProjectDetailProvider>
 								</TaskDetailProvider>
 							</AddTaskProvider>
