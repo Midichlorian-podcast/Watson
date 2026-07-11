@@ -7,7 +7,7 @@ import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WriteRejectedToast } from "../components/WriteRejectedToast";
 import { AddTaskProvider } from "../lib/addTask";
 import { BulkSelectProvider } from "../lib/bulkSelect";
-import { MailProvider } from "../mail/state";
+import { MailBridgeProvider } from "../mail/bridge";
 import { KeyboardProvider } from "../lib/keyboard";
 import { ListSearchProvider } from "../lib/listSearch";
 import { ProjectDetailProvider } from "../lib/projectDetail";
@@ -46,7 +46,7 @@ export function AppLayout() {
 								<TaskDetailProvider>
 									<ProjectDetailProvider>
 										<BulkSelectProvider>
-											<MailProvider>
+											<MailBridgeProvider>
 											<KeyboardProvider>
 											<div
 												className="flex h-full min-h-full"
@@ -83,7 +83,7 @@ export function AppLayout() {
 												<BulkBar />
 											</div>
 											</KeyboardProvider>
-											</MailProvider>
+											</MailBridgeProvider>
 										</BulkSelectProvider>
 									</ProjectDetailProvider>
 								</TaskDetailProvider>

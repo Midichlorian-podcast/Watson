@@ -25,6 +25,9 @@ const tasks = new Table(
 		recurrence_basis: column.text,
 		assignment_mode: column.text,
 		status_id: column.text,
+		/** Propojení Mail ↔ úkol — chip „Z mailu" (handoff 2026-07-10). */
+		mail_th: column.text,
+		mail_label: column.text,
 		completed_at: column.text,
 		created_by: column.text,
 		created_at: column.text,

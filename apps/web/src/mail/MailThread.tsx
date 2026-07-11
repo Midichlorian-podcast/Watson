@@ -581,8 +581,8 @@ export function MailThread() {
 							</span>
 							<span style={{ width: 1, height: 20, background: "var(--line)", margin: "0 2px" }} />
 							<span
-								onClick={() => showToast("Email → úkol přijde s další várkou mailu")}
-								title="Udělej z mailu úkol — propojí se s vláknem"
+								onClick={() => m.quickTask(t.id)}
+								title="Udělej z mailu úkol — priorita a termín se předvyplní, propojí se s vláknem"
 								data-ghost
 								style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, padding: "6px 10px" }}
 							>

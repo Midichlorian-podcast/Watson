@@ -11,6 +11,7 @@ import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { todayISO } from "../lib/tasks";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
+import { useMailDigest, useOpenMailThread } from "../mail/state";
 
 /**
  * Velín — přehled pro vedení, jen role Vlastník/Admin (prototyp ř. 946–1080 +
@@ -91,6 +92,12 @@ export function Velin() {
 	const goalsAll = useGoalsOverview(t);
 	const flowsAll = useFlowsOverview();
 	const members = useAllMembers();
+	// Pošta z mail modulu (bez filtru firmy — seed světy se liší, viz state.tsx).
+	const digest = useMailDigest();
+	const openMailThread = useOpenMailThread();
+	const urgMails = (digest?.items ?? []).filter(
+		(x) => x.flag === "p1" || x.flag === "p2",
+	);
 	const [firm, setFirm] = useState<string | null>(null); // velFirm
 
 	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks");
@@ -387,10 +394,12 @@ export function Velin() {
 					{t("velin.kpiOverdue")}: <b className="font-display">{view.kOv}</b>
 				</span>
 				<span>
-					{t("velin.kpiUnread")}: <b className="font-display">–</b>
+					{t("velin.kpiUnread")}:{" "}
+					<b className="font-display">{digest ? digest.unread : "–"}</b>
 				</span>
 				<span>
-					{t("velin.kpiUrgent")}: <b className="font-display">–</b>
+					{t("velin.kpiUrgent")}:{" "}
+					<b className="font-display">{digest ? urgMails.length : "–"}</b>
 				</span>
 				<span>
 					{t("velin.kpiRisk")}: <b className="font-display">{view.kRisk}</b>
@@ -516,6 +525,53 @@ export function Velin() {
 						</Row>
 					))}
 				</div>
+
+				{/* Pošta — urgence a SLA (prototyp urg, ř. 1027–1041) */}
+				{urgMails.length > 0 && (
+					<div className={cardCls} style={cardStyle}>
+						<CardHead
+							title={t("velin.cardMail")}
+							foot={t("velin.openMail")}
+							onFoot={() => void navigate({ to: "/mail" })}
+						/>
+						{urgMails.map((mm) => (
+							<Row
+								key={mm.id}
+								onClick={() => {
+									openMailThread?.(mm.id);
+									void navigate({ to: "/mail" });
+								}}
+							>
+								<span
+									className="shrink-0 font-mono"
+									style={{
+										fontSize: 10,
+										color: "var(--w-overdue)",
+										border: "1px solid var(--w-overdue)",
+										borderRadius: 5,
+										padding: "0 5px",
+									}}
+								>
+									{mm.flag.toUpperCase()}
+								</span>
+								<div className="min-w-0 flex-1">
+									<div
+										className="truncate font-body text-ink"
+										style={{ fontSize: 12.5 }}
+									>
+										{mm.subj}
+									</div>
+									<div
+										className="font-body text-ink-3"
+										style={{ fontSize: 10.5, marginTop: 1 }}
+									>
+										{mm.from} · {mm.mbShort}
+									</div>
+								</div>
+							</Row>
+						))}
+					</div>
+				)}
 
 				{/* Cíle v riziku */}
 				{view.risky.length > 0 && (

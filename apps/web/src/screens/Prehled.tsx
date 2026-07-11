@@ -7,6 +7,7 @@ import { initials } from "../lib/format";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import { useAllMembers, useFlowsOverview, useGoalsOverview } from "../lib/overview";
 import type { ListItemRow, ListRow, TaskRow } from "../lib/powersync/AppSchema";
+import { useMailDigest, useOpenMailThread } from "../mail/state";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
@@ -86,6 +87,9 @@ export function Prehled() {
 	const goalsAll = useGoalsOverview(t);
 	const flowsAll = useFlowsOverview();
 	const members = useAllMembers();
+	// Digest pošty z mail modulu (bez filtru firmy — seed světy se liší, viz state.tsx).
+	const digest = useMailDigest();
+	const openMailThread = useOpenMailThread();
 	// ovFirm — filtr firmy (prototyp: null = Vše)
 	const [firm, setFirm] = useState<string | null>(null);
 
@@ -253,6 +257,21 @@ export function Prehled() {
 				}),
 			);
 		}
+		// urgentní vlákna v poště (prototyp: p1/p2 max 2 jména)
+		const urgM = (digest?.items ?? []).filter(
+			(x) => x.flag === "p1" || x.flag === "p2",
+		);
+		if (urgM.length) {
+			const names = urgM
+				.slice(0, 2)
+				.map((x) => `„${x.subj.length > 36 ? `${x.subj.slice(0, 34)}…` : x.subj}“`)
+				.join(", ");
+			parts.push(
+				t(urgM.length === 1 ? "prehled.synMailOne" : "prehled.synMailMany", {
+					names,
+				}),
+			);
+		}
 		const r0 = risk[0];
 		if (r0)
 			parts.push(
@@ -280,6 +299,7 @@ export function Prehled() {
 		allTasks,
 		allLists,
 		allListItems,
+		digest,
 		projects,
 		projById,
 		flowSteps,
@@ -332,6 +352,11 @@ export function Prehled() {
 					},
 				]
 			: []),
+		{
+			key: "a2",
+			label: t("prehled.actMail"),
+			onClick: () => void navigate({ to: "/mail" }),
+		},
 		...(view.risk.length
 			? [
 					{
@@ -499,6 +524,85 @@ export function Prehled() {
 						</OvRow>
 					))}
 				</div>
+
+				{/* Pošta — z digestu mail modulu (prototyp mails, ř. 741–765) */}
+				{digest && (
+					<div className={cardCls} style={cardStyle}>
+						<CardHead
+							title={t("prehled.cardMail")}
+							footLabel={
+								digest.unread > 0
+									? t("prehled.mailUnread", { count: digest.unread })
+									: t("prehled.openMail")
+							}
+							onFoot={() => void navigate({ to: "/mail" })}
+						/>
+						{digest.items.slice(0, 4).map((mm) => (
+							<OvRow
+								key={mm.id}
+								onClick={() => {
+									openMailThread?.(mm.id);
+									void navigate({ to: "/mail" });
+								}}
+							>
+								<span
+									className="flex shrink-0 items-center justify-center rounded-lg border border-line bg-panel-2 font-display font-bold text-ink-2"
+									style={{ width: 26, height: 26, fontSize: 9.5 }}
+								>
+									{mm.ini}
+								</span>
+								<div className="min-w-0 flex-1">
+									<div className="flex items-center" style={{ gap: 7 }}>
+										{mm.unread && (
+											<span
+												className="shrink-0 rounded-full"
+												style={{ width: 7, height: 7, background: "var(--w-brass)" }}
+											/>
+										)}
+										<span
+											className="truncate font-display font-semibold text-ink"
+											style={{ fontSize: 12.5 }}
+										>
+											{mm.from}
+										</span>
+										<span
+											className="shrink-0 font-mono text-ink-3"
+											style={{ fontSize: 10.5 }}
+										>
+											{mm.mbShort}
+										</span>
+									</div>
+									<div
+										className="truncate font-body text-ink-2"
+										style={{ fontSize: 12, marginTop: 1 }}
+									>
+										{mm.subj}
+									</div>
+								</div>
+								{(mm.flag === "p1" || mm.flag === "p2") && (
+									<span
+										className="shrink-0 font-mono"
+										style={{
+											fontSize: 10,
+											color: "var(--w-overdue)",
+											border: "1px solid var(--w-overdue)",
+											borderRadius: 5,
+											padding: "0 5px",
+										}}
+									>
+										{mm.flag.toUpperCase()}
+									</span>
+								)}
+								<span
+									className="shrink-0 font-mono text-ink-3"
+									style={{ fontSize: 11 }}
+								>
+									{mm.time}
+								</span>
+							</OvRow>
+						))}
+					</div>
+				)}
 
 				{/* Nejbližší akce (Seznamy) */}
 				{view.akce.length > 0 && (

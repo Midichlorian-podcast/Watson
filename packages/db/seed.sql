@@ -223,4 +223,16 @@ FROM (VALUES
 JOIN workspaces w ON w.name = 'TJ Sokol Praha'
 ON CONFLICT (id) DO NOTHING;
 
+
+-- ── Mail ↔ úkol demo pár (handoff: vlákno faktura ↔ úkol mx1, opjak ↔ mx2) ──
+INSERT INTO tasks (id, project_id, name, priority, due_date, mail_th, mail_label, created_by)
+SELECT t.tid::uuid, p.id, t.name, t.prio, CURRENT_DATE + t.due_off, t.mail_th, t.mail_label,
+       (SELECT id FROM users WHERE email = 'demo@watson.test')
+FROM (VALUES
+ ('e6000000-0000-4000-8000-000000000001','Uhradit opravnou fakturu za nájem — 42 200 Kč',2,1,'faktura','Faktura za nájem — červenec','Finance'),
+ ('e6000000-0000-4000-8000-000000000002','Doplnit rozpočet k žádosti OP JAK',1,3,'opjak','Výzva OP JAK — doplnění žádosti','Finance')
+) AS t(tid, name, prio, due_off, mail_th, mail_label, pname)
+JOIN projects p ON p.name = t.pname
+ON CONFLICT (id) DO NOTHING;
+
 COMMIT;

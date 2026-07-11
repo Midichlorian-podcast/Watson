@@ -109,6 +109,7 @@
 		"assignAnyHint": "Stačí kdokoli — jeden checkbox pro celý úkol",
 		"assignAllHint": "Každý zvlášť — {{done}}/{{total}} hotovo",
 		"reminder": "Připomenutí",
+		"fromMail": "Z mailu",
 		"reminders": "Připomínky",
 		"remBefore": "před termínem",
 		"remAt": "v",
@@ -647,6 +648,11 @@
 		"roleUcetni": "Účetní",
 		"roleVedouci": "Vedoucí"
 	},
+	"mail": {
+		"taskCreatedToast": "Úkol z mailu přidán do Schránky — termín dnes",
+		"taskCreatedOpen": "Otevřít",
+		"taskNoInbox": "Nenašel jsem inbox projekt — úkol nezaložen"
+	},
 	"velin": {
 		"badge": "VEDENÍ",
 		"navTitle": "Přehled pro vedení — vidí jen Vlastník a Admin",
@@ -712,6 +718,14 @@
 		"synOverdue_other": "{{count}} věcí je po termínu — nejdřív „{{name}}“.",
 		"synRisk": "Cíl „{{name}}“ zaostává — {{label}}, uplynulo {{elapsed}} % času.",
 		"synChecklist": "Checklist „{{name}}“ je na {{pct}} %.",
+		"synMailOne": "V poště čeká urgentní vlákno: {{names}}.",
+		"synMailMany": "V poště čekají urgentní vlákna: {{names}}.",
+		"actMail": "Otevřít poštu",
+		"cardMail": "Pošta",
+		"openMail": "Otevřít mail",
+		"mailUnread_one": "1 nepřečtená čeká v poště",
+		"mailUnread_few": "{{count}} nepřečtené čekají v poště",
+		"mailUnread_other": "{{count}} nepřečtených čeká v poště",
 		"cardEvents": "Nejbližší akce",
 		"allLists": "Všechny seznamy",
 		"actReschedule": "Přeplánovat zpožděné",

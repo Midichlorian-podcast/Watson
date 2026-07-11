@@ -1,4 +1,5 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
@@ -36,6 +37,7 @@ import {
 } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { deleteTaskWithUndo } from "../lib/undo";
+import { useOpenMailThread } from "../mail/state";
 
 type Pri = 1 | 2 | 3 | 4;
 type Member = { id: string; name: string; email: string; image: string | null };
@@ -175,6 +177,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const { metaOf } = useRowMeta();
 	const { data: session } = useSession();
 	const qc = useQueryClient();
+	const navigate = useNavigate();
+	// Chip „Z mailu" — otevře propojené vlákno v mail modulu (handoff mailTh).
+	const openMailThread = useOpenMailThread();
 
 	// Výskyt řady: virtuální id `base@ISO` → base úkol + banner + per-výskyt akce.
 	const occ = parseOccId(id);
@@ -928,6 +933,29 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								>
 									{t("detail.reminder")}
 								</span>
+							)}
+							{/* propojení Mail ↔ úkol — mosazný chip „Z mailu · … → otevřít vlákno"
+							    (handoff: úkol nese mailTh + mailLabel; screenshot 22 / archiv) */}
+							{task.mail_th && (
+								<button
+									type="button"
+									onClick={() => {
+										openMailThread?.(task.mail_th ?? "");
+										onClose();
+										void navigate({ to: "/mail" });
+									}}
+									className="cursor-pointer font-display font-semibold hover:brightness-105"
+									style={{
+										fontSize: 11.5,
+										padding: "4px 10px",
+										borderRadius: 999,
+										background: "var(--w-brass-soft)",
+										border: "1px solid var(--w-brass)",
+										color: "var(--w-brass-text)",
+									}}
+								>
+									✉ {t("detail.fromMail")} · {task.mail_label ?? ""} →
+								</button>
 							)}
 						</div>
 

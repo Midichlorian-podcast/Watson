@@ -6,17 +6,26 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "../layout/useTheme";
-import { showToast } from "../lib/toast";
 import "./mail.css";
+import { AdminScreen } from "./AdminScreen";
+import { CheatSheet } from "./CheatSheet";
+import { DeniScreen } from "./DeniScreen";
 import { MailList, useListRows } from "./MailList";
 import { MailSub } from "./MailSub";
 import { MailThread } from "./MailThread";
+import { NastaveniScreen } from "./NastaveniScreen";
+import { NewMessage } from "./NewMessage";
+import { SearchOverlay } from "./SearchOverlay";
 import { useMail } from "./state";
 
 export function MailScreen() {
 	const m = useMail();
 	const { theme } = useTheme();
 	const [drawer, setDrawer] = useState(false);
+	// overlaye: hledání (⌘K, /), Nová zpráva (C, Napsat), tahák zkratek (?)
+	const [searchOn, setSearchOn] = useState(false);
+	const [newOn, setNewOn] = useState(false);
+	const [cheatOn, setCheatOn] = useState(false);
 	const { order } = useListRows();
 	const orderRef = useRef(order);
 	orderRef.current = order;
@@ -33,7 +42,20 @@ export function MailScreen() {
 					el.tagName === "TEXTAREA" ||
 					el.isContentEditable);
 			const mail = mRef.current;
+			// ⌘K → hledání (před typing guardem, funguje i z pole; prototyp ř. 2745)
+			if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+				e.preventDefault();
+				setSearchOn((v) => !v);
+				return;
+			}
 			if (e.key === "Escape") {
+				// overlaye mají vlastní Esc (data-esc-layer) — tady jen nižší vrstvy
+				if (document.querySelector("[data-esc-layer]")) return;
+				// Esc z Dění/Administrace/Nastavení vrací na seznam
+				if (mail.scr !== "mail") {
+					mail.setScr("mail");
+					return;
+				}
 				if (Object.keys(mail.selIds).length) {
 					mail.clearSel();
 					return;
@@ -41,7 +63,11 @@ export function MailScreen() {
 				if (mail.mstep === "thread") mail.closeThread();
 				return;
 			}
+			// zkratky seznamu jen na obrazovce "mail"
+			if (mail.scr !== "mail") return;
 			if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+			// otevřený overlay = klávesy seznamu nereagují (kaskáda prototypu)
+			if (document.querySelector("[data-esc-layer]")) return;
 			const ids = orderRef.current;
 			const cur = mail.sel ? ids.indexOf(mail.sel) : -1;
 			const k = e.key.toLowerCase();
@@ -85,12 +111,15 @@ export function MailScreen() {
 					if (mail.sel) mail.toggleSel(mail.sel);
 					break;
 				case "c":
+					e.preventDefault();
+					setNewOn(true);
+					break;
 				case "/":
 					e.preventDefault();
-					showToast("Nová zpráva a hledání přijdou s další várkou mailu");
+					setSearchOn(true);
 					break;
 				case "?":
-					showToast("Tahák zkratek mailu přijde s další várkou — J/K, O, R, E, H, D, S, U, X");
+					setCheatOn(true);
 					break;
 			}
 		};
@@ -111,9 +140,29 @@ export function MailScreen() {
 				style={{ display: "flex", flex: 1, minWidth: 0, minHeight: 0 }}
 			>
 				<MailSub drawer={drawer} onCloseDrawer={() => setDrawer(false)} />
-				<MailList onOpenDrawer={() => setDrawer(true)} />
-				<MailThread />
+				{/* vnitřní obrazovky nahrazují seznam+vlákno; panel složek zůstává */}
+				{m.scr === "mail" ? (
+					<>
+						<MailList
+							onOpenDrawer={() => setDrawer(true)}
+							onSearch={() => setSearchOn(true)}
+							onCompose={() => setNewOn(true)}
+						/>
+						<MailThread />
+					</>
+				) : m.scr === "deni" ? (
+					<DeniScreen />
+				) : m.scr === "admin" ? (
+					<AdminScreen />
+				) : (
+					<NastaveniScreen />
+				)}
 			</div>
+
+			{/* overlaye modulu: hledání ⌘K, Nová zpráva, tahák zkratek */}
+			<SearchOverlay open={searchOn} onClose={() => setSearchOn(false)} />
+			<NewMessage open={newOn} onClose={() => setNewOn(false)} />
+			<CheatSheet open={cheatOn} onClose={() => setCheatOn(false)} />
 		</div>
 	);
 }

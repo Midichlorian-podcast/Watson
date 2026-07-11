@@ -87,6 +87,9 @@ export interface ChatExtra {
 
 export type MailFolder = string; // vse|pinned|odlozene|gatekeeper|osobni|f_*|d_*|<mbId>
 
+/** Vnitřní obrazovka mail modulu (prototyp state.scr, ř. 2282): seznam+vlákno | Dění | Administrace | Nastavení. */
+export type MailScr = "mail" | "deni" | "admin" | "nastaveni";
+
 interface UndoState {
 	on: boolean;
 	left: number;
@@ -98,13 +101,18 @@ interface UndoState {
 export interface MailBridge {
 	onNav?: (target: string) => void;
 	taskStates?: Record<string, { done: boolean }>;
+	/** Vazby vlákno → úkoly odvozené z reálných tasks.mail_th (bridge.tsx). */
+	taskLinks?: Record<
+		string,
+		{ n: string; owner: string; prio: string; app: string }[]
+	>;
 	onCreateTask?: (payload: {
 		id: string;
 		name: string;
 		mailTh: string;
 		mailLabel: string;
 		priority?: number;
-	}) => void;
+	}) => void | Promise<void>;
 }
 
 interface MailCtxValue {
@@ -113,6 +121,9 @@ interface MailCtxValue {
 	// stav navigace/seznamu
 	folder: MailFolder;
 	setFolder: (f: MailFolder) => void;
+	/** Aktivní obrazovka modulu (Dění / Administrace / Nastavení místo seznamu+vlákna). */
+	scr: MailScr;
+	setScr: (v: MailScr) => void;
 	fdr: string;
 	setFdr: (v: string) => void;
 	grp: string;
@@ -195,8 +206,10 @@ interface MailCtxValue {
 	allowImgs: (id: string) => void;
 	sum: boolean;
 	setSum: (v: boolean) => void;
-	// vazby na úkoly (seed taskLinks + bridge)
+	// vazby na úkoly (reálné tasks.mail_th přes bridge; seed fallback bez bridge)
 	taskLinks: Record<string, { n: string; owner: string; prio: string; app: string }[]>;
+	/** Email → úkol jedním klikem (prototyp quickTask, ř. 2594) — přes bridge.onCreateTask. */
+	quickTask: (id: string) => void;
 	bridge: MailBridge;
 	// admin/nastavení seedy (čtou je vrstvy modulu)
 	adm: typeof ADM_SEED;
@@ -244,6 +257,7 @@ export function MailProvider({
 	bridge?: MailBridge;
 }) {
 	const [folder, setFolderRaw] = useState<MailFolder>("vse");
+	const [scr, setScr] = useState<MailScr>("mail");
 	const [fdr, setFdr] = useState("dorucene");
 	const [grp, setGrp] = useState("inbox");
 	const [filters, setFilters] = useState({
@@ -284,7 +298,8 @@ export function MailProvider({
 		null,
 	);
 	const [collArmed, setCollArmed] = useState(false);
-	const [taskLinks] = useState(TASK_LINKS_SEED);
+	// Reálné vazby z tasks.mail_th (bridge); seed jen jako fallback bez aplikace.
+	const taskLinks = bridge?.taskLinks ?? TASK_LINKS_SEED;
 
 	// koncepty přežijí reload (prototyp interval 1,5 s; tady debounce 1,5 s)
 	const draftsRef = useRef(drafts);
@@ -391,6 +406,7 @@ export function MailProvider({
 
 	const setFolder = useCallback((f: MailFolder) => {
 		setFolderRaw(f);
+		setScr("mail"); // klik na složku vrací z Dění/Administrace/Nastavení do seznamu
 		setFdr("dorucene");
 		setGrp("inbox");
 		setMstep("list");
@@ -692,11 +708,36 @@ export function MailProvider({
 
 	const gkLeft = GK.filter((g) => !gkDone[g.id]).length;
 
+	/** Email → úkol jedním klikem (prototyp quickTask, ř. 2594–2610): priorita
+	 * z vlajky (p1/p2 → P1/P2, jinak P3), termín dnes, název „Odpovědět: …". */
+	const quickTask = useCallback(
+		(id: string) => {
+			const t = TH.find((x) => x.id === id);
+			if (!t || !bridge?.onCreateTask) return;
+			if ((taskLinks[id] ?? []).length) {
+				showToast("Vlákno už úkol má — stav vidíš na chipu");
+				return;
+			}
+			const o = ov[id] ?? {};
+			const flag = o.flag ?? (t.flag === "prop" ? "p2" : (t.flag ?? "none"));
+			void bridge.onCreateTask({
+				id: crypto.randomUUID(),
+				name: `Odpovědět: ${t.subj}`,
+				mailTh: t.id,
+				mailLabel: t.subj,
+				priority: flag === "p1" ? 1 : flag === "p2" ? 2 : 3,
+			});
+		},
+		[bridge, taskLinks, ov],
+	);
+
 	const value = useMemo<MailCtxValue>(
 		() => ({
 			threads: TH,
 			folder,
 			setFolder,
+			scr,
+			setScr,
 			fdr,
 			setFdr,
 			grp,
@@ -761,6 +802,7 @@ export function MailProvider({
 			sum,
 			setSum,
 			taskLinks,
+			quickTask,
 			bridge: bridge ?? {},
 			adm: ADM_SEED,
 			nast: NAST_SEED,
@@ -768,6 +810,7 @@ export function MailProvider({
 		[
 			folder,
 			setFolder,
+			scr,
 			fdr,
 			grp,
 			filters,
@@ -823,6 +866,7 @@ export function MailProvider({
 			allowImgs,
 			sum,
 			taskLinks,
+			quickTask,
 			bridge,
 		],
 	);
@@ -836,9 +880,79 @@ export function useMail(): MailCtxValue {
 	return v;
 }
 
-/** Souhrn pro zbytek aplikace (badge sidebar; Přehled/Velín v další várce). */
+/** Souhrn pro zbytek aplikace (badge sidebar). */
 export function useMailUnread(): number {
 	const v = useContext(Ctx);
 	if (!v) return 0;
 	return v.unreadStats().total;
+}
+
+export interface MailDigestItem {
+	id: string;
+	from: string;
+	ini: string;
+	subj: string;
+	mb: string;
+	mbShort: string;
+	time: string;
+	unread: boolean;
+	flag: string;
+	hasTask: boolean;
+}
+
+export interface MailDigest {
+	items: MailDigestItem[];
+	unread: number;
+}
+
+const FLAG_ORD: Record<string, number> = { p1: 0, p2: 1, p3: 2, p4: 3 };
+
+/**
+ * Digest pošty pro Přehled a Velín (prototyp _sendDigest, ř. 2575–2593):
+ * top-8 inboxových vláken řazených dle urgence/pinu/nepřečtenosti + celkový
+ * počet nepřečtených. (Bez filtru firmy — seed svět mailu je jiný než seed
+ * aplikace; v produkci mapuje schránku na firmu MBF.)
+ */
+export function useMailDigest(): MailDigest | null {
+	const v = useContext(Ctx);
+	return useMemo(() => {
+		if (!v) return null;
+		const rows = v.threads
+			.filter((t) => {
+				if (t.personal || t.sentF || t.draftF) return false;
+				const e = v.eff(t);
+				if (e.arch || e.trash || e.spam || e.snoozed || e.muted) return false;
+				return (v.ovOf(t.id).grp ?? t.grp) === "inbox" && !e.closed;
+			})
+			.sort((a, b) => {
+				const ea = v.eff(a);
+				const eb = v.eff(b);
+				return (
+					(FLAG_ORD[ea.flag] ?? 4) - (FLAG_ORD[eb.flag] ?? 4) ||
+					Number(eb.pin) - Number(ea.pin) ||
+					Number(v.unreadFor(b)) - Number(v.unreadFor(a))
+				);
+			})
+			.slice(0, 8)
+			.map((t) => ({
+				id: t.id,
+				from: t.from.n,
+				ini: t.from.ini,
+				subj: t.subj,
+				mb: t.mb ?? "osobni",
+				mbShort: t.mb ? `${t.mb}@` : "osobní",
+				time: v.ovOf(t.id).time ?? t.time,
+				unread: v.unreadFor(t),
+				flag: v.eff(t).flag,
+				hasTask: (v.taskLinks[t.id] ?? []).length > 0,
+			}));
+		return { items: rows, unread: v.unreadStats().total };
+	}, [v]);
+}
+
+/** Otevření vlákna odjinud z aplikace (chip „Z mailu" v detailu úkolu). */
+export function useOpenMailThread(): ((id: string) => void) | null {
+	const v = useContext(Ctx);
+	if (!v) return null;
+	return v.openThread;
 }

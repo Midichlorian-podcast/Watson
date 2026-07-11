@@ -69,6 +69,9 @@ export const tasks = pgTable(
 		statusId: uuid("status_id").references(() => statuses.id, {
 			onDelete: "set null",
 		}),
+		/** Propojení Mail ↔ úkol (handoff 2026-07-10): id mailového vlákna + label chipu „Z mailu". */
+		mailTh: varchar("mail_th", { length: 120 }),
+		mailLabel: varchar("mail_label", { length: 300 }),
 		createdBy: uuid("created_by").references(() => users.id, {
 			onDelete: "set null",
 		}),

@@ -142,6 +142,9 @@
 [data-menuitem]:hover{ background:var(--panel-2); }
 [data-oneclick]{ border:1px solid var(--line); background:var(--panel); color:var(--ink-2); cursor:pointer; }
 [data-oneclick]:hover{ border-color:var(--brass); color:var(--brass-text); background:var(--brass-soft); }
+/* vnitřní obrazovky (Dění / Administrace) — hover řádků a sloupců dle style-hover prototypu */
+[data-drow]:hover{ background:var(--panel-2); }
+[data-pcol]:hover{ background:var(--panel-2); }
 [data-actlbl]{ display:inline; }
 @media (max-width:1599px){ [data-actlbl]{ display:none; } }
 @media (max-width:879px){

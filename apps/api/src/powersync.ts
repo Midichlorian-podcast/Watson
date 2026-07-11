@@ -143,6 +143,8 @@ const TABLES: Record<string, TableDef> = {
 			recurrence_basis: "text",
 			assignment_mode: "text",
 			status_id: "text",
+			mail_th: "text",
+			mail_label: "text",
 			completed_at: "ts",
 		},
 		hasUpdatedAt: true,

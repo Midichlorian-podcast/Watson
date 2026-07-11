@@ -10,7 +10,7 @@ bucket_definitions:
     data:
       - SELECT id, project_id, section_id, parent_id, name, description, priority, color,
         due_date, start_date, deadline, duration_min, days, sort_order, recurrence, recurrence_rule, recurrence_basis,
-        assignment_mode, status_id, completed_at, created_by, created_at
+        assignment_mode, status_id, mail_th, mail_label, completed_at, created_by, created_at
         FROM tasks
         WHERE project_id = bucket.project_id
       # Projekt sám (barva projektu = tělo karet úkolů, R6) + jeho struktura.

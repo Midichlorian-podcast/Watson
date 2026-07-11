@@ -107,6 +107,7 @@
 		"assignAnyHint": "Anyone — one checkbox for the whole task",
 		"assignAllHint": "Each separately — {{done}}/{{total}} done",
 		"reminder": "Reminder",
+		"fromMail": "From mail",
 		"reminders": "Reminders",
 		"remBefore": "before due",
 		"remAt": "at",
@@ -641,6 +642,11 @@
 		"roleUcetni": "Accountant",
 		"roleVedouci": "Manager"
 	},
+	"mail": {
+		"taskCreatedToast": "Task from mail added to Inbox — due today",
+		"taskCreatedOpen": "Open",
+		"taskNoInbox": "No inbox project found — task not created"
+	},
 	"velin": {
 		"badge": "LEADS",
 		"navTitle": "Leadership overview — visible to Owner and Admin only",
@@ -702,6 +708,13 @@
 		"synOverdue_other": "{{count}} items are overdue — start with “{{name}}”.",
 		"synRisk": "Goal “{{name}}” is falling behind — {{label}}, {{elapsed}} % of time elapsed.",
 		"synChecklist": "Checklist “{{name}}” is at {{pct}} %.",
+		"synMailOne": "An urgent thread awaits in mail: {{names}}.",
+		"synMailMany": "Urgent threads await in mail: {{names}}.",
+		"actMail": "Open mail",
+		"cardMail": "Mail",
+		"openMail": "Open mail",
+		"mailUnread_one": "1 unread waiting in mail",
+		"mailUnread_other": "{{count}} unread waiting in mail",
 		"cardEvents": "Upcoming events",
 		"allLists": "All lists",
 		"actReschedule": "Reschedule overdue",

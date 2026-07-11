@@ -15,7 +15,7 @@ import {
 	useState,
 	useEffect,
 } from "react";
-import { showToast } from "../lib/toast";
+import { CtxMenu } from "./CtxMenu";
 import { GK, MB, P, SLA, STL, type MailThread } from "./data";
 import { type ThreadEff, useMail } from "./state";
 
@@ -232,8 +232,8 @@ function RowActs({ vm }: { vm: RowVM }) {
 	return (
 		<div data-rowacts>
 			{rowBtn(
-				stop(() => showToast("Email → úkol přijde s další várkou mailu")),
-				"Vytvořit úkol z vlákna — projekt, priorita a termín se předvyplní",
+				stop(() => m.quickTask(id)),
+				"Vytvořit úkol z vlákna — priorita a termín se předvyplní, přistane v osobní Schránce",
 				<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden>
 					<path d="M4 7 L5.4 8.4 L7.8 6" />
 					<line x1="10.5" y1="7.3" x2="19" y2="7.3" />
@@ -288,7 +288,16 @@ function RowActs({ vm }: { vm: RowVM }) {
 	);
 }
 
-function MailRow({ vm, compactPin }: { vm: RowVM; compactPin?: boolean }) {
+function MailRow({
+	vm,
+	compactPin,
+	onCtx,
+}: {
+	vm: RowVM;
+	compactPin?: boolean;
+	/** Pravý klik → kontextové menu (prototyp contextmenu listener, ř. 2509). */
+	onCtx?: (id: string, x: number, y: number) => void;
+}) {
 	const m = useMail();
 	const t = vm.t;
 	const e = vm.e;
@@ -296,6 +305,11 @@ function MailRow({ vm, compactPin }: { vm: RowVM; compactPin?: boolean }) {
 	return (
 		<div
 			onClick={() => m.openThread(t.id)}
+			onContextMenu={(ev) => {
+				if (!onCtx) return;
+				ev.preventDefault();
+				onCtx(t.id, ev.clientX, ev.clientY);
+			}}
 			data-tid={t.id}
 			tabIndex={0}
 			data-mrow
@@ -631,10 +645,22 @@ function listTitle(folder: string, fdr: string): string {
 	return F[folder] ?? "Doručené";
 }
 
-export function MailList({ onOpenDrawer }: { onOpenDrawer: () => void }) {
+export function MailList({
+	onOpenDrawer,
+	onSearch,
+	onCompose,
+}: {
+	onOpenDrawer: () => void;
+	onSearch: () => void;
+	onCompose: () => void;
+}) {
 	const m = useMail();
 	const { isDorView, gN, pinRows, rozRows, rows } = useListRows();
 	const [vmenu, setVmenu] = useState(false);
+	// kontextové menu řádku (pravý klik); hledání a Napsat řídí MailScreen (⌘K/C)
+	const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(
+		null,
+	);
 	const vmenuRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		if (!vmenu) return;
@@ -714,7 +740,7 @@ export function MailList({ onOpenDrawer }: { onOpenDrawer: () => void }) {
 					<span style={{ flex: 1 }} />
 					<span
 						data-rowbtn
-						onClick={() => showToast("Hledání v poště (⌘K) přijde s další várkou mailu")}
+						onClick={onSearch}
 						title="Hledat v poště ( / nebo ⌘K )"
 						style={{ border: "1px solid var(--line)", background: "var(--panel)" }}
 					>
@@ -762,7 +788,7 @@ export function MailList({ onOpenDrawer }: { onOpenDrawer: () => void }) {
 					</span>
 					<span
 						data-primary
-						onClick={() => showToast("Nová zpráva přijde s další várkou mailu")}
+						onClick={onCompose}
 						style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "7px 13px" }}
 					>
 						<svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden>
@@ -941,7 +967,12 @@ export function MailList({ onOpenDrawer }: { onOpenDrawer: () => void }) {
 							<>
 								<div style={secHead}>Připnuté</div>
 								{pinShown.map((vm) => (
-									<MailRow key={vm.t.id} vm={vm} compactPin />
+									<MailRow
+										key={vm.t.id}
+										vm={vm}
+										compactPin
+										onCtx={(id, x, y) => setCtx({ id, x, y })}
+									/>
 								))}
 								{!m.pinExp && pinMore > 0 && (
 									<div
@@ -980,7 +1011,11 @@ export function MailList({ onOpenDrawer }: { onOpenDrawer: () => void }) {
 						)}
 
 						{rows.map((vm) => (
-							<MailRow key={vm.t.id} vm={vm} />
+							<MailRow
+								key={vm.t.id}
+								vm={vm}
+								onCtx={(id, x, y) => setCtx({ id, x, y })}
+							/>
 						))}
 
 						{rows.length === 0 && pinRows.length === 0 && (
@@ -1051,6 +1086,9 @@ export function MailList({ onOpenDrawer }: { onOpenDrawer: () => void }) {
 					</>
 				)}
 			</div>
+
+			{/* kontextové menu řádku (pravý klik) */}
+			<CtxMenu ctx={ctx} onClose={() => setCtx(null)} />
 		</div>
 	);
 }

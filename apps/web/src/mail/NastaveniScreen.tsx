@@ -1,0 +1,368 @@
+/**
+ * Nastavení — Mail (osobní volby, platí jen pro uživatele; prototyp šablona
+ * ř. 1609–1759 + logika nastV, ř. 3339–3403). Vzhled je napojený na reálný
+ * app-wide motiv (kontrakt `vzhled` → useTheme), „Nepřečtené ve sdílených
+ * schránkách" na SDÍLENÝ m.perOsoba/m.setPerOsoba (globální výchozí, per
+ * schránka se ladí v Administraci). Zbytek (notifikace, VIP, soukromí,
+ * chování po archivaci, OOO, podpisy) je demo vrstva držená lokálně
+ * (useState z NAST_SEED). Swipe gesta vynechána — seznam je zatím nemá.
+ */
+import { useState } from "react";
+import { useTheme } from "../layout/useTheme";
+import { showToast } from "../lib/toast";
+import { MB, NAST_SEED, type NastSeed } from "./data";
+import { useMail } from "./state";
+
+/** Kopie osobního seedu — lokální demo stav se nesmí propsat do seedu. */
+const nastInit = (): NastSeed => ({
+	...NAST_SEED,
+	notif: { ...NAST_SEED.notif },
+	vip: [...NAST_SEED.vip],
+});
+
+/** Demo mezipaměť — volby přežijí odchod z obrazovky v rámci session
+ * (prototyp drží nast v globálním state; state API modulu nerozšiřujeme). */
+const cache: { nast: NastSeed } = { nast: nastInit() };
+
+const cardStyle = {
+	background: "var(--panel)",
+	border: "1px solid var(--line)",
+	borderRadius: 14,
+	marginTop: 16,
+	overflow: "hidden",
+} as const;
+
+const segTab = {
+	fontFamily: "var(--w-font-display)",
+	fontWeight: 600,
+	fontSize: 10.5,
+	padding: "3px 11px",
+	borderRadius: 999,
+	cursor: "pointer",
+} as const;
+
+const pillStyle = {
+	fontFamily: "var(--w-font-display)",
+	fontWeight: 600,
+	fontSize: 10.5,
+	padding: "3px 10px",
+	borderRadius: 999,
+	flex: "none",
+} as const;
+
+/** Titulek karty (prototyp „Notifikace“, „Soukromí“, …). */
+const headStyle = {
+	fontFamily: "var(--w-font-display)",
+	fontWeight: 700,
+	fontSize: 13,
+	color: "var(--ink)",
+	padding: "13px 18px 11px",
+	borderBottom: "1px solid var(--line)",
+} as const;
+
+export function NastaveniScreen() {
+	const m = useMail();
+	const { theme, toggle } = useTheme();
+	const [nast, setNastRaw] = useState<NastSeed>(cache.nast);
+
+	const setNast = (patch: Partial<NastSeed>) => {
+		cache.nast = { ...cache.nast, ...patch };
+		setNastRaw(cache.nast);
+	};
+
+	const addVip = () => {
+		const v = nast.vipIn.trim();
+		if (!v) return;
+		setNast({ vip: [...nast.vip, v], vipIn: "" });
+		showToast(`Přidáno mezi VIP — ${v} upozorní vždy, i při úrovni VIP`);
+	};
+
+	/** Řádky notifikací: 4 týmové schránky + osobní (prototyp notifRows, ř. 3348). */
+	const notifRows = ["info", "granty", "podcast", "studio", "osobni"].map((id) => ({
+		id,
+		addr: id === "osobni" ? "kosir.adam@gmail.com" : (MB[id]?.addr ?? id),
+	}));
+
+	return (
+		<div
+			data-screen-label="Nastavení — Mail"
+			style={{ flex: 1, overflow: "auto", background: "var(--panel-2)" }}
+		>
+			<div style={{ maxWidth: 760, margin: "0 auto", padding: "20px 26px 46px" }}>
+				<span
+					data-ghost
+					onClick={() => m.setScr("mail")}
+					style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "6px 12px" }}
+				>
+					← Mail
+				</span>
+				<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 800, fontSize: 20, color: "var(--ink)", marginTop: 14 }}>
+					Nastavení — Mail
+				</div>
+				<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink-3)", marginTop: 4 }}>
+					Osobní volby — platí jen pro tebe, na všech zařízeních.
+				</div>
+
+				{/* ── Vzhled (prototyp ř. 1617–1625) — sdílený motiv aplikace ── */}
+				<div style={{ ...cardStyle, marginTop: 18 }}>
+					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 18px" }}>
+						<span style={{ flex: 1, fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 13, color: "var(--ink)" }}>Vzhled</span>
+						<span style={{ display: "inline-flex", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 999, padding: 2 }}>
+							<span
+								onClick={() => theme === "dark" && toggle()}
+								data-tab
+								data-active={theme === "light" || undefined}
+								style={{ ...segTab, fontSize: 11, padding: "4px 13px" }}
+							>
+								Světlý
+							</span>
+							<span
+								onClick={() => theme === "light" && toggle()}
+								data-tab
+								data-active={theme === "dark" || undefined}
+								style={{ ...segTab, fontSize: 11, padding: "4px 13px" }}
+							>
+								Tmavý
+							</span>
+						</span>
+					</div>
+				</div>
+
+				{/* ── Notifikace (prototyp ř. 1627–1651) ── */}
+				<div style={cardStyle}>
+					<div style={headStyle}>Notifikace</div>
+					{notifRows.map((r) => (
+						<div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
+							<span data-mbdot={r.id} style={{ width: 9, height: 9, borderRadius: "50%", flex: "none" }} />
+							<span style={{ flex: 1, minWidth: 150, fontFamily: "var(--w-font-mono)", fontSize: 11, color: "var(--ink-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+								{r.addr}
+							</span>
+							<span style={{ display: "inline-flex", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 999, padding: 2 }}>
+								<span onClick={() => setNast({ notif: { ...nast.notif, [r.id]: "vse" } })} data-tab data-active={nast.notif[r.id] === "vse" || undefined} style={segTab}>
+									Všechny
+								</span>
+								<span
+									onClick={() => setNast({ notif: { ...nast.notif, [r.id]: "vip" } })}
+									data-tab
+									data-active={nast.notif[r.id] === "vip" || undefined}
+									title="Jen P1–P2, přiřazení a @zmínky"
+									style={segTab}
+								>
+									VIP
+								</span>
+								<span onClick={() => setNast({ notif: { ...nast.notif, [r.id]: "zadne" } })} data-tab data-active={nast.notif[r.id] === "zadne" || undefined} style={segTab}>
+									Žádné
+								</span>
+							</span>
+						</div>
+					))}
+					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 18px" }}>
+						<span
+							title="Přerušit smí jen P1 — override zapíná eskalující manažer/admin, ne odesílatel"
+							style={{ flex: 1, fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-2)" }}
+						>
+							Tiché hodiny{" "}
+							<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)" }}>21:00–7:00</span>{" "}
+							<span style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)" }}>— přerušit smí jen P1</span>
+						</span>
+						<span data-statepill data-on={nast.quiet || undefined} onClick={() => setNast({ quiet: !nast.quiet })} style={pillStyle}>
+							{nast.quiet ? "zapnuté" : "vypnuté"}
+						</span>
+					</div>
+					<div style={{ display: "flex", alignItems: "center", gap: 7, padding: "0 18px 12px", flexWrap: "wrap" }}>
+						<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11, color: "var(--ink-3)", flex: "none" }}>
+							VIP odesílatelé <span style={{ opacity: 0.8 }}>— upozorní vždy:</span>
+						</span>
+						{nast.vip.map((addr) => (
+							<span key={addr} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-2)", border: "1px solid var(--line)", borderRadius: 999, padding: "2px 6px 2px 9px" }}>
+								{addr}
+								<span
+									onClick={() => setNast({ vip: nast.vip.filter((z) => z !== addr) })}
+									style={{ cursor: "pointer", opacity: 0.6, fontSize: 12, lineHeight: 1 }}
+								>
+									×
+								</span>
+							</span>
+						))}
+						<input
+							value={nast.vipIn}
+							onChange={(e) => setNast({ vipIn: e.target.value })}
+							onKeyDown={(e) => {
+								if (e.key === "Enter") addVip();
+							}}
+							placeholder="přidat adresu ⏎"
+							style={{ width: 150, border: "1px dashed var(--line)", background: "transparent", borderRadius: 999, padding: "3px 10px", fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink)", outline: "none" }}
+						/>
+					</div>
+				</div>
+
+				{/* ── Soukromí (prototyp ř. 1671–1687) ── */}
+				<div style={cardStyle}>
+					<div style={headStyle}>Soukromí</div>
+					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 18px", borderBottom: "1px solid var(--line)" }}>
+						<div style={{ flex: 1 }}>
+							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-2)" }}>Vzdálené obrázky v mailech</div>
+							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", marginTop: 1 }}>
+								blokování skryje sledovací pixely — načteš je pak jedním klikem
+							</div>
+						</div>
+						<span data-statepill data-on={nast.privImg || undefined} onClick={() => setNast({ privImg: !nast.privImg })} style={pillStyle}>
+							{nast.privImg ? "načítat" : "blokovat"}
+						</span>
+					</div>
+					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 18px" }}>
+						<div style={{ flex: 1 }}>
+							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-2)" }}>Automatické stahování příloh</div>
+							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", marginTop: 1 }}>
+								pro rychlé náhledy; vypni na pomalém připojení
+							</div>
+						</div>
+						<span data-statepill data-on={nast.privAtt || undefined} onClick={() => setNast({ privAtt: !nast.privAtt })} style={pillStyle}>
+							{nast.privAtt ? "zapnuto" : "vypnuto"}
+						</span>
+					</div>
+				</div>
+
+				{/* ── Po archivaci / smazání (prototyp ř. 1689–1700) ── */}
+				<div style={cardStyle}>
+					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 18px" }}>
+						<div style={{ flex: 1 }}>
+							<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 13, color: "var(--ink)" }}>Po archivaci / smazání</div>
+							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", marginTop: 1 }}>kam tě pošle vyřízení konverzace</div>
+						</div>
+						<span style={{ display: "inline-flex", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 999, padding: 2, flex: "none" }}>
+							<span onClick={() => setNast({ beh: "dalsi" })} data-tab data-active={nast.beh !== "seznam" || undefined} style={segTab}>
+								Další konverzace
+							</span>
+							<span onClick={() => setNast({ beh: "seznam" })} data-tab data-active={nast.beh === "seznam" || undefined} style={segTab}>
+								Zpět na seznam
+							</span>
+						</span>
+					</div>
+				</div>
+
+				{/* ── Nepřečtené ve sdílených schránkách (prototyp ř. 1702–1714) — SDÍLENÝ m.perOsoba ── */}
+				<div style={cardStyle}>
+					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 18px" }}>
+						<div style={{ flex: 1 }}>
+							<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 13, color: "var(--ink)" }}>Nepřečtené ve sdílených schránkách</div>
+							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", marginTop: 1 }}>
+								komu se konverzace označí jako přečtená po otevření
+							</div>
+						</div>
+						<span style={{ display: "inline-flex", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 999, padding: 2, flex: "none" }}>
+							<span
+								onClick={() => {
+									m.setPerOsoba(true);
+									showToast("Per osoba: mail se ti odškrtne, až ho otevřeš ty — kolegovo čtení tvoje nepřečtené nemění");
+								}}
+								data-tab
+								data-active={m.perOsoba || undefined}
+								style={segTab}
+							>
+								Per osoba
+							</span>
+							<span
+								onClick={() => {
+									m.setPerOsoba(false);
+									showToast("Sdílené čtení: první otevření kýmkoli označí přečteno všem — pozor, snadno něco propadne");
+								}}
+								data-tab
+								data-active={!m.perOsoba || undefined}
+								style={segTab}
+							>
+								Sdílené
+							</span>
+						</span>
+					</div>
+					<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", padding: "10px 18px", background: "var(--panel-2)" }}>
+						Per osoba: mail zůstává nepřečtený pro každého člena schránky, dokud ho sám
+						neotevře — nic nepropadne jen proto, že to viděl kolega (u řádku se ukáže
+						„Petra už četla“). Sdílené: první otevření kýmkoli označí přečteno všem.
+						Interní stavy Nový / Otevřený / Čeká tím nejsou dotčené. Jednotlivé schránky
+						jdou přepnout zvlášť v Administraci → Nepřečtené.
+					</div>
+				</div>
+
+				{/* ── Podpisy (prototyp ř. 1716–1727) ── */}
+				<div style={cardStyle}>
+					<div style={headStyle}>Podpisy</div>
+					{Object.entries(MB).map(([id, mb]) => (
+						<div key={id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", borderBottom: "1px solid var(--line)" }}>
+							<span data-mbdot={id} style={{ width: 9, height: 9, borderRadius: "50%", flex: "none" }} />
+							<span style={{ width: 90, flex: "none", fontFamily: "var(--w-font-mono)", fontSize: 11, color: "var(--ink-2)" }}>{mb.short}</span>
+							<span style={{ flex: 1, fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+								{mb.sig}
+							</span>
+							<span
+								data-ghost
+								onClick={() => showToast(`Úprava podpisu pro ${mb.short} — sdílený pro celou schránku`)}
+								style={{ fontSize: 11, padding: "4px 10px", flex: "none" }}
+							>
+								Upravit
+							</span>
+						</div>
+					))}
+					<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", padding: "10px 18px", background: "var(--panel-2)" }}>
+						Podpis se doplňuje podle schránky, za kterou odpovídáš — ne podle toho, kdo píše.
+					</div>
+				</div>
+
+				{/* ── Automatická odpověď / OOO (prototyp ř. 1729–1743) ── */}
+				<div style={cardStyle}>
+					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 18px" }}>
+						<div style={{ flex: 1 }}>
+							<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 13, color: "var(--ink)" }}>Automatická odpověď</div>
+							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", marginTop: 1 }}>
+								mimo kancelář — každému odesílateli max 1× za 4 dny, newslettery se přeskakují
+							</div>
+						</div>
+						<span data-statepill data-on={nast.ooo || undefined} onClick={() => setNast({ ooo: !nast.ooo })} style={pillStyle}>
+							{nast.ooo ? "zapnutá" : "vypnutá"}
+						</span>
+					</div>
+					{nast.ooo && (
+						<div style={{ padding: "0 18px 13px" }}>
+							<textarea
+								value={nast.oooTxt}
+								onChange={(e) => setNast({ oooTxt: e.target.value })}
+								rows={3}
+								style={{ width: "100%", border: "1px solid var(--line)", background: "var(--panel-2)", borderRadius: 10, padding: "9px 11px", fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink)", lineHeight: 1.55, outline: "none", resize: "none", boxSizing: "border-box" }}
+							/>
+							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", marginTop: 6 }}>
+								Platí pro tvoje osobní odpovědi — týmové schránky mají vlastní automatiku v Administraci.
+							</div>
+						</div>
+					)}
+				</div>
+
+				{/* ── Osobní schránka (prototyp ř. 1745–1755) ── */}
+				<div style={cardStyle}>
+					<div style={headStyle}>Osobní schránka</div>
+					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", flexWrap: "wrap" }}>
+						<span data-mbdot="osobni" style={{ width: 9, height: 9, borderRadius: "50%", flex: "none" }} />
+						<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 11.5, color: "var(--ink-2)" }}>kosir.adam@gmail.com</span>
+						<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-mono)", fontSize: 9.5, padding: "2px 9px", borderRadius: 999, background: "var(--pers-bg)", border: "1px solid var(--pers-line)", color: "var(--pers-ink)" }}>
+							<svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden>
+								<rect x="2.2" y="5" width="7.6" height="5.2" rx="1.2" stroke="currentColor" strokeWidth="1.2" />
+								<path d="M4 5 V3.8 A2 2 0 0 1 8 3.8 V5" stroke="currentColor" strokeWidth="1.2" />
+							</svg>
+							šifrováno · bez AI
+						</span>
+						<span style={{ flex: 1 }} />
+						<span
+							data-ghost
+							onClick={() => showToast("Osobní schránka by se odpojila — šifrovaná vlákna zůstávají jen v tvém zařízení")}
+							style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)", flex: "none" }}
+						>
+							Odpojit
+						</span>
+					</div>
+					<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", padding: "0 18px 13px" }}>
+						Uložená šifrovaně, mimo týmové hledání, AI i správu týmu. Admin ji nevidí.
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
