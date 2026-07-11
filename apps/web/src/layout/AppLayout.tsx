@@ -1,4 +1,4 @@
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useRouterState } from "@tanstack/react-router";
 import { Suspense, useEffect, useState } from "react";
 import { BulkBar } from "../components/BulkBar";
 import { SyncGate } from "../components/Loading";
@@ -7,6 +7,7 @@ import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WriteRejectedToast } from "../components/WriteRejectedToast";
 import { AddTaskProvider } from "../lib/addTask";
 import { BulkSelectProvider } from "../lib/bulkSelect";
+import { MailProvider } from "../mail/state";
 import { KeyboardProvider } from "../lib/keyboard";
 import { ListSearchProvider } from "../lib/listSearch";
 import { ProjectDetailProvider } from "../lib/projectDetail";
@@ -28,6 +29,9 @@ export function AppLayout() {
 		() => localStorage.getItem("watson.rail") === "1",
 	);
 	const isMobile = useIsMobile();
+	// Mail zabírá celou plochu MAIN místo topbaru (prototyp screenNotMail, ř. 357).
+	const path = useRouterState({ select: (s) => s.location.pathname });
+	const onMail = path.startsWith("/mail");
 	useEffect(applyTweaks, []);
 	useEffect(() => {
 		localStorage.setItem("watson.rail", collapsed ? "1" : "0");
@@ -42,6 +46,7 @@ export function AppLayout() {
 								<TaskDetailProvider>
 									<ProjectDetailProvider>
 										<BulkSelectProvider>
+											<MailProvider>
 											<KeyboardProvider>
 											<div
 												className="flex h-full min-h-full"
@@ -54,9 +59,13 @@ export function AppLayout() {
 													/>
 												)}
 												<div className="flex min-w-0 flex-1 flex-col">
-													<Header />
+													{!onMail && <Header />}
 													<main
-														className="flex-1 overflow-auto"
+														className={
+															onMail
+																? "flex flex-1 flex-col overflow-hidden"
+																: "flex-1 overflow-auto"
+														}
 														style={isMobile ? { paddingBottom: 58 } : undefined}
 													>
 														<SyncGate>
@@ -74,6 +83,7 @@ export function AppLayout() {
 												<BulkBar />
 											</div>
 											</KeyboardProvider>
+											</MailProvider>
 										</BulkSelectProvider>
 									</ProjectDetailProvider>
 								</TaskDetailProvider>

@@ -13,6 +13,7 @@ export const MAIN_NAV: NavItem[] = [
 	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
 	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox", count: true },
+	{ to: "/mail", icon: "mail", labelKey: "nav.mail", count: true },
 	{ to: "/", icon: "dnes", labelKey: "nav.today", count: true },
 	{
 		to: "/nadchazejici",

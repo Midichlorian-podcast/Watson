@@ -8,6 +8,7 @@ import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
 import { useProjects } from "../lib/projects";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
+import { useMailUnread } from "../mail/state";
 import { MAIN_NAV, type NavItem, VELIN_NAV } from "./nav";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -139,6 +140,8 @@ export function Sidebar({
 	const { data: activeLists } = usePsQuery<{ id: string }>(
 		"SELECT id FROM lists WHERE archived = 0 OR archived IS NULL",
 	);
+	// Mail — badge = per-osoba nepřečtené v týmových schránkách (unreadFor součet).
+	const mailUnread = useMailUnread();
 
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs, setActiveWs, isCollapsed, toggleCollapse } = useWorkspace();
@@ -196,8 +199,9 @@ export function Sidebar({
 			// Jen skutečně přiřazené (prototyp ř. 3150 — ne autor).
 			"/oblibene/me": visible.filter((t) => assigned.has(t.id)).length,
 			"/seznamy": (activeLists ?? []).length,
+			"/mail": mailUnread,
 		};
-	}, [openTasks, myAssignments, projects, userId, activeLists]);
+	}, [openTasks, myAssignments, projects, userId, activeLists, mailUnread]);
 
 	const isActive = (to: string) =>
 		to === "/" ? path === "/" : path.startsWith(to);

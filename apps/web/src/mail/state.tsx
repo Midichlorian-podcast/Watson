@@ -1,0 +1,844 @@
+/**
+ * Mail modul — stavové jádro (port `class Component` z design/handoff WatsonMail.dc.html).
+ * Demo modul se seed daty (reálný mail backend = samostatný program M1–M3 dle
+ * files/MAIL_*.md); drží kontrakt handoffu: per-osoba nepřečtenost (unread +
+ * readBy/readAt, režim per/shared per schránka), overrides `ov` (eff), urgence
+ * P1–P4 se SLA, stavový automat vlákna, koncepty s persistencí, undo odeslání.
+ * Persistence jen UI preference + koncepty (klíče watson-mail.*), ov je efemérní
+ * jako v prototypu.
+ */
+import {
+	createContext,
+	type ReactNode,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { showToast } from "../lib/toast";
+import {
+	ADM_SEED,
+	GK,
+	type MailThread,
+	NAST_SEED,
+	P,
+	SLA,
+	STL,
+	TH,
+} from "./data";
+
+/** Per-thread overrides (prototyp `ov` + eff, ř. 3449–3465). */
+export interface ThreadOv {
+	st?: string;
+	closed?: boolean;
+	owner?: string | null;
+	sent?: boolean;
+	pin?: boolean;
+	snoozed?: string | null;
+	read?: boolean;
+	flag?: string;
+	arch?: boolean;
+	trash?: boolean;
+	spam?: boolean;
+	muted?: boolean;
+	grp?: string;
+	snip?: string;
+	time?: string;
+	bounceFixed?: boolean;
+}
+
+export interface ThreadEff {
+	st: string;
+	closed: boolean;
+	owner: string | null;
+	sent: boolean;
+	pin: boolean;
+	snoozed: string | null;
+	read: boolean;
+	flag: string;
+	arch: boolean;
+	trash: boolean;
+	spam: boolean;
+	muted: boolean;
+}
+
+export interface DraftState {
+	mode: "draft" | "edit" | "empty";
+	text: string;
+	queued?: boolean;
+}
+
+/** Odchozí zpráva přidaná do vlákna po odeslání (prototyp sentX). */
+export interface SentMsg {
+	dir: "out";
+	by: string;
+	t: string;
+	to: string;
+	body: string[];
+}
+
+export interface ChatExtra {
+	who: string;
+	t: string;
+	pre: string;
+}
+
+export type MailFolder = string; // vse|pinned|odlozene|gatekeeper|osobni|f_*|d_*|<mbId>
+
+interface UndoState {
+	on: boolean;
+	left: number;
+	mb: string;
+	markDone: boolean;
+}
+
+/** Most do aplikace (kontrakt handoffu on-nav / task-states / on-create-task). */
+export interface MailBridge {
+	onNav?: (target: string) => void;
+	taskStates?: Record<string, { done: boolean }>;
+	onCreateTask?: (payload: {
+		id: string;
+		name: string;
+		mailTh: string;
+		mailLabel: string;
+		priority?: number;
+	}) => void;
+}
+
+interface MailCtxValue {
+	// data
+	threads: MailThread[];
+	// stav navigace/seznamu
+	folder: MailFolder;
+	setFolder: (f: MailFolder) => void;
+	fdr: string;
+	setFdr: (v: string) => void;
+	grp: string;
+	setGrp: (v: string) => void;
+	filters: { unread: boolean; att: boolean; mine: boolean; fu: boolean };
+	toggleFilter: (k: "unread" | "att" | "mine" | "fu") => void;
+	sel: string | null;
+	ctab: "vlakno" | "chat";
+	setCtab: (v: "vlakno" | "chat") => void;
+	mstep: "list" | "thread";
+	setMstep: (v: "list" | "thread") => void;
+	pinExp: boolean;
+	setPinExp: (v: boolean) => void;
+	rozOn: boolean;
+	setRozOn: (v: boolean) => void;
+	selIds: Record<string, true>;
+	toggleSel: (id: string) => void;
+	clearSel: () => void;
+	// overrides + predikáty
+	ovOf: (id: string) => ThreadOv;
+	eff: (t: MailThread) => ThreadEff;
+	unreadFor: (t: MailThread) => boolean;
+	readModeOf: (t: MailThread) => "per" | "shared";
+	unreadStats: () => { total: number; per: Record<string, number>; pers: number };
+	msgsOf: (t: MailThread) => number;
+	// akce
+	openThread: (id: string) => void;
+	closeThread: () => void;
+	rowAct: (
+		id: string,
+		kind:
+			| "done"
+			| "pin"
+			| "snooze"
+			| "arch"
+			| "trash"
+			| "spam"
+			| "unread"
+			| "mute"
+			| "restore",
+	) => void;
+	bulkAct: (kind: "done" | "arch" | "trash" | "unread") => void;
+	setOv: (id: string, patch: ThreadOv) => void;
+	setFlag: (id: string, flag: string) => void;
+	setThreadState: (id: string, st: string) => void;
+	setOwner: (id: string, owner: string | null) => void;
+	// koncepty + odesílání
+	drafts: Record<string, DraftState>;
+	setDraft: (id: string, text: string, mode?: DraftState["mode"]) => void;
+	attached: Record<string, string>;
+	attach: (id: string, label: string) => void;
+	detach: (id: string) => void;
+	sentX: Record<string, SentMsg[]>;
+	checkSend: (t: MailThread, markDone: boolean) => void;
+	undo: UndoState | null;
+	undoBack: () => void;
+	warn: { id: string; markDone: boolean } | null;
+	setWarn: (w: { id: string; markDone: boolean } | null) => void;
+	collArmed: boolean;
+	// chat
+	chatX: Record<string, ChatExtra[]>;
+	sendChat: (id: string, text: string) => void;
+	chatOff: boolean;
+	setChatOff: (v: boolean) => void;
+	// per-osoba čtení
+	perOsoba: boolean;
+	setPerOsoba: (v: boolean) => void;
+	mbRead: Record<string, "per" | "shared">;
+	setMbRead: (mb: string, mode: "per" | "shared") => void;
+	// gatekeeper
+	gkDone: Record<string, string>;
+	gkDecide: (id: string, verdict: "accept" | "acceptDone" | "block" | "blockDom") => void;
+	gkLeft: number;
+	// zobrazení
+	exp: Record<string, boolean>;
+	toggleExp: (key: string) => void;
+	translated: boolean;
+	setTranslated: (v: boolean) => void;
+	imgOk: Record<string, boolean>;
+	allowImgs: (id: string) => void;
+	sum: boolean;
+	setSum: (v: boolean) => void;
+	// vazby na úkoly (seed taskLinks + bridge)
+	taskLinks: Record<string, { n: string; owner: string; prio: string; app: string }[]>;
+	bridge: MailBridge;
+	// admin/nastavení seedy (čtou je vrstvy modulu)
+	adm: typeof ADM_SEED;
+	nast: typeof NAST_SEED;
+}
+
+const Ctx = createContext<MailCtxValue | null>(null);
+
+const LS = {
+	drafts: "watson-mail.drafts",
+	perOsoba: "watson-mail.perOsoba",
+	mbRead: "watson-mail.mbRead",
+	chatOff: "watson-mail.chatOff",
+};
+
+const loadJSON = <T,>(key: string, fallback: T): T => {
+	try {
+		const raw = localStorage.getItem(key);
+		return raw ? (JSON.parse(raw) as T) : fallback;
+	} catch {
+		return fallback;
+	}
+};
+
+/** Seed vazeb mail ↔ úkol (prototyp state.taskLinks): faktura ↔ mx1, opjak ↔ mx2. */
+const TASK_LINKS_SEED: MailCtxValue["taskLinks"] = {
+	faktura: [
+		{
+			n: "Uhradit opravnou fakturu za nájem — 42 200 Kč",
+			owner: "ad",
+			prio: "p2",
+			app: "mx1",
+		},
+	],
+	opjak: [
+		{ n: "Doplnit rozpočet k žádosti OP JAK", owner: "mh", prio: "p1", app: "mx2" },
+	],
+};
+
+export function MailProvider({
+	children,
+	bridge,
+}: {
+	children: ReactNode;
+	bridge?: MailBridge;
+}) {
+	const [folder, setFolderRaw] = useState<MailFolder>("vse");
+	const [fdr, setFdr] = useState("dorucene");
+	const [grp, setGrp] = useState("inbox");
+	const [filters, setFilters] = useState({
+		unread: false,
+		att: false,
+		mine: false,
+		fu: false,
+	});
+	const [sel, setSel] = useState<string | null>("faktura");
+	const [ctab, setCtab] = useState<"vlakno" | "chat">("vlakno");
+	const [mstep, setMstep] = useState<"list" | "thread">("list");
+	const [pinExp, setPinExp] = useState(false);
+	const [rozOn, setRozOn] = useState(false);
+	const [selIds, setSelIds] = useState<Record<string, true>>({});
+	const [ov, setOvState] = useState<Record<string, ThreadOv>>({});
+	const [drafts, setDrafts] = useState<Record<string, DraftState>>(() =>
+		loadJSON(LS.drafts, {}),
+	);
+	const [attached, setAttached] = useState<Record<string, string>>({});
+	const [sentX, setSentX] = useState<Record<string, SentMsg[]>>({});
+	const [chatX, setChatX] = useState<Record<string, ChatExtra[]>>({});
+	const [chatOff, setChatOffRaw] = useState(
+		() => localStorage.getItem(LS.chatOff) === "1",
+	);
+	const [perOsoba, setPerOsobaRaw] = useState(
+		() => localStorage.getItem(LS.perOsoba) !== "false",
+	);
+	const [mbRead, setMbReadState] = useState<Record<string, "per" | "shared">>(
+		() => loadJSON(LS.mbRead, {}),
+	);
+	const [gkDone, setGkDone] = useState<Record<string, string>>({});
+	const [exp, setExp] = useState<Record<string, boolean>>({});
+	const [translated, setTranslated] = useState(false);
+	const [imgOk, setImgOk] = useState<Record<string, boolean>>({});
+	const [sum, setSum] = useState(true);
+	const [undo, setUndo] = useState<UndoState | null>(null);
+	const [warn, setWarn] = useState<{ id: string; markDone: boolean } | null>(
+		null,
+	);
+	const [collArmed, setCollArmed] = useState(false);
+	const [taskLinks] = useState(TASK_LINKS_SEED);
+
+	// koncepty přežijí reload (prototyp interval 1,5 s; tady debounce 1,5 s)
+	const draftsRef = useRef(drafts);
+	draftsRef.current = drafts;
+	useEffect(() => {
+		const t = setTimeout(() => {
+			try {
+				localStorage.setItem(LS.drafts, JSON.stringify(draftsRef.current));
+			} catch {
+				/* plné úložiště — koncept zůstává v paměti */
+			}
+		}, 1500);
+		return () => clearTimeout(t);
+	}, [drafts]);
+
+	const undoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+	const prevSend = useRef<{
+		id: string;
+		ov: ThreadOv | undefined;
+		draft: DraftState | undefined;
+		att: string | undefined;
+		sent: SentMsg[] | undefined;
+	} | null>(null);
+	const collTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	const ovOf = useCallback((id: string): ThreadOv => ov[id] ?? {}, [ov]);
+	const setOv = useCallback((id: string, patch: ThreadOv) => {
+		setOvState((s) => ({ ...s, [id]: { ...s[id], ...patch } }));
+	}, []);
+
+	/** Efektivní stav vlákna — seed + override (prototyp eff, ř. 3452). */
+	const eff = useCallback(
+		(t: MailThread): ThreadEff => {
+			const o = ov[t.id] ?? {};
+			const st = o.st ?? t.st;
+			const flag =
+				o.flag !== undefined
+					? o.flag
+					: t.flag === "prop"
+						? "p2" // výchozí urgenceVlajky prop prototypu
+						: (t.flag ?? "none");
+			return {
+				st,
+				closed: !!o.closed || st === "hotovo",
+				owner: o.owner !== undefined ? o.owner : (t.owner ?? null),
+				sent: !!o.sent,
+				pin: o.pin !== undefined ? !!o.pin : !!t.pin,
+				snoozed: o.snoozed !== undefined ? o.snoozed : (t.snoozed ?? null),
+				read: !!o.read,
+				flag,
+				arch: !!o.arch,
+				trash: !!o.trash,
+				spam: !!o.spam,
+				muted: !!o.muted,
+			};
+		},
+		[ov],
+	);
+
+	/** Režim čtení: osobní vždy per; jinak per schránka / globální výchozí. */
+	const readModeOf = useCallback(
+		(t: MailThread): "per" | "shared" => {
+			if (t.personal) return "per";
+			return mbRead[t.mb] ?? (perOsoba ? "per" : "shared");
+		},
+		[mbRead, perOsoba],
+	);
+
+	/** Per-osoba nepřečtenost (prototyp unreadFor, ř. 3472). */
+	const unreadFor = useCallback(
+		(t: MailThread): boolean => {
+			const e = eff(t);
+			const mine = !!t.unread && !e.read;
+			if (readModeOf(t) === "per") return mine;
+			return mine && !(t.readBy ?? []).length;
+		},
+		[eff, readModeOf],
+	);
+
+	/** Souhrn nepřečtených (badge sidebar + per schránka; prototyp ř. 3473–3484). */
+	const unreadStats = useCallback(() => {
+		const per: Record<string, number> = {};
+		let total = 0;
+		let pers = 0;
+		for (const t of TH) {
+			const e = eff(t);
+			if (e.muted || t.sentF || t.draftF || e.arch || e.trash || e.snoozed)
+				continue;
+			if (!unreadFor(t)) continue;
+			if (t.personal) {
+				pers++;
+				continue;
+			}
+			total++;
+			per[t.mb] = (per[t.mb] ?? 0) + 1;
+		}
+		return { total, per, pers };
+	}, [eff, unreadFor]);
+
+	const msgsOf = useCallback(
+		(t: MailThread) => t.msgs.length + (sentX[t.id]?.length ?? 0),
+		[sentX],
+	);
+
+	const setFolder = useCallback((f: MailFolder) => {
+		setFolderRaw(f);
+		setFdr("dorucene");
+		setGrp("inbox");
+		setMstep("list");
+	}, []);
+
+	/** Otevření vlákna = přečteno pro mě (per-osoba vrstva) + mobilní krok. */
+	const openThread = useCallback(
+		(id: string) => {
+			setSel(id);
+			setCtab("vlakno");
+			setMstep("thread");
+			setTranslated(false);
+			setOv(id, { read: true });
+		},
+		[setOv],
+	);
+	const closeThread = useCallback(() => setMstep("list"), []);
+
+	const toggleSel = useCallback((id: string) => {
+		setSelIds((s) => {
+			const next = { ...s };
+			if (next[id]) delete next[id];
+			else next[id] = true;
+			return next;
+		});
+	}, []);
+	const clearSel = useCallback(() => setSelIds({}), []);
+
+	/** Akce řádku (prototyp rowAct, ř. 2884–2906). Osobní „done" → archiv. */
+	const rowAct = useCallback<MailCtxValue["rowAct"]>(
+		(id, kindRaw) => {
+			const t = TH.find((x) => x.id === id);
+			if (!t) return;
+			const kind = kindRaw === "done" && t.personal ? "arch" : kindRaw;
+			const e = eff(t);
+			const undoPatch = (patch: ThreadOv, label: string) => {
+				const prev: ThreadOv = {};
+				for (const k of Object.keys(patch) as (keyof ThreadOv)[]) {
+					// biome-ignore lint/suspicious/noExplicitAny: zrcadlení klíčů patche
+					(prev as any)[k] = (ovOf(id) as any)[k];
+				}
+				setOv(id, patch);
+				showToast(label, {
+					label: "Zpět",
+					onClick: () => setOv(id, prev),
+				});
+			};
+			switch (kind) {
+				case "done":
+					undoPatch({ st: "hotovo", closed: true, read: true }, "Hotovo");
+					break;
+				case "pin":
+					setOv(id, { pin: !e.pin });
+					break;
+				case "snooze":
+					undoPatch({ snoozed: "zítra 8:00" }, "Odloženo na zítra 8:00");
+					break;
+				case "arch":
+					undoPatch({ arch: true, read: true }, "Archivováno");
+					break;
+				case "trash":
+					undoPatch({ trash: true }, "Přesunuto do koše");
+					break;
+				case "spam":
+					undoPatch({ spam: true }, "Označeno jako blokované");
+					break;
+				case "unread":
+					setOv(id, { read: e.read ? false : true });
+					break;
+				case "mute":
+					setOv(id, { muted: !e.muted });
+					break;
+				case "restore":
+					undoPatch(
+						{ arch: false, trash: false, snoozed: null, spam: false },
+						"Vráceno do Inboxu",
+					);
+					break;
+			}
+		},
+		[eff, ovOf, setOv],
+	);
+
+	const bulkAct = useCallback<MailCtxValue["bulkAct"]>(
+		(kind) => {
+			const ids = Object.keys(selIds);
+			for (const id of ids) {
+				if (kind === "unread") setOv(id, { read: false });
+				else rowAct(id, kind);
+			}
+			setSelIds({});
+			if (kind === "unread") showToast(`${ids.length} označeno jako nepřečtené`);
+		},
+		[selIds, rowAct, setOv],
+	);
+
+	/** Vlajka urgence: P1/P2 hlásí auto-úkol „Odpovědět: …" (prototyp setFlag, ř. 4109). */
+	const setFlagAct = useCallback(
+		(id: string, flag: string) => {
+			setOv(id, { flag });
+			const t = TH.find((x) => x.id === id);
+			if (!t) return;
+			if (flag === "p1" || flag === "p2") {
+				showToast(
+					`${SLA[flag]?.chip ?? flag.toUpperCase()} — vznikl úkol „Odpovědět: ${t.subj.slice(0, 32)}…" (${SLA[flag]?.sla ?? ""})`,
+				);
+			} else if (flag === "p3" || flag === "p4") {
+				showToast(`${SLA[flag]?.chip ?? ""} — jen vlajka a follow-up, bez úkolu`);
+			}
+		},
+		[setOv],
+	);
+
+	/** Stavový automat vlákna: hotovo = terminál pro urgenci; reopen SLA obnoví. */
+	const setThreadState = useCallback(
+		(id: string, st: string) => {
+			const wasClosed = !!ovOf(id).closed;
+			setOv(id, { st, closed: st === "hotovo" });
+			if (st === "hotovo")
+				showToast("Hotovo — urgence se už neobnoví, i kdyby přišla další zpráva");
+			else if (wasClosed) showToast(`Znovu otevřeno — ${STL[st] ?? st}`);
+		},
+		[ovOf, setOv],
+	);
+
+	const setOwner = useCallback(
+		(id: string, owner: string | null) => {
+			setOv(id, { owner });
+			showToast(owner ? `Přiřazeno: ${P[owner]?.n ?? owner}` : "Přiřazení zrušeno");
+		},
+		[setOv],
+	);
+
+	const setDraft = useCallback(
+		(id: string, text: string, mode: DraftState["mode"] = "edit") => {
+			setDrafts((s) => ({ ...s, [id]: { ...s[id], mode, text } }));
+		},
+		[],
+	);
+	const attach = useCallback((id: string, label: string) => {
+		setAttached((s) => ({ ...s, [id]: label }));
+	}, []);
+	const detach = useCallback((id: string) => {
+		setAttached((s) => {
+			const next = { ...s };
+			delete next[id];
+			return next;
+		});
+	}, []);
+
+	/** Odeslání (prototyp sendReply, ř. 4117): zpráva do vlákna, stav, undo okno 10 s. */
+	const doSend = useCallback(
+		(t: MailThread, markDone: boolean) => {
+			const text = drafts[t.id]?.text?.trim() || (t.draft ?? []).join("\n");
+			prevSend.current = {
+				id: t.id,
+				ov: ov[t.id] ? { ...ov[t.id] } : undefined,
+				draft: drafts[t.id] ? { ...(drafts[t.id] as DraftState) } : undefined,
+				att: attached[t.id],
+				sent: sentX[t.id] ? [...(sentX[t.id] as SentMsg[])] : undefined,
+			};
+			const msg: SentMsg = {
+				dir: "out",
+				by: "ad",
+				t: "teď",
+				to: t.from.n,
+				body: text.split("\n").filter(Boolean),
+			};
+			setSentX((s) => ({ ...s, [t.id]: [...(s[t.id] ?? []), msg] }));
+			setOv(t.id, {
+				st: markDone ? "hotovo" : "odeslano",
+				closed: markDone,
+				sent: true,
+				read: true,
+				snip: `Ty: ${text.slice(0, 64)}`,
+				time: "teď",
+			});
+			setDrafts((s) => {
+				const next = { ...s };
+				delete next[t.id];
+				return next;
+			});
+			detach(t.id);
+			setWarn(null);
+			// undo lišta 10 s (prototyp startUndo, ř. 3497)
+			if (undoTimer.current) clearInterval(undoTimer.current);
+			setUndo({ on: true, left: 10, mb: t.mb ?? "osobni", markDone });
+			undoTimer.current = setInterval(() => {
+				setUndo((u) => {
+					if (!u) return null;
+					if (u.left <= 1) {
+						if (undoTimer.current) clearInterval(undoTimer.current);
+						return null;
+					}
+					return { ...u, left: u.left - 1 };
+				});
+			}, 1000);
+		},
+		[drafts, ov, attached, sentX, setOv, detach],
+	);
+
+	/** Řetěz ochran před odesláním (prototyp checkSend, ř. 3406–3429). */
+	const checkSend = useCallback(
+		(t: MailThread, markDone: boolean) => {
+			// kolizní pojistka — kolega právě dopisuje (seed t.coll); druhý klik do 6 s odešle
+			if (t.coll && !collArmed) {
+				setCollArmed(true);
+				showToast("Petra právě dopisuje odpověď — kliknutím znovu odešleš i tak");
+				if (collTimer.current) clearTimeout(collTimer.current);
+				collTimer.current = setTimeout(() => setCollArmed(false), 6000);
+				return;
+			}
+			setCollArmed(false);
+			// hlídání přílohy: text slibuje přílohu, ale žádná není
+			const text = drafts[t.id]?.text ?? (t.draft ?? []).join("\n");
+			if (/příloh|příloz|přikládám|přiložen|attach/i.test(text) && !attached[t.id]) {
+				setWarn({ id: t.id, markDone });
+				return;
+			}
+			doSend(t, markDone);
+		},
+		[collArmed, drafts, attached, doSend],
+	);
+
+	/** Zpět vzetí odeslání — obnoví koncept i stav (prototyp undoBack, ř. 4148). */
+	const undoBack = useCallback(() => {
+		const p = prevSend.current;
+		if (!p) return;
+		if (undoTimer.current) clearInterval(undoTimer.current);
+		setUndo(null);
+		setOvState((s) => {
+			const next = { ...s };
+			if (p.ov) next[p.id] = p.ov;
+			else delete next[p.id];
+			return next;
+		});
+		setDrafts((s) => {
+			const next = { ...s };
+			if (p.draft) next[p.id] = p.draft;
+			else delete next[p.id];
+			return next;
+		});
+		setSentX((s) => {
+			const next = { ...s };
+			if (p.sent) next[p.id] = p.sent;
+			else delete next[p.id];
+			return next;
+		});
+		if (p.att) setAttached((s) => ({ ...s, [p.id]: p.att as string }));
+		showToast("Odeslání vzato zpět — koncept je zpátky v editoru");
+		prevSend.current = null;
+	}, []);
+
+	const sendChat = useCallback((id: string, text: string) => {
+		if (!text.trim()) return;
+		setChatX((s) => ({
+			...s,
+			[id]: [...(s[id] ?? []), { who: "ad", t: "teď", pre: text.trim() }],
+		}));
+	}, []);
+
+	const setPerOsoba = useCallback((v: boolean) => {
+		setPerOsobaRaw(v);
+		localStorage.setItem(LS.perOsoba, String(v));
+	}, []);
+	const setMbRead = useCallback((mb: string, mode: "per" | "shared") => {
+		setMbReadState((s) => {
+			const next = { ...s, [mb]: mode };
+			localStorage.setItem(LS.mbRead, JSON.stringify(next));
+			return next;
+		});
+	}, []);
+	const setChatOff = useCallback((v: boolean) => {
+		setChatOffRaw(v);
+		localStorage.setItem(LS.chatOff, v ? "1" : "0");
+	}, []);
+
+	const gkDecide = useCallback<MailCtxValue["gkDecide"]>((id, verdict) => {
+		setGkDone((s) => ({ ...s, [id]: verdict }));
+		const g = GK.find((x) => x.id === id);
+		const labels: Record<string, string> = {
+			accept: "Povoleno — příště rovnou do Inboxu",
+			acceptDone: "Povoleno a rovnou vyřízeno",
+			block: "Blokováno — odesílatel už neprojde",
+			blockDom: "Blokována celá doména",
+		};
+		showToast(`${g?.name ?? id}: ${labels[verdict]}`);
+	}, []);
+
+	const toggleExp = useCallback((key: string) => {
+		setExp((s) => ({ ...s, [key]: !s[key] }));
+	}, []);
+	const allowImgs = useCallback((id: string) => {
+		setImgOk((s) => ({ ...s, [id]: true }));
+	}, []);
+	const toggleFilter = useCallback((k: "unread" | "att" | "mine" | "fu") => {
+		setFilters((s) => ({ ...s, [k]: !s[k] }));
+	}, []);
+
+	const gkLeft = GK.filter((g) => !gkDone[g.id]).length;
+
+	const value = useMemo<MailCtxValue>(
+		() => ({
+			threads: TH,
+			folder,
+			setFolder,
+			fdr,
+			setFdr,
+			grp,
+			setGrp,
+			filters,
+			toggleFilter,
+			sel,
+			ctab,
+			setCtab,
+			mstep,
+			setMstep,
+			pinExp,
+			setPinExp,
+			rozOn,
+			setRozOn,
+			selIds,
+			toggleSel,
+			clearSel,
+			ovOf,
+			eff,
+			unreadFor,
+			readModeOf,
+			unreadStats,
+			msgsOf,
+			openThread,
+			closeThread,
+			rowAct,
+			bulkAct,
+			setOv,
+			setFlag: setFlagAct,
+			setThreadState,
+			setOwner,
+			drafts,
+			setDraft,
+			attached,
+			attach,
+			detach,
+			sentX,
+			checkSend,
+			undo,
+			undoBack,
+			warn,
+			setWarn,
+			collArmed,
+			chatX,
+			sendChat,
+			chatOff,
+			setChatOff,
+			perOsoba,
+			setPerOsoba,
+			mbRead,
+			setMbRead,
+			gkDone,
+			gkDecide,
+			gkLeft,
+			exp,
+			toggleExp,
+			translated,
+			setTranslated,
+			imgOk,
+			allowImgs,
+			sum,
+			setSum,
+			taskLinks,
+			bridge: bridge ?? {},
+			adm: ADM_SEED,
+			nast: NAST_SEED,
+		}),
+		[
+			folder,
+			setFolder,
+			fdr,
+			grp,
+			filters,
+			toggleFilter,
+			sel,
+			ctab,
+			mstep,
+			pinExp,
+			rozOn,
+			selIds,
+			toggleSel,
+			clearSel,
+			ovOf,
+			eff,
+			unreadFor,
+			readModeOf,
+			unreadStats,
+			msgsOf,
+			openThread,
+			closeThread,
+			rowAct,
+			bulkAct,
+			setOv,
+			setFlagAct,
+			setThreadState,
+			setOwner,
+			drafts,
+			setDraft,
+			attached,
+			attach,
+			detach,
+			sentX,
+			checkSend,
+			undo,
+			undoBack,
+			warn,
+			collArmed,
+			chatX,
+			sendChat,
+			chatOff,
+			setChatOff,
+			perOsoba,
+			setPerOsoba,
+			mbRead,
+			setMbRead,
+			gkDone,
+			gkDecide,
+			gkLeft,
+			exp,
+			toggleExp,
+			translated,
+			imgOk,
+			allowImgs,
+			sum,
+			taskLinks,
+			bridge,
+		],
+	);
+
+	return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function useMail(): MailCtxValue {
+	const v = useContext(Ctx);
+	if (!v) throw new Error("useMail mimo MailProvider");
+	return v;
+}
+
+/** Souhrn pro zbytek aplikace (badge sidebar; Přehled/Velín v další várce). */
+export function useMailUnread(): number {
+	const v = useContext(Ctx);
+	if (!v) return 0;
+	return v.unreadStats().total;
+}

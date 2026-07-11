@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Cheatsheet } from "../components/Cheatsheet";
 import { CommandPalette } from "../components/CommandPalette";
@@ -47,9 +47,16 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const gPending = useRef(false);
 	const gTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+	// Mail vlastní klávesnici, když je jeho obrazovka aktivní — appka své zkratky
+	// vypíná (prototyp _onKey ř. 2853: `if(screen==='mail') return`).
+	const path = useRouterState({ select: (s) => s.location.pathname });
+	const onMail = path.startsWith("/mail");
+	const onMailRef = useRef(onMail);
+	onMailRef.current = onMail;
 
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
+			if (onMailRef.current) return;
 			// Esc zavře tahák / paletu (ostatní vrstvy mají vlastní Esc handlery)
 			if (e.key === "Escape") {
 				if (cheatOpen) setCheatOpen(false);

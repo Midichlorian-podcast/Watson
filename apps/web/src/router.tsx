@@ -22,6 +22,7 @@ const Hledat = named(() => import("./screens/Hledat"), "Hledat");
 const Prehled = named(() => import("./screens/Prehled"), "Prehled");
 const Seznamy = named(() => import("./screens/Seznamy"), "Seznamy");
 const Velin = named(() => import("./screens/Velin"), "Velin");
+const Mail = named(() => import("./screens/Mail"), "Mail");
 const Nastaveni = named(() => import("./screens/Nastaveni"), "Nastaveni");
 const Postupy = named(() => import("./screens/Postupy"), "Postupy");
 const Projekty = named(() => import("./screens/Projekty"), "Projekty");
@@ -50,6 +51,11 @@ const velinRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/velin",
 	component: Velin,
+});
+const mailRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/mail",
+	component: Mail,
 });
 const indexRoute = createRoute({
 	getParentRoute: () => rootRoute,
@@ -134,6 +140,7 @@ const routeTree = rootRoute.addChildren([
 	prehledRoute,
 	seznamyRoute,
 	velinRoute,
+	mailRoute,
 	indexRoute,
 	ukolyRoute,
 	nadchRoute,
