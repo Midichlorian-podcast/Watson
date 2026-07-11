@@ -122,19 +122,19 @@ export function useSwipe(opts: {
 		st.current.dx = 0;
 	}, [finish]);
 
-	/** Trackpad: gesto se ozbrojí jen VÝRAZNĚ horizontálním pohybem, svislý
-	 * scroll ho ruší; akce se potvrdí až po 280 ms klidu (≈ puštění prstů). */
+	/** Trackpad: ozbrojí se prvním převážně horizontálním pohybem a pak jede
+	 * PLYNULE (drobné svislé chvění gesto neruší — ruší ho jen zřetelně svislý
+	 * scroll); akce se potvrdí 160 ms po posledním pohybu (≈ puštění prstů). */
 	const onWheel = useCallback(
 		(e: React.WheelEvent) => {
 			if (disabled) return;
 			const ax = Math.abs(e.deltaX);
 			const ay = Math.abs(e.deltaY);
 			if (!wheel.current.armed) {
-				// vstupní podmínka: zřetelně do strany, ne šikmý scroll
-				if (ax < 8 || ax <= 2 * ay) return;
+				if (ax < 4 || ax <= ay) return;
 				wheel.current.armed = true;
-			} else if (ay >= ax) {
-				// svislý pohyb během gesta = omyl → zrušit bez akce
+			} else if (ay > 12 && ay > 2 * ax) {
+				// zřetelně svislý scroll během gesta = omyl → zrušit bez akce
 				cancelWheel();
 				return;
 			}
@@ -146,7 +146,7 @@ export function useSwipe(opts: {
 				const dx = wheel.current.acc;
 				wheel.current = { acc: 0, armed: false, timer: null };
 				finish(dx);
-			}, 280);
+			}, 160);
 		},
 		[disabled, emit, finish, cancelWheel],
 	);

@@ -4,22 +4,25 @@ import { Icon, type IconName } from "@watson/ui";
 import { useState } from "react";
 import { useWatson } from "../lib/watson";
 import { isLeadership, useWorkspaces } from "../lib/workspace";
+import { useMailUnread } from "../mail/state";
 
+/** Hlavní taby = nejdůležitější moduly Watsonu (feedback 2026-07-11):
+ * Přehled (domovská syntéza), Dnes, Mail (s počtem nepřečtených), Úkoly. */
 const TABS: {
-	to: "/" | "/ukoly" | "/nadchazejici" | "/projekty";
+	to: "/prehled" | "/" | "/mail" | "/ukoly";
 	icon: IconName;
 	labelKey: string;
 }[] = [
+	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
 	{ to: "/", icon: "dnes", labelKey: "nav.today" },
+	{ to: "/mail", icon: "mail", labelKey: "nav.mail" },
 	{ to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks" },
-	{ to: "/nadchazejici", icon: "nadchazejici", labelKey: "nav.upcoming" },
-	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
 ];
 
 /** Sekce dostupné přes „Více" (na mobilu není sidebar → jinak nedosažitelné). */
 const MORE: { to: string; icon: IconName; labelKey: string }[] = [
-	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
-	{ to: "/mail", icon: "mail", labelKey: "nav.mail" },
+	{ to: "/nadchazejici", icon: "nadchazejici", labelKey: "nav.upcoming" },
+	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
 	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox" },
@@ -31,13 +34,14 @@ const MORE: { to: string; icon: IconName; labelKey: string }[] = [
 	{ to: "/nastaveni", icon: "nastaveni", labelKey: "nav.settings" },
 ];
 
-/** Mobilní spodní lišta: 4 hlavní navigace + „Více" (list ostatních sekcí) + Watson. */
+/** Mobilní spodní lišta: 4 hlavní moduly + „Více" (list ostatních sekcí) + Watson. */
 export function MobileTabBar() {
 	const { t } = useTranslation();
 	const { toggleWatson } = useWatson();
 	const path = useRouterState({ select: (s) => s.location.pathname });
 	const [moreOpen, setMoreOpen] = useState(false);
 	const { data: workspaces } = useWorkspaces();
+	const mailUnread = useMailUnread();
 
 	// Velín jen pro vedení (Vlastník/Admin) — stejný gating jako sidebar.
 	const more = isLeadership(workspaces)
@@ -106,6 +110,7 @@ export function MobileTabBar() {
 			>
 				{TABS.map((tab) => {
 					const active = tab.to === "/" ? path === "/" : path.startsWith(tab.to);
+					const badge = tab.to === "/mail" ? mailUnread : 0;
 					return (
 						<Link
 							key={tab.to}
@@ -118,7 +123,30 @@ export function MobileTabBar() {
 								color: active ? "var(--w-brass-text)" : "var(--w-ink-3)",
 							}}
 						>
-							<Icon name={tab.icon} size={20} />
+							<span style={{ position: "relative", display: "inline-flex" }}>
+								<Icon name={tab.icon} size={20} />
+								{badge > 0 && (
+									<span
+										className="font-mono"
+										style={{
+											position: "absolute",
+											top: -4,
+											right: -9,
+											minWidth: 14,
+											height: 14,
+											padding: "0 3px",
+											borderRadius: 999,
+											background: "var(--w-brass)",
+											color: "#fff",
+											fontSize: 8.5,
+											lineHeight: "14px",
+											textAlign: "center",
+										}}
+									>
+										{badge > 99 ? "99+" : badge}
+									</span>
+								)}
+							</span>
 							<span
 								className="font-display font-semibold"
 								style={{ fontSize: 10 }}

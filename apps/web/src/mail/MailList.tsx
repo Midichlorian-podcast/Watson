@@ -190,7 +190,10 @@ export function useListRows() {
 				const e = m.eff(t);
 				if (!inMb(t)) return false;
 				if (m.fdr === "odeslane") return !!t.sentF;
-				if (m.fdr === "koncepty") return !!t.draftF;
+				// koncepty: seed koncepty + ŽIVĚ rozepsané odpovědi odkudkoli
+				// (vlákno, plovoucí okno, peek z Přehledu/Velína — persist drafts)
+				if (m.fdr === "koncepty")
+					return !!t.draftF || !!m.drafts[t.id]?.text?.trim();
 				if (m.fdr === "archiv") return !!e.arch;
 				return isDor(t, e);
 			});
@@ -494,11 +497,11 @@ function MailRow({
 				const ax = Math.abs(ev.deltaX);
 				const ay = Math.abs(ev.deltaY);
 				if (!swWheel.current.armed) {
-					// vstup: zřetelně do strany, ne šikmý scroll
-					if (ax < 8 || ax <= 2 * ay) return;
+					// ozbrojení prvním převážně horizontálním pohybem
+					if (ax < 4 || ax <= ay) return;
 					swWheel.current.armed = true;
-				} else if (ay >= ax) {
-					// svislý pohyb během gesta = omyl → zrušit bez akce
+				} else if (ay > 12 && ay > 2 * ax) {
+					// zřetelně svislý scroll během gesta = omyl → zrušit bez akce
 					if (swWheel.current.timer) clearTimeout(swWheel.current.timer);
 					swWheel.current = { armed: false, timer: null };
 					sw.current.dx = 0;
@@ -506,14 +509,15 @@ function MailRow({
 					swApply(0);
 					return;
 				}
-				// obsah jede proti směru prstů (natural scroll)
+				// obsah jede proti směru prstů (natural scroll); drobné svislé
+				// chvění gesto neruší → tah je plynulý
 				sw.current.dx -= ev.deltaX;
 				swApply(sw.current.dx);
 				if (swWheel.current.timer) clearTimeout(swWheel.current.timer);
 				swWheel.current.timer = setTimeout(() => {
 					swWheel.current = { armed: false, timer: null };
 					swFinish();
-				}, 280);
+				}, 160);
 			}}
 			data-tid={t.id}
 			tabIndex={0}

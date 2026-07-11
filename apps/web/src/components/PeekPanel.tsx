@@ -9,7 +9,7 @@
  */
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
@@ -19,7 +19,8 @@ import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { toggleTask } from "../lib/tasks";
-import { SLA, TH } from "../mail/data";
+import { showToast } from "../lib/toast";
+import { P, SLA, TH } from "../mail/data";
 import { useMail } from "../mail/state";
 
 export type PeekTarget =
@@ -196,7 +197,7 @@ export function PeekPanel({
 					{target.kind === "goal" && <GoalPeek goal={target.goal} />}
 					{target.kind === "flow" && <FlowPeek flow={target.flow} />}
 					{target.kind === "mail" && (
-						<MailPeek id={target.id} onClose={onClose} openFull={target.openFull} />
+						<MailPeek id={target.id} onClose={onClose} />
 					)}
 					{target.kind === "list" && <ListPeek id={target.id} />}
 					{target.kind === "member" && (
@@ -431,22 +432,63 @@ function FlowPeek({ flow }: { flow: FlowOverviewRow }) {
 	);
 }
 
-/** Pošta — náhled vlákna + přímé odbavení (Hotovo / Odložit / → úkol). */
-function MailPeek({
-	id,
-	onClose,
-	openFull,
-}: {
-	id: string;
-	onClose: () => void;
-	openFull: () => void;
-}) {
+/** Jméno fake přílohy + neviditelný marker „poslat bez přílohy" (vzor MailThread). */
+const PEEK_ATT_NAME = "dokument_1.pdf · 118 kB";
+const PEEK_ATT_MARK = "—";
+
+/**
+ * Pošta — plný workspace v peeku (feedback 3. kolo: „napsat komplet mail,
+ * odeslat ho, přidělit ho"): všechny zprávy, přidělení vlastníka, odpověď
+ * s REAL-TIME ukládáním do Konceptů (stejný draft store jako vlákno),
+ * odeslání přes checkSend (celý řetěz ochran) a rychlé akce. Po odeslání
+ * nebo Hotovo se karta zavře → zpátky na Přehled/Velín.
+ */
+function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 	const { t } = useTranslation();
 	const m = useMail();
 	const th = TH.find((x) => x.id === id);
+	// odeslání odložené na další render — checkSend čte attached ze zavřeného
+	// kontextu, po m.attach() musí proběhnout nový render (vzor MailThread pend)
+	const [pend, setPend] = useState<{ markDone: boolean } | null>(null);
+	// počet odeslaných před pokusem — nárůst = doopravdy odesláno → zavřít
+	const sentBase = useRef<number | null>(null);
+	const setOv = m.setOv;
+
+	// otevření peeku = přečteno (zrcadlí openThread, state.tsx ř. 460)
+	useEffect(() => {
+		setOv(id, { read: true });
+	}, [id, setOv]);
+
+	useEffect(() => {
+		if (pend && th) {
+			setPend(null);
+			m.checkSend(th, pend.markDone);
+		}
+	}, [pend, th, m]);
+
+	const sentCount = (m.sentX[id] ?? []).length;
+	useEffect(() => {
+		if (sentBase.current !== null && sentCount > sentBase.current) {
+			sentBase.current = null;
+			showToast(t("peek.sentToast"));
+			onClose();
+		}
+	}, [sentCount, onClose, t]);
+
 	if (!th) return null;
 	const sla = th.flag ? SLA[th.flag] : undefined;
 	const hasTask = (m.taskLinks[id] ?? []).length > 0;
+	const ownerKey = m.ovOf(id).owner ?? th.owner ?? null;
+	const draftText = m.drafts[id]?.text ?? (th.draft ?? []).join("\n");
+	const attachedLabel = m.attached[id];
+	const warnHere = m.warn?.id === id ? m.warn : null;
+	const allMsgs = [...th.msgs, ...(m.sentX[id] ?? [])];
+
+	const trySend = (markDone: boolean) => {
+		sentBase.current = sentCount;
+		m.checkSend(th, markDone);
+	};
+
 	return (
 		<div>
 			<div className="flex items-center" style={{ gap: 8 }}>
@@ -484,16 +526,52 @@ function MailPeek({
 				)}
 			</div>
 
-			{/* přímé odbavení — akce mail modulu (rowAct/quickTask přes provider) */}
-			<div className="flex flex-wrap" style={{ gap: 8, marginTop: 14 }}>
-				<ActBtn
-					primary
-					label={t("peek.mailReply")}
-					onClick={() => {
-						onClose();
-						openFull();
-					}}
-				/>
+			{/* přidělení vlastníka (m.setOwner — týmové vlákno) */}
+			{!th.personal && (
+				<div className="flex flex-wrap items-center" style={{ gap: 6, marginTop: 12 }}>
+					<span
+						className="shrink-0 font-display font-semibold text-ink-3"
+						style={{ fontSize: 10.5 }}
+					>
+						{t("peek.owner")}:
+					</span>
+					<button
+						type="button"
+						onClick={() => m.setOwner(id, null)}
+						className="rounded-full border font-display font-semibold"
+						style={{
+							fontSize: 10.5,
+							padding: "2px 9px",
+							borderColor: ownerKey ? "var(--w-line)" : "var(--w-brass)",
+							background: ownerKey ? "var(--w-card)" : "var(--w-brass-soft)",
+							color: ownerKey ? "var(--w-ink-3)" : "var(--w-brass-text)",
+						}}
+					>
+						{t("peek.ownerNone")}
+					</button>
+					{Object.entries(P).map(([key, p]) => (
+						<button
+							key={key}
+							type="button"
+							onClick={() => m.setOwner(id, key)}
+							title={p.n}
+							className="rounded-full border font-display font-semibold"
+							style={{
+								fontSize: 10.5,
+								padding: "2px 9px",
+								borderColor: ownerKey === key ? "var(--w-brass)" : "var(--w-line)",
+								background: ownerKey === key ? "var(--w-brass-soft)" : "var(--w-card)",
+								color: ownerKey === key ? "var(--w-brass-text)" : "var(--w-ink-2)",
+							}}
+						>
+							{p.n.split(" ")[0]}
+						</button>
+					))}
+				</div>
+			)}
+
+			{/* rychlé odbavení — po akci zpátky na Přehled/Velín */}
+			<div className="flex flex-wrap" style={{ gap: 8, marginTop: 12 }}>
 				<ActBtn
 					label={t("bulk.done")}
 					onClick={() => {
@@ -528,8 +606,9 @@ function MailPeek({
 					{th.sum}
 				</div>
 			)}
+
 			<SectionLabel>{t("peek.mailMsgs")}</SectionLabel>
-			{th.msgs.slice(-2).map((mg, i) => (
+			{allMsgs.map((mg, i) => (
 				<div
 					key={`${mg.t}-${i}`}
 					className="rounded-[10px] border border-line"
@@ -544,12 +623,11 @@ function MailPeek({
 						className="font-body text-ink-2"
 						style={{ fontSize: 12, marginTop: 6, lineHeight: 1.55 }}
 					>
-						{mg.body.slice(0, 3).map((pp, j) => (
+						{mg.body.map((pp, j) => (
 							<p key={`${j}-${pp.slice(0, 8)}`} style={{ margin: "0 0 5px" }}>
 								{pp}
 							</p>
 						))}
-						{mg.body.length > 3 && <span className="text-ink-3">…</span>}
 					</div>
 				</div>
 			))}
@@ -558,6 +636,103 @@ function MailPeek({
 					{t("peek.mailChat", { count: th.chat.length })}
 				</div>
 			)}
+
+			{/* odpověď — STEJNÝ draft store jako vlákno (real-time → Koncepty) */}
+			<SectionLabel>{t("peek.reply")}</SectionLabel>
+			<textarea
+				value={draftText}
+				onChange={(e) => m.setDraft(id, e.target.value)}
+				rows={4}
+				placeholder={t("peek.replyPh")}
+				className="font-body text-ink"
+				style={{
+					width: "100%",
+					boxSizing: "border-box",
+					border: "1px solid var(--w-line)",
+					background: "var(--w-panel-2)",
+					borderRadius: 11,
+					padding: "10px 12px",
+					fontSize: 12.5,
+					lineHeight: 1.55,
+					outline: "none",
+					resize: "vertical",
+				}}
+			/>
+			{attachedLabel && attachedLabel !== PEEK_ATT_MARK && (
+				<div
+					className="inline-flex items-center font-mono text-ink-2"
+					style={{
+						gap: 5,
+						fontSize: 10,
+						background: "var(--w-panel-2)",
+						border: "1px solid var(--w-line)",
+						borderRadius: 6,
+						padding: "2px 8px",
+						marginTop: 6,
+					}}
+				>
+					📎 {attachedLabel}
+					<button
+						type="button"
+						onClick={() => m.detach(id)}
+						className="text-ink-3"
+						style={{ lineHeight: 1 }}
+					>
+						×
+					</button>
+				</div>
+			)}
+
+			{/* inline varování o slíbené příloze — MailThread tu není, kreslíme sami */}
+			{warnHere && (
+				<div
+					className="font-body"
+					style={{
+						fontSize: 12,
+						marginTop: 10,
+						padding: "10px 12px",
+						borderRadius: 10,
+						background: "var(--w-overdue-soft)",
+						color: "var(--w-ink)",
+					}}
+				>
+					<div className="font-display font-bold" style={{ fontSize: 12.5 }}>
+						{t("peek.warnTitle")}
+					</div>
+					<div className="flex flex-wrap" style={{ gap: 7, marginTop: 8 }}>
+						<ActBtn label={t("peek.warnCancel")} onClick={() => m.setWarn(null)} />
+						<ActBtn
+							label={t("peek.warnAnyway")}
+							onClick={() => {
+								m.attach(id, PEEK_ATT_MARK);
+								m.setWarn(null);
+								setPend({ markDone: warnHere.markDone });
+							}}
+						/>
+						<ActBtn
+							primary
+							label={t("peek.warnAttach")}
+							onClick={() => {
+								m.attach(id, PEEK_ATT_NAME);
+								m.setWarn(null);
+								setPend({ markDone: warnHere.markDone });
+							}}
+						/>
+					</div>
+				</div>
+			)}
+
+			<div className="flex flex-wrap items-center" style={{ gap: 8, marginTop: 10 }}>
+				<ActBtn primary label={t("peek.send")} onClick={() => trySend(false)} />
+				<ActBtn label={t("peek.sendDone")} onClick={() => trySend(true)} />
+				<ActBtn
+					label={t("peek.attach")}
+					onClick={() => m.attach(id, PEEK_ATT_NAME)}
+				/>
+				<span className="font-body text-ink-3" style={{ fontSize: 10.5, marginLeft: "auto" }}>
+					{t("peek.draftNote")}
+				</span>
+			</div>
 		</div>
 	);
 }
