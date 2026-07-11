@@ -18,17 +18,7 @@ import {
 	useState,
 } from "react";
 import { showToast } from "../lib/toast";
-import {
-	ADM_SEED,
-	GK,
-	type MailThread,
-	MB,
-	NAST_SEED,
-	P,
-	SLA,
-	STL,
-	TH,
-} from "./data";
+import { ADM_SEED, GK, type MailThread, MB, NAST_SEED, P, SLA, STL, TH } from "./data";
 
 /** Per-thread overrides (prototyp `ov` + eff, ř. 3449–3465). */
 export interface ThreadOv {
@@ -113,10 +103,7 @@ export interface MailBridge {
 	onNav?: (target: string) => void;
 	taskStates?: Record<string, { done: boolean }>;
 	/** Vazby vlákno → úkoly odvozené z reálných tasks.mail_th (bridge.tsx). */
-	taskLinks?: Record<
-		string,
-		{ n: string; owner: string; prio: string; app: string }[]
-	>;
+	taskLinks?: Record<string, { n: string; owner: string; prio: string; app: string }[]>;
 	/** Projekty aplikace pro Email → úkol formulář (L-19: osobní vlákno smí jen osobní). */
 	projects?: { id: string; name: string; color: string | null; personal: boolean }[];
 	onCreateTask?: (payload: {
@@ -171,16 +158,7 @@ interface MailCtxValue {
 	closeThread: () => void;
 	rowAct: (
 		id: string,
-		kind:
-			| "done"
-			| "pin"
-			| "snooze"
-			| "arch"
-			| "trash"
-			| "spam"
-			| "unread"
-			| "mute"
-			| "restore",
+		kind: "done" | "pin" | "snooze" | "arch" | "trash" | "spam" | "unread" | "mute" | "restore",
 	) => void;
 	bulkAct: (kind: "done" | "arch" | "trash" | "unread") => void;
 	setOv: (id: string, patch: ThreadOv) => void;
@@ -225,6 +203,9 @@ interface MailCtxValue {
 	setPerOsoba: (v: boolean) => void;
 	mbRead: Record<string, "per" | "shared">;
 	setMbRead: (mb: string, mode: "per" | "shared") => void;
+	// podpisy composeru (vzor Spark) — klíč = id schránky nebo "osobni", hodnota = id podpisu (SIGS)
+	sigChoice: Record<string, string>;
+	setSigChoice: (mb: string, sigId: string) => void;
 	// gatekeeper
 	gkDone: Record<string, string>;
 	gkDecide: (id: string, verdict: "accept" | "acceptDone" | "block" | "blockDom") => void;
@@ -255,6 +236,7 @@ const LS = {
 	perOsoba: "watson-mail.perOsoba",
 	mbRead: "watson-mail.mbRead",
 	chatOff: "watson-mail.chatOff",
+	sig: "watson-mail.sig",
 };
 
 const loadJSON = <T,>(key: string, fallback: T): T => {
@@ -276,18 +258,10 @@ const TASK_LINKS_SEED: MailCtxValue["taskLinks"] = {
 			app: "mx1",
 		},
 	],
-	opjak: [
-		{ n: "Doplnit rozpočet k žádosti OP JAK", owner: "mh", prio: "p1", app: "mx2" },
-	],
+	opjak: [{ n: "Doplnit rozpočet k žádosti OP JAK", owner: "mh", prio: "p1", app: "mx2" }],
 };
 
-export function MailProvider({
-	children,
-	bridge,
-}: {
-	children: ReactNode;
-	bridge?: MailBridge;
-}) {
+export function MailProvider({ children, bridge }: { children: ReactNode; bridge?: MailBridge }) {
 	const [folder, setFolderRaw] = useState<MailFolder>("vse");
 	const [scr, setScr] = useState<MailScr>("mail");
 	const [fdr, setFdr] = useState("dorucene");
@@ -305,21 +279,19 @@ export function MailProvider({
 	const [rozOn, setRozOn] = useState(false);
 	const [selIds, setSelIds] = useState<Record<string, true>>({});
 	const [ov, setOvState] = useState<Record<string, ThreadOv>>({});
-	const [drafts, setDrafts] = useState<Record<string, DraftState>>(() =>
-		loadJSON(LS.drafts, {}),
-	);
+	const [drafts, setDrafts] = useState<Record<string, DraftState>>(() => loadJSON(LS.drafts, {}));
 	const [attached, setAttached] = useState<Record<string, string>>({});
 	const [sentX, setSentX] = useState<Record<string, SentMsg[]>>({});
 	const [float, setFloat] = useState<{ id: string; min: boolean } | null>(null);
 	const [chatX, setChatX] = useState<Record<string, ChatExtra[]>>({});
-	const [chatOff, setChatOffRaw] = useState(
-		() => localStorage.getItem(LS.chatOff) === "1",
+	const [chatOff, setChatOffRaw] = useState(() => localStorage.getItem(LS.chatOff) === "1");
+	const [perOsoba, setPerOsobaRaw] = useState(() => localStorage.getItem(LS.perOsoba) !== "false");
+	const [mbRead, setMbReadState] = useState<Record<string, "per" | "shared">>(() =>
+		loadJSON(LS.mbRead, {}),
 	);
-	const [perOsoba, setPerOsobaRaw] = useState(
-		() => localStorage.getItem(LS.perOsoba) !== "false",
-	);
-	const [mbRead, setMbReadState] = useState<Record<string, "per" | "shared">>(
-		() => loadJSON(LS.mbRead, {}),
+	// volba podpisu per identita — drží jen explicitní volby, defaulty řeší SigPicker.sigBody
+	const [sigChoice, setSigChoiceState] = useState<Record<string, string>>(() =>
+		loadJSON(LS.sig, {}),
 	);
 	const [gkDone, setGkDone] = useState<Record<string, string>>({});
 	const [sd, setSdState] = useState<Record<string, SdState>>({});
@@ -332,9 +304,7 @@ export function MailProvider({
 	const [imgOk, setImgOk] = useState<Record<string, boolean>>({});
 	const [sum, setSum] = useState(true);
 	const [undo, setUndo] = useState<UndoState | null>(null);
-	const [warn, setWarn] = useState<{ id: string; markDone: boolean } | null>(
-		null,
-	);
+	const [warn, setWarn] = useState<{ id: string; markDone: boolean } | null>(null);
 	const [collArmed, setCollArmed] = useState(false);
 	// Reálné vazby z tasks.mail_th (bridge); seed jen jako fallback bez aplikace.
 	const taskLinks = bridge?.taskLinks ?? TASK_LINKS_SEED;
@@ -443,8 +413,7 @@ export function MailProvider({
 		let pers = 0;
 		for (const t of TH) {
 			const e = eff(t);
-			if (e.muted || t.sentF || t.draftF || e.arch || e.trash || e.snoozed)
-				continue;
+			if (e.muted || t.sentF || t.draftF || e.arch || e.trash || e.snoozed) continue;
 			if (!unreadFor(t)) continue;
 			if (t.personal) {
 				pers++;
@@ -537,10 +506,7 @@ export function MailProvider({
 					setOv(id, { muted: !e.muted });
 					break;
 				case "restore":
-					undoPatch(
-						{ arch: false, trash: false, snoozed: null, spam: false },
-						"Vráceno do Inboxu",
-					);
+					undoPatch({ arch: false, trash: false, snoozed: null, spam: false }, "Vráceno do Inboxu");
 					break;
 			}
 		},
@@ -599,12 +565,9 @@ export function MailProvider({
 		[setOv],
 	);
 
-	const setDraft = useCallback(
-		(id: string, text: string, mode: DraftState["mode"] = "edit") => {
-			setDrafts((s) => ({ ...s, [id]: { ...s[id], mode, text } }));
-		},
-		[],
-	);
+	const setDraft = useCallback((id: string, text: string, mode: DraftState["mode"] = "edit") => {
+		setDrafts((s) => ({ ...s, [id]: { ...s[id], mode, text } }));
+	}, []);
 	const attach = useCallback((id: string, label: string) => {
 		setAttached((s) => ({ ...s, [id]: label }));
 	}, []);
@@ -673,15 +636,11 @@ export function MailProvider({
 			// sdílený koncept ve schvalování — pending && !approved blokuje odeslání
 			const sdt = sd[t.id];
 			if (sdt?.pending && !sdt.approved) {
-				showToast(
-					"Koncept čeká na schválení — odeslat ho půjde až po schválení pověřenou osobou.",
-				);
+				showToast("Koncept čeká na schválení — odeslat ho půjde až po schválení pověřenou osobou.");
 				return;
 			}
 			if (sdt?.returned && !sdt.approved) {
-				showToast(
-					"Koncept je vrácený s komentářem — uprav ho a vyžádej schválení znovu.",
-				);
+				showToast("Koncept je vrácený s komentářem — uprav ho a vyžádej schválení znovu.");
 				return;
 			}
 			// kolizní pojistka — kolega právě dopisuje (seed t.coll); druhý klik do 6 s odešle
@@ -709,16 +668,13 @@ export function MailProvider({
 	const sdPatch = useCallback((id: string, patch: SdState) => {
 		setSdState((s) => ({ ...s, [id]: { ...s[id], ...patch } }));
 	}, []);
-	const sdShare = useCallback(
-		(id: string) => {
-			const t = TH.find((x) => x.id === id);
-			setSdState((s) => ({ ...s, [id]: { shared: true } }));
-			showToast(
-				`Koncept sdílen s týmem ${(t && !t.personal && MB[t.mb]?.short) || ""} — píšete ho spolu, změny se slévají živě.`,
-			);
-		},
-		[],
-	);
+	const sdShare = useCallback((id: string) => {
+		const t = TH.find((x) => x.id === id);
+		setSdState((s) => ({ ...s, [id]: { shared: true } }));
+		showToast(
+			`Koncept sdílen s týmem ${(t && !t.personal && MB[t.mb]?.short) || ""} — píšete ho spolu, změny se slévají živě.`,
+		);
+	}, []);
 	const sdAsk = useCallback(
 		(id: string) => {
 			sdPatch(id, { pending: true, returned: false });
@@ -791,6 +747,13 @@ export function MailProvider({
 		setMbReadState((s) => {
 			const next = { ...s, [mb]: mode };
 			localStorage.setItem(LS.mbRead, JSON.stringify(next));
+			return next;
+		});
+	}, []);
+	const setSigChoice = useCallback((mb: string, sigId: string) => {
+		setSigChoiceState((s) => {
+			const next = { ...s, [mb]: sigId };
+			localStorage.setItem(LS.sig, JSON.stringify(next));
 			return next;
 		});
 	}, []);
@@ -916,6 +879,8 @@ export function MailProvider({
 			setPerOsoba,
 			mbRead,
 			setMbRead,
+			sigChoice,
+			setSigChoice,
 			gkDone,
 			gkDecide,
 			gkLeft,
@@ -990,6 +955,8 @@ export function MailProvider({
 			setPerOsoba,
 			mbRead,
 			setMbRead,
+			sigChoice,
+			setSigChoice,
 			gkDone,
 			gkDecide,
 			gkLeft,

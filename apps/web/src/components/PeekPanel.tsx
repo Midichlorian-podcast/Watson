@@ -23,6 +23,7 @@ import { toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { useTheme } from "../layout/useTheme";
 import { MB, P, SLA, TH } from "../mail/data";
+import { SigBlock, SigPicker } from "../mail/SigPicker";
 import { useMail } from "../mail/state";
 import { TaskModal } from "../mail/TaskModal";
 
@@ -427,6 +428,8 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 	const [pend, setPend] = useState<{ markDone: boolean } | null>(null);
 	// plný formulář „Úkol" mail modulu (stejný jako ve vlákně — parita pojmů)
 	const [taskOpen, setTaskOpen] = useState(false);
+	// interní diskuse — vstup (sdílený store m.chatX/sendChat jako vlákno)
+	const [chatText, setChatText] = useState("");
 	// počet odeslaných před pokusem — nárůst = doopravdy odesláno → zavřít
 	const sentBase = useRef<number | null>(null);
 	const setOv = m.setOv;
@@ -722,17 +725,125 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 					</div>
 				</div>
 			))}
-			{th.chat.length > 0 && (
-				<div
-					style={{
-						fontFamily: "var(--w-font-body)",
-						fontSize: 11.5,
-						color: "var(--ink-3)",
-					}}
-				>
-					{t("peek.mailChat", { count: th.chat.length })}
+			{/* interní diskuse — PLNÁ (čtení + psaní), stejný store jako vlákno
+			    (feedback: notifikace o zmínce musí vést na viditelný chat) */}
+			<SectionLabel>{t("peek.chat")}</SectionLabel>
+			<div
+				style={{
+					border: "1px solid var(--line)",
+					borderRadius: 10,
+					padding: "8px 11px",
+					background: "var(--panel-2)",
+				}}
+			>
+				{th.chat.length === 0 && (m.chatX[id] ?? []).length === 0 && (
+					<div
+						style={{
+							fontFamily: "var(--w-font-body)",
+							fontSize: 11.5,
+							color: "var(--ink-3)",
+						}}
+					>
+						{t("peek.chatEmpty")}
+					</div>
+				)}
+				{[...th.chat, ...(m.chatX[id] ?? [])].map((c, i) => (
+					<div
+						key={`${c.who}-${c.t}-${i}`}
+						style={{ display: "flex", gap: 8, padding: "3px 0" }}
+					>
+						<span
+							data-av={P[c.who]?.av ?? ""}
+							style={{
+								width: 20,
+								height: 20,
+								borderRadius: "50%",
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+								flex: "none",
+								fontSize: 7.5,
+								fontWeight: 700,
+								background: "var(--panel)",
+								border: "1px solid var(--line)",
+								color: "var(--ink-2)",
+							}}
+						>
+							{P[c.who]?.ini ?? "?"}
+						</span>
+						<span
+							style={{
+								flex: 1,
+								minWidth: 0,
+								fontFamily: "var(--w-font-body)",
+								fontSize: 12,
+								color: "var(--ink-2)",
+								lineHeight: 1.5,
+							}}
+						>
+							<span
+								style={{
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 600,
+									color: "var(--ink)",
+								}}
+							>
+								{P[c.who]?.n.split(" ")[0] ?? c.who}
+							</span>{" "}
+							{"pre" in c && c.pre ? c.pre : ""}
+							{"m" in c && c.m ? (
+								<b style={{ color: "var(--brass-text)" }}> {c.m}</b>
+							) : null}
+							{"post" in c && c.post ? c.post : ""}{" "}
+							<span
+								style={{
+									fontFamily: "var(--w-font-mono)",
+									fontSize: 9,
+									color: "var(--ink-3)",
+								}}
+							>
+								{c.t}
+							</span>
+						</span>
+					</div>
+				))}
+				<div className="flex items-center" style={{ gap: 7, marginTop: 6 }}>
+					<input
+						value={chatText}
+						onChange={(e) => setChatText(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" && chatText.trim()) {
+								m.sendChat(id, chatText.trim());
+								setChatText("");
+							}
+						}}
+						placeholder={t("peek.chatPh")}
+						style={{
+							flex: 1,
+							minWidth: 0,
+							border: "1px solid var(--line)",
+							background: "var(--panel)",
+							color: "var(--ink)",
+							fontFamily: "var(--w-font-body)",
+							fontSize: 12,
+							borderRadius: 9,
+							padding: "6px 10px",
+							outline: "none",
+						}}
+					/>
+					<span
+						data-ghost
+						onClick={() => {
+							if (!chatText.trim()) return;
+							m.sendChat(id, chatText.trim());
+							setChatText("");
+						}}
+						style={{ fontSize: 11, padding: "6px 11px" }}
+					>
+						{t("peek.chatSend")}
+					</span>
 				</div>
-			)}
+			</div>
 
 			{/* odpověď — STEJNÝ draft store jako vlákno (real-time → Koncepty) */}
 			<SectionLabel>{t("peek.reply")}</SectionLabel>
@@ -756,6 +867,8 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 					resize: "vertical",
 				}}
 			/>
+			{/* zvolený podpis na konci mailu — stejný blok jako Nová zpráva/vlákno */}
+			<SigBlock mb={th.personal ? "osobni" : th.mb} />
 			{attachedLabel && attachedLabel !== PEEK_ATT_MARK && (
 				<div
 					className="inline-flex items-center"
@@ -872,6 +985,7 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 				>
 					<ClipSvg />
 				</span>
+				<SigPicker mb={th.personal ? "osobni" : th.mb} />
 				<span
 					style={{
 						fontFamily: "var(--w-font-body)",

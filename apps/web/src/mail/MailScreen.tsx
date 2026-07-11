@@ -80,9 +80,7 @@ export function MailScreen() {
 			const startX = e.clientX;
 			setDragging(true);
 			const mv = (ev: PointerEvent) => {
-				const nw = Math.round(
-					Math.max(300, Math.min(620, startW + (ev.clientX - startX))),
-				);
+				const nw = Math.round(Math.max(300, Math.min(620, startW + (ev.clientX - startX))));
 				lwRef.current = `${nw}px`;
 				if (el) el.style.width = lwRef.current;
 			};
@@ -125,10 +123,7 @@ export function MailScreen() {
 		const h = (e: KeyboardEvent) => {
 			const el = document.activeElement as HTMLElement | null;
 			const typing =
-				!!el &&
-				(el.tagName === "INPUT" ||
-					el.tagName === "TEXTAREA" ||
-					el.isContentEditable);
+				!!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 			const mail = mRef.current;
 			// ⌘K → hledání (před typing guardem, funguje i z pole; prototyp ř. 2745)
 			if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
@@ -251,9 +246,19 @@ export function MailScreen() {
 							onPointerDown={rzDown}
 							onDoubleClick={rzReset}
 							title="Táhni pro změnu šířky seznamu · dvojklik vrátí výchozí"
-							style={{ width: 9, flex: "none", cursor: "col-resize", position: "relative", margin: "0 -5px 0 -4px", zIndex: 6 }}
+							style={{
+								width: 9,
+								flex: "none",
+								cursor: "col-resize",
+								position: "relative",
+								margin: "0 -5px 0 -4px",
+								zIndex: 6,
+							}}
 						>
-							<span data-rzline style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1 }} />
+							<span
+								data-rzline
+								style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1 }}
+							/>
 							<span
 								onClick={() => {
 									const n = !lcol;
@@ -264,7 +269,9 @@ export function MailScreen() {
 											: "Split View — seznam vedle čtení.",
 									);
 								}}
-								title={lcol ? "Zobrazit seznam (Split View)" : "Skrýt seznam — čtení na celou šířku"}
+								title={
+									lcol ? "Zobrazit seznam (Split View)" : "Skrýt seznam — čtení na celou šířku"
+								}
 								style={{
 									position: "absolute",
 									top: "50%",
@@ -301,69 +308,9 @@ export function MailScreen() {
 				)}
 			</div>
 
-			{/* mobilní spodní lišta (prototyp data-moonly, ř. 1784–1800) — jen ≤879 px */}
-			{m.scr === "mail" && (
-				<div
-					data-moonly
-					style={{
-						display: "flex",
-						borderTop: "1px solid var(--line)",
-						background: "var(--panel)",
-						flex: "none",
-						paddingBottom: "env(safe-area-inset-bottom)",
-					}}
-				>
-					<div
-						onClick={() => m.setMstep("list")}
-						data-mnav
-						data-active={m.mstep === "list" || undefined}
-						style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "9px 0 7px", cursor: "pointer" }}
-					>
-						<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
-							<rect x="3.5" y="5" width="17" height="14" rx="1.6" />
-							<path d="M4.2 6.4 L12 12.6 L19.8 6.4" />
-						</svg>
-						<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10 }}>Doručené</span>
-					</div>
-					<div
-						onClick={() => setNewOn(true)}
-						style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "9px 0 7px", cursor: "pointer" }}
-					>
-						<span
-							style={{
-								width: 34,
-								height: 34,
-								marginTop: -14,
-								borderRadius: "50%",
-								background: "var(--brass)",
-								color: "#fff",
-								display: "flex",
-								alignItems: "center",
-								justifyContent: "center",
-								boxShadow: "var(--shadow)",
-							}}
-						>
-							<svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden>
-								<path d="M2 12 L2.8 9.2 L9.8 2.2 A1.1 1.1 0 0 1 11.4 2.2 L11.8 2.6 A1.1 1.1 0 0 1 11.8 4.2 L4.8 11.2 Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-							</svg>
-						</span>
-						<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10, color: "var(--brass-text)" }}>Napsat</span>
-					</div>
-					<div
-						onClick={() => setDrawer(true)}
-						data-mnav
-						style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "9px 0 7px", cursor: "pointer" }}
-					>
-						<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
-							<circle cx="7" cy="7" r="2.6" />
-							<circle cx="17" cy="7" r="2.6" />
-							<circle cx="7" cy="17" r="2.6" />
-							<circle cx="17" cy="17" r="2.6" />
-						</svg>
-						<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10 }}>Schránky</span>
-					</div>
-				</div>
-			)}
+			{/* Mobilní spodní lišta modulu ZRUŠENA (feedback: dvě menu nad sebou) —
+			    navigaci drží jediná aplikační lišta; Napsat + hamburger Schránek
+			    jsou v hlavičce seznamu (onCompose/onOpenDrawer). */}
 
 			{/* overlaye modulu: hledání ⌘K, Nová zpráva, tahák zkratek, plovoucí composer */}
 			<SearchOverlay open={searchOn} onClose={() => setSearchOn(false)} />

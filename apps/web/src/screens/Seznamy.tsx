@@ -21,6 +21,7 @@ import type {
 } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { showToast } from "../lib/toast";
+import { pushUndo } from "../lib/undo";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 /**
@@ -41,8 +42,7 @@ const parseTplSections = (raw: string | null): TplSection[] => {
 		if (!Array.isArray(v)) return [];
 		return v.filter(
 			(s): s is TplSection =>
-				!!s && typeof (s as TplSection).name === "string" &&
-				Array.isArray((s as TplSection).items),
+				!!s && typeof (s as TplSection).name === "string" && Array.isArray((s as TplSection).items),
 		);
 	} catch {
 		return [];
@@ -53,6 +53,40 @@ const pillBtnCls =
 	"rounded-[9px] border border-line bg-card font-display font-semibold text-ink-2 hover:border-brass";
 const pillBtnStyle: CSSProperties = { fontSize: 12, padding: "6px 11px" };
 
+type Row = Record<string, unknown>;
+
+/** Re-INSERT snapshotu řádků (undo mazání) — jen ne-NULL sloupce, vzor lib/undo.ts. */
+const reinsertRows = async (
+	tx: { execute: (sql: string, params?: unknown[]) => Promise<unknown> },
+	table: string,
+	rows: Row[],
+) => {
+	for (const r of rows) {
+		const cols = Object.keys(r).filter((c) => r[c] !== null && r[c] !== undefined);
+		await tx.execute(
+			`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
+			cols.map((c) => r[c]),
+		);
+	}
+};
+
+/** Ikonové × (mazání sekce/položky) — ztlumené, plná viditelnost na hover řádku. */
+const xBtnCls =
+	"grid shrink-0 place-items-center rounded-md border border-line bg-card text-ink-3 opacity-30 hover:border-brass hover:text-brass-text group-hover:opacity-100";
+
+function XIcon() {
+	return (
+		<svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden>
+			<path
+				d="M1.5 1.5 L8.5 8.5 M8.5 1.5 L1.5 8.5"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinecap="round"
+			/>
+		</svg>
+	);
+}
+
 export function Seznamy() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
@@ -61,9 +95,7 @@ export function Seznamy() {
 	const { activeWs } = useWorkspace();
 	const { data: workspaces } = useWorkspaces();
 
-	const { data: lists } = usePsQuery<ListRow>(
-		"SELECT * FROM lists ORDER BY created_at DESC",
-	);
+	const { data: lists } = usePsQuery<ListRow>("SELECT * FROM lists ORDER BY created_at DESC");
 	// tiebreaker id: položky šablony sdílejí created_at → bez něj se pořadí
 	// remízových řádků po UPDATE (odškrtnutí) měnilo o pár míst (feedback)
 	const { data: sections } = usePsQuery<ListSectionRow>(
@@ -83,10 +115,7 @@ export function Seznamy() {
 		const byList = new Map<string, ListItemRow[]>();
 		for (const it of items ?? []) {
 			if (it.section_id)
-				bySection.set(it.section_id, [
-					...(bySection.get(it.section_id) ?? []),
-					it,
-				]);
+				bySection.set(it.section_id, [...(bySection.get(it.section_id) ?? []), it]);
 			if (it.list_id) byList.set(it.list_id, [...(byList.get(it.list_id) ?? []), it]);
 		}
 		return {
@@ -106,8 +135,7 @@ export function Seznamy() {
 	/** Založit seznam ze šablony (prototyp createListFrom + _instTpl). */
 	const createFromTemplate = async (tpl: ListTemplateRow) => {
 		const wsId =
-			activeWs &&
-			!(workspaces ?? []).find((w) => w.id === activeWs)?.isPersonal
+			activeWs && !(workspaces ?? []).find((w) => w.id === activeWs)?.isPersonal
 				? activeWs
 				: (tpl.workspace_id ?? activeWs);
 		if (!wsId) return;
@@ -118,7 +146,15 @@ export function Seznamy() {
 			await tx.execute(
 				`INSERT INTO lists (id, workspace_id, template_id, name, event, archived, created_by, created_at)
          VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
-				[listId, wsId, tpl.id, tpl.name, t("lists.eventPlaceholderNew"), session?.user?.id ?? null, now],
+				[
+					listId,
+					wsId,
+					tpl.id,
+					tpl.name,
+					t("lists.eventPlaceholderNew"),
+					session?.user?.id ?? null,
+					now,
+				],
 			);
 			for (let si = 0; si < secs.length; si++) {
 				const sec = secs[si];
@@ -143,13 +179,9 @@ export function Seznamy() {
 	};
 
 	/** Prázdný seznam (feedback 2026-07-11) — jedna výchozí sekce; název a akce
-	 * se editují rovnou v detailu (inputy v hlavičce). */
-	const createBlank = async () => {
-		const wsId =
-			activeWs &&
-			!(workspaces ?? []).find((w) => w.id === activeWs)?.isPersonal
-				? activeWs
-				: (workspaces ?? []).find((w) => !w.isPersonal)?.id;
+	 * se editují rovnou v detailu (inputy v hlavičce). Cílový prostor volí
+	 * volající (osobní × týmová skupina, feedback 2026-07-11). */
+	const createBlank = async (wsId: string) => {
 		if (!wsId) return;
 		const listId = crypto.randomUUID();
 		const now = new Date().toISOString();
@@ -191,6 +223,93 @@ export function Seznamy() {
 	const wsColor = (id: string | null) =>
 		(workspaces ?? []).find((w) => w.id === id)?.color ?? "var(--w-ink-3)";
 
+	// Osobní × týmové seznamy (feedback 2026-07-11) — dvě skupiny podle sféry
+	// prostoru seznamu; každá má vlastní „+ Nový seznam" do odpovídajícího ws.
+	const personalWsIds = new Set((workspaces ?? []).filter((w) => w.isPersonal).map((w) => w.id));
+	const myPersonalWs = (workspaces ?? []).find((w) => w.isPersonal)?.id ?? null;
+	const activeWsRow = (workspaces ?? []).find((w) => w.id === activeWs);
+	const teamTargetWs =
+		activeWsRow && !activeWsRow.isPersonal
+			? activeWsRow.id
+			: ((workspaces ?? []).find((w) => !w.isPersonal)?.id ?? null);
+	const activePersonal = active.filter((l) => personalWsIds.has(l.workspace_id ?? ""));
+	const activeTeam = active.filter((l) => !personalWsIds.has(l.workspace_id ?? ""));
+
+	const listCard = (l: ListRow) => {
+		const st = statsOf.list(l.id);
+		const complete = st.total > 0 && st.done >= st.total;
+		return (
+			<div
+				key={l.id}
+				onClick={() => void navigate({ to: "/seznamy", search: { seznam: l.id } })}
+				className="cursor-pointer rounded-[14px] border border-line bg-card hover:border-brass"
+				style={{ padding: "15px 16px", boxShadow: "var(--w-shadow-sm)" }}
+			>
+				<div className="flex items-center" style={{ gap: 8 }}>
+					<span
+						className="shrink-0"
+						style={{
+							width: 8,
+							height: 8,
+							borderRadius: 3,
+							background: wsColor(l.workspace_id),
+						}}
+					/>
+					<span
+						className="min-w-0 flex-1 truncate font-display font-bold text-ink"
+						style={{ fontSize: 14 }}
+					>
+						{l.name}
+					</span>
+					{complete && <DonePill label={t("lists.donePill")} />}
+				</div>
+				<div className="font-mono text-ink-3" style={{ fontSize: 11.5, marginTop: 4 }}>
+					{l.event}
+				</div>
+				<div className="flex items-center" style={{ gap: 9, marginTop: 11 }}>
+					<ProgressBar pct={st.pct} height={6} />
+					<span className="shrink-0 font-mono text-ink-2" style={{ fontSize: 11 }}>
+						{st.done}/{st.total}
+					</span>
+				</div>
+			</div>
+		);
+	};
+
+	/** Skupina seznamů (osobní/týmová) — skryje se, když je prázdná a nejde
+	 * v ní nic založit (uživatel nemá odpovídající prostor). */
+	const listGroup = (label: string, group: ListRow[], createWs: string | null) =>
+		group.length === 0 && !createWs ? null : (
+			<>
+				<div
+					className="font-display font-bold text-ink-3 uppercase"
+					style={{ fontSize: 11, letterSpacing: ".06em", margin: "18px 0 10px" }}
+				>
+					{label}
+				</div>
+				<div
+					style={{
+						display: "grid",
+						gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+						gap: 12,
+					}}
+				>
+					{/* nový prázdný seznam (feedback — dřív šlo zakládat jen ze šablon) */}
+					{createWs && (
+						<button
+							type="button"
+							onClick={() => void createBlank(createWs)}
+							className="flex items-center justify-center rounded-[14px] border border-line border-dashed font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
+							style={{ minHeight: 92, fontSize: 13, gap: 7 }}
+						>
+							+ {t("lists.newList")}
+						</button>
+					)}
+					{group.map(listCard)}
+				</div>
+			</>
+		);
+
 	return (
 		<div className="mx-auto" style={{ maxWidth: 980, padding: "20px 22px 90px" }}>
 			<p
@@ -209,72 +328,9 @@ export function Seznamy() {
 				</div>
 			)}
 
-			{/* aktivní instance */}
-			<div
-				style={{
-					display: "grid",
-					gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-					gap: 12,
-				}}
-			>
-				{/* nový prázdný seznam (feedback — dřív šlo zakládat jen ze šablon) */}
-				<button
-					type="button"
-					onClick={() => void createBlank()}
-					className="flex items-center justify-center rounded-[14px] border border-line border-dashed font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
-					style={{ minHeight: 92, fontSize: 13, gap: 7 }}
-				>
-					+ {t("lists.newList")}
-				</button>
-				{active.map((l) => {
-					const st = statsOf.list(l.id);
-					const complete = st.total > 0 && st.done >= st.total;
-					return (
-						<div
-							key={l.id}
-							onClick={() =>
-								void navigate({ to: "/seznamy", search: { seznam: l.id } })
-							}
-							className="cursor-pointer rounded-[14px] border border-line bg-card hover:border-brass"
-							style={{ padding: "15px 16px", boxShadow: "var(--w-shadow-sm)" }}
-						>
-							<div className="flex items-center" style={{ gap: 8 }}>
-								<span
-									className="shrink-0"
-									style={{
-										width: 8,
-										height: 8,
-										borderRadius: 3,
-										background: wsColor(l.workspace_id),
-									}}
-								/>
-								<span
-									className="min-w-0 flex-1 truncate font-display font-bold text-ink"
-									style={{ fontSize: 14 }}
-								>
-									{l.name}
-								</span>
-								{complete && <DonePill label={t("lists.donePill")} />}
-							</div>
-							<div
-								className="font-mono text-ink-3"
-								style={{ fontSize: 11.5, marginTop: 4 }}
-							>
-								{l.event}
-							</div>
-							<div className="flex items-center" style={{ gap: 9, marginTop: 11 }}>
-								<ProgressBar pct={st.pct} height={6} />
-								<span
-									className="shrink-0 font-mono text-ink-2"
-									style={{ fontSize: 11 }}
-								>
-									{st.done}/{st.total}
-								</span>
-							</div>
-						</div>
-					);
-				})}
-			</div>
+			{/* aktivní instance — osobní × týmové (feedback 2026-07-11) */}
+			{listGroup(t("lists.personalGroup"), activePersonal, myPersonalWs)}
+			{listGroup(t("lists.teamGroup"), activeTeam, teamTargetWs)}
 
 			{/* Šablony */}
 			<div
@@ -291,26 +347,17 @@ export function Seznamy() {
 				}}
 			>
 				{(templates ?? []).map((tpl) => {
-					const count = parseTplSections(tpl.sections).reduce(
-						(n, s) => n + s.items.length,
-						0,
-					);
+					const count = parseTplSections(tpl.sections).reduce((n, s) => n + s.items.length, 0);
 					return (
 						<div
 							key={tpl.id}
 							className="rounded-[13px] border border-line border-dashed bg-card"
 							style={{ padding: "13px 14px" }}
 						>
-							<div
-								className="font-display font-bold text-ink"
-								style={{ fontSize: 13 }}
-							>
+							<div className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
 								{tpl.name}
 							</div>
-							<div
-								className="font-body text-ink-3"
-								style={{ fontSize: 11.5, marginTop: 3 }}
-							>
+							<div className="font-body text-ink-3" style={{ fontSize: 11.5, marginTop: 3 }}>
 								{tpl.description} · {t("lists.itemCount", { count })}
 							</div>
 							<button
@@ -353,22 +400,14 @@ export function Seznamy() {
 							return (
 								<div
 									key={l.id}
-									onClick={() =>
-										void navigate({ to: "/seznamy", search: { seznam: l.id } })
-									}
+									onClick={() => void navigate({ to: "/seznamy", search: { seznam: l.id } })}
 									className="cursor-pointer rounded-[14px] border border-line bg-card"
 									style={{ padding: "15px 16px" }}
 								>
-									<div
-										className="font-display font-bold text-ink"
-										style={{ fontSize: 14 }}
-									>
+									<div className="font-display font-bold text-ink" style={{ fontSize: 14 }}>
 										{l.name}
 									</div>
-									<div
-										className="font-mono text-ink-3"
-										style={{ fontSize: 11.5, marginTop: 4 }}
-									>
+									<div className="font-mono text-ink-3" style={{ fontSize: 11.5, marginTop: 4 }}>
 										{l.event} · {st.done}/{st.total}
 									</div>
 								</div>
@@ -399,10 +438,7 @@ function DonePill({ label }: { label: string }) {
 
 function ProgressBar({ pct, height }: { pct: number; height: number }) {
 	return (
-		<div
-			className="flex-1 overflow-hidden rounded-full bg-panel-2"
-			style={{ height }}
-		>
+		<div className="flex-1 overflow-hidden rounded-full bg-panel-2" style={{ height }}>
 			<div
 				style={{
 					height: "100%",
@@ -436,6 +472,8 @@ function ListDetail({
 	const [inputs, setInputs] = useState<Record<string, string>>({});
 	// nová sekce (feedback — sekce šly dřív jen ze šablon)
 	const [secName, setSecName] = useState("");
+	// přejmenování sekce — lokální stav per sekce, zápis na blur/Enter (vzor název seznamu)
+	const [secNames, setSecNames] = useState<Record<string, string>>({});
 	// řazení odškrtnutých (feedback): dolů v sekci × zůstat na místě — per seznam,
 	// per uživatel (jen zobrazení, pozice v DB se nemění)
 	const [doneDown, setDoneDown] = useState(
@@ -458,10 +496,9 @@ function ListDetail({
 		queryKey: ["wsMembersFull", list.workspace_id],
 		enabled: !!list.workspace_id,
 		queryFn: async () => {
-			const r = await fetch(
-				`${API_URL}/api/workspaces/${list.workspace_id}/members`,
-				{ credentials: "include" },
-			);
+			const r = await fetch(`${API_URL}/api/workspaces/${list.workspace_id}/members`, {
+				credentials: "include",
+			});
 			if (!r.ok) throw new Error("members");
 			return (await r.json()).members as { id: string; name: string }[];
 		},
@@ -477,75 +514,101 @@ function ListDetail({
 
 	const saveField = async (col: "name" | "event", val: string) => {
 		if ((list[col] ?? "") === val) return;
-		await powerSync.execute(`UPDATE lists SET ${col} = ? WHERE id = ?`, [
-			val,
-			list.id,
-		]);
+		await powerSync.execute(`UPDATE lists SET ${col} = ? WHERE id = ?`, [val, list.id]);
 	};
 
 	const toggleItem = (it: ListItemRow) =>
-		void powerSync.execute("UPDATE list_items SET done = ? WHERE id = ?", [
-			it.done ? 0 : 1,
-			it.id,
-		]);
+		void powerSync.execute("UPDATE list_items SET done = ? WHERE id = ?", [it.done ? 0 : 1, it.id]);
 
 	const setWho = (it: ListItemRow, uid: string | null) => {
 		setAssignOpen(null);
-		void powerSync.execute("UPDATE list_items SET who_id = ? WHERE id = ?", [
-			uid,
-			it.id,
-		]);
+		void powerSync.execute("UPDATE list_items SET who_id = ? WHERE id = ?", [uid, it.id]);
 	};
 
 	const addSection = async () => {
 		const val = secName.trim();
 		if (!val) return;
-		const pos = sections.length
-			? Math.max(...sections.map((s) => s.position ?? 0)) + 1
-			: 0;
+		const pos = sections.length ? Math.max(...sections.map((s) => s.position ?? 0)) + 1 : 0;
 		setSecName("");
 		await powerSync.execute(
 			"INSERT INTO list_sections (id, list_id, workspace_id, name, position, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-			[
-				crypto.randomUUID(),
-				list.id,
-				list.workspace_id,
-				val,
-				pos,
-				new Date().toISOString(),
-			],
+			[crypto.randomUUID(), list.id, list.workspace_id, val, pos, new Date().toISOString()],
 		);
+	};
+
+	/** Přejmenovat sekci (feedback 2026-07-11) — prázdný název = návrat k původnímu. */
+	const saveSectionName = async (sec: ListSectionRow) => {
+		const raw = secNames[sec.id];
+		if (raw === undefined) return;
+		setSecNames((s) => {
+			const n = { ...s };
+			delete n[sec.id];
+			return n;
+		});
+		const val = raw.trim();
+		if (!val || val === (sec.name ?? "")) return;
+		await powerSync.execute("UPDATE list_sections SET name = ? WHERE id = ?", [val, sec.id]);
+	};
+
+	/** Smazat sekci VČETNĚ položek s undo (feedback 2026-07-11) — snapshot řádků,
+	 * DELETE v jedné transakci, ⌘Z re-INSERTne rodiče (sekci) před dětmi (položkami). */
+	const deleteSection = async (sec: ListSectionRow) => {
+		const secRows = await powerSync.getAll<Row>("SELECT * FROM list_sections WHERE id = ?", [
+			sec.id,
+		]);
+		const itemRows = await powerSync.getAll<Row>("SELECT * FROM list_items WHERE section_id = ?", [
+			sec.id,
+		]);
+		const doDelete = () =>
+			powerSync.writeTransaction(async (tx) => {
+				await tx.execute("DELETE FROM list_items WHERE section_id = ?", [sec.id]);
+				await tx.execute("DELETE FROM list_sections WHERE id = ?", [sec.id]);
+			});
+		await doDelete();
+		pushUndo({
+			undo: () =>
+				powerSync.writeTransaction(async (tx) => {
+					await reinsertRows(tx, "list_sections", secRows ?? []);
+					await reinsertRows(tx, "list_items", itemRows ?? []);
+				}),
+			redo: doDelete,
+		});
+		showToast(t("lists.sectionDeletedToast"));
+	};
+
+	/** Smazat položku s undo (feedback 2026-07-11). */
+	const deleteItem = async (it: ListItemRow) => {
+		const rows = await powerSync.getAll<Row>("SELECT * FROM list_items WHERE id = ?", [it.id]);
+		const doDelete = async () => {
+			await powerSync.execute("DELETE FROM list_items WHERE id = ?", [it.id]);
+		};
+		await doDelete();
+		pushUndo({
+			undo: async () => {
+				await reinsertRows(powerSync, "list_items", rows ?? []);
+			},
+			redo: doDelete,
+		});
+		showToast(t("lists.itemDeletedToast"));
 	};
 
 	const addItem = async (sec: ListSectionRow) => {
 		const val = (inputs[sec.id] ?? "").trim();
 		if (!val) return;
 		const its = itemsBySection.get(sec.id) ?? [];
-		const pos = its.length
-			? Math.max(...its.map((x) => x.position ?? 0)) + 1
-			: 0;
+		const pos = its.length ? Math.max(...its.map((x) => x.position ?? 0)) + 1 : 0;
 		setInputs((s) => ({ ...s, [sec.id]: "" }));
 		await powerSync.execute(
 			`INSERT INTO list_items (id, list_id, section_id, workspace_id, text, done, position, created_at)
        VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
-			[
-				crypto.randomUUID(),
-				list.id,
-				sec.id,
-				list.workspace_id,
-				val,
-				pos,
-				new Date().toISOString(),
-			],
+			[crypto.randomUUID(), list.id, sec.id, list.workspace_id, val, pos, new Date().toISOString()],
 		);
 	};
 
 	/** Reset po akci — vše odškrtnout + odarchivovat (prototyp resetList). */
 	const reset = async () => {
 		await powerSync.writeTransaction(async (tx) => {
-			await tx.execute("UPDATE list_items SET done = 0 WHERE list_id = ?", [
-				list.id,
-			]);
+			await tx.execute("UPDATE list_items SET done = 0 WHERE list_id = ?", [list.id]);
 			await tx.execute("UPDATE lists SET archived = 0 WHERE id = ?", [list.id]);
 		});
 		showToast(t("lists.resetToast"));
@@ -583,11 +646,7 @@ function ListDetail({
 	};
 
 	return (
-		<div
-			ref={rootRef}
-			className="mx-auto"
-			style={{ maxWidth: 980, padding: "20px 22px 90px" }}
-		>
+		<div ref={rootRef} className="mx-auto" style={{ maxWidth: 980, padding: "20px 22px 90px" }}>
 			{/* horní lišta */}
 			<div className="flex items-center" style={{ gap: 10, marginBottom: 14 }}>
 				<button
@@ -627,7 +686,12 @@ function ListDetail({
 				>
 					{t("lists.doneSort")}
 				</button>
-				<button type="button" onClick={() => void reset()} className={pillBtnCls} style={pillBtnStyle}>
+				<button
+					type="button"
+					onClick={() => void reset()}
+					className={pillBtnCls}
+					style={pillBtnStyle}
+				>
 					{t("lists.reset")}
 				</button>
 				<button
@@ -638,7 +702,12 @@ function ListDetail({
 				>
 					{t("lists.saveAsTpl")}
 				</button>
-				<button type="button" onClick={() => void archive()} className={pillBtnCls} style={pillBtnStyle}>
+				<button
+					type="button"
+					onClick={() => void archive()}
+					className={pillBtnCls}
+					style={pillBtnStyle}
+				>
 					{list.archived ? t("lists.unarchive") : t("lists.archiveAct")}
 				</button>
 			</div>
@@ -701,9 +770,7 @@ function ListDetail({
 			{sections.map((sec) => {
 				const its = itemsBySection.get(sec.id) ?? [];
 				// „Odškrtnuté dolů": stabilní sort zachovává pořadí uvnitř skupin
-				const shown = doneDown
-					? [...its].sort((a, b) => Number(!!a.done) - Number(!!b.done))
-					: its;
+				const shown = doneDown ? [...its].sort((a, b) => Number(!!a.done) - Number(!!b.done)) : its;
 				const secDone = its.filter((x) => x.done).length;
 				const complete = its.length > 0 && secDone >= its.length;
 				return (
@@ -713,19 +780,31 @@ function ListDetail({
 						style={{ boxShadow: "var(--w-shadow-sm)", marginBottom: 12 }}
 					>
 						<div
-							className="flex items-center bg-panel-2"
+							className="group flex items-center bg-panel-2"
 							style={{ gap: 8, padding: "11px 16px" }}
 						>
-							<span
-								className="flex-1 font-display font-bold text-ink-2 uppercase"
+							{/* název sekce = input (feedback 2026-07-11 — vzor název seznamu) */}
+							<input
+								value={secNames[sec.id] ?? sec.name ?? ""}
+								onChange={(e) => setSecNames((s) => ({ ...s, [sec.id]: e.target.value }))}
+								onBlur={() => void saveSectionName(sec)}
+								onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+								className="min-w-0 flex-1 border-none bg-transparent font-display font-bold text-ink-2 uppercase outline-none"
 								style={{ fontSize: 12, letterSpacing: ".04em" }}
-							>
-								{sec.name}
-							</span>
+							/>
 							{complete && <DonePill label={t("lists.donePill")} />}
 							<span className="font-mono text-ink-3" style={{ fontSize: 11 }}>
 								{secDone}/{its.length}
 							</span>
+							<button
+								type="button"
+								title={t("lists.deleteSection")}
+								onClick={() => void deleteSection(sec)}
+								className={xBtnCls}
+								style={{ width: 20, height: 20 }}
+							>
+								<XIcon />
+							</button>
 						</div>
 						{shown.map((it) => {
 							const who = (team ?? []).find((m) => m.id === it.who_id);
@@ -733,7 +812,7 @@ function ListDetail({
 							return (
 								<div
 									key={it.id}
-									className="relative flex items-center border-line border-t"
+									className="group relative flex items-center border-line border-t"
 									style={{ gap: 10, padding: "8px 16px" }}
 								>
 									{/* čtvercový checkbox (prototyp data-lscheck) */}
@@ -801,6 +880,19 @@ function ListDetail({
 									>
 										{who ? initials(who.name) : "+"}
 									</button>
+									{/* smazat položku s undo (feedback 2026-07-11) */}
+									<button
+										type="button"
+										title={t("lists.deleteItem")}
+										onClick={(e) => {
+											e.stopPropagation();
+											void deleteItem(it);
+										}}
+										className={xBtnCls}
+										style={{ width: 20, height: 20 }}
+									>
+										<XIcon />
+									</button>
 									{assignOpen === key && (
 										<div
 											onClick={(e) => e.stopPropagation()}
@@ -834,17 +926,9 @@ function ListDetail({
 														height: 28,
 														fontSize: 9.5,
 														background:
-															it.who_id === m.id
-																? "var(--w-brass-soft)"
-																: "var(--w-panel-2)",
-														borderColor:
-															it.who_id === m.id
-																? "var(--w-brass)"
-																: "var(--w-line)",
-														color:
-															it.who_id === m.id
-																? "var(--w-brass-text)"
-																: "var(--w-ink-2)",
+															it.who_id === m.id ? "var(--w-brass-soft)" : "var(--w-panel-2)",
+														borderColor: it.who_id === m.id ? "var(--w-brass)" : "var(--w-line)",
+														color: it.who_id === m.id ? "var(--w-brass-text)" : "var(--w-ink-2)",
 													}}
 												>
 													{initials(m.name)}
@@ -871,9 +955,7 @@ function ListDetail({
 							/>
 							<input
 								value={inputs[sec.id] ?? ""}
-								onChange={(e) =>
-									setInputs((s) => ({ ...s, [sec.id]: e.target.value }))
-								}
+								onChange={(e) => setInputs((s) => ({ ...s, [sec.id]: e.target.value }))}
 								onKeyDown={(e: KeyboardEvent<HTMLInputElement>) =>
 									e.key === "Enter" && void addItem(sec)
 								}

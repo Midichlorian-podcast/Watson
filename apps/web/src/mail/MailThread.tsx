@@ -8,16 +8,11 @@
  * AI draft karta, sdílené koncepty + schvalování, důvěrný režim, Odeslat později,
  * kontrola přílohy, kolizní hlídka a undo lišta (overlaye prototypu ř. 2207–2230).
  */
-import {
-	type CSSProperties,
-	type ReactNode,
-	useEffect,
-	useRef,
-	useState,
-} from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { showToast } from "../lib/toast";
 import { MB, P, SLA, STL, TPL } from "./data";
 import { HostPreview } from "./HostPreview";
+import { SigBlock, SigPicker } from "./SigPicker";
 import { useMail } from "./state";
 import { TaskModal } from "./TaskModal";
 
@@ -73,8 +68,7 @@ const first = (n: string) => n.split(" ")[0] ?? n;
 const QUICK_BODY: Record<string, string> = {
 	"Úhradu potvrzujeme":
 		"Dobrý den, pane Horáku,\n\npotvrzujeme — částka 42 200 Kč odejde dnes z našeho provozního účtu. Potvrzení o platbě pošlu po provedení příkazu.\n\nAdam Košír, T-Group Studio",
-	Poděkovat:
-		"Dobrý den,\n\nděkujeme za zprávu i rychlé vyřízení.\n\nAdam Košír, T-Group Studio",
+	Poděkovat: "Dobrý den,\n\nděkujeme za zprávu i rychlé vyřízení.\n\nAdam Košír, T-Group Studio",
 	"Vyžádat podklady":
 		"Dobrý den,\n\nprosím pošlete nám k platbě ještě QR kód nebo variabilní symbol pro spárování.\n\nAdam Košír, T-Group Studio",
 };
@@ -175,13 +169,24 @@ const ccInput: CSSProperties = {
 
 const CheckSvg = ({ size = 12, style }: { size?: number; style?: CSSProperties }) => (
 	<svg width={size} height={size} viewBox="0 0 14 14" fill="none" style={style} aria-hidden>
-		<path d="M2.5 7.4 L5.5 10.4 L11.5 3.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+		<path
+			d="M2.5 7.4 L5.5 10.4 L11.5 3.6"
+			stroke="currentColor"
+			strokeWidth="1.8"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		/>
 	</svg>
 );
 
 const FlagSvg = ({ w = 9, h = 11 }: { w?: number; h?: number }) => (
 	<svg width={w} height={h} viewBox="0 0 10 12" fill="none" aria-hidden>
-		<path d="M2 1 V11 M2 1.5 H8.6 L7 4.25 L8.6 7 H2" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+		<path
+			d="M2 1 V11 M2 1.5 H8.6 L7 4.25 L8.6 7 H2"
+			stroke="currentColor"
+			strokeWidth="1.5"
+			strokeLinejoin="round"
+		/>
 	</svg>
 );
 
@@ -194,19 +199,37 @@ const LockSvg = ({ size = 10, style }: { size?: number; style?: CSSProperties })
 
 const ChevSvg = ({ style }: { style?: CSSProperties }) => (
 	<svg width="8" height="8" viewBox="0 0 9 9" style={style} aria-hidden>
-		<path d="M2 3 L4.5 6 L7 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+		<path
+			d="M2 3 L4.5 6 L7 3"
+			stroke="currentColor"
+			strokeWidth="1.5"
+			fill="none"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		/>
 	</svg>
 );
 
 const ClipSvg = ({ size = 12, style }: { size?: number; style?: CSSProperties }) => (
 	<svg width={size} height={size} viewBox="0 0 14 14" fill="none" style={style} aria-hidden>
-		<path d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+		<path
+			d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4"
+			stroke="currentColor"
+			strokeWidth="1.2"
+			strokeLinecap="round"
+		/>
 	</svg>
 );
 
 const SendSvg = ({ size = 14 }: { size?: number }) => (
 	<svg width={size} height={size} viewBox="0 0 14 14" fill="none" aria-hidden>
-		<path d="M2 7 H11 M7.5 3 L11.5 7 L7.5 11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+		<path
+			d="M2 7 H11 M7.5 3 L11.5 7 L7.5 11"
+			stroke="currentColor"
+			strokeWidth="1.6"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		/>
 	</svg>
 );
 
@@ -214,7 +237,15 @@ const SendSvg = ({ size = 14 }: { size?: number }) => (
 const ChatLock = () => (
 	<span
 		title="Interní vrstva vlákna — externí odesílatel ji nikdy neuvidí"
-		style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)" }}
+		style={{
+			marginLeft: "auto",
+			display: "inline-flex",
+			alignItems: "center",
+			gap: 5,
+			fontFamily: "var(--w-font-mono)",
+			fontSize: 9.5,
+			color: "var(--ink-3)",
+		}}
 	>
 		<LockSvg size={10} />
 		odesílatel nevidí
@@ -247,8 +278,7 @@ export function MailThread() {
 	useEffect(() => {
 		if (!pop) return;
 		const h = (e: globalThis.MouseEvent) => {
-			if (headRef.current && !headRef.current.contains(e.target as Node))
-				setPop(null);
+			if (headRef.current && !headRef.current.contains(e.target as Node)) setPop(null);
 		};
 		document.addEventListener("mousedown", h);
 		return () => document.removeEventListener("mousedown", h);
@@ -258,8 +288,7 @@ export function MailThread() {
 	useEffect(() => {
 		if (!cpop) return;
 		const h = (e: globalThis.MouseEvent) => {
-			if (compRef.current && !compRef.current.contains(e.target as Node))
-				setCpop(null);
+			if (compRef.current && !compRef.current.contains(e.target as Node)) setCpop(null);
 		};
 		document.addEventListener("mousedown", h);
 		return () => document.removeEventListener("mousedown", h);
@@ -338,14 +367,32 @@ export function MailThread() {
 				data-threadpane
 				data-chatmode={m.chatOff ? "tab" : "panel"}
 				data-ctab={m.ctab}
-				style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--panel)", position: "relative" }}
+				style={{
+					flex: 1,
+					minWidth: 0,
+					display: "flex",
+					flexDirection: "column",
+					minHeight: 0,
+					background: "var(--panel)",
+					position: "relative",
+				}}
 			>
 				<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
 					<div style={{ textAlign: "center" }}>
-						<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 14, color: "var(--ink-2)", marginBottom: 4 }}>
+						<div
+							style={{
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 700,
+								fontSize: 14,
+								color: "var(--ink-2)",
+								marginBottom: 4,
+							}}
+						>
 							Vyber konverzaci
 						</div>
-						<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink-3)" }}>
+						<div
+							style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink-3)" }}
+						>
 							Vlákno se otevře tady vedle seznamu.
 						</div>
 					</div>
@@ -400,7 +447,8 @@ export function MailThread() {
 				isOk: false,
 				title: "Ukončeno",
 				meta: "urgence se už neobnoví ani při nové příchozí zprávě",
-				note: e.flag !== "none" ? `úroveň ${SLA[e.flag]?.chip ?? ""} zůstává v historii vlákna` : "",
+				note:
+					e.flag !== "none" ? `úroveň ${SLA[e.flag]?.chip ?? ""} zůstává v historii vlákna` : "",
 				hasTask: false,
 				taskDone: false,
 				taskMsg: "",
@@ -429,7 +477,8 @@ export function MailThread() {
 			note: `eskalace: ${d.esk} · počítají se jen pracovní hodiny (pátek večer → deadline pondělí)`,
 			hasTask: d.task,
 			taskDone: false,
-			taskMsg: "Otevře propojený úkol ve Watsonu (entity_links) — po odeslání odpovědi se odškrtne sám.",
+			taskMsg:
+				"Otevře propojený úkol ve Watsonu (entity_links) — po odeslání odpovědi se odškrtne sám.",
 		};
 	})();
 
@@ -441,7 +490,14 @@ export function MailThread() {
 				sys: true,
 				text: `Watson · vlajka ${SLA[e.flag]?.chip ?? ""} → úkol „Odpovědět: ${t.subj}“ pro ${owner ? first(owner.n) : "dispečink"}`,
 			});
-		const add = (c: { who: string; t: string; pre?: string; m?: string; post?: string; ai?: boolean }) => {
+		const add = (c: {
+			who: string;
+			t: string;
+			pre?: string;
+			m?: string;
+			post?: string;
+			ai?: boolean;
+		}) => {
 			const p = P[c.who];
 			chatItems.push({
 				sys: false,
@@ -488,8 +544,7 @@ export function MailThread() {
 	const draftText = dr?.text ?? "";
 	const canDraft = aiOn && !!t.draft && !e.sent && !e.closed;
 	// mode: bez konceptu + AI návrh → karta „draft"; jinak edit/empty (RTE)
-	let mode: "draft" | "edit" | "empty" =
-		dr?.mode ?? (canDraft && t.aiDraft ? "draft" : "empty");
+	let mode: "draft" | "edit" | "empty" = dr?.mode ?? (canDraft && t.aiDraft ? "draft" : "empty");
 	if (mode === "draft" && !(canDraft && t.aiDraft)) mode = "empty";
 	const quick = t.quick ?? [];
 	const showQuickRow =
@@ -606,7 +661,9 @@ export function MailThread() {
 		m.sendChat(t.id, txt);
 		setChatIn("");
 		if (txt.includes("@"))
-			showToast("Zmíněný kolega dostane upozornění — externí odesílatel tuhle vrstvu nikdy neuvidí.");
+			showToast(
+				"Zmíněný kolega dostane upozornění — externí odesílatel tuhle vrstvu nikdy neuvidí.",
+			);
 	};
 
 	// warn modal: attach (marker/dummy) → pend → efekt výš pošle přes checkSend
@@ -625,7 +682,16 @@ export function MailThread() {
 					// biome-ignore lint/suspicious/noArrayIndexKey: statický seed seznam
 					<div key={i} style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0" }}>
 						<span style={{ flex: 1, height: 1, background: "var(--line)" }} />
-						<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 9, color: "var(--ink-3)", textAlign: "center", maxWidth: "82%", lineHeight: 1.5 }}>
+						<span
+							style={{
+								fontFamily: "var(--w-font-mono)",
+								fontSize: 9,
+								color: "var(--ink-3)",
+								textAlign: "center",
+								maxWidth: "82%",
+								lineHeight: 1.5,
+							}}
+						>
 							{c.text}
 						</span>
 						<span style={{ flex: 1, height: 1, background: "var(--line)" }} />
@@ -633,17 +699,43 @@ export function MailThread() {
 				) : (
 					// biome-ignore lint/suspicious/noArrayIndexKey: statický seed seznam
 					<div key={i} style={{ display: "flex", gap: 8 }}>
-						<span data-av={c.av} style={{ ...avStyle(compact ? 22 : 24, compact ? 8.5 : 9), marginTop: 2 }}>
+						<span
+							data-av={c.av}
+							style={{ ...avStyle(compact ? 22 : 24, compact ? 8.5 : 9), marginTop: 2 }}
+						>
 							{c.ini}
 						</span>
-						<div data-chatmsg data-ai={c.ai || undefined} style={{ flex: 1, minWidth: 0, padding: compact ? "7px 10px" : "8px 11px" }}>
+						<div
+							data-chatmsg
+							data-ai={c.ai || undefined}
+							style={{ flex: 1, minWidth: 0, padding: compact ? "7px 10px" : "8px 11px" }}
+						>
 							<div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-								<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: compact ? 11.5 : 12, color: "var(--ink)" }}>
+								<span
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 600,
+										fontSize: compact ? 11.5 : 12,
+										color: "var(--ink)",
+									}}
+								>
 									{c.name}
 								</span>
-								<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)" }}>{c.t}</span>
+								<span
+									style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)" }}
+								>
+									{c.t}
+								</span>
 							</div>
-							<div style={{ fontFamily: "var(--w-font-body)", fontSize: compact ? 12 : 12.5, color: "var(--ink-2)", lineHeight: 1.55, marginTop: 2 }}>
+							<div
+								style={{
+									fontFamily: "var(--w-font-body)",
+									fontSize: compact ? 12 : 12.5,
+									color: "var(--ink-2)",
+									lineHeight: 1.55,
+									marginTop: 2,
+								}}
+							>
 								{c.pre}
 								{c.m && <span data-mention>{c.m}</span>}
 								{c.post}
@@ -653,8 +745,17 @@ export function MailThread() {
 				),
 			)}
 			{chatItems.length === 0 && (
-				<div style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.55, padding: compact ? "4px 2px" : undefined }}>
-					Zatím ticho. Napiš poznámku nebo zmiň kolegu přes @ — externí lidé tuhle vrstvu nikdy neuvidí.
+				<div
+					style={{
+						fontFamily: "var(--w-font-body)",
+						fontSize: 11.5,
+						color: "var(--ink-3)",
+						lineHeight: 1.55,
+						padding: compact ? "4px 2px" : undefined,
+					}}
+				>
+					Zatím ticho. Napiš poznámku nebo zmiň kolegu přes @ — externí lidé tuhle vrstvu nikdy
+					neuvidí.
 				</div>
 			)}
 		</>
@@ -685,7 +786,18 @@ export function MailThread() {
 			<span
 				onClick={sendChatNow}
 				title="Přidat interní zprávu"
-				style={{ width: compact ? 31 : 34, height: compact ? 31 : 34, borderRadius: 9, background: "var(--brass)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flex: "none" }}
+				style={{
+					width: compact ? 31 : 34,
+					height: compact ? 31 : 34,
+					borderRadius: 9,
+					background: "var(--brass)",
+					color: "#fff",
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "center",
+					cursor: "pointer",
+					flex: "none",
+				}}
 			>
 				<SendSvg size={compact ? 13 : 14} />
 			</span>
@@ -698,34 +810,113 @@ export function MailThread() {
 			data-screen-label="Thread workspace"
 			data-chatmode={m.chatOff ? "tab" : "panel"}
 			data-ctab={m.ctab}
-			style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0, background: "var(--panel)", position: "relative" }}
+			style={{
+				flex: 1,
+				minWidth: 0,
+				display: "flex",
+				flexDirection: "column",
+				minHeight: 0,
+				background: "var(--panel)",
+				position: "relative",
+			}}
 		>
 			{/* ── VRSTVA 4: lišta stavu & akce (prototyp ř. 788–897) ── */}
-			<div ref={headRef} style={{ flex: "none", padding: "11px 18px 10px", borderBottom: "1px solid var(--line)", background: "var(--panel)", position: "relative" }}>
+			<div
+				ref={headRef}
+				style={{
+					flex: "none",
+					padding: "11px 18px 10px",
+					borderBottom: "1px solid var(--line)",
+					background: "var(--panel)",
+					position: "relative",
+				}}
+			>
 				<div data-thrhead style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
 					<span
 						data-moonly
 						onClick={m.closeThread}
-						style={{ width: 31, height: 31, borderRadius: 8, border: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--ink-2)", flex: "none", marginTop: 2 }}
+						style={{
+							width: 31,
+							height: 31,
+							borderRadius: 8,
+							border: "1px solid var(--line)",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							cursor: "pointer",
+							color: "var(--ink-2)",
+							flex: "none",
+							marginTop: 2,
+						}}
 					>
 						<svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-							<path d="M8.5 2.5 L4 7 L8.5 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+							<path
+								d="M8.5 2.5 L4 7 L8.5 11.5"
+								stroke="currentColor"
+								strokeWidth="1.6"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							/>
 						</svg>
 					</span>
 					<div style={{ flex: 1, minWidth: 160 }}>
-						<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 16.5, color: "var(--ink)", lineHeight: 1.25 }}>
+						<div
+							style={{
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 700,
+								fontSize: 16.5,
+								color: "var(--ink)",
+								lineHeight: 1.25,
+							}}
+						>
 							{t.subj}
 						</div>
-						<div data-thrmeta style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5, flexWrap: "wrap", minWidth: 0 }}>
-							<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)", flex: "none" }}>
-								<span data-mbdot={t.personal ? "osobni" : t.mb} style={{ width: 8, height: 8, borderRadius: "50%" }} />
+						<div
+							data-thrmeta
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 8,
+								marginTop: 5,
+								flexWrap: "wrap",
+								minWidth: 0,
+							}}
+						>
+							<span
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 5,
+									fontFamily: "var(--w-font-mono)",
+									fontSize: 10.5,
+									color: "var(--ink-3)",
+									flex: "none",
+								}}
+							>
+								<span
+									data-mbdot={t.personal ? "osobni" : t.mb}
+									style={{ width: 8, height: 8, borderRadius: "50%" }}
+								/>
 								{mbAddr}
 							</span>
-							<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+							<span
+								style={{
+									fontFamily: "var(--w-font-body)",
+									fontSize: 11.5,
+									color: "var(--ink-3)",
+									minWidth: 0,
+									overflow: "hidden",
+									textOverflow: "ellipsis",
+									whiteSpace: "nowrap",
+								}}
+							>
 								{metaLine}
 							</span>
 							{seenOn && (
-								<span title="Kdo z týmu schránky už konverzaci otevřel" style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}>
+								<span
+									title="Kdo z týmu schránky už konverzaci otevřel"
+									style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none" }}
+								>
 									<span data-seengrp>
 										{seenRows.map((p) => (
 											<span key={p.k} data-seenav data-read={p.read} data-me={p.me} title={p.tip}>
@@ -733,7 +924,13 @@ export function MailThread() {
 											</span>
 										))}
 									</span>
-									<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)" }}>
+									<span
+										style={{
+											fontFamily: "var(--w-font-mono)",
+											fontSize: 10.5,
+											color: "var(--ink-3)",
+										}}
+									>
 										přečteno {seenN}/{people.length}
 									</span>
 								</span>
@@ -741,13 +938,38 @@ export function MailThread() {
 							{rtoOn && (
 								<span
 									title="Bezpečnostní upozornění: adresa pro odpovědi se liší od odesílatele"
-									style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--w-font-mono)", fontSize: 9, color: "var(--ink-2)", border: "1px solid var(--ink-3)", borderRadius: 999, padding: "1px 7px", flex: "none" }}
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 4,
+										fontFamily: "var(--w-font-mono)",
+										fontSize: 9,
+										color: "var(--ink-2)",
+										border: "1px solid var(--ink-3)",
+										borderRadius: 999,
+										padding: "1px 7px",
+										flex: "none",
+									}}
 								>
 									⚠ odpovědi jdou na {t.replyTo} (reply-to ≠ odesílatel)
 								</span>
 							)}
 							{t.personal && (
-								<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10, padding: "2px 9px", borderRadius: 999, background: "var(--pers-bg)", border: "1px solid var(--pers-line)", color: "var(--pers-ink)" }}>
+								<span
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 5,
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 600,
+										fontSize: 10,
+										padding: "2px 9px",
+										borderRadius: 999,
+										background: "var(--pers-bg)",
+										border: "1px solid var(--pers-line)",
+										color: "var(--pers-ink)",
+									}}
+								>
 									<LockSvg size={9} />
 									osobní · šifrováno
 								</span>
@@ -755,7 +977,14 @@ export function MailThread() {
 							{aiOffOn && (
 								<span
 									title="AI je pro granty@ vypnutá — žádná shrnutí ani drafty"
-									style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)", border: "1px solid var(--line)", borderRadius: 4, padding: "1px 5px" }}
+									style={{
+										fontFamily: "var(--w-font-mono)",
+										fontSize: 9.5,
+										color: "var(--ink-3)",
+										border: "1px solid var(--line)",
+										borderRadius: 4,
+										padding: "1px 5px",
+									}}
 								>
 									AI vypnuta
 								</span>
@@ -763,26 +992,71 @@ export function MailThread() {
 						</div>
 					</div>
 					{!t.personal && (
-						<div data-thracts style={{ display: "flex", gap: 6, flex: "none", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-							<span onClick={() => setPop(pop === "flag" ? null : "flag")} title="Priorita a urgence vlákna — P1 až P4" data-pflag={e.flag}>
+						<div
+							data-thracts
+							style={{
+								display: "flex",
+								gap: 6,
+								flex: "none",
+								alignItems: "center",
+								flexWrap: "wrap",
+								justifyContent: "flex-end",
+							}}
+						>
+							<span
+								onClick={() => setPop(pop === "flag" ? null : "flag")}
+								title="Priorita a urgence vlákna — P1 až P4"
+								data-pflag={e.flag}
+							>
 								<FlagSvg />
 								{e.flag === "none" ? "Vlajka" : (SLA[e.flag]?.chip ?? "")}
 							</span>
-							<span onClick={() => setPop(pop === "state" ? null : "state")} data-mstate={e.st} style={{ cursor: "pointer" }}>
+							<span
+								onClick={() => setPop(pop === "state" ? null : "state")}
+								data-mstate={e.st}
+								style={{ cursor: "pointer" }}
+							>
 								{STL[e.st] ?? e.st}
 								<ChevSvg style={{ opacity: 0.6 }} />
 							</span>
 							<span
 								onClick={() => setPop(pop === "assign" ? null : "assign")}
 								title="Přiřazená odpovědná osoba"
-								style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--line)", borderRadius: 999, padding: "2px 9px 2px 3px", cursor: "pointer", background: "var(--panel)" }}
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 6,
+									border: "1px solid var(--line)",
+									borderRadius: 999,
+									padding: "2px 9px 2px 3px",
+									cursor: "pointer",
+									background: "var(--panel)",
+								}}
 							>
 								{owner ? (
-									<span data-av={owner.av} style={{ ...avStyle(19, 8), display: "inline-flex" }}>{owner.ini}</span>
+									<span data-av={owner.av} style={{ ...avStyle(19, 8), display: "inline-flex" }}>
+										{owner.ini}
+									</span>
 								) : (
-									<span style={{ width: 19, height: 19, borderRadius: "50%", border: "1.4px dashed var(--ink-3)", display: "inline-flex" }} />
+									<span
+										style={{
+											width: 19,
+											height: 19,
+											borderRadius: "50%",
+											border: "1.4px dashed var(--ink-3)",
+											display: "inline-flex",
+										}}
+									/>
 								)}
-								<span data-actlbl style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11.5, color: "var(--ink-2)" }}>
+								<span
+									data-actlbl
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 600,
+										fontSize: 11.5,
+										color: "var(--ink-2)",
+									}}
+								>
 									{owner ? first(owner.n) : "Přiřadit"}
 								</span>
 								<ChevSvg style={{ color: "var(--ink-3)" }} />
@@ -792,15 +1066,48 @@ export function MailThread() {
 								onClick={() => setTaskM(true)}
 								title="Udělej z mailu úkol — formulář s prioritou, termínem a projektem, propojí se s vláknem"
 								data-ghost
-								style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, padding: "6px 10px" }}
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 5,
+									fontSize: 11.5,
+									padding: "6px 10px",
+								}}
 							>
 								<svg width="11" height="11" viewBox="0 0 13 13" aria-hidden>
-									<line x1="6.5" y1="2" x2="6.5" y2="11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-									<line x1="2" y1="6.5" x2="11" y2="6.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+									<line
+										x1="6.5"
+										y1="2"
+										x2="6.5"
+										y2="11"
+										stroke="currentColor"
+										strokeWidth="1.7"
+										strokeLinecap="round"
+									/>
+									<line
+										x1="2"
+										y1="6.5"
+										x2="11"
+										y2="6.5"
+										stroke="currentColor"
+										strokeWidth="1.7"
+										strokeLinecap="round"
+									/>
 								</svg>
 								<span data-actlbl>Úkol</span>
 							</span>
-							<span onClick={() => setPop(pop === "more" ? null : "more")} data-ghost style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 29, height: 29, padding: 0 }}>
+							<span
+								onClick={() => setPop(pop === "more" ? null : "more")}
+								data-ghost
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									justifyContent: "center",
+									width: 29,
+									height: 29,
+									padding: 0,
+								}}
+							>
 								<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
 									<circle cx="8" cy="3.5" r="1.3" fill="currentColor" />
 									<circle cx="8" cy="8" r="1.3" fill="currentColor" />
@@ -811,7 +1118,14 @@ export function MailThread() {
 								onClick={() => m.rowAct(t.id, "done")}
 								title="Hotovo — terminální stav, urgence se už neobnoví"
 								data-ghost
-								style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, padding: "6px 11px", color: "var(--success-ink)" }}
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 5,
+									fontSize: 11.5,
+									padding: "6px 11px",
+									color: "var(--success-ink)",
+								}}
 							>
 								<CheckSvg size={11} />
 								<span data-actlbl>Hotovo</span>
@@ -834,17 +1148,59 @@ export function MailThread() {
 										m.setFlag(t.id, k);
 										setPop(null);
 									}}
-									style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "7px 9px", borderRadius: 9, cursor: "pointer" }}
+									style={{
+										display: "flex",
+										alignItems: "flex-start",
+										gap: 9,
+										padding: "7px 9px",
+										borderRadius: 9,
+										cursor: "pointer",
+									}}
 								>
-									<span data-pdot={k} style={{ width: 10, height: 10, borderRadius: 3, flex: "none", marginTop: 3 }} />
+									<span
+										data-pdot={k}
+										style={{ width: 10, height: 10, borderRadius: 3, flex: "none", marginTop: 3 }}
+									/>
 									<div style={{ flex: 1, minWidth: 0 }}>
 										<div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-											<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 12, color: "var(--ink)" }}>{d.name}</span>
-											<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)" }}>{d.sla}</span>
+											<span
+												style={{
+													fontFamily: "var(--w-font-display)",
+													fontWeight: 700,
+													fontSize: 12,
+													color: "var(--ink)",
+												}}
+											>
+												{d.name}
+											</span>
+											<span
+												style={{
+													fontFamily: "var(--w-font-mono)",
+													fontSize: 9.5,
+													color: "var(--ink-3)",
+												}}
+											>
+												{d.sla}
+											</span>
 										</div>
-										<div style={{ fontFamily: "var(--w-font-body)", fontSize: 11, color: "var(--ink-3)", lineHeight: 1.45, marginTop: 1 }}>{d.desc}</div>
+										<div
+											style={{
+												fontFamily: "var(--w-font-body)",
+												fontSize: 11,
+												color: "var(--ink-3)",
+												lineHeight: 1.45,
+												marginTop: 1,
+											}}
+										>
+											{d.desc}
+										</div>
 									</div>
-									{e.flag === k && <CheckSvg size={12} style={{ color: "var(--brass-text)", flex: "none", marginTop: 3 }} />}
+									{e.flag === k && (
+										<CheckSvg
+											size={12}
+											style={{ color: "var(--brass-text)", flex: "none", marginTop: 3 }}
+										/>
+									)}
 								</div>
 							);
 						})}
@@ -860,7 +1216,8 @@ export function MailThread() {
 							Zrušit vlajku
 						</div>
 						<div style={popNote}>
-							SLA běží, jen když je poslední zpráva příchozí. Odpovědí se uspí, novou příchozí se obnoví. Hotovo = konec, urgence se už neobnoví.
+							SLA běží, jen když je poslední zpráva příchozí. Odpovědí se uspí, novou příchozí se
+							obnoví. Hotovo = konec, urgence se už neobnoví.
 						</div>
 					</div>
 				)}
@@ -879,13 +1236,22 @@ export function MailThread() {
 									}}
 									data-statepill
 									data-on={e.st === k || undefined}
-									style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10.5, padding: "4px 10px", borderRadius: 999, whiteSpace: "nowrap" }}
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 600,
+										fontSize: 10.5,
+										padding: "4px 10px",
+										borderRadius: 999,
+										whiteSpace: "nowrap",
+									}}
 								>
 									{STL[k]}
 								</span>
 							))}
 						</div>
-						<div style={{ ...popNote, padding: "8px 3px 0" }}>Stav se zrcadlí do propojeného úkolu — Hotovo tady = hotovo tam.</div>
+						<div style={{ ...popNote, padding: "8px 3px 0" }}>
+							Stav se zrcadlí do propojeného úkolu — Hotovo tady = hotovo tam.
+						</div>
 					</div>
 				)}
 
@@ -903,14 +1269,42 @@ export function MailThread() {
 										m.setOwner(t.id, pid);
 										setPop(null);
 									}}
-									style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 9px", borderRadius: 9, cursor: "pointer" }}
+									style={{
+										display: "flex",
+										alignItems: "center",
+										gap: 9,
+										padding: "7px 9px",
+										borderRadius: 9,
+										cursor: "pointer",
+									}}
 								>
-									<span data-av={p.av} style={avStyle(24, 9)}>{p.ini}</span>
+									<span data-av={p.av} style={avStyle(24, 9)}>
+										{p.ini}
+									</span>
 									<div style={{ flex: 1, minWidth: 0 }}>
-										<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 12.5, color: "var(--ink)" }}>{p.n}</div>
-										<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10, color: "var(--ink-3)" }}>{p.role}</div>
+										<div
+											style={{
+												fontFamily: "var(--w-font-display)",
+												fontWeight: 600,
+												fontSize: 12.5,
+												color: "var(--ink)",
+											}}
+										>
+											{p.n}
+										</div>
+										<div
+											style={{
+												fontFamily: "var(--w-font-body)",
+												fontSize: 10,
+												color: "var(--ink-3)",
+											}}
+										>
+											{p.role}
+										</div>
 									</div>
-									{e.owner === pid && <CheckSvg size={12} style={{ color: "var(--brass-text)", flex: "none" }} />}
+									{e.owner === pid && (
+										<CheckSvg size={12} style={{ color: "var(--brass-text)", flex: "none" }} />
+									)}
 								</div>
 							);
 						})}
@@ -924,9 +1318,25 @@ export function MailThread() {
 						>
 							Odebrat přiřazení
 						</div>
-						<div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontFamily: "var(--w-font-body)", fontSize: 10, color: "var(--ink-3)", lineHeight: 1.5, padding: "6px 9px 4px", borderTop: "1px solid var(--line)", marginTop: 4 }}>
+						<div
+							style={{
+								display: "flex",
+								gap: 6,
+								alignItems: "flex-start",
+								fontFamily: "var(--w-font-body)",
+								fontSize: 10,
+								color: "var(--ink-3)",
+								lineHeight: 1.5,
+								padding: "6px 9px 4px",
+								borderTop: "1px solid var(--line)",
+								marginTop: 4,
+							}}
+						>
 							<LockSvg size={10} style={{ flex: "none", marginTop: 1 }} />
-							<span>Nabídka ukazuje jen lidi s přístupem k {mb?.short ?? ""} — komu schránka nepatří, tomu vlákno předat nejde.</span>
+							<span>
+								Nabídka ukazuje jen lidi s přístupem k {mb?.short ?? ""} — komu schránka nepatří,
+								tomu vlákno předat nejde.
+							</span>
 						</div>
 					</div>
 				)}
@@ -1033,7 +1443,9 @@ export function MailThread() {
 								setPop(null);
 								m.setOv(t.id, { snoozed: "bez termínu" });
 								m.closeThread();
-								showToast("Set Aside — odloženo bez termínu. Čeká v Odloženo, dokud ho ručně nevrátíš.");
+								showToast(
+									"Set Aside — odloženo bez termínu. Čeká v Odloženo, dokud ho ručně nevrátíš.",
+								);
 							}}
 							data-menuitem
 						>
@@ -1152,31 +1564,113 @@ export function MailThread() {
 
 			{/* ── Urgence / SLA lišta (prototyp ř. 898–916) ── */}
 			{strip && (
-				<div data-pstrip={strip.kind} title={strip.note} style={{ flex: "none", display: "flex", alignItems: "center", gap: 10, padding: "7px 18px", borderBottom: "1px solid var(--line)", minWidth: 0 }}>
-					<span data-pink={strip.kind} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 11, flex: "none" }}>
+				<div
+					data-pstrip={strip.kind}
+					title={strip.note}
+					style={{
+						flex: "none",
+						display: "flex",
+						alignItems: "center",
+						gap: 10,
+						padding: "7px 18px",
+						borderBottom: "1px solid var(--line)",
+						minWidth: 0,
+					}}
+				>
+					<span
+						data-pink={strip.kind}
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 6,
+							fontFamily: "var(--w-font-display)",
+							fontWeight: 700,
+							fontSize: 11,
+							flex: "none",
+						}}
+					>
 						{strip.isFlag && <FlagSvg />}
 						{strip.isOk && <CheckSvg size={11} />}
 						{strip.title}
 					</span>
-					<span data-pink={strip.kind} data-stripmeta style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, opacity: 0.85, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+					<span
+						data-pink={strip.kind}
+						data-stripmeta
+						style={{
+							fontFamily: "var(--w-font-mono)",
+							fontSize: 10.5,
+							opacity: 0.85,
+							minWidth: 0,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap",
+						}}
+					>
 						{strip.meta}
 					</span>
 					{strip.hasTask && (
 						<span
 							onClick={() => showToast(strip.taskMsg)}
 							title="Úkol vytvořený urgencí — propojený s vláknem, po odeslání odpovědi se sám odškrtne"
-							style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 999, padding: "2px 10px 2px 5px", cursor: "pointer", maxWidth: 340, minWidth: 0, flex: "0 1 auto" }}
+							style={{
+								display: "inline-flex",
+								alignItems: "center",
+								gap: 6,
+								background: "var(--panel)",
+								border: "1px solid var(--line)",
+								borderRadius: 999,
+								padding: "2px 10px 2px 5px",
+								cursor: "pointer",
+								maxWidth: 340,
+								minWidth: 0,
+								flex: "0 1 auto",
+							}}
 						>
 							{strip.taskDone ? (
-								<span style={{ width: 13, height: 13, borderRadius: "50%", background: "var(--success)", display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+								<span
+									style={{
+										width: 13,
+										height: 13,
+										borderRadius: "50%",
+										background: "var(--success)",
+										display: "inline-flex",
+										alignItems: "center",
+										justifyContent: "center",
+										flex: "none",
+									}}
+								>
 									<svg width="7" height="7" viewBox="0 0 10 10" aria-hidden>
-										<path d="M1.5 5.2 L4 7.7 L8.5 2.6" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+										<path
+											d="M1.5 5.2 L4 7.7 L8.5 2.6"
+											stroke="#fff"
+											strokeWidth="1.8"
+											fill="none"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
 									</svg>
 								</span>
 							) : (
-								<span style={{ width: 13, height: 13, borderRadius: "50%", border: "1.5px solid var(--ink-3)", flex: "none" }} />
+								<span
+									style={{
+										width: 13,
+										height: 13,
+										borderRadius: "50%",
+										border: "1.5px solid var(--ink-3)",
+										flex: "none",
+									}}
+								/>
 							)}
-							<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11, color: "var(--ink-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+							<span
+								style={{
+									fontFamily: "var(--w-font-body)",
+									fontSize: 11,
+									color: "var(--ink-2)",
+									overflow: "hidden",
+									textOverflow: "ellipsis",
+									whiteSpace: "nowrap",
+								}}
+							>
 								Odpovědět: {t.subj}
 							</span>
 						</span>
@@ -1186,28 +1680,76 @@ export function MailThread() {
 
 			{/* ── Záložky Vlákno / Interní chat (prototyp ř. 917–930) ── */}
 			{!t.personal && (
-				<div data-chattabs style={{ flex: "none", padding: "8px 18px 0", background: "var(--panel)", borderBottom: "1px solid var(--line)", gap: 8, alignItems: "center" }}>
-					<div style={{ display: "inline-flex", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 10, padding: 3, marginBottom: 8 }}>
+				<div
+					data-chattabs
+					style={{
+						flex: "none",
+						padding: "8px 18px 0",
+						background: "var(--panel)",
+						borderBottom: "1px solid var(--line)",
+						gap: 8,
+						alignItems: "center",
+					}}
+				>
+					<div
+						style={{
+							display: "inline-flex",
+							background: "var(--panel-2)",
+							border: "1px solid var(--line)",
+							borderRadius: 10,
+							padding: 3,
+							marginBottom: 8,
+						}}
+					>
 						<span
 							onClick={() => m.setCtab("vlakno")}
 							data-tab
 							data-active={m.ctab === "vlakno" || undefined}
-							style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 12, padding: "5px 14px", borderRadius: 7, cursor: "pointer" }}
+							style={{
+								display: "inline-flex",
+								alignItems: "center",
+								gap: 6,
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 600,
+								fontSize: 12,
+								padding: "5px 14px",
+								borderRadius: 7,
+								cursor: "pointer",
+							}}
 						>
 							Vlákno
-							<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, opacity: 0.65 }}>{msgsAll.length}</span>
+							<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, opacity: 0.65 }}>
+								{msgsAll.length}
+							</span>
 						</span>
 						<span
 							onClick={() => m.setCtab("chat")}
 							data-tab
 							data-active={m.ctab === "chat" || undefined}
-							style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 12, padding: "5px 14px", borderRadius: 7, cursor: "pointer" }}
+							style={{
+								display: "inline-flex",
+								alignItems: "center",
+								gap: 6,
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 600,
+								fontSize: 12,
+								padding: "5px 14px",
+								borderRadius: 7,
+								cursor: "pointer",
+							}}
 						>
 							<svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden>
-								<path d="M2.5 2.5 H11.5 V9.5 H7 L4.5 12 V9.5 H2.5 Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+								<path
+									d="M2.5 2.5 H11.5 V9.5 H7 L4.5 12 V9.5 H2.5 Z"
+									stroke="currentColor"
+									strokeWidth="1.3"
+									strokeLinejoin="round"
+								/>
 							</svg>
 							Interní chat
-							<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, opacity: 0.65 }}>{nchat}</span>
+							<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, opacity: 0.65 }}>
+								{nchat}
+							</span>
 						</span>
 					</div>
 					<span style={{ flex: 1 }} />
@@ -1220,7 +1762,13 @@ export function MailThread() {
 							}}
 							title="Vrátit interní chat jako pravý panel"
 							data-rowbtn
-							style={{ border: "1px solid var(--line)", background: "var(--panel)", fontFamily: "var(--w-font-mono)", fontSize: 11, marginBottom: 8 }}
+							style={{
+								border: "1px solid var(--line)",
+								background: "var(--panel)",
+								fontFamily: "var(--w-font-mono)",
+								fontSize: 11,
+								marginBottom: 8,
+							}}
 						>
 							«
 						</span>
@@ -1231,12 +1779,23 @@ export function MailThread() {
 			{/* ── VRSTVA 1+3: vlákno + interní chat (prototyp ř. 931–1146) ── */}
 			<div data-thrbody style={{ flex: 1, minHeight: 140, display: "flex" }}>
 				{/* Čtecí sloupec */}
-				<div data-tpane="mail" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
+				<div
+					data-tpane="mail"
+					style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}
+				>
 					<div style={{ flex: 1, overflow: "auto" }}>
 						<div style={{ maxWidth: 768, margin: "0 auto", padding: "18px 28px 22px" }}>
 							{msgsAll.length > 1 && (
 								<div style={{ display: "flex", justifyContent: "flex-end", padding: "0 0 6px" }}>
-									<span onClick={expAll} style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)", cursor: "pointer" }}>
+									<span
+										onClick={expAll}
+										style={{
+											fontFamily: "var(--w-font-mono)",
+											fontSize: 10,
+											color: "var(--ink-3)",
+											cursor: "pointer",
+										}}
+									>
 										{anyCollapsed ? "Rozbalit vše" : "Sbalit starší"}
 									</span>
 								</div>
@@ -1244,17 +1803,52 @@ export function MailThread() {
 
 							{/* bounce banner (prototyp ř. 943–952) */}
 							{bounceOn && (
-								<div style={{ display: "flex", gap: 9, alignItems: "flex-start", border: "1px solid var(--ink-3)", borderRadius: 11, padding: "9px 12px", marginBottom: 6, background: "var(--panel)" }}>
-									<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" style={{ color: "var(--ink-2)", flex: "none", marginTop: 1 }} aria-hidden>
+								<div
+									style={{
+										display: "flex",
+										gap: 9,
+										alignItems: "flex-start",
+										border: "1px solid var(--ink-3)",
+										borderRadius: 11,
+										padding: "9px 12px",
+										marginBottom: 6,
+										background: "var(--panel)",
+									}}
+								>
+									<svg
+										width="13"
+										height="13"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.9"
+										strokeLinecap="round"
+										style={{ color: "var(--ink-2)", flex: "none", marginTop: 1 }}
+										aria-hidden
+									>
 										<path d="M12 5 V13" />
 										<circle cx="12" cy="17.5" r="1.3" fill="currentColor" />
 										<circle cx="12" cy="12" r="9.2" />
 									</svg>
 									<div style={{ flex: 1, minWidth: 0 }}>
-										<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 12, color: "var(--ink)" }}>
+										<div
+											style={{
+												fontFamily: "var(--w-font-display)",
+												fontWeight: 700,
+												fontSize: 12,
+												color: "var(--ink)",
+											}}
+										>
 											Nedoručeno — zpráva se vrátila
 										</div>
-										<div style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-2)", marginTop: 2 }}>
+										<div
+											style={{
+												fontFamily: "var(--w-font-body)",
+												fontSize: 11.5,
+												color: "var(--ink-2)",
+												marginTop: 2,
+											}}
+										>
 											{t.bounce}. Nic se neztratilo — původní text je níž ve vlákně.
 										</div>
 									</div>
@@ -1262,7 +1856,9 @@ export function MailThread() {
 										onClick={() => {
 											m.setOv(t.id, { bounceFixed: true });
 											startEdit();
-											showToast("Oprav adresu v poli Komu a pošli znovu — původní zpráva zůstává ve vlákně jako nedoručená.");
+											showToast(
+												"Oprav adresu v poli Komu a pošli znovu — původní zpráva zůstává ve vlákně jako nedoručená.",
+											);
 										}}
 										data-ghost
 										style={{ fontSize: 10.5, padding: "5px 11px", flex: "none" }}
@@ -1274,8 +1870,29 @@ export function MailThread() {
 
 							{/* navázané úkoly (prototyp ř. 953–960) */}
 							{links.length > 0 && (
-								<div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 11, padding: "8px 12px", marginBottom: 6, background: "var(--panel)" }}>
-									<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)", flex: "none" }}>NAVÁZANÉ ÚKOLY</span>
+								<div
+									style={{
+										display: "flex",
+										gap: 8,
+										alignItems: "center",
+										flexWrap: "wrap",
+										border: "1px solid var(--line)",
+										borderRadius: 11,
+										padding: "8px 12px",
+										marginBottom: 6,
+										background: "var(--panel)",
+									}}
+								>
+									<span
+										style={{
+											fontFamily: "var(--w-font-mono)",
+											fontSize: 9.5,
+											color: "var(--ink-3)",
+											flex: "none",
+										}}
+									>
+										NAVÁZANÉ ÚKOLY
+									</span>
 									{links.map((tk) => {
 										const rec = m.bridge.taskStates?.[tk.app];
 										return (
@@ -1283,18 +1900,40 @@ export function MailThread() {
 												key={tk.app}
 												onClick={() => {
 													if (m.bridge.onNav) m.bridge.onNav(`task:${tk.app}`);
-													else showToast("Úkol žije v produktivní části Watsonu — chip „z mailu“ na něm vede zpět do tohohle vlákna.");
+													else
+														showToast(
+															"Úkol žije v produktivní části Watsonu — chip „z mailu“ na něm vede zpět do tohohle vlákna.",
+														);
 												}}
 												data-pflag={tk.prio}
 												title={`vyřizuje ${P[tk.owner]?.n ?? tk.owner} · klik otevře úkol v aplikaci`}
-												style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10.5, padding: "3px 10px", borderRadius: 999, cursor: "pointer" }}
+												style={{
+													display: "inline-flex",
+													alignItems: "center",
+													gap: 6,
+													fontFamily: "var(--w-font-display)",
+													fontWeight: 600,
+													fontSize: 10.5,
+													padding: "3px 10px",
+													borderRadius: 999,
+													cursor: "pointer",
+												}}
 											>
 												<svg width="10" height="10" viewBox="0 0 14 14" fill="none" aria-hidden>
-													<path d="M2.5 7.4 L5.5 10.4 L11.5 3.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+													<path
+														d="M2.5 7.4 L5.5 10.4 L11.5 3.6"
+														stroke="currentColor"
+														strokeWidth="1.7"
+														strokeLinecap="round"
+														strokeLinejoin="round"
+													/>
 												</svg>
 												{tk.n}
 												{rec && (
-													<span data-mstate={rec.done ? "hotovo" : "otevreny"} style={{ fontSize: 9.5, padding: "1px 7px", marginLeft: 2 }}>
+													<span
+														data-mstate={rec.done ? "hotovo" : "otevreny"}
+														style={{ fontSize: 9.5, padding: "1px 7px", marginLeft: 2 }}
+													>
 														{rec.done ? "hotovo" : "otevřený"}
 													</span>
 												)}
@@ -1306,27 +1945,85 @@ export function MailThread() {
 
 							{/* AI shrnutí vlákna (prototyp ř. 961–969) */}
 							{hasSum && (
-								<div style={{ display: "flex", gap: 10, background: "var(--brass-soft)", borderRadius: 12, padding: "10px 13px", marginBottom: 6, alignItems: "flex-start" }}>
-									<span style={{ width: 17, height: 17, borderRadius: "50%", border: "1.6px solid var(--brass-text)", color: "var(--brass-text)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, fontFamily: "var(--w-font-display)", flex: "none", marginTop: 1 }}>
+								<div
+									style={{
+										display: "flex",
+										gap: 10,
+										background: "var(--brass-soft)",
+										borderRadius: 12,
+										padding: "10px 13px",
+										marginBottom: 6,
+										alignItems: "flex-start",
+									}}
+								>
+									<span
+										style={{
+											width: 17,
+											height: 17,
+											borderRadius: "50%",
+											border: "1.6px solid var(--brass-text)",
+											color: "var(--brass-text)",
+											display: "flex",
+											alignItems: "center",
+											justifyContent: "center",
+											fontSize: 9,
+											fontWeight: 800,
+											fontFamily: "var(--w-font-display)",
+											flex: "none",
+											marginTop: 1,
+										}}
+									>
 										W
 									</span>
 									<div style={{ flex: 1, minWidth: 0 }}>
-										<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 10.5, letterSpacing: ".05em", color: "var(--brass-text)" }}>
+										<div
+											style={{
+												fontFamily: "var(--w-font-display)",
+												fontWeight: 700,
+												fontSize: 10.5,
+												letterSpacing: ".05em",
+												color: "var(--brass-text)",
+											}}
+										>
 											SHRNUTÍ VLÁKNA
 										</div>
 										{m.sum && (
-											<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55, marginTop: 3 }}>
+											<div
+												style={{
+													fontFamily: "var(--w-font-body)",
+													fontSize: 12.5,
+													color: "var(--ink-2)",
+													lineHeight: 1.55,
+													marginTop: 3,
+												}}
+											>
 												{t.sum}
 											</div>
 										)}
 									</div>
-									<span onClick={() => m.setSum(!m.sum)} style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--brass-text)", cursor: "pointer", flex: "none" }}>
+									<span
+										onClick={() => m.setSum(!m.sum)}
+										style={{
+											fontFamily: "var(--w-font-mono)",
+											fontSize: 10,
+											color: "var(--brass-text)",
+											cursor: "pointer",
+											flex: "none",
+										}}
+									>
 										{m.sum ? "skrýt" : "zobrazit"}
 									</span>
 								</div>
 							)}
 							{aiOffOn && (
-								<div style={{ fontFamily: "var(--w-font-body)", fontSize: 11, color: "var(--ink-3)", margin: "2px 0 6px" }}>
+								<div
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 11,
+										color: "var(--ink-3)",
+										margin: "2px 0 6px",
+									}}
+								>
 									AI je pro granty@ vypnutá (osobní údaje žadatelů) — bez shrnutí a draftů.
 								</div>
 							)}
@@ -1352,28 +2049,106 @@ export function MailThread() {
 											key={key}
 											onClick={() => m.toggleExp(key)}
 											title="Rozbalit zprávu"
-											style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 0", borderBottom: "1px solid var(--line)", cursor: "pointer" }}
+											style={{
+												display: "flex",
+												alignItems: "center",
+												gap: 10,
+												padding: "11px 0",
+												borderBottom: "1px solid var(--line)",
+												cursor: "pointer",
+											}}
 										>
-											<span data-av={av} style={avStyle(26, 9)}>{ini}</span>
-											<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 12.5, color: "var(--ink)", flex: "none" }}>{name}</span>
-											<span style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-3)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+											<span data-av={av} style={avStyle(26, 9)}>
+												{ini}
+											</span>
+											<span
+												style={{
+													fontFamily: "var(--w-font-display)",
+													fontWeight: 600,
+													fontSize: 12.5,
+													color: "var(--ink)",
+													flex: "none",
+												}}
+											>
+												{name}
+											</span>
+											<span
+												style={{
+													fontFamily: "var(--w-font-body)",
+													fontSize: 12,
+													color: "var(--ink-3)",
+													flex: 1,
+													minWidth: 0,
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													whiteSpace: "nowrap",
+												}}
+											>
 												{msg.body[1] ?? msg.body[0]}
 											</span>
-											{msg.att && <ClipSvg size={11} style={{ color: "var(--ink-3)", flex: "none" }} />}
-											<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)", flex: "none" }}>{msg.t}</span>
+											{msg.att && (
+												<ClipSvg size={11} style={{ color: "var(--ink-3)", flex: "none" }} />
+											)}
+											<span
+												style={{
+													fontFamily: "var(--w-font-mono)",
+													fontSize: 10.5,
+													color: "var(--ink-3)",
+													flex: "none",
+												}}
+											>
+												{msg.t}
+											</span>
 										</div>
 									);
 
 								return (
-									<div key={key} style={{ padding: "15px 0 10px", borderBottom: "1px solid var(--line)" }}>
-										<div onClick={() => m.toggleExp(key)} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-											<span data-av={av} style={avStyle(32, 11)}>{ini}</span>
+									<div
+										key={key}
+										style={{ padding: "15px 0 10px", borderBottom: "1px solid var(--line)" }}
+									>
+										<div
+											onClick={() => m.toggleExp(key)}
+											style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
+										>
+											<span data-av={av} style={avStyle(32, 11)}>
+												{ini}
+											</span>
 											<div style={{ flex: 1, minWidth: 0 }}>
 												<div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-													<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 13.5, color: "var(--ink)" }}>{name}</span>
-													<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{addr}</span>
+													<span
+														style={{
+															fontFamily: "var(--w-font-display)",
+															fontWeight: 700,
+															fontSize: 13.5,
+															color: "var(--ink)",
+														}}
+													>
+														{name}
+													</span>
+													<span
+														style={{
+															fontFamily: "var(--w-font-mono)",
+															fontSize: 10,
+															color: "var(--ink-3)",
+															overflow: "hidden",
+															textOverflow: "ellipsis",
+															whiteSpace: "nowrap",
+														}}
+													>
+														{addr}
+													</span>
 												</div>
-												<div style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)", marginTop: 2 }}>komu: {msg.to}</div>
+												<div
+													style={{
+														fontFamily: "var(--w-font-mono)",
+														fontSize: 10,
+														color: "var(--ink-3)",
+														marginTop: 2,
+													}}
+												>
+													komu: {msg.to}
+												</div>
 											</div>
 											{msg.en && (
 												<span
@@ -1382,36 +2157,102 @@ export function MailThread() {
 														m.setTranslated(!m.translated);
 													}}
 													title="Watson přeloží zprávu — originál zůstává k dispozici"
-													style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10.5, padding: "3px 9px", borderRadius: 999, background: "var(--brass-soft)", color: "var(--brass-text)", cursor: "pointer", flex: "none" }}
+													style={{
+														display: "inline-flex",
+														alignItems: "center",
+														gap: 5,
+														fontFamily: "var(--w-font-display)",
+														fontWeight: 600,
+														fontSize: 10.5,
+														padding: "3px 9px",
+														borderRadius: 999,
+														background: "var(--brass-soft)",
+														color: "var(--brass-text)",
+														cursor: "pointer",
+														flex: "none",
+													}}
 												>
 													{m.translated ? "Zobrazit originál" : "Přeložit do češtiny"}
 												</span>
 											)}
-											<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)", flex: "none" }}>{msg.t}</span>
+											<span
+												style={{
+													fontFamily: "var(--w-font-mono)",
+													fontSize: 10.5,
+													color: "var(--ink-3)",
+													flex: "none",
+												}}
+											>
+												{msg.t}
+											</span>
 										</div>
 										{outd && mb && (
-											<div style={{ display: "flex", alignItems: "center", gap: 6, margin: "7px 0 0 42px" }}>
+											<div
+												style={{
+													display: "flex",
+													alignItems: "center",
+													gap: 6,
+													margin: "7px 0 0 42px",
+												}}
+											>
 												<LockSvg size={10} style={{ color: "var(--brass-text)" }} />
-												<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--brass-text)" }}>
+												<span
+													style={{
+														fontFamily: "var(--w-font-mono)",
+														fontSize: 10,
+														color: "var(--brass-text)",
+													}}
+												>
 													odesláno za {mb.short} · odeslal {name}
 												</span>
 											</div>
 										)}
 										<div style={{ margin: "10px 0 0 42px", maxWidth: "66ch" }}>
 											{imgBlocked && (
-												<div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px dashed var(--line)", background: "var(--panel-2)", borderRadius: 9, padding: "6px 10px", marginBottom: 8, flexWrap: "wrap" }}>
-													<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ color: "var(--ink-3)", flex: "none" }} aria-hidden>
+												<div
+													style={{
+														display: "flex",
+														alignItems: "center",
+														gap: 8,
+														border: "1px dashed var(--line)",
+														background: "var(--panel-2)",
+														borderRadius: 9,
+														padding: "6px 10px",
+														marginBottom: 8,
+														flexWrap: "wrap",
+													}}
+												>
+													<svg
+														width="12"
+														height="12"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														strokeWidth="1.8"
+														style={{ color: "var(--ink-3)", flex: "none" }}
+														aria-hidden
+													>
 														<rect x="3.5" y="5" width="17" height="14" rx="1.6" />
 														<circle cx="9" cy="10" r="1.6" />
 														<path d="M4.5 17 L10 12 L14 15.5 L16.5 13.5 L20 16.5" />
 													</svg>
-													<span style={{ flex: 1, minWidth: 140, fontFamily: "var(--w-font-body)", fontSize: 11, color: "var(--ink-2)" }}>
+													<span
+														style={{
+															flex: 1,
+															minWidth: 140,
+															fontFamily: "var(--w-font-body)",
+															fontSize: 11,
+															color: "var(--ink-2)",
+														}}
+													>
 														Obrázky blokovány — ochrana před sledovacími pixely.
 													</span>
 													<span
 														onClick={() => {
 															m.allowImgs(t.id);
-															showToast("Obrázky načteny pro tuhle zprávu. „Vždy od odesílatele“ si zapamatuje výjimku.");
+															showToast(
+																"Obrázky načteny pro tuhle zprávu. „Vždy od odesílatele“ si zapamatuje výjimku.",
+															);
 														}}
 														data-ghost
 														style={{ fontSize: 10, padding: "3px 9px", flex: "none" }}
@@ -1421,7 +2262,9 @@ export function MailThread() {
 													<span
 														onClick={() => {
 															m.allowImgs(t.id);
-															showToast("Obrázky načteny pro tuhle zprávu. „Vždy od odesílatele“ si zapamatuje výjimku.");
+															showToast(
+																"Obrázky načteny pro tuhle zprávu. „Vždy od odesílatele“ si zapamatuje výjimku.",
+															);
 														}}
 														data-ghost
 														style={{ fontSize: 10, padding: "3px 9px", flex: "none" }}
@@ -1431,18 +2274,45 @@ export function MailThread() {
 												</div>
 											)}
 											{island && (
-												<div style={{ fontFamily: "var(--w-font-mono)", fontSize: 9, color: "var(--ink-3)", marginBottom: 4 }}>
+												<div
+													style={{
+														fontFamily: "var(--w-font-mono)",
+														fontSize: 9,
+														color: "var(--ink-3)",
+														marginBottom: 4,
+													}}
+												>
 													HTML e-mail · zobrazuje se jako světlý ostrov i v tmavém režimu ·{" "}
-													<span style={{ cursor: "pointer", color: "var(--brass-text)" }} title="Demo — otevře originál v plné šířce">
+													<span
+														style={{ cursor: "pointer", color: "var(--brass-text)" }}
+														title="Demo — otevře originál v plné šířce"
+													>
 														původní podoba
 													</span>
 												</div>
 											)}
 											{island ? (
-												<div style={{ background: "#ffffff", color: "#16161a", border: "1px solid var(--line)", borderRadius: 10, padding: "12px 14px" }}>
+												<div
+													style={{
+														background: "#ffffff",
+														color: "#16161a",
+														border: "1px solid var(--line)",
+														borderRadius: 10,
+														padding: "12px 14px",
+													}}
+												>
 													{body.map((p, bi) => (
 														// biome-ignore lint/suspicious/noArrayIndexKey: statické odstavce
-														<p key={bi} style={{ fontFamily: "var(--w-font-body)", fontSize: 14, color: "#16161a", lineHeight: 1.65, margin: "0 0 10px" }}>
+														<p
+															key={bi}
+															style={{
+																fontFamily: "var(--w-font-body)",
+																fontSize: 14,
+																color: "#16161a",
+																lineHeight: 1.65,
+																margin: "0 0 10px",
+															}}
+														>
 															{p}
 														</p>
 													))}
@@ -1450,22 +2320,80 @@ export function MailThread() {
 											) : (
 												body.map((p, bi) => (
 													// biome-ignore lint/suspicious/noArrayIndexKey: statické odstavce
-													<p key={bi} style={{ fontFamily: "var(--w-font-body)", fontSize: 14.5, color: "var(--ink)", lineHeight: 1.68, margin: "0 0 10px" }}>
+													<p
+														key={bi}
+														style={{
+															fontFamily: "var(--w-font-body)",
+															fontSize: 14.5,
+															color: "var(--ink)",
+															lineHeight: 1.68,
+															margin: "0 0 10px",
+														}}
+													>
 														{p}
 													</p>
 												))
 											)}
 											{msg.att && (
 												<span
-													onClick={() => showToast("Náhled přílohy — v aplikaci se otevře prohlížeč souboru.")}
-													style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 9, padding: "7px 11px", margin: "2px 0 8px", cursor: "pointer" }}
+													onClick={() =>
+														showToast("Náhled přílohy — v aplikaci se otevře prohlížeč souboru.")
+													}
+													style={{
+														display: "inline-flex",
+														alignItems: "center",
+														gap: 8,
+														background: "var(--panel-2)",
+														border: "1px solid var(--line)",
+														borderRadius: 9,
+														padding: "7px 11px",
+														margin: "2px 0 8px",
+														cursor: "pointer",
+													}}
 												>
-													<svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ color: "var(--ink-3)" }} aria-hidden>
-														<rect x="3" y="1.5" width="8" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
-														<line x1="5" y1="5" x2="9" y2="5" stroke="currentColor" strokeWidth="1.2" />
-														<line x1="5" y1="7.5" x2="9" y2="7.5" stroke="currentColor" strokeWidth="1.2" />
+													<svg
+														width="13"
+														height="13"
+														viewBox="0 0 14 14"
+														fill="none"
+														style={{ color: "var(--ink-3)" }}
+														aria-hidden
+													>
+														<rect
+															x="3"
+															y="1.5"
+															width="8"
+															height="11"
+															rx="1.5"
+															stroke="currentColor"
+															strokeWidth="1.2"
+														/>
+														<line
+															x1="5"
+															y1="5"
+															x2="9"
+															y2="5"
+															stroke="currentColor"
+															strokeWidth="1.2"
+														/>
+														<line
+															x1="5"
+															y1="7.5"
+															x2="9"
+															y2="7.5"
+															stroke="currentColor"
+															strokeWidth="1.2"
+														/>
 													</svg>
-													<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 11, color: "var(--ink-2)" }}>{msg.att}</span>
+													<span
+														style={{
+															fontFamily: "var(--w-font-mono)",
+															fontSize: 11,
+															color: "var(--ink-2)",
+														}}
+													>
+														{msg.att}
+													</span>
 												</span>
 											)}
 											{msg.quote && (
@@ -1473,15 +2401,41 @@ export function MailThread() {
 													<span
 														onClick={() => m.toggleExp(qKey)}
 														title="Citovaný text předchozích zpráv"
-														style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)", border: "1px solid var(--line)", borderRadius: 999, padding: "2px 10px", cursor: "pointer" }}
+														style={{
+															display: "inline-flex",
+															alignItems: "center",
+															gap: 6,
+															fontFamily: "var(--w-font-mono)",
+															fontSize: 10.5,
+															color: "var(--ink-3)",
+															border: "1px solid var(--line)",
+															borderRadius: 999,
+															padding: "2px 10px",
+															cursor: "pointer",
+														}}
 													>
 														⋯ citovaný text
 													</span>
 													{m.exp[qKey] && (
-														<div style={{ borderLeft: "2px solid var(--line)", marginTop: 8, paddingLeft: 12 }}>
+														<div
+															style={{
+																borderLeft: "2px solid var(--line)",
+																marginTop: 8,
+																paddingLeft: 12,
+															}}
+														>
 															{msg.quote.map((q, qi) => (
 																// biome-ignore lint/suspicious/noArrayIndexKey: statické odstavce
-																<p key={qi} style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.6, margin: "0 0 7px" }}>
+																<p
+																	key={qi}
+																	style={{
+																		fontFamily: "var(--w-font-body)",
+																		fontSize: 12.5,
+																		color: "var(--ink-3)",
+																		lineHeight: 1.6,
+																		margin: "0 0 7px",
+																	}}
+																>
 																	{q}
 																</p>
 															))}
@@ -1499,21 +2453,48 @@ export function MailThread() {
 								<span
 									onClick={startEdit}
 									data-ghost
-									style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "7px 14px", color: "var(--brass-text)", borderColor: "var(--brass)" }}
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 6,
+										fontSize: 12,
+										padding: "7px 14px",
+										color: "var(--brass-text)",
+										borderColor: "var(--brass)",
+									}}
 								>
 									<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
-										<path d="M6 3.2 L2.6 6.6 L6 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-										<path d="M2.6 6.6 H8.6 A2.9 2.9 0 0 1 11.5 9.5 V10.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+										<path
+											d="M6 3.2 L2.6 6.6 L6 10"
+											stroke="currentColor"
+											strokeWidth="1.4"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
+										<path
+											d="M2.6 6.6 H8.6 A2.9 2.9 0 0 1 11.5 9.5 V10.8"
+											stroke="currentColor"
+											strokeWidth="1.4"
+											strokeLinecap="round"
+										/>
 									</svg>
 									Odpovědět
 								</span>
 								<span
 									onClick={() => {
 										startEdit();
-										showToast("Odpověď všem — příjemci z vlákna. Reply-all guard ohlídá externí adresy.");
+										showToast(
+											"Odpověď všem — příjemci z vlákna. Reply-all guard ohlídá externí adresy.",
+										);
 									}}
 									data-ghost
-									style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "7px 14px" }}
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 6,
+										fontSize: 12,
+										padding: "7px 14px",
+									}}
 								>
 									Odpovědět všem
 								</span>
@@ -1530,11 +2511,28 @@ export function MailThread() {
 										});
 									}}
 									data-ghost
-									style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "7px 14px" }}
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 6,
+										fontSize: 12,
+										padding: "7px 14px",
+									}}
 								>
 									<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
-										<path d="M8 3.2 L11.4 6.6 L8 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-										<path d="M11.4 6.6 H5.4 A2.9 2.9 0 0 0 2.5 9.5 V10.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+										<path
+											d="M8 3.2 L11.4 6.6 L8 10"
+											stroke="currentColor"
+											strokeWidth="1.4"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
+										<path
+											d="M11.4 6.6 H5.4 A2.9 2.9 0 0 0 2.5 9.5 V10.8"
+											stroke="currentColor"
+											strokeWidth="1.4"
+											strokeLinecap="round"
+										/>
 									</svg>
 									Přeposlat
 								</span>
@@ -1545,11 +2543,37 @@ export function MailThread() {
 
 				{/* Interní chat: záložka (mobil/tablet/režim Záložka, prototyp ř. 1052–1096) */}
 				{!t.personal && (
-					<div data-tpane="chat" style={{ flex: 1, minWidth: 0, flexDirection: "column", minHeight: 0, background: "var(--panel-2)" }}>
+					<div
+						data-tpane="chat"
+						style={{
+							flex: 1,
+							minWidth: 0,
+							flexDirection: "column",
+							minHeight: 0,
+							background: "var(--panel-2)",
+						}}
+					>
 						<div style={{ flex: 1, overflow: "auto", padding: "14px 18px 6px" }}>
-							<div style={{ maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 9 }}>
+							<div
+								style={{
+									maxWidth: 640,
+									margin: "0 auto",
+									display: "flex",
+									flexDirection: "column",
+									gap: 9,
+								}}
+							>
 								<div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-									<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 10.5, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-3)" }}>
+									<span
+										style={{
+											fontFamily: "var(--w-font-display)",
+											fontWeight: 700,
+											fontSize: 10.5,
+											letterSpacing: ".05em",
+											textTransform: "uppercase",
+											color: "var(--ink-3)",
+										}}
+									>
 										Interní diskuse
 									</span>
 									<ChatLock />
@@ -1565,12 +2589,43 @@ export function MailThread() {
 
 				{/* Interní chat: pravý panel (desktop ≥1440, prototyp ř. 1097–1146) */}
 				{!t.personal && (
-					<div data-chatrail style={{ width: 306, flex: "none", borderLeft: "1px solid var(--line)", background: "var(--panel-2)", flexDirection: "column", minHeight: 0 }}>
-						<div style={{ flex: "none", display: "flex", alignItems: "center", gap: 7, padding: "12px 14px 8px" }}>
-							<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 10.5, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-3)" }}>
+					<div
+						data-chatrail
+						style={{
+							width: 306,
+							flex: "none",
+							borderLeft: "1px solid var(--line)",
+							background: "var(--panel-2)",
+							flexDirection: "column",
+							minHeight: 0,
+						}}
+					>
+						<div
+							style={{
+								flex: "none",
+								display: "flex",
+								alignItems: "center",
+								gap: 7,
+								padding: "12px 14px 8px",
+							}}
+						>
+							<span
+								style={{
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 700,
+									fontSize: 10.5,
+									letterSpacing: ".05em",
+									textTransform: "uppercase",
+									color: "var(--ink-3)",
+								}}
+							>
 								Interní diskuse
 							</span>
-							<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)" }}>{nchat}</span>
+							<span
+								style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)" }}
+							>
+								{nchat}
+							</span>
 							<ChatLock />
 							<span
 								onClick={() => {
@@ -1584,7 +2639,16 @@ export function MailThread() {
 								»
 							</span>
 						</div>
-						<div style={{ flex: 1, overflow: "auto", padding: "2px 14px 6px", display: "flex", flexDirection: "column", gap: 9 }}>
+						<div
+							style={{
+								flex: 1,
+								overflow: "auto",
+								padding: "2px 14px 6px",
+								display: "flex",
+								flexDirection: "column",
+								gap: 9,
+							}}
+						>
 							{chatMsgs(true)}
 						</div>
 						<div style={{ flex: "none", padding: "8px 14px 12px" }}>{chatInput(true)}</div>
@@ -1594,13 +2658,49 @@ export function MailThread() {
 
 			{/* ── Kolizní hlídka (prototyp ř. 923–931 v bloku Kolize) ── */}
 			{collOn && (
-				<div data-tpane="mail" style={{ flex: "none", display: "flex", alignItems: "center", gap: 9, padding: "7px 18px", background: "var(--brass-soft)", borderTop: "1px solid var(--line)" }}>
-					<span data-pulse style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--brass)", flex: "none" }} />
+				<div
+					data-tpane="mail"
+					style={{
+						flex: "none",
+						display: "flex",
+						alignItems: "center",
+						gap: 9,
+						padding: "7px 18px",
+						background: "var(--brass-soft)",
+						borderTop: "1px solid var(--line)",
+					}}
+				>
+					<span
+						data-pulse
+						style={{
+							width: 7,
+							height: 7,
+							borderRadius: "50%",
+							background: "var(--brass)",
+							flex: "none",
+						}}
+					/>
 					<span style={{ ...avStyle(18, 7.5), display: "inline-flex" }}>PŠ</span>
-					<span style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-2)", flex: 1, minWidth: 0 }}>
-						<span style={{ fontWeight: 600 }}>Petra Šimková</span> právě píše odpověď v tomhle vlákně — domluvte se, ať neodejdou dvě.
+					<span
+						style={{
+							fontFamily: "var(--w-font-body)",
+							fontSize: 12,
+							color: "var(--ink-2)",
+							flex: 1,
+							minWidth: 0,
+						}}
+					>
+						<span style={{ fontWeight: 600 }}>Petra Šimková</span> právě píše odpověď v tomhle
+						vlákně — domluvte se, ať neodejdou dvě.
 					</span>
-					<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)", flex: "none" }}>
+					<span
+						style={{
+							fontFamily: "var(--w-font-mono)",
+							fontSize: 9.5,
+							color: "var(--ink-3)",
+							flex: "none",
+						}}
+					>
 						{m.collArmed ? "další klik na Odeslat odešle i tak" : "kolizní hlídka"}
 					</span>
 				</div>
@@ -1608,18 +2708,63 @@ export function MailThread() {
 
 			{/* ── VRSTVA 2: composer (prototyp ř. 1147–1380) — RTE + toolbar + karty ── */}
 			{/* CSS ≥1440 vnucuje [data-tpane="mail"] display:flex !important → nutný column */}
-			<div ref={compRef} data-tpane="mail" style={{ flex: "none", flexDirection: "column", borderTop: "1px solid var(--line)", background: "var(--panel)", padding: "9px 18px 12px", position: "relative" }}>
+			<div
+				ref={compRef}
+				data-tpane="mail"
+				style={{
+					flex: "none",
+					flexDirection: "column",
+					borderTop: "1px solid var(--line)",
+					background: "var(--panel)",
+					padding: "9px 18px 12px",
+					position: "relative",
+				}}
+			>
 				<div
 					title="From je svázané s vláknem — identita se u odpovědi nemění. Podpis se doplní podle schránky."
-					style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", paddingBottom: 7 }}
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: 7,
+						flexWrap: "wrap",
+						paddingBottom: 7,
+					}}
 				>
 					<LockSvg size={11} style={{ color: "var(--ink-3)", flex: "none" }} />
-					<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)" }}>Odpovídáš jako</span>
-					<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 12, color: "var(--ink)" }}>Adam Košír</span>
+					<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)" }}>
+						Odpovídáš jako
+					</span>
+					<span
+						style={{
+							fontFamily: "var(--w-font-display)",
+							fontWeight: 600,
+							fontSize: 12,
+							color: "var(--ink)",
+						}}
+					>
+						Adam Košír
+					</span>
 					{!t.personal && mb && (
 						<>
-							<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)" }}>za</span>
-							<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-2)", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 6, padding: "1px 7px" }}>
+							<span
+								style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)" }}
+							>
+								za
+							</span>
+							<span
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 5,
+									fontFamily: "var(--w-font-mono)",
+									fontSize: 10.5,
+									color: "var(--ink-2)",
+									background: "var(--panel-2)",
+									border: "1px solid var(--line)",
+									borderRadius: 6,
+									padding: "1px 7px",
+								}}
+							>
 								<span data-mbdot={t.mb} style={{ width: 7, height: 7, borderRadius: "50%" }} />
 								{mb.addr}
 							</span>
@@ -1627,8 +2772,22 @@ export function MailThread() {
 					)}
 					{t.personal && (
 						<>
-							<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)" }}>ze své osobní adresy</span>
-							<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--pers-ink)", background: "var(--pers-bg)", border: "1px solid var(--pers-line)", borderRadius: 6, padding: "1px 7px" }}>
+							<span
+								style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)" }}
+							>
+								ze své osobní adresy
+							</span>
+							<span
+								style={{
+									fontFamily: "var(--w-font-mono)",
+									fontSize: 10.5,
+									color: "var(--pers-ink)",
+									background: "var(--pers-bg)",
+									border: "1px solid var(--pers-line)",
+									borderRadius: 6,
+									padding: "1px 7px",
+								}}
+							>
 								kosir.adam@gmail.com
 							</span>
 						</>
@@ -1641,46 +2800,131 @@ export function MailThread() {
 						style={{ border: "1px solid var(--line)" }}
 					>
 						<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
-							<path d="M5.5 2.5 H2.5 V11.5 H11.5 V8.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-							<path d="M8 2.5 H11.5 V6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-							<line x1="11.2" y1="2.8" x2="6.8" y2="7.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+							<path
+								d="M5.5 2.5 H2.5 V11.5 H11.5 V8.5"
+								stroke="currentColor"
+								strokeWidth="1.3"
+								strokeLinecap="round"
+							/>
+							<path
+								d="M8 2.5 H11.5 V6"
+								stroke="currentColor"
+								strokeWidth="1.3"
+								strokeLinecap="round"
+							/>
+							<line
+								x1="11.2"
+								y1="2.8"
+								x2="6.8"
+								y2="7.2"
+								stroke="currentColor"
+								strokeWidth="1.3"
+								strokeLinecap="round"
+							/>
 						</svg>
 					</span>
 				</div>
 
 				{/* AI draft karta (prototyp comp.isDraft, ř. 1183–1209) — jen aiDraft && AI on && bez konceptu */}
 				{mode === "draft" && (
-					<div style={{ border: "1.5px solid var(--brass)", background: "var(--brass-soft)", borderRadius: 13, padding: "11px 13px" }}>
+					<div
+						style={{
+							border: "1.5px solid var(--brass)",
+							background: "var(--brass-soft)",
+							borderRadius: 13,
+							padding: "11px 13px",
+						}}
+					>
 						<div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-							<span style={{ width: 17, height: 17, borderRadius: "50%", border: "1.6px solid var(--brass-text)", color: "var(--brass-text)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, fontFamily: "var(--w-font-display)", flex: "none" }}>
+							<span
+								style={{
+									width: 17,
+									height: 17,
+									borderRadius: "50%",
+									border: "1.6px solid var(--brass-text)",
+									color: "var(--brass-text)",
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "center",
+									fontSize: 9,
+									fontWeight: 800,
+									fontFamily: "var(--w-font-display)",
+									flex: "none",
+								}}
+							>
 								W
 							</span>
-							<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 12, color: "var(--brass-text)" }}>
+							<span
+								style={{
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 700,
+									fontSize: 12,
+									color: "var(--brass-text)",
+								}}
+							>
 								Watson · návrh odpovědi
 							</span>
 							<span
 								onClick={() => setCpop(cpop === "why" ? null : "why")}
-								style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11, color: "var(--brass-text)", cursor: "pointer" }}
+								style={{
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 600,
+									fontSize: 11,
+									color: "var(--brass-text)",
+									cursor: "pointer",
+								}}
 							>
 								proč tenhle návrh?
 							</span>
 							<span
 								onClick={() => m.setDraft(t.id, "", "empty")}
 								title="Zahodit návrh"
-								style={{ marginLeft: "auto", fontSize: 15, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer", flex: "none" }}
+								style={{
+									marginLeft: "auto",
+									fontSize: 15,
+									lineHeight: 1,
+									color: "var(--ink-3)",
+									cursor: "pointer",
+									flex: "none",
+								}}
 							>
 								×
 							</span>
 						</div>
 						{cpop === "why" && (
-							<div style={{ background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 9, padding: "8px 11px", marginBottom: 8 }}>
+							<div
+								style={{
+									background: "var(--panel)",
+									border: "1px solid var(--line)",
+									borderRadius: 9,
+									padding: "8px 11px",
+									marginBottom: 8,
+								}}
+							>
 								{(t.why ?? []).map((w) => (
-									<div key={w} style={{ display: "flex", gap: 7, fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
+									<div
+										key={w}
+										style={{
+											display: "flex",
+											gap: 7,
+											fontFamily: "var(--w-font-body)",
+											fontSize: 11.5,
+											color: "var(--ink-2)",
+											lineHeight: 1.55,
+										}}
+									>
 										<span style={{ color: "var(--brass)", flex: "none" }}>·</span>
 										<span>{w}</span>
 									</div>
 								))}
-								<div style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)", marginTop: 6 }}>
+								<div
+									style={{
+										fontFamily: "var(--w-font-mono)",
+										fontSize: 9.5,
+										color: "var(--ink-3)",
+										marginTop: 6,
+									}}
+								>
 									návrh vychází z vlákna a interní diskuse · nikam se neodeslal
 								</div>
 							</div>
@@ -1688,12 +2932,29 @@ export function MailThread() {
 						<div style={{ maxHeight: 148, overflow: "auto" }}>
 							{(t.draft ?? []).map((p, pi) => (
 								// biome-ignore lint/suspicious/noArrayIndexKey: statické odstavce návrhu
-								<p key={pi} style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink)", lineHeight: 1.6, margin: "0 0 6px" }}>
+								<p
+									key={pi}
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 12.5,
+										color: "var(--ink)",
+										lineHeight: 1.6,
+										margin: "0 0 6px",
+									}}
+								>
 									{p}
 								</p>
 							))}
 						</div>
-						<div style={{ display: "flex", gap: 7, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+						<div
+							style={{
+								display: "flex",
+								gap: 7,
+								marginTop: 8,
+								alignItems: "center",
+								flexWrap: "wrap",
+							}}
+						>
 							<span
 								onClick={() => {
 									m.setDraft(t.id, (t.draft ?? []).join("\n\n"));
@@ -1704,10 +2965,21 @@ export function MailThread() {
 							>
 								Použít a upravit
 							</span>
-							<span onClick={() => m.setDraft(t.id, "", "empty")} data-ghost style={{ fontSize: 11.5, padding: "6px 12px" }}>
+							<span
+								onClick={() => m.setDraft(t.id, "", "empty")}
+								data-ghost
+								style={{ fontSize: 11.5, padding: "6px 12px" }}
+							>
 								Zahodit
 							</span>
-							<span style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", marginLeft: "auto" }}>
+							<span
+								style={{
+									fontFamily: "var(--w-font-body)",
+									fontSize: 10.5,
+									color: "var(--ink-3)",
+									marginLeft: "auto",
+								}}
+							>
 								AI nikdy neodesílá sama — odešleš ty.
 							</span>
 						</div>
@@ -1718,7 +2990,15 @@ export function MailThread() {
 					<>
 						{/* quick reply chipy (prototyp comp.quick) */}
 						{showQuickRow && (
-							<div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
+							<div
+								style={{
+									display: "flex",
+									gap: 6,
+									flexWrap: "wrap",
+									marginBottom: 8,
+									alignItems: "center",
+								}}
+							>
 								{quick.map((label) => (
 									<span
 										key={label}
@@ -1727,78 +3007,239 @@ export function MailThread() {
 											focusComp();
 										}}
 										data-oneclick
-										style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11, padding: "4px 10px", borderRadius: 999 }}
+										style={{
+											fontFamily: "var(--w-font-display)",
+											fontWeight: 600,
+											fontSize: 11,
+											padding: "4px 10px",
+											borderRadius: 999,
+										}}
 									>
 										{label}
 									</span>
 								))}
-								<span style={{ marginLeft: "auto", fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)" }}>
+								<span
+									style={{
+										marginLeft: "auto",
+										fontFamily: "var(--w-font-body)",
+										fontSize: 10.5,
+										color: "var(--ink-3)",
+									}}
+								>
 									AI nikdy neodesílá sama — odešleš ty.
 								</span>
 							</div>
 						)}
 
 						{/* Komu + Cc/Bcc (prototyp ř. 1211–1222) */}
-						<div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6, fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)" }}>
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 8,
+								flexWrap: "wrap",
+								marginBottom: 6,
+								fontFamily: "var(--w-font-body)",
+								fontSize: 11.5,
+								color: "var(--ink-3)",
+							}}
+						>
 							<span style={{ flex: "none" }}>Komu</span>
-							<span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 999, padding: "2px 10px", fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11, color: "var(--ink-2)" }}>
+							<span
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 5,
+									background: "var(--panel-2)",
+									border: "1px solid var(--line)",
+									borderRadius: 999,
+									padding: "2px 10px",
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 600,
+									fontSize: 11,
+									color: "var(--ink-2)",
+								}}
+							>
 								{t.from.n} &lt;{t.from.addr}&gt;
 							</span>
 							{!ccOn && (
-								<span onClick={() => setCcOn(true)} style={{ cursor: "pointer", color: "var(--brass-text)", fontWeight: 600 }}>
+								<span
+									onClick={() => setCcOn(true)}
+									style={{ cursor: "pointer", color: "var(--brass-text)", fontWeight: 600 }}
+								>
 									Cc/Bcc
 								</span>
 							)}
 						</div>
 						{ccOn && (
 							<div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-								<input placeholder="Cc — kopie (našeptává z kontaktů)" title="Reply-all guard ohlídá externí adresy v kopii" style={ccInput} />
+								<input
+									placeholder="Cc — kopie (našeptává z kontaktů)"
+									title="Reply-all guard ohlídá externí adresy v kopii"
+									style={ccInput}
+								/>
 								<input placeholder="Bcc — skrytá kopie" style={ccInput} />
 							</div>
 						)}
 
 						{/* RTE toolbar (prototyp ř. 1223–1259) */}
-						<div style={{ display: "flex", gap: 2, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
-							<span onMouseDown={pd} onClick={() => rteCmd("bold")} data-rowbtn title="Tučné (⌘B)" style={{ fontFamily: "var(--w-font-display)", fontWeight: 800, fontSize: 12 }}>
+						<div
+							style={{
+								display: "flex",
+								gap: 2,
+								marginBottom: 6,
+								alignItems: "center",
+								flexWrap: "wrap",
+							}}
+						>
+							<span
+								onMouseDown={pd}
+								onClick={() => rteCmd("bold")}
+								data-rowbtn
+								title="Tučné (⌘B)"
+								style={{ fontFamily: "var(--w-font-display)", fontWeight: 800, fontSize: 12 }}
+							>
 								B
 							</span>
-							<span onMouseDown={pd} onClick={() => rteCmd("italic")} data-rowbtn title="Kurzíva (⌘I)" style={{ fontFamily: "var(--w-font-body)", fontStyle: "italic", fontWeight: 600, fontSize: 12 }}>
+							<span
+								onMouseDown={pd}
+								onClick={() => rteCmd("italic")}
+								data-rowbtn
+								title="Kurzíva (⌘I)"
+								style={{
+									fontFamily: "var(--w-font-body)",
+									fontStyle: "italic",
+									fontWeight: 600,
+									fontSize: 12,
+								}}
+							>
 								I
 							</span>
-							<span onMouseDown={pd} onClick={() => rteCmd("underline")} data-rowbtn title="Podtržení (⌘U)" style={{ fontSize: 11.5, textDecoration: "underline", fontFamily: "var(--w-font-body)", fontWeight: 600 }}>
+							<span
+								onMouseDown={pd}
+								onClick={() => rteCmd("underline")}
+								data-rowbtn
+								title="Podtržení (⌘U)"
+								style={{
+									fontSize: 11.5,
+									textDecoration: "underline",
+									fontFamily: "var(--w-font-body)",
+									fontWeight: 600,
+								}}
+							>
 								U
 							</span>
-							<span onMouseDown={pd} onClick={() => rteCmd("strikeThrough")} data-rowbtn title="Přeškrtnutí" style={{ fontSize: 11.5, textDecoration: "line-through", fontFamily: "var(--w-font-body)", fontWeight: 600 }}>
+							<span
+								onMouseDown={pd}
+								onClick={() => rteCmd("strikeThrough")}
+								data-rowbtn
+								title="Přeškrtnutí"
+								style={{
+									fontSize: 11.5,
+									textDecoration: "line-through",
+									fontFamily: "var(--w-font-body)",
+									fontWeight: 600,
+								}}
+							>
 								S
 							</span>
 							<span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} />
-							<span onMouseDown={pd} onClick={() => rteCmd("insertUnorderedList")} data-rowbtn title="Odrážky">
+							<span
+								onMouseDown={pd}
+								onClick={() => rteCmd("insertUnorderedList")}
+								data-rowbtn
+								title="Odrážky"
+							>
 								<svg width="13" height="13" viewBox="0 0 14 14" aria-hidden>
 									<circle cx="2.6" cy="3.4" r="1" fill="currentColor" />
 									<circle cx="2.6" cy="7" r="1" fill="currentColor" />
 									<circle cx="2.6" cy="10.6" r="1" fill="currentColor" />
-									<line x1="5.4" y1="3.4" x2="12" y2="3.4" stroke="currentColor" strokeWidth="1.3" />
+									<line
+										x1="5.4"
+										y1="3.4"
+										x2="12"
+										y2="3.4"
+										stroke="currentColor"
+										strokeWidth="1.3"
+									/>
 									<line x1="5.4" y1="7" x2="12" y2="7" stroke="currentColor" strokeWidth="1.3" />
-									<line x1="5.4" y1="10.6" x2="12" y2="10.6" stroke="currentColor" strokeWidth="1.3" />
+									<line
+										x1="5.4"
+										y1="10.6"
+										x2="12"
+										y2="10.6"
+										stroke="currentColor"
+										strokeWidth="1.3"
+									/>
 								</svg>
 							</span>
-							<span onMouseDown={pd} onClick={() => rteCmd("insertOrderedList")} data-rowbtn title="Číslování" style={{ fontFamily: "var(--w-font-mono)", fontSize: 10 }}>
+							<span
+								onMouseDown={pd}
+								onClick={() => rteCmd("insertOrderedList")}
+								data-rowbtn
+								title="Číslování"
+								style={{ fontFamily: "var(--w-font-mono)", fontSize: 10 }}
+							>
 								1.
 							</span>
-							<span onMouseDown={pd} onClick={() => rteCmd("formatBlock", "blockquote")} data-rowbtn title="Citace" style={{ fontFamily: "var(--w-font-display)", fontWeight: 800, fontSize: 13 }}>
+							<span
+								onMouseDown={pd}
+								onClick={() => rteCmd("formatBlock", "blockquote")}
+								data-rowbtn
+								title="Citace"
+								style={{ fontFamily: "var(--w-font-display)", fontWeight: 800, fontSize: 13 }}
+							>
 								„
 							</span>
 							<span style={{ position: "relative", display: "inline-flex" }}>
-								<span onMouseDown={pd} onClick={linkOpen} data-rowbtn data-on={cpop === "lnk" || undefined} title="Vložit odkaz — označ text a klikni">
+								<span
+									onMouseDown={pd}
+									onClick={linkOpen}
+									data-rowbtn
+									data-on={cpop === "lnk" || undefined}
+									title="Vložit odkaz — označ text a klikni"
+								>
 									<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
-										<path d="M5.8 8.2 L8.2 5.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-										<path d="M6.5 4 L7.8 2.7 A2.3 2.3 0 0 1 11.3 6.2 L10 7.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-										<path d="M7.5 10 L6.2 11.3 A2.3 2.3 0 0 1 2.7 7.8 L4 6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+										<path
+											d="M5.8 8.2 L8.2 5.8"
+											stroke="currentColor"
+											strokeWidth="1.3"
+											strokeLinecap="round"
+										/>
+										<path
+											d="M6.5 4 L7.8 2.7 A2.3 2.3 0 0 1 11.3 6.2 L10 7.5"
+											stroke="currentColor"
+											strokeWidth="1.3"
+											strokeLinecap="round"
+										/>
+										<path
+											d="M7.5 10 L6.2 11.3 A2.3 2.3 0 0 1 2.7 7.8 L4 6.5"
+											stroke="currentColor"
+											strokeWidth="1.3"
+											strokeLinecap="round"
+										/>
 									</svg>
 								</span>
 								{/* popover odkazu (prototyp pop='lnk', ř. 1234–1239 + lnkApply) */}
 								{cpop === "lnk" && (
-									<div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 52, display: "flex", gap: 6, alignItems: "center", width: "min(300px, 74vw)", background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 11, boxShadow: "var(--shadow)", padding: 7, animation: "wPop .12s ease" }}>
+									<div
+										style={{
+											position: "absolute",
+											bottom: "calc(100% + 8px)",
+											left: 0,
+											zIndex: 52,
+											display: "flex",
+											gap: 6,
+											alignItems: "center",
+											width: "min(300px, 74vw)",
+											background: "var(--panel)",
+											border: "1px solid var(--line)",
+											borderRadius: 11,
+											boxShadow: "var(--shadow)",
+											padding: 7,
+											animation: "wPop .12s ease",
+										}}
+									>
 										<input
 											value={lnkUrl}
 											onChange={(ev) => setLnkUrl(ev.target.value)}
@@ -1809,9 +3250,24 @@ export function MailThread() {
 												}
 											}}
 											placeholder="https://…"
-											style={{ flex: 1, minWidth: 0, border: "1px solid var(--line)", background: "var(--panel-2)", borderRadius: 8, padding: "6px 9px", fontFamily: "var(--w-font-mono)", fontSize: 11, color: "var(--ink)", outline: "none" }}
+											style={{
+												flex: 1,
+												minWidth: 0,
+												border: "1px solid var(--line)",
+												background: "var(--panel-2)",
+												borderRadius: 8,
+												padding: "6px 9px",
+												fontFamily: "var(--w-font-mono)",
+												fontSize: 11,
+												color: "var(--ink)",
+												outline: "none",
+											}}
 										/>
-										<span onClick={lnkApply} data-primary style={{ fontSize: 11, padding: "6px 11px", flex: "none" }}>
+										<span
+											onClick={lnkApply}
+											data-primary
+											style={{ fontSize: 11, padding: "6px 11px", flex: "none" }}
+										>
 											Vložit
 										</span>
 									</div>
@@ -1836,9 +3292,24 @@ export function MailThread() {
 									data-rowbtn
 									data-on={cpop === "tpl" || undefined}
 									title="Vložit šablonu odpovědi"
-									style={{ width: "auto", padding: "0 9px", gap: 5, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11 }}
+									style={{
+										width: "auto",
+										padding: "0 9px",
+										gap: 5,
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 600,
+										fontSize: 11,
+									}}
 								>
-									<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden>
+									<svg
+										width="12"
+										height="12"
+										viewBox="0 0 14 14"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.3"
+										aria-hidden
+									>
 										<rect x="2" y="2" width="10" height="10" rx="1.6" />
 										<line x1="4.4" y1="5" x2="9.6" y2="5" />
 										<line x1="4.4" y1="7.5" x2="9.6" y2="7.5" />
@@ -1848,27 +3319,76 @@ export function MailThread() {
 								</span>
 								{/* popover šablon (prototyp ř. 1246–1256) — vloží NA KONEC konceptu */}
 								{cpop === "tpl" && (
-									<div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 52, width: "min(330px, 78vw)", background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 13, boxShadow: "var(--shadow)", padding: 5, animation: "wPop .14s ease" }}>
+									<div
+										style={{
+											position: "absolute",
+											bottom: "calc(100% + 8px)",
+											left: 0,
+											zIndex: 52,
+											width: "min(330px, 78vw)",
+											background: "var(--panel)",
+											border: "1px solid var(--line)",
+											borderRadius: 13,
+											boxShadow: "var(--shadow)",
+											padding: 5,
+											animation: "wPop .14s ease",
+										}}
+									>
 										{tpls.map((tp) => (
 											<div
 												key={tp.n}
 												onClick={() => {
 													// nikdy nepřepsat rozepsané — šablona jde na konec, oddělená prázdným řádkem
 													const cur = m.drafts[t.id]?.text ?? "";
-													m.setDraft(t.id, cur.trim() ? `${cur.replace(/\s+$/, "")}\n\n${tp.b}` : tp.b);
+													m.setDraft(
+														t.id,
+														cur.trim() ? `${cur.replace(/\s+$/, "")}\n\n${tp.b}` : tp.b,
+													);
 													setCpop(null);
 													focusComp();
 												}}
 												data-menuitem
 												style={{ display: "block" }}
 											>
-												<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 12, color: "var(--ink)" }}>{tp.n}</div>
-												<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>
-													{tp.b.split("\n").filter((x) => x && !x.startsWith("Dobrý den") && !x.startsWith("Vážení"))[0] ?? tp.b}
+												<div
+													style={{
+														fontFamily: "var(--w-font-display)",
+														fontWeight: 600,
+														fontSize: 12,
+														color: "var(--ink)",
+													}}
+												>
+													{tp.n}
+												</div>
+												<div
+													style={{
+														fontFamily: "var(--w-font-body)",
+														fontSize: 10.5,
+														color: "var(--ink-3)",
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+														whiteSpace: "nowrap",
+														marginTop: 1,
+													}}
+												>
+													{tp.b
+														.split("\n")
+														.filter(
+															(x) => x && !x.startsWith("Dobrý den") && !x.startsWith("Vážení"),
+														)[0] ?? tp.b}
 												</div>
 											</div>
 										))}
-										<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10, color: "var(--ink-3)", padding: "6px 10px 5px", borderTop: tpls.length ? "1px solid var(--line)" : undefined, marginTop: tpls.length ? 4 : 0 }}>
+										<div
+											style={{
+												fontFamily: "var(--w-font-body)",
+												fontSize: 10,
+												color: "var(--ink-3)",
+												padding: "6px 10px 5px",
+												borderTop: tpls.length ? "1px solid var(--line)" : undefined,
+												marginTop: tpls.length ? 4 : 0,
+											}}
+										>
 											{t.personal
 												? "Osobní schránka nemá sdílené šablony."
 												: `Sdílené šablony pro ${mb?.short ?? ""} — spravují se v Administraci. Při vložení je Watson umí přizpůsobit příjemci (+AI).`}
@@ -1876,12 +3396,16 @@ export function MailThread() {
 									</div>
 								)}
 							</span>
+							{/* výběr podpisu (vzor Spark) — blok se kreslí pod editorem */}
+							<SigPicker mb={t.personal ? "osobni" : t.mb} />
 							<span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} />
 							<span
 								onClick={() => {
 									setConf(!conf);
 									if (!conf)
-										showToast("Důvěrný režim zapnut — příjemce otevře mail kódem, nejde přeposlat ani kopírovat.");
+										showToast(
+											"Důvěrný režim zapnut — příjemce otevře mail kódem, nejde přeposlat ani kopírovat.",
+										);
 								}}
 								data-rowbtn
 								data-on={conf || undefined}
@@ -1893,20 +3417,76 @@ export function MailThread() {
 
 						{/* sdílený koncept + schvalování (prototyp comp.sdOn, ř. 1272–1291) */}
 						{sdOn && (
-							<div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--navy-soft)", border: "1px solid var(--line)", borderRadius: 10, padding: "6px 11px", marginBottom: 6, flexWrap: "wrap" }}>
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: 8,
+									background: "var(--navy-soft)",
+									border: "1px solid var(--line)",
+									borderRadius: 10,
+									padding: "6px 11px",
+									marginBottom: 6,
+									flexWrap: "wrap",
+								}}
+							>
 								<span style={{ display: "inline-flex" }}>
-									<span data-av="brass" style={{ width: 19, height: 19, borderRadius: "50%", background: "var(--avatar-navy)", color: "#fff", fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 7.5, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--panel)" }}>
+									<span
+										data-av="brass"
+										style={{
+											width: 19,
+											height: 19,
+											borderRadius: "50%",
+											background: "var(--avatar-navy)",
+											color: "#fff",
+											fontFamily: "var(--w-font-display)",
+											fontWeight: 700,
+											fontSize: 7.5,
+											display: "inline-flex",
+											alignItems: "center",
+											justifyContent: "center",
+											border: "2px solid var(--panel)",
+										}}
+									>
 										AK
 									</span>
-									<span style={{ width: 19, height: 19, borderRadius: "50%", background: "var(--avatar-navy)", color: "#fff", fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 7.5, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--panel)", marginLeft: -7 }}>
+									<span
+										style={{
+											width: 19,
+											height: 19,
+											borderRadius: "50%",
+											background: "var(--avatar-navy)",
+											color: "#fff",
+											fontFamily: "var(--w-font-display)",
+											fontWeight: 700,
+											fontSize: 7.5,
+											display: "inline-flex",
+											alignItems: "center",
+											justifyContent: "center",
+											border: "2px solid var(--panel)",
+											marginLeft: -7,
+										}}
+									>
 										TM
 									</span>
 								</span>
-								<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-2)", flex: 1, minWidth: 150 }}>
+								<span
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 11.5,
+										color: "var(--ink-2)",
+										flex: 1,
+										minWidth: 150,
+									}}
+								>
 									Sdílený koncept — píšete ho spolu, změny se slévají živě.
 								</span>
 								{sdCanAsk && (
-									<span onClick={() => m.sdAsk(t.id)} data-ghost style={{ fontSize: 10.5, padding: "4px 10px", flex: "none" }}>
+									<span
+										onClick={() => m.sdAsk(t.id)}
+										data-ghost
+										style={{ fontSize: 10.5, padding: "4px 10px", flex: "none" }}
+									>
 										Vyžádat schválení
 									</span>
 								)}
@@ -1914,7 +3494,19 @@ export function MailThread() {
 									<>
 										<span
 											title="Odejde za schránku; audit zaznamená autora (Adam) i schvalovatele (Tereza). SLA běží dál až do reálného odeslání — eskalace by šla schvalovateli."
-											style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10, padding: "2px 9px", borderRadius: 999, background: "var(--brass-soft)", color: "var(--brass-text)", flex: "none" }}
+											style={{
+												display: "inline-flex",
+												alignItems: "center",
+												gap: 5,
+												fontFamily: "var(--w-font-display)",
+												fontWeight: 600,
+												fontSize: 10,
+												padding: "2px 9px",
+												borderRadius: 999,
+												background: "var(--brass-soft)",
+												color: "var(--brass-text)",
+												flex: "none",
+											}}
 										>
 											čeká na schválení · Tereza
 										</span>
@@ -1928,7 +3520,11 @@ export function MailThread() {
 												>
 													Schválit za Terezu
 												</span>
-												<span onClick={() => m.sdReturn(t.id)} data-ghost style={{ fontSize: 10.5, padding: "4px 10px", flex: "none" }}>
+												<span
+													onClick={() => m.sdReturn(t.id)}
+													data-ghost
+													style={{ fontSize: 10.5, padding: "4px 10px", flex: "none" }}
+												>
 													Vrátit s komentářem
 												</span>
 											</>
@@ -1937,16 +3533,48 @@ export function MailThread() {
 								)}
 								{sdReturned && (
 									<>
-										<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10, padding: "2px 9px", borderRadius: 999, border: "1px solid var(--line)", color: "var(--ink-2)", flex: "none" }}>
+										<span
+											style={{
+												display: "inline-flex",
+												alignItems: "center",
+												gap: 5,
+												fontFamily: "var(--w-font-display)",
+												fontWeight: 600,
+												fontSize: 10,
+												padding: "2px 9px",
+												borderRadius: 999,
+												border: "1px solid var(--line)",
+												color: "var(--ink-2)",
+												flex: "none",
+											}}
+										>
 											vráceno · Tereza: „Zmírni druhý odstavec“
 										</span>
-										<span onClick={() => m.sdAsk(t.id)} data-ghost style={{ fontSize: 10.5, padding: "4px 10px", flex: "none" }}>
+										<span
+											onClick={() => m.sdAsk(t.id)}
+											data-ghost
+											style={{ fontSize: 10.5, padding: "4px 10px", flex: "none" }}
+										>
 											Vyžádat znovu
 										</span>
 									</>
 								)}
 								{sdApproved && (
-									<span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10, padding: "2px 9px", borderRadius: 999, background: "var(--success-soft)", color: "var(--success-ink)", flex: "none" }}>
+									<span
+										style={{
+											display: "inline-flex",
+											alignItems: "center",
+											gap: 5,
+											fontFamily: "var(--w-font-display)",
+											fontWeight: 600,
+											fontSize: 10,
+											padding: "2px 9px",
+											borderRadius: 999,
+											background: "var(--success-soft)",
+											color: "var(--success-ink)",
+											flex: "none",
+										}}
+									>
 										schváleno · Tereza
 									</span>
 								)}
@@ -1955,12 +3583,40 @@ export function MailThread() {
 
 						{/* důvěrný režim — pruh (prototyp comp.confOn, ř. 1299–1305) */}
 						{conf && (
-							<div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--brass)", background: "var(--brass-soft)", borderRadius: 10, padding: "6px 11px", marginBottom: 6 }}>
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: 8,
+									border: "1px solid var(--brass)",
+									background: "var(--brass-soft)",
+									borderRadius: 10,
+									padding: "6px 11px",
+									marginBottom: 6,
+								}}
+							>
 								<LockSvg size={12} style={{ color: "var(--brass-text)", flex: "none" }} />
-								<span style={{ flex: 1, fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-2)" }}>
-									Důvěrné — příjemce nemůže přeposlat ani kopírovat; přístup vyprší 31. 8. V týmové schránce ho vidí všichni s přístupem (schránka = hranice), Assign funguje.
+								<span
+									style={{
+										flex: 1,
+										fontFamily: "var(--w-font-body)",
+										fontSize: 11.5,
+										color: "var(--ink-2)",
+									}}
+								>
+									Důvěrné — příjemce nemůže přeposlat ani kopírovat; přístup vyprší 31. 8. V týmové
+									schránce ho vidí všichni s přístupem (schránka = hranice), Assign funguje.
 								</span>
-								<span onClick={() => setConf(false)} style={{ fontSize: 14, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer", flex: "none" }}>
+								<span
+									onClick={() => setConf(false)}
+									style={{
+										fontSize: 14,
+										lineHeight: 1,
+										color: "var(--ink-3)",
+										cursor: "pointer",
+										flex: "none",
+									}}
+								>
 									×
 								</span>
 							</div>
@@ -1983,50 +3639,90 @@ export function MailThread() {
 							}}
 						/>
 
-						{/* podpis schránky — needitovatelný blok (prototyp comp.sigOpts, ř. 1259–1268) */}
-						{mb && (
-							<div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 9, padding: "7px 11px", marginTop: 8 }}>
-								<div style={{ flex: 1, minWidth: 0 }}>
-									<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-2)", whiteSpace: "pre-line", lineHeight: 1.5 }}>
-										{`${mb.sig}\n${mb.addr}`}
-									</div>
-									<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10, color: "var(--ink-3)", marginTop: 3 }}>
-										Výchozí podpis patří schránce — upravíš ho v Nastavení.
-									</div>
-								</div>
-							</div>
-						)}
+						{/* blok zvoleného podpisu (vzor Spark) — vybírá se tlačítkem Podpis v toolbaru */}
+						<SigBlock mb={t.personal ? "osobni" : t.mb} />
 
 						{/* chip přílohy (prototyp comp.attached, ř. 1312–1320); marker „—" se nekreslí */}
 						{attLabel && attLabel !== ATT_MARK && (
 							<div style={{ display: "flex", marginTop: 8 }}>
 								<span
 									title="Nahráno · limit 25 MB se hlídá předem"
-									style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 9, padding: "6px 10px" }}
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 8,
+										background: "var(--panel-2)",
+										border: "1px solid var(--line)",
+										borderRadius: 9,
+										padding: "6px 10px",
+									}}
 								>
 									<ClipSvg size={12} style={{ color: "var(--ink-3)" }} />
-									<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-2)" }}>{attLabel}</span>
-									<span onClick={() => m.detach(t.id)} title="Odebrat přílohu" style={{ cursor: "pointer", color: "var(--ink-3)", fontSize: 13, lineHeight: 1 }}>
+									<span
+										style={{
+											fontFamily: "var(--w-font-mono)",
+											fontSize: 10.5,
+											color: "var(--ink-2)",
+										}}
+									>
+										{attLabel}
+									</span>
+									<span
+										onClick={() => m.detach(t.id)}
+										title="Odebrat přílohu"
+										style={{
+											cursor: "pointer",
+											color: "var(--ink-3)",
+											fontSize: 13,
+											lineHeight: 1,
+										}}
+									>
 										×
 									</span>
 								</span>
 							</div>
 						)}
 
-						<div style={{ display: "flex", gap: 7, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+						<div
+							style={{
+								display: "flex",
+								gap: 7,
+								marginTop: 8,
+								alignItems: "center",
+								flexWrap: "wrap",
+							}}
+						>
 							{/* Odeslat se šipkou = Odeslat později (prototyp ř. 1324–1327) */}
 							<span style={{ display: "inline-flex", borderRadius: 8, overflow: "hidden" }}>
-								<span data-primary onClick={() => m.checkSend(t, false)} style={{ fontSize: 11.5, padding: "7px 14px", borderRadius: "8px 0 0 8px" }}>
+								<span
+									data-primary
+									onClick={() => m.checkSend(t, false)}
+									style={{ fontSize: 11.5, padding: "7px 14px", borderRadius: "8px 0 0 8px" }}
+								>
 									Odeslat
 								</span>
 								<span
 									data-primary
 									onClick={() => setCpop(cpop === "send" ? null : "send")}
 									title="Naplánovat odeslání"
-									style={{ fontSize: 11.5, padding: "7px 8px", borderRadius: "0 8px 8px 0", borderLeft: "1px solid rgba(255,255,255,.35)", display: "inline-flex", alignItems: "center" }}
+									style={{
+										fontSize: 11.5,
+										padding: "7px 8px",
+										borderRadius: "0 8px 8px 0",
+										borderLeft: "1px solid rgba(255,255,255,.35)",
+										display: "inline-flex",
+										alignItems: "center",
+									}}
 								>
 									<svg width="9" height="9" viewBox="0 0 9 9" aria-hidden>
-										<path d="M2 3 L4.5 6 L7 3" stroke="#fff" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+										<path
+											d="M2 3 L4.5 6 L7 3"
+											stroke="#fff"
+											strokeWidth="1.5"
+											fill="none"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
 									</svg>
 								</span>
 							</span>
@@ -2034,17 +3730,37 @@ export function MailThread() {
 								data-ghost
 								onClick={() => {
 									m.attach(t.id, ATT_NAME);
-									showToast("Příloha se nahrává (progress na chipu) — z disku nebo úložiště (Drive/R2).");
+									showToast(
+										"Příloha se nahrává (progress na chipu) — z disku nebo úložiště (Drive/R2).",
+									);
 								}}
 								title="Přiložit soubor — z disku nebo úložiště"
-								style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, padding: 0 }}
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									justifyContent: "center",
+									width: 30,
+									height: 30,
+									padding: 0,
+								}}
 							>
 								<ClipSvg size={13} />
 							</span>
-							<span data-ghost onClick={() => m.setDraft(t.id, "", "empty")} style={{ fontSize: 11.5, padding: "6px 12px" }}>
+							<span
+								data-ghost
+								onClick={() => m.setDraft(t.id, "", "empty")}
+								style={{ fontSize: 11.5, padding: "6px 12px" }}
+							>
 								Zahodit
 							</span>
-							<span style={{ marginLeft: "auto", fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)" }}>
+							<span
+								style={{
+									marginLeft: "auto",
+									fontFamily: "var(--w-font-body)",
+									fontSize: 10.5,
+									color: "var(--ink-3)",
+								}}
+							>
 								po odeslání máš 10 s na Zpět
 							</span>
 						</div>
@@ -2052,17 +3768,57 @@ export function MailThread() {
 						{/* Odeslat později + sdílený koncept (prototyp comp.sendMenu, ř. 1352–1365).
 						    Demo bez reálné fronty — plan() jen ohlásí naplánování, koncept zůstává. */}
 						{cpop === "send" && (
-							<div style={{ position: "absolute", bottom: "calc(100% - 46px)", left: 18, zIndex: 52, width: 238, background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--shadow)", padding: 5, animation: "wPop .14s ease" }}>
-								<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 10, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-3)", padding: "5px 10px 6px" }}>
+							<div
+								style={{
+									position: "absolute",
+									bottom: "calc(100% - 46px)",
+									left: 18,
+									zIndex: 52,
+									width: 238,
+									background: "var(--panel)",
+									border: "1px solid var(--line)",
+									borderRadius: 12,
+									boxShadow: "var(--shadow)",
+									padding: 5,
+									animation: "wPop .14s ease",
+								}}
+							>
+								<div
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 700,
+										fontSize: 10,
+										letterSpacing: ".05em",
+										textTransform: "uppercase",
+										color: "var(--ink-3)",
+										padding: "5px 10px 6px",
+									}}
+								>
 									Odeslat později
 								</div>
 								<div onClick={() => plan("dnes v 18:00")} data-menuitem>
 									<span style={{ flex: 1 }}>Dnes večer</span>
-									<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)" }}>18:00</span>
+									<span
+										style={{
+											fontFamily: "var(--w-font-mono)",
+											fontSize: 10.5,
+											color: "var(--ink-3)",
+										}}
+									>
+										18:00
+									</span>
 								</div>
 								<div onClick={() => plan("zítra v 8:00")} data-menuitem>
 									<span style={{ flex: 1 }}>Zítra ráno</span>
-									<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)" }}>8:00</span>
+									<span
+										style={{
+											fontFamily: "var(--w-font-mono)",
+											fontSize: 10.5,
+											color: "var(--ink-3)",
+										}}
+									>
+										8:00
+									</span>
 								</div>
 								<div onClick={() => plan("ve vlastní čas")} data-menuitem>
 									<span style={{ flex: 1 }}>Vlastní čas…</span>
@@ -2077,8 +3833,17 @@ export function MailThread() {
 								>
 									<span style={{ flex: 1 }}>Odeslat a označit Hotovo</span>
 								</div>
-								<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10, color: "var(--ink-3)", padding: "5px 10px 4px", lineHeight: 1.45 }}>
-									Časy v tvém pásmu (Praha), u zahraničního příjemce ukážeme i jeho. Naplánování SLA nezastaví — běží až do reálného odeslání.
+								<div
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 10,
+										color: "var(--ink-3)",
+										padding: "5px 10px 4px",
+										lineHeight: 1.45,
+									}}
+								>
+									Časy v tvém pásmu (Praha), u zahraničního příjemce ukážeme i jeho. Naplánování SLA
+									nezastaví — běží až do reálného odeslání.
 								</div>
 								<div style={{ height: 1, background: "var(--line)", margin: "4px 6px" }} />
 								{sdShow && (
@@ -2111,11 +3876,37 @@ export function MailThread() {
 
 			{/* ── undo lišta po odeslání (prototyp ř. 2225–2230) ── */}
 			{m.undo?.on && (
-				<div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: 26, zIndex: 70, display: "flex", alignItems: "center", gap: 12, background: "#17283f", color: "#fff", borderRadius: 12, padding: "10px 16px", boxShadow: "var(--shadow)", animation: "wUp .2s ease" }}>
+				<div
+					style={{
+						position: "fixed",
+						left: "50%",
+						transform: "translateX(-50%)",
+						bottom: 26,
+						zIndex: 70,
+						display: "flex",
+						alignItems: "center",
+						gap: 12,
+						background: "#17283f",
+						color: "#fff",
+						borderRadius: 12,
+						padding: "10px 16px",
+						boxShadow: "var(--shadow)",
+						animation: "wUp .2s ease",
+					}}
+				>
 					<span style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5 }}>
 						Odesláno za {MB[m.undo.mb]?.short ?? "osobní adresu"}
 					</span>
-					<span onClick={m.undoBack} style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 12.5, color: "var(--brass)", cursor: "pointer" }}>
+					<span
+						onClick={m.undoBack}
+						style={{
+							fontFamily: "var(--w-font-display)",
+							fontWeight: 700,
+							fontSize: 12.5,
+							color: "var(--brass)",
+							cursor: "pointer",
+						}}
+					>
 						Zpět ({m.undo.left} s)
 					</span>
 				</div>
@@ -2124,30 +3915,103 @@ export function MailThread() {
 			{/* ── varování: chybějící příloha (prototyp ř. 2207–2223) ── */}
 			{warn && (
 				<>
-					<div onClick={() => m.setWarn(null)} style={{ position: "fixed", inset: 0, zIndex: 79, background: "rgba(23,40,63,.32)", animation: "wFade .12s ease" }} />
-					<div data-screen-label="Varování — příloha" style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 80, width: "min(400px, 92vw)", background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "var(--shadow)", animation: "wPop .14s ease", padding: "17px 18px 15px" }}>
+					<div
+						onClick={() => m.setWarn(null)}
+						style={{
+							position: "fixed",
+							inset: 0,
+							zIndex: 79,
+							background: "rgba(23,40,63,.32)",
+							animation: "wFade .12s ease",
+						}}
+					/>
+					<div
+						data-screen-label="Varování — příloha"
+						style={{
+							position: "fixed",
+							top: "50%",
+							left: "50%",
+							transform: "translate(-50%,-50%)",
+							zIndex: 80,
+							width: "min(400px, 92vw)",
+							background: "var(--panel)",
+							border: "1px solid var(--line)",
+							borderRadius: 16,
+							boxShadow: "var(--shadow)",
+							animation: "wPop .14s ease",
+							padding: "17px 18px 15px",
+						}}
+					>
 						<div style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
-							<span style={{ width: 30, height: 30, borderRadius: 9, background: "var(--p2-soft)", color: "var(--p2-text)", display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+							<span
+								style={{
+									width: 30,
+									height: 30,
+									borderRadius: 9,
+									background: "var(--p2-soft)",
+									color: "var(--p2-text)",
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "center",
+									flex: "none",
+								}}
+							>
 								<ClipSvg size={15} />
 							</span>
 							<div style={{ flex: 1, minWidth: 0 }}>
-								<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 14, color: "var(--ink)" }}>
+								<div
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 700,
+										fontSize: 14,
+										color: "var(--ink)",
+									}}
+								>
 									Zmiňuješ přílohu — ale žádná není připojená
 								</div>
-								<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55, marginTop: 4 }}>
-									V textu je „v příloze“. U sdílené schránky je to častá chyba — mail odejde za celý tým.
+								<div
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 12,
+										color: "var(--ink-2)",
+										lineHeight: 1.55,
+										marginTop: 4,
+									}}
+								>
+									V textu je „v příloze“. U sdílené schránky je to častá chyba — mail odejde za celý
+									tým.
 								</div>
 							</div>
 						</div>
-						<div style={{ display: "flex", gap: 7, marginTop: 14, justifyContent: "flex-end", flexWrap: "wrap" }}>
-							<span data-ghost onClick={() => m.setWarn(null)} style={{ fontSize: 11.5, padding: "7px 13px" }}>
+						<div
+							style={{
+								display: "flex",
+								gap: 7,
+								marginTop: 14,
+								justifyContent: "flex-end",
+								flexWrap: "wrap",
+							}}
+						>
+							<span
+								data-ghost
+								onClick={() => m.setWarn(null)}
+								style={{ fontSize: 11.5, padding: "7px 13px" }}
+							>
 								Zrušit
 							</span>
 							{/* marker „—" projde kontrolou přílohy v checkSend; doSend ho zase odepne */}
-							<span data-ghost onClick={() => beginPendSend(warn.id, warn.markDone, ATT_MARK)} style={{ fontSize: 11.5, padding: "7px 13px" }}>
+							<span
+								data-ghost
+								onClick={() => beginPendSend(warn.id, warn.markDone, ATT_MARK)}
+								style={{ fontSize: 11.5, padding: "7px 13px" }}
+							>
 								Poslat i tak
 							</span>
-							<span data-primary onClick={() => beginPendSend(warn.id, warn.markDone, ATT_NAME)} style={{ fontSize: 11.5, padding: "7px 14px" }}>
+							<span
+								data-primary
+								onClick={() => beginPendSend(warn.id, warn.markDone, ATT_NAME)}
+								style={{ fontSize: 11.5, padding: "7px 14px" }}
+							>
 								Připojit a odeslat
 							</span>
 						</div>

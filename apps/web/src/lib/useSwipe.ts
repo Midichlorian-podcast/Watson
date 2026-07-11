@@ -1,19 +1,31 @@
 /**
- * Řádkový swipe — TŘI vstupy: dotyk (pointer touch), tažení myší/stiskem
- * jednoho prstu (pointer mouse + capture — gesto drží i mimo řádek a potvrdí
- * se puštěním tlačítka) a trackpad dvouprstý (horizontální wheel; konec gesta
- * web nehlásí → usazení 160 ms). Prahy malé 110 / velké 260 px, gumový odpor,
- * akce VÝHRADNĚ po dokončení gesta, svislý scroll wheel gesto ruší. Při
- * překročení prahu krátká vibrace (kde zařízení umí). Vizuál kreslí konzument
- * přes onUpdate(dx, mag).
+ * Řádkový swipe — JEDNOTNÝ systém pro úkoly i mail (feedback 2026-07-11,
+ * 3 kola ladění). Tvrdé pravidlo: AKCE SE PROVEDE VÝHRADNĚ TAŽENÍM
+ * A NÁSLEDNÝM PUŠTĚNÍM, nebo klikem na tlačítko. Nikdy „samovolně po čase".
+ *
+ * Tři vstupy:
+ *  · dotyk (pointer touch) — akce na zvednutí prstů dle prahu;
+ *  · stisk + tah (myš / jeden prst na trackpadu) — pointer capture, akce
+ *    na puštění tlačítka;
+ *  · dvouprstý trackpad (wheel) — web NEUMÍ poznat zvednutí prstů, proto
+ *    wheel NIKDY neprovádí akci: po usazení (200 ms) řádek buď zaskočí
+ *    zpět (malý tah), nebo se UKOTVÍ otevřený (LATCH) a akce dané strany
+ *    se zobrazí jako klikací tlačítka. Klik mimo / Esc / svislý scroll
+ *    kotvu zavře bez akce.
+ *
+ * Prahy: malé potažení 110 px (tier 1) / velké 260 px (tier 2); kotva od
+ * 66 px. Gumový odpor za velkým prahem, vibrace při překročení prahu (kde
+ * zařízení umí). Vizuál kreslí konzument přes onUpdate(dx, mag) a stav
+ * kotvy dostává přes onLatch(side|null).
  */
 import { useCallback, useEffect, useRef } from "react";
 
 export type SwipeMag = "none" | "r0" | "r1" | "r2" | "l0" | "l1" | "l2";
+export type SwipeSide = "l" | "r";
 
 /* Globální vlastník gesta — v jednu chvíli smí táhnout JEN JEDEN řádek.
  * Bez toho kurzor sjíždějící přes řádky akumuloval na několika naráz a po
- * usazení vystřelily dvě akce (audit S1). Sdílí i mail modul. */
+ * dokončení vystřelily dvě akce (audit S1). Sdílí i mail modul. */
 let gestureOwner: symbol | null = null;
 export function claimGesture(id: symbol): boolean {
 	if (gestureOwner && gestureOwner !== id) return false;
@@ -24,10 +36,14 @@ export function releaseGesture(id: symbol): void {
 	if (gestureOwner === id) gestureOwner = null;
 }
 
-/** Malé potažení — pod ním se nic neprovede (jen náznak r0/l0). */
+/** Malé potažení (tier 1). */
 export const SWIPE_SHORT = 110;
-/** Velké potažení — druhá úroveň akce. */
+/** Velké potažení (tier 2). */
 export const SWIPE_LONG = 260;
+/** Od kolika px se wheel gesto ukotví (místo akce). */
+const LATCH_MIN = 66;
+/** Odsazení ukotveného řádku — dost místa pro dvě tlačítka. */
+export const SWIPE_LATCH_OFF = 148;
 
 const ACTION_TIERS = new Set<SwipeMag>(["r1", "r2", "l1", "l2"]);
 
@@ -56,31 +72,23 @@ export const swipeBuzz = (): void => {
 export function useSwipe(opts: {
 	/** Živý vizuál během tahu — dx už s gumovým odporem; mag pro barvy/text. */
 	onUpdate: (dx: number, mag: SwipeMag) => void;
-	/** Dokončený tah přes práh (r1/r2/l1/l2) — až PO puštění/usazení. */
+	/** Dokončený TAH (dotyk/stisk) přes práh — provádí akci. */
 	onSwipe: (mag: "r1" | "r2" | "l1" | "l2") => void;
+	/** Ukotvení po wheel gestu — konzument zobrazí klikací tlačítka strany. */
+	onLatch?: (side: SwipeSide | null) => void;
 	disabled?: boolean;
 }) {
-	const { onUpdate, onSwipe, disabled } = opts;
+	const { onUpdate, onSwipe, onLatch, disabled } = opts;
 	const st = useRef({ startX: 0, dx: 0, on: false });
 	const wheel = useRef({
 		acc: 0,
 		armed: false,
 		timer: null as ReturnType<typeof setTimeout> | null,
 	});
+	const latched = useRef<SwipeSide | null>(null);
 	const lastTier = useRef<SwipeMag>("none");
 	const blockUntil = useRef(0);
 	const gid = useRef(Symbol("swipe"));
-
-	// unmount: zrušit timer BEZ provedení akce a pustit vlastnictví gesta
-	// (jinak akce „do zad" na odmountovaném řádku — audit S1)
-	useEffect(() => {
-		const w = wheel.current;
-		const g = gid.current;
-		return () => {
-			if (w.timer) clearTimeout(w.timer);
-			releaseGesture(g);
-		};
-	}, []);
 
 	/** Vizuál + haptika při změně úrovně (náznak → malé → velké potažení). */
 	const emit = useCallback(
@@ -94,6 +102,47 @@ export function useSwipe(opts: {
 		[onUpdate],
 	);
 
+	/** Zavřít kotvu (bez akce) — klik mimo, Esc, svislý scroll, nové gesto. */
+	const unlatch = useCallback(() => {
+		if (!latched.current) return;
+		latched.current = null;
+		lastTier.current = "none";
+		releaseGesture(gid.current);
+		onLatch?.(null);
+		onUpdate(0, "none");
+	}, [onLatch, onUpdate]);
+
+	// klik mimo / Esc zavírá kotvu — listenery jen dokud je ukotveno
+	const unlatchRef = useRef(unlatch);
+	unlatchRef.current = unlatch;
+	const docListeners = useRef(false);
+	const attachDocListeners = useCallback(() => {
+		if (docListeners.current) return;
+		docListeners.current = true;
+		const onClick = () => {
+			unlatchRef.current();
+			detach();
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				unlatchRef.current();
+				detach();
+			}
+		};
+		function detach() {
+			docListeners.current = false;
+			document.removeEventListener("click", onClick);
+			document.removeEventListener("keydown", onKey);
+		}
+		// až po doběhnutí aktuálního kliknutí (jinak by kotvu hned zavřel)
+		setTimeout(() => {
+			if (!latched.current) return;
+			document.addEventListener("click", onClick);
+			document.addEventListener("keydown", onKey);
+		}, 0);
+	}, []);
+
+	/** Dokončený TAH (dotyk/stisk) — jediná cesta, která akci provádí sama. */
 	const finish = useCallback(
 		(dx: number) => {
 			releaseGesture(gid.current);
@@ -110,13 +159,15 @@ export function useSwipe(opts: {
 		[onUpdate, onSwipe],
 	);
 
-	const cancelWheel = useCallback(() => {
-		if (wheel.current.timer) clearTimeout(wheel.current.timer);
-		wheel.current = { acc: 0, armed: false, timer: null };
-		lastTier.current = "none";
-		releaseGesture(gid.current);
-		onUpdate(0, "none");
-	}, [onUpdate]);
+	// unmount: zrušit timer BEZ provedení akce a pustit vlastnictví gesta
+	useEffect(() => {
+		const w = wheel.current;
+		const g = gid.current;
+		return () => {
+			if (w.timer) clearTimeout(w.timer);
+			releaseGesture(g);
+		};
+	}, []);
 
 	// Tažení: dotyk hned; myš/jeden prst (stisk + tah) se aktivuje až po 6 px
 	// do strany, aby nekolidoval s klikem — pak si vezme pointer capture,
@@ -125,6 +176,7 @@ export function useSwipe(opts: {
 	const onPointerDown = useCallback(
 		(e: React.PointerEvent) => {
 			if (disabled) return;
+			if (latched.current) unlatch();
 			if (e.pointerType === "touch") {
 				if (!claimGesture(gid.current)) return;
 				st.current = { startX: e.clientX, dx: 0, on: true };
@@ -133,7 +185,7 @@ export function useSwipe(opts: {
 				st.current = { startX: e.clientX, dx: 0, on: false };
 			}
 		},
-		[disabled],
+		[disabled, unlatch],
 	);
 	const onPointerMove = useCallback(
 		(e: React.PointerEvent) => {
@@ -181,21 +233,30 @@ export function useSwipe(opts: {
 	const onPointerUp = endPointer;
 	const onPointerCancel = endPointer;
 
-	/** Trackpad: ozbrojí se prvním převážně horizontálním pohybem a pak jede
-	 * PLYNULE (drobné svislé chvění gesto neruší — ruší ho jen zřetelně svislý
-	 * scroll); akce se potvrdí 160 ms po posledním pohybu (≈ puštění prstů). */
+	/** Trackpad (wheel): plynulý náhled; po usazení NIKDY akce — jen kotva
+	 * s klikacími tlačítky (od 66 px), jinak návrat. Zvednutí prstů web
+	 * nepozná, proto tudy žádná akce nesmí projít. */
 	const onWheel = useCallback(
 		(e: React.WheelEvent) => {
 			if (disabled) return;
 			const ax = Math.abs(e.deltaX);
 			const ay = Math.abs(e.deltaY);
+			if (latched.current) {
+				// svislý scroll zavírá kotvu; horizontální ji nechává být
+				if (ay > ax) unlatch();
+				return;
+			}
 			if (!wheel.current.armed) {
 				if (ax < 4 || ax <= ay) return;
 				if (!claimGesture(gid.current)) return;
 				wheel.current.armed = true;
 			} else if (ay > 12 && ay > 2 * ax) {
 				// zřetelně svislý scroll během gesta = omyl → zrušit bez akce
-				cancelWheel();
+				if (wheel.current.timer) clearTimeout(wheel.current.timer);
+				wheel.current = { acc: 0, armed: false, timer: null };
+				lastTier.current = "none";
+				releaseGesture(gid.current);
+				onUpdate(0, "none");
 				return;
 			}
 			// obsah jede proti směru prstů (natural scroll)
@@ -205,17 +266,34 @@ export function useSwipe(opts: {
 			wheel.current.timer = setTimeout(() => {
 				const dx = wheel.current.acc;
 				wheel.current = { acc: 0, armed: false, timer: null };
-				finish(dx);
-			}, 160);
+				if (Math.abs(dx) >= LATCH_MIN) {
+					// UKOTVIT — akci provede až klik na tlačítko
+					const side: SwipeSide = dx > 0 ? "r" : "l";
+					latched.current = side;
+					lastTier.current = "none";
+					blockUntil.current = Date.now() + 350;
+					onUpdate(side === "r" ? SWIPE_LATCH_OFF : -SWIPE_LATCH_OFF, "none");
+					onLatch?.(side);
+					attachDocListeners();
+				} else {
+					lastTier.current = "none";
+					releaseGesture(gid.current);
+					onUpdate(0, "none");
+				}
+			}, 200);
 		},
-		[disabled, emit, finish, cancelWheel],
+		[disabled, emit, onUpdate, onLatch, unlatch, attachDocListeners],
 	);
 
 	/** Klik těsně po tahu ignorovat (prototyp _swBlock). */
-	const swipedRecently = useCallback(() => Date.now() < blockUntil.current, []);
+	const swipedRecently = useCallback(
+		() => Date.now() < blockUntil.current || latched.current !== null,
+		[],
+	);
 
 	return {
 		handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onWheel },
 		swipedRecently,
+		unlatch,
 	};
 }

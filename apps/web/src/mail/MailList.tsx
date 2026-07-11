@@ -17,7 +17,7 @@ import {
 	useEffect,
 } from "react";
 import { showToast } from "../lib/toast";
-import { claimGesture, releaseGesture } from "../lib/useSwipe";
+import { type SwipeSide, useSwipe } from "../lib/useSwipe";
 import { AskWatson } from "./AskWatson";
 import { CtxMenu } from "./CtxMenu";
 import {
@@ -28,9 +28,6 @@ import {
 	P,
 	SLA,
 	STL,
-	SW_LONG,
-	SW_SHORT,
-	SWL,
 	type MailThread,
 } from "./data";
 import { NotifCenter } from "./NotifCenter";
@@ -369,24 +366,6 @@ function RowActs({ vm }: { vm: RowVM }) {
 	);
 }
 
-/** Konfigurace swipe akcí (prototyp swCfg default: r1 hotovo · r2 pin · l1 snooze · l2 archiv). */
-const SW_CFG: Record<string, "done" | "pin" | "snooze" | "arch"> = {
-	r1: "done",
-	r2: "pin",
-	l1: "snooze",
-	l2: "arch",
-};
-
-/** Klasifikace tahu (prototyp swMag, ř. 2932): none | r0/l0 (náznak) | r1/l1 | r2/l2. */
-const swMag = (dx: number): string => {
-	const a = Math.abs(dx);
-	if (a < 12) return "none";
-	const side = dx > 0 ? "r" : "l";
-	if (a < SW_SHORT) return `${side}0`;
-	if (a < SW_LONG) return `${side}1`;
-	return `${side}2`;
-};
-
 function MailRow({
 	vm,
 	compactPin,
@@ -401,88 +380,99 @@ function MailRow({
 	const t = vm.t;
 	const e = vm.e;
 	const selOn = !!m.selIds[t.id];
-	// swipe gesta (touch; prototyp swApply/swFinish, ř. 2932–2987) — gumový odpor,
-	// akce až po puštění, klik po tahu se blokuje (prototyp _swBlock 350 ms)
+	// Swipe — JEDNOTNÝ systém s úkoly (lib/useSwipe): tah+puštění provede akci,
+	// dvouprstý trackpad UKOTVÍ řádek s klikacími tlačítky (akce nikdy „sama").
 	const swcRef = useRef<HTMLDivElement>(null);
 	const swuRef = useRef<HTMLDivElement>(null);
-	const sw = useRef({ startX: 0, dx: 0, on: false });
-	const swBlock = useRef(0);
-	// trackpad wheel = swipe — gesto se ozbrojí prvním převážně horizontálním
-	// pohybem, zřetelně svislý scroll ho ruší, akce po 160 ms klidu (≈ puštění)
-	const swWheel = useRef({
-		armed: false,
-		timer: null as ReturnType<typeof setTimeout> | null,
-	});
-	// tažení myší / stiskem jednoho prstu (feedback: „uchycení jedním prstem")
-	// — aktivace po 6 px do strany + pointer capture, potvrzení puštěním
-	const swMouse = useRef({ startX: 0, startY: 0, active: false });
-	// haptika při překročení prahu (mobil; desktop = vizuální pilulka)
-	const swTier = useRef("none");
-	// globální vlastník gesta (jen jeden řádek smí táhnout) + úklid timeru
-	const swGid = useRef(Symbol("mailswipe"));
-	useEffect(() => {
-		const w = swWheel.current;
-		const g = swGid.current;
-		return () => {
-			if (w.timer) clearTimeout(w.timer);
-			releaseGesture(g);
-		};
-	}, []);
-	const swApply = (dx: number) => {
+	const [swLatch, setSwLatch] = useState<SwipeSide | null>(null);
+
+	// stavové akce stran — reverzní pro reverzní stav (feedback: pin↔odepnout…)
+	const sideActs = (side: SwipeSide) =>
+		side === "r"
+			? [
+					e.closed
+						? {
+								css: "done",
+								label: "Vrátit",
+								run: () => {
+									m.setOv(t.id, { closed: false, st: "otevreny" });
+									showToast("Vráceno mezi otevřené");
+								},
+							}
+						: { css: "done", label: "Hotovo", run: () => m.rowAct(t.id, "done") },
+					{
+						css: "pin",
+						label: e.pin ? "Odepnout" : "Připnout",
+						run: () => m.rowAct(t.id, "pin"),
+					},
+				]
+			: [
+					e.snoozed
+						? {
+								css: "snooze",
+								label: "Probudit",
+								run: () => m.rowAct(t.id, "restore"),
+							}
+						: {
+								css: "snooze",
+								label: "Odložit",
+								run: () => m.rowAct(t.id, "snooze"),
+							},
+					e.arch
+						? { css: "arch", label: "Obnovit", run: () => m.rowAct(t.id, "restore") }
+						: { css: "arch", label: "Archiv", run: () => m.rowAct(t.id, "arch") },
+				];
+
+	// vizuál: hook dodává eased dx + mag → DOM zápis (data-swu/pilulky prototypu)
+	const swApply = (dx: number, mag: string) => {
 		const swc = swcRef.current;
 		const swu = swuRef.current;
 		if (!swc || !swu) return;
-		const a = Math.abs(dx);
-		const eased = a <= SW_LONG ? dx : Math.sign(dx) * (SW_LONG + (a - SW_LONG) * 0.2);
-		swc.style.transform = `translateX(${eased}px)`;
-		const mag = swMag(eased);
-		if (/^[rl][12]$/.test(mag) && mag !== swTier.current && "vibrate" in navigator) {
-			navigator.vibrate(8);
+		if (dx === 0) {
+			swc.style.transition = "transform .18s ease";
+			setTimeout(() => {
+				if (swcRef.current) swcRef.current.style.transition = "";
+			}, 200);
+		} else {
+			swc.style.transition = "";
 		}
-		swTier.current = mag;
-		const act = mag === "none" ? "none" : SW_CFG[`${mag[0]}${mag[1] === "0" ? "1" : mag[1]}`];
+		swc.style.transform = `translateX(${dx}px)`;
+		const side: SwipeSide = dx > 0 ? "r" : "l";
+		const acts = sideActs(side);
+		const tierAct = mag === "none" ? null : (acts[mag.endsWith("2") ? 1 : 0] ?? null);
 		swu.setAttribute("data-mag", mag);
-		swu.setAttribute("data-act", act ?? "none");
-		const pill = swu.querySelector<HTMLElement>(
-			`[data-swpill="${dx > 0 ? "r" : "l"}"]`,
-		);
+		swu.setAttribute("data-act", tierAct ? tierAct.css : "none");
+		const pill = swu.querySelector<HTMLElement>(`[data-swpill="${side}"]`);
 		const other = swu.querySelector<HTMLElement>(
-			`[data-swpill="${dx > 0 ? "l" : "r"}"]`,
+			`[data-swpill="${side === "r" ? "l" : "r"}"]`,
 		);
 		if (pill) {
-			pill.style.width = `${Math.max(0, Math.abs(eased) - 16)}px`;
+			pill.style.width = dx === 0 ? "0px" : `${Math.max(0, Math.abs(dx) - 16)}px`;
 			const txt = pill.querySelector("[data-swtxt]");
-			if (txt) txt.textContent = act && act !== "none" ? (SWL[act] ?? "") : "";
+			if (txt) txt.textContent = tierAct ? tierAct.label : "";
 		}
 		if (other) other.style.width = "0px";
 	};
-	const swFinish = () => {
-		releaseGesture(swGid.current);
-		const swc = swcRef.current;
-		const { dx } = sw.current;
-		sw.current.on = false;
-		if (swc) {
-			swc.style.transition = "transform .18s ease";
-			swc.style.transform = "translateX(0)";
-			setTimeout(() => {
-				if (swc) swc.style.transition = "";
-			}, 200);
-		}
-		swApply(0);
-		const mag = swMag(dx);
-		const act = SW_CFG[mag];
-		if (act) {
-			swBlock.current = Date.now();
-			m.rowAct(t.id, act);
-		} else if (Math.abs(dx) > 12) {
-			swBlock.current = Date.now();
-		}
-		sw.current.dx = 0;
+
+	const swipe = useSwipe({
+		onUpdate: swApply,
+		onLatch: setSwLatch,
+		onSwipe: (mag: "r1" | "r2" | "l1" | "l2") => {
+			const acts = sideActs(mag[0] === "r" ? "r" : "l");
+			acts[mag.endsWith("2") ? 1 : 0]?.run();
+		},
+	});
+	/** Barvy kotvených tlačítek — stejné jako [data-act] podklady v mail.css. */
+	const actColor: Record<string, string> = {
+		done: "var(--success)",
+		pin: "var(--brass)",
+		snooze: "#24395a",
+		arch: "#8c8a82",
 	};
 	return (
 		<div
 			onClick={() => {
-				if (Date.now() - swBlock.current < 350) return;
+				if (swipe.swipedRecently()) return;
 				m.openThread(t.id);
 			}}
 			onContextMenu={(ev) => {
@@ -490,88 +480,7 @@ function MailRow({
 				ev.preventDefault();
 				onCtx(t.id, ev.clientX, ev.clientY);
 			}}
-			onPointerDown={(ev) => {
-				if (ev.pointerType === "touch") {
-					if (!claimGesture(swGid.current)) return;
-					sw.current = { startX: ev.clientX, dx: 0, on: true };
-				} else if (ev.button === 0) {
-					swMouse.current = {
-						startX: ev.clientX,
-						startY: ev.clientY,
-						active: false,
-					};
-					sw.current = { startX: ev.clientX, dx: 0, on: false };
-				}
-			}}
-			onPointerMove={(ev) => {
-				if (ev.pointerType === "touch") {
-					if (!sw.current.on) return;
-					sw.current.dx = ev.clientX - sw.current.startX;
-					swApply(sw.current.dx);
-					return;
-				}
-				// tažení myší/jedním prstem — aktivace po 6 px do strany
-				if (ev.buttons !== 1) return;
-				const dx = ev.clientX - swMouse.current.startX;
-				const dy = ev.clientY - swMouse.current.startY;
-				if (!swMouse.current.active) {
-					if (Math.abs(dx) < 6 || Math.abs(dx) <= Math.abs(dy)) return;
-					if (!claimGesture(swGid.current)) return;
-					swMouse.current.active = true;
-					try {
-						(ev.currentTarget as Element).setPointerCapture(ev.pointerId);
-					} catch {
-						/* capture není podmínkou gesta */
-					}
-				}
-				ev.preventDefault();
-				sw.current.dx = dx;
-				swApply(dx);
-			}}
-			onPointerUp={(ev) => {
-				if (ev.pointerType === "touch") {
-					if (sw.current.on) swFinish();
-					return;
-				}
-				if (!swMouse.current.active) return;
-				swMouse.current.active = false;
-				swFinish();
-			}}
-			onPointerCancel={() => {
-				if (sw.current.on || swMouse.current.active) {
-					swMouse.current.active = false;
-					swFinish();
-				}
-			}}
-			onWheel={(ev) => {
-				if (sw.current.on) return;
-				const ax = Math.abs(ev.deltaX);
-				const ay = Math.abs(ev.deltaY);
-				if (!swWheel.current.armed) {
-					// ozbrojení prvním převážně horizontálním pohybem
-					if (ax < 4 || ax <= ay) return;
-					if (!claimGesture(swGid.current)) return;
-					swWheel.current.armed = true;
-				} else if (ay > 12 && ay > 2 * ax) {
-					// zřetelně svislý scroll během gesta = omyl → zrušit bez akce
-					if (swWheel.current.timer) clearTimeout(swWheel.current.timer);
-					swWheel.current = { armed: false, timer: null };
-					sw.current.dx = 0;
-					swTier.current = "none";
-					releaseGesture(swGid.current);
-					swApply(0);
-					return;
-				}
-				// obsah jede proti směru prstů (natural scroll); drobné svislé
-				// chvění gesto neruší → tah je plynulý
-				sw.current.dx -= ev.deltaX;
-				swApply(sw.current.dx);
-				if (swWheel.current.timer) clearTimeout(swWheel.current.timer);
-				swWheel.current.timer = setTimeout(() => {
-					swWheel.current = { armed: false, timer: null };
-					swFinish();
-				}, 160);
-			}}
+			{...swipe.handlers}
 			data-tid={t.id}
 			tabIndex={0}
 			data-mrow
@@ -588,6 +497,46 @@ function MailRow({
 					<span data-swtxt />
 				</span>
 			</div>
+
+			{/* kotva (trackpad): akce dané strany jako KLIKACÍ tlačítka */}
+			{swLatch && (
+				<div
+					style={{
+						position: "absolute",
+						top: 0,
+						bottom: 0,
+						zIndex: 2,
+						display: "flex",
+						alignItems: "center",
+						gap: 6,
+						...(swLatch === "r" ? { left: 10 } : { right: 10 }),
+					}}
+				>
+					{sideActs(swLatch).map((a) => (
+						<span
+							key={a.label}
+							onClick={(ev) => {
+								ev.stopPropagation();
+								a.run();
+								swipe.unlatch();
+							}}
+							style={{
+								background: actColor[a.css] ?? "var(--brass)",
+								color: "#fff",
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 700,
+								fontSize: 11.5,
+								padding: "6px 13px",
+								borderRadius: 11,
+								cursor: "pointer",
+								whiteSpace: "nowrap",
+							}}
+						>
+							{a.label}
+						</span>
+					))}
+				</div>
+			)}
 			<div ref={swcRef} data-swc style={{ display: "flex", gap: 10, padding: "12px 14px 11px" }}>
 				<RowActs vm={vm} />
 				<span

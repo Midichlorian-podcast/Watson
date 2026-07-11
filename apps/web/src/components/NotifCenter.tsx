@@ -200,11 +200,13 @@ export function NotifCenter({
 		return () => document.removeEventListener("keydown", h);
 	}, [open, peek, openId, onClose]);
 
-	const act = useCallback(
+	/** Klik na TITULEK = rychlá karta na místě (detail úkolu / mail peek). */
+	const quickAct = useCallback(
 		(n: NotifItem) => {
 			markSeen([n.key]);
 			switch (n.action.type) {
 				case "flow":
+					// postup nemá rychlou kartu s odbavením → rovnou modul
 					onClose();
 					void navigate({
 						to: "/postupy",
@@ -237,6 +239,34 @@ export function NotifCenter({
 			}
 		},
 		[navigate, onClose, openTask, m],
+	);
+
+	/** Šipka vpravo = přechod DO MODULU na danou věc (feedback: dva typy akcí). */
+	const moduleAct = useCallback(
+		(n: NotifItem) => {
+			markSeen([n.key]);
+			onClose();
+			switch (n.action.type) {
+				case "flow":
+					void navigate({
+						to: "/postupy",
+						search: { postup: n.action.chainId },
+					});
+					break;
+				case "task":
+					void navigate({ to: "/ukoly", search: { ukol: n.action.taskId } });
+					break;
+				case "mailThread":
+					m.openThread(n.action.id);
+					void navigate({ to: "/mail" });
+					break;
+				case "mailFolder":
+					m.setFolder(n.action.folder);
+					void navigate({ to: "/mail" });
+					break;
+			}
+		},
+		[navigate, onClose, m],
 	);
 
 	if (!open) return null;
@@ -301,42 +331,68 @@ export function NotifCenter({
 					{items.map((n) => {
 						const isSeen = !!seenSnapshot()[n.key];
 						return (
-							<button
+							<div
 								key={n.key}
-								type="button"
-								onClick={() => act(n)}
-								className="flex w-full items-start rounded-lg text-left hover:bg-panel-2"
-								style={{ gap: 9, padding: "8px 9px", opacity: isSeen ? 0.55 : 1 }}
+								className="group flex w-full items-center rounded-lg hover:bg-panel-2"
+								style={{ gap: 4, opacity: isSeen ? 0.55 : 1 }}
 							>
-								<span
-									className="mt-1 shrink-0 rounded-full"
-									style={{ width: 7, height: 7, background: DOT[n.kind] }}
-								/>
-								<span className="min-w-0 flex-1">
+								{/* titulek = rychlá karta NA MÍSTĚ */}
+								<button
+									type="button"
+									onClick={() => quickAct(n)}
+									title={t("notif.quickTitle")}
+									className="flex min-w-0 flex-1 items-start text-left"
+									style={{ gap: 9, padding: "8px 4px 8px 9px" }}
+								>
 									<span
-										className="block truncate font-display font-semibold text-ink"
-										style={{ fontSize: 12.5 }}
-									>
-										{n.title}
-									</span>
-									{n.sub && (
+										className="mt-1 shrink-0 rounded-full"
+										style={{ width: 7, height: 7, background: DOT[n.kind] }}
+									/>
+									<span className="min-w-0 flex-1">
 										<span
-											className="block truncate font-body text-ink-3"
-											style={{ fontSize: 11, marginTop: 1 }}
+											className="block truncate font-display font-semibold text-ink"
+											style={{ fontSize: 12.5 }}
 										>
-											{n.sub}
+											{n.title}
+										</span>
+										{n.sub && (
+											<span
+												className="block truncate font-body text-ink-3"
+												style={{ fontSize: 11, marginTop: 1 }}
+											>
+												{n.sub}
+											</span>
+										)}
+									</span>
+									{n.time && (
+										<span
+											className="shrink-0 font-mono text-ink-3"
+											style={{ fontSize: 9.5, marginTop: 2 }}
+										>
+											{n.time}
 										</span>
 									)}
-								</span>
-								{n.time && (
-									<span
-										className="shrink-0 font-mono text-ink-3"
-										style={{ fontSize: 9.5, marginTop: 2 }}
-									>
-										{n.time}
-									</span>
-								)}
-							</button>
+								</button>
+								{/* šipka = přechod do modulu na danou věc */}
+								<button
+									type="button"
+									onClick={() => moduleAct(n)}
+									title={t("notif.moduleTitle")}
+									aria-label={t("notif.moduleTitle")}
+									className="grid shrink-0 place-items-center rounded-md border border-line text-ink-3 opacity-0 focus-visible:opacity-100 hover:border-brass hover:text-brass-text group-hover:opacity-100"
+									style={{ width: 24, height: 24, marginRight: 6 }}
+								>
+									<svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
+										<path
+											d="M4 2 H10 V8 M10 2 L2 10"
+											stroke="currentColor"
+											strokeWidth="1.4"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
+									</svg>
+								</button>
+							</div>
 						);
 					})}
 				</div>

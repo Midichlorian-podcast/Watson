@@ -687,8 +687,13 @@
 		"cardMail": "Pošta — urgence a SLA",
 		"openMail": "Otevřít mail"
 	},
+	"swipe": {
+		"revert": "Vrátit"
+	},
 	"notif": {
 		"markAll": "označit vše jako viděné",
+		"quickTitle": "Otevřít rychlou kartu (vyřídíš tady)",
+		"moduleTitle": "Přejít do modulu",
 		"foot": "Klik položku vyřídí rovnou tady — detail úkolu i mail se otevřou na místě.",
 		"overdueSince": "po termínu od {{date}}",
 		"slaRunning": "SLA běží",
@@ -741,16 +746,26 @@
 		"memberTasks_few": "{{count}} otevřené úkoly",
 		"memberTasks_other": "{{count}} otevřených úkolů",
 		"memberOpen": "Otevřené úkoly",
-		"memberEmpty": "Žádné otevřené přiřazené úkoly."
+		"memberEmpty": "Žádné otevřené přiřazené úkoly.",
+		"chat": "Interní diskuse",
+		"chatPh": "Napsat týmu… (nikdy neodejde ven)",
+		"chatEmpty": "Zatím žádná interní zpráva — tady se domlouvá tým nad vláknem.",
+		"chatSend": "Poslat týmu"
 	},
 	"lists": {
 		"intro": "Opakované checklisty na akce — MČR, show, nábory, soustředění. Šablona → instance k akci, odškrtáváš, po akci reset.",
 		"emptyActive": "Žádný aktivní seznam — založ nový, nebo použij šablonu níže.",
+		"personalGroup": "Osobní seznamy",
+		"teamGroup": "Týmové seznamy",
 		"newList": "Nový seznam",
 		"newName": "Nový seznam",
 		"defaultSection": "Položky",
 		"sectionPh": "Název nové sekce…",
 		"addSection": "Přidat sekci",
+		"deleteSection": "Smazat sekci i s položkami — ⌘Z vrátí",
+		"sectionDeletedToast": "Sekce smazána — ⌘Z vrátí",
+		"deleteItem": "Smazat položku — ⌘Z vrátí",
+		"itemDeletedToast": "Položka smazána — ⌘Z vrátí",
 		"doneSort": "Odškrtnuté dolů",
 		"doneSortTitle": "Hotové položky řadit na konec sekce (jen zobrazení — pořadí v seznamu se nemění). Vypnuto = zůstávají na místě.",
 		"templates": "Šablony",

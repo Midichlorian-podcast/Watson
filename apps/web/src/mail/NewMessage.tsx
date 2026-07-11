@@ -5,9 +5,10 @@
  * (audit L-11); externí příjemce dostane marker (audit SEC-02); před odesláním
  * hlídám slíbenou přílohu (Modul 5); šablony TPL nikdy nepřepisují text (L-50).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { showToast } from "../lib/toast";
 import { MB, TPL } from "./data";
+import { SigBlock, SigPicker } from "./SigPicker";
 import { useMail } from "./state";
 
 /** Regex „text slibuje přílohu" — shodný se state.checkSend (prototyp ř. 3417). */
@@ -28,13 +29,7 @@ const hasExternal = (to: string): boolean =>
 		.filter((tok) => tok.includes("@"))
 		.some((tok) => !/@t-group-dance\.cz$/i.test(tok.trim()));
 
-export function NewMessage({
-	open,
-	onClose,
-}: {
-	open: boolean;
-	onClose: () => void;
-}) {
+export function NewMessage({ open, onClose }: { open: boolean; onClose: () => void }) {
 	// výchozí identita info@ (prototyp state.newFrom: 'info', ř. 2284)
 	const [from, setFrom] = useState("info");
 	const [to, setTo] = useState("");
@@ -73,18 +68,12 @@ export function NewMessage({
 	useEffect(() => {
 		if (!tplOpen) return;
 		const h = (e: globalThis.MouseEvent) => {
-			if (tplRef.current && !tplRef.current.contains(e.target as Node))
-				setTplOpen(false);
+			if (tplRef.current && !tplRef.current.contains(e.target as Node)) setTplOpen(false);
 		};
 		document.addEventListener("mousedown", h);
 		return () => document.removeEventListener("mousedown", h);
 	}, [tplOpen]);
 
-	const sig = useMemo(
-		() =>
-			from === "osobni" ? "bez podpisu (osobní)" : (MB[from]?.sig ?? ""),
-		[from],
-	);
 	const isFwd = subj.startsWith("Fwd:");
 	const extOn = hasExternal(to);
 	const tpls = TPL[from] ?? [];
@@ -99,7 +88,8 @@ export function NewMessage({
 		setTplOpen(false);
 	};
 
-	/** Odeslání (prototyp nw.send, ř. 4220) — s pojistkou na slíbenou přílohu. */
+	/** Odeslání (prototyp nw.send, ř. 4220) — s pojistkou na slíbenou přílohu.
+	 * Zvolený podpis (SigBlock) se k tělu přidá při odeslání — demo jen v UI. */
 	const doSend = () => {
 		showToast(`Odesláno z ${addrOf(from)}`);
 		reset();
@@ -157,7 +147,15 @@ export function NewMessage({
 		>
 			{/* hlavička (prototyp ř. 1809–1812) */}
 			<div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-				<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 14, color: "var(--ink)", flex: 1 }}>
+				<span
+					style={{
+						fontFamily: "var(--w-font-display)",
+						fontWeight: 700,
+						fontSize: 14,
+						color: "var(--ink)",
+						flex: 1,
+					}}
+				>
 					Nová zpráva
 				</span>
 				<span
@@ -170,8 +168,25 @@ export function NewMessage({
 			</div>
 
 			{/* Od — jen schránky s přístupem, identita barvou schránky (ř. 1813–1818, audit L-11) */}
-			<div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingBottom: 9 }}>
-				<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11, color: "var(--ink-3)", width: 52, flex: "none" }}>
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+					flexWrap: "wrap",
+					paddingBottom: 9,
+				}}
+			>
+				<span
+					style={{
+						fontFamily: "var(--w-font-display)",
+						fontWeight: 600,
+						fontSize: 11,
+						color: "var(--ink-3)",
+						width: 52,
+						flex: "none",
+					}}
+				>
 					Od
 				</span>
 				{FROM_IDS.map((id) => (
@@ -218,25 +233,66 @@ export function NewMessage({
 					<span data-mbdot="osobni" style={{ width: 7, height: 7, borderRadius: "50%" }} />
 					{OSOBNI_ADDR}
 					<svg width="8" height="8" viewBox="0 0 12 12" fill="none" aria-hidden>
-						<rect x="2.2" y="5" width="7.6" height="5.2" rx="1.2" stroke="currentColor" strokeWidth="1.3" />
+						<rect
+							x="2.2"
+							y="5"
+							width="7.6"
+							height="5.2"
+							rx="1.2"
+							stroke="currentColor"
+							strokeWidth="1.3"
+						/>
 						<path d="M4 5 V3.8 A2 2 0 0 1 8 3.8 V5" stroke="currentColor" strokeWidth="1.3" />
 					</svg>
 				</span>
 			</div>
-			<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", margin: "-4px 0 10px 60px" }}>
-				From vybíráš jen ze schránek, kam máš přístup — volný text neexistuje. Podpis: {sig}
+			<div
+				style={{
+					fontFamily: "var(--w-font-body)",
+					fontSize: 10.5,
+					color: "var(--ink-3)",
+					margin: "-4px 0 10px 60px",
+				}}
+			>
+				From vybíráš jen ze schránek, kam máš přístup — volný text neexistuje. Podpis vybereš dole.
 			</div>
 
 			{/* Komu (ř. 1820–1824) + marker externí domény (audit SEC-02) */}
-			<div style={{ display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid var(--line)", padding: "8px 0" }}>
-				<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11, color: "var(--ink-3)", width: 52, flex: "none" }}>
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+					borderTop: "1px solid var(--line)",
+					padding: "8px 0",
+				}}
+			>
+				<span
+					style={{
+						fontFamily: "var(--w-font-display)",
+						fontWeight: 600,
+						fontSize: 11,
+						color: "var(--ink-3)",
+						width: 52,
+						flex: "none",
+					}}
+				>
 					Komu
 				</span>
 				<input
 					value={to}
 					onChange={(e) => setTo(e.target.value)}
 					placeholder="jméno nebo adresa… (našeptává z kontaktů)"
-					style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "var(--w-font-body)", fontSize: 13, color: "var(--ink)" }}
+					style={{
+						flex: 1,
+						minWidth: 0,
+						border: "none",
+						background: "transparent",
+						outline: "none",
+						fontFamily: "var(--w-font-body)",
+						fontSize: 13,
+						color: "var(--ink)",
+					}}
 				/>
 				{extOn && (
 					<span
@@ -256,25 +312,66 @@ export function NewMessage({
 				)}
 				<span
 					onClick={() => showToast("Kopie a skrytá kopie přijdou s reálným odesíláním (M2)")}
-					style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)", cursor: "pointer" }}
+					style={{
+						fontFamily: "var(--w-font-mono)",
+						fontSize: 10,
+						color: "var(--ink-3)",
+						cursor: "pointer",
+					}}
 				>
 					Kopie
 				</span>
 			</div>
 
 			{/* Předmět (ř. 1825–1829) */}
-			<div style={{ display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid var(--line)", padding: "8px 0" }}>
-				<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11, color: "var(--ink-3)", width: 52, flex: "none" }}>
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+					borderTop: "1px solid var(--line)",
+					padding: "8px 0",
+				}}
+			>
+				<span
+					style={{
+						fontFamily: "var(--w-font-display)",
+						fontWeight: 600,
+						fontSize: 11,
+						color: "var(--ink-3)",
+						width: 52,
+						flex: "none",
+					}}
+				>
 					Předmět
 				</span>
 				<input
 					value={subj}
 					onChange={(e) => setSubj(e.target.value)}
 					placeholder="O čem to je"
-					style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "var(--w-font-body)", fontSize: 13, color: "var(--ink)" }}
+					style={{
+						flex: 1,
+						minWidth: 0,
+						border: "none",
+						background: "transparent",
+						outline: "none",
+						fontFamily: "var(--w-font-body)",
+						fontSize: 13,
+						color: "var(--ink)",
+					}}
 				/>
 				{isFwd && (
-					<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)", border: "1px solid var(--line)", borderRadius: 5, padding: "1px 6px", flex: "none" }}>
+					<span
+						style={{
+							fontFamily: "var(--w-font-mono)",
+							fontSize: 9.5,
+							color: "var(--ink-3)",
+							border: "1px solid var(--line)",
+							borderRadius: 5,
+							padding: "1px 6px",
+							flex: "none",
+						}}
+					>
 						vlákno v citaci + přílohy
 					</span>
 				)}
@@ -306,6 +403,9 @@ export function NewMessage({
 				}}
 			/>
 
+			{/* blok zvoleného podpisu (vzor Spark) — readonly, při odeslání se přidá k tělu */}
+			<SigBlock mb={from} />
+
 			{/* přílohy — chipy (styl dle taskMV chipu, ř. 2028) */}
 			{atts.length > 0 && (
 				<div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -326,7 +426,12 @@ export function NewMessage({
 							}}
 						>
 							<svg width="10" height="10" viewBox="0 0 14 14" fill="none" aria-hidden>
-								<path d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+								<path
+									d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4"
+									stroke="currentColor"
+									strokeWidth="1.2"
+									strokeLinecap="round"
+								/>
 							</svg>
 							{a}
 							<span
@@ -343,21 +448,69 @@ export function NewMessage({
 
 			{/* inline varování — text slibuje přílohu, žádná není (Modul 5, ř. 2206–2219) */}
 			{warnAtt && (
-				<div style={{ display: "flex", gap: 11, alignItems: "flex-start", border: "1px solid var(--p2)", background: "var(--p2-soft)", borderRadius: 11, padding: "10px 13px", marginTop: 10 }}>
-					<span style={{ width: 30, height: 30, borderRadius: 9, background: "var(--panel)", color: "var(--p2-text)", display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+				<div
+					style={{
+						display: "flex",
+						gap: 11,
+						alignItems: "flex-start",
+						border: "1px solid var(--p2)",
+						background: "var(--p2-soft)",
+						borderRadius: 11,
+						padding: "10px 13px",
+						marginTop: 10,
+					}}
+				>
+					<span
+						style={{
+							width: 30,
+							height: 30,
+							borderRadius: 9,
+							background: "var(--panel)",
+							color: "var(--p2-text)",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							flex: "none",
+						}}
+					>
 						<svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden>
-							<path d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+							<path
+								d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4"
+								stroke="currentColor"
+								strokeWidth="1.3"
+								strokeLinecap="round"
+							/>
 						</svg>
 					</span>
 					<div style={{ flex: 1, minWidth: 0 }}>
-						<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 12.5, color: "var(--ink)" }}>
+						<div
+							style={{
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 700,
+								fontSize: 12.5,
+								color: "var(--ink)",
+							}}
+						>
 							Zmiňuješ přílohu — ale žádná není připojená
 						</div>
-						<div style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.55, marginTop: 3 }}>
-							V textu je „v příloze". U sdílené schránky je to častá chyba — mail odejde za celý tým.
+						<div
+							style={{
+								fontFamily: "var(--w-font-body)",
+								fontSize: 11.5,
+								color: "var(--ink-2)",
+								lineHeight: 1.55,
+								marginTop: 3,
+							}}
+						>
+							V textu je „v příloze". U sdílené schránky je to častá chyba — mail odejde za celý
+							tým.
 						</div>
 						<div style={{ display: "flex", gap: 7, marginTop: 8, flexWrap: "wrap" }}>
-							<span onClick={() => setWarnAtt(false)} data-ghost style={{ fontSize: 11, padding: "5px 11px" }}>
+							<span
+								onClick={() => setWarnAtt(false)}
+								data-ghost
+								style={{ fontSize: 11, padding: "5px 11px" }}
+							>
 								Zrušit
 							</span>
 							<span onClick={doSend} data-ghost style={{ fontSize: 11, padding: "5px 11px" }}>
@@ -380,21 +533,45 @@ export function NewMessage({
 					onClick={() => showToast("Odeslat později: dnes večer · zítra ráno · vlastní čas.")}
 					data-ghost
 					title="Odeslat později"
-					style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 31, height: 31, padding: 0 }}
+					style={{
+						display: "inline-flex",
+						alignItems: "center",
+						justifyContent: "center",
+						width: 31,
+						height: 31,
+						padding: 0,
+					}}
 				>
 					<svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden>
 						<circle cx="7" cy="7" r="5.2" stroke="currentColor" strokeWidth="1.2" />
-						<path d="M7 4.2 V7 L9 8.6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+						<path
+							d="M7 4.2 V7 L9 8.6"
+							stroke="currentColor"
+							strokeWidth="1.2"
+							strokeLinecap="round"
+						/>
 					</svg>
 				</span>
 				<span
 					onClick={addAtt}
 					data-ghost
 					title="Přiložit soubor"
-					style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 31, height: 31, padding: 0 }}
+					style={{
+						display: "inline-flex",
+						alignItems: "center",
+						justifyContent: "center",
+						width: 31,
+						height: 31,
+						padding: 0,
+					}}
 				>
 					<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
-						<path d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+						<path
+							d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4"
+							stroke="currentColor"
+							strokeWidth="1.2"
+							strokeLinecap="round"
+						/>
 					</svg>
 				</span>
 				<div ref={tplRef} style={{ position: "relative" }}>
@@ -402,7 +579,12 @@ export function NewMessage({
 						onClick={() => setTplOpen((v) => !v)}
 						data-ghost
 						title="Sdílené šablony odpovědí vybrané schránky"
-						style={{ display: "inline-flex", alignItems: "center", fontSize: 11, padding: "7px 12px" }}
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							fontSize: 11,
+							padding: "7px 12px",
+						}}
 					>
 						Šablony
 					</span>
@@ -422,23 +604,53 @@ export function NewMessage({
 								animation: "wPop .14s ease",
 							}}
 						>
-							<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 10, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-3)", padding: "4px 9px 5px" }}>
+							<div
+								style={{
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 700,
+									fontSize: 10,
+									letterSpacing: ".05em",
+									textTransform: "uppercase",
+									color: "var(--ink-3)",
+									padding: "4px 9px 5px",
+								}}
+							>
 								Šablony · {from === "osobni" ? "osobní" : MB[from]?.short}
 							</div>
 							{tpls.length === 0 && (
-								<div style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)", padding: "4px 9px 7px" }}>
+								<div
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 11.5,
+										color: "var(--ink-3)",
+										padding: "4px 9px 7px",
+									}}
+								>
 									Osobní schránka sdílené šablony nemá.
 								</div>
 							)}
 							{tpls.map((tp) => (
-								<div key={tp.n} onClick={() => insertTpl(tp.b)} data-menuitem title="Vloží se na kurzor — rozepsaný text se nikdy nepřepisuje">
+								<div
+									key={tp.n}
+									onClick={() => insertTpl(tp.b)}
+									data-menuitem
+									title="Vloží se na kurzor — rozepsaný text se nikdy nepřepisuje"
+								>
 									<span style={{ flex: 1 }}>{tp.n}</span>
 								</div>
 							))}
 						</div>
 					)}
 				</div>
-				<span style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", marginLeft: "auto" }}>
+				<SigPicker mb={from} />
+				<span
+					style={{
+						fontFamily: "var(--w-font-body)",
+						fontSize: 10.5,
+						color: "var(--ink-3)",
+						marginLeft: "auto",
+					}}
+				>
 					Před odesláním hlídám přílohy a externí příjemce.
 				</span>
 			</div>

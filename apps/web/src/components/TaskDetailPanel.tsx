@@ -29,13 +29,7 @@ import { useProject } from "../lib/projects";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
-import {
-	occLabel,
-	rowDue,
-	setOccurrenceOverride,
-	todayISO,
-	toggleTask,
-} from "../lib/tasks";
+import { occLabel, rowDue, setOccurrenceOverride, todayISO, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { deleteTaskWithUndo } from "../lib/undo";
 import { useOpenMailThread } from "../mail/state";
@@ -50,8 +44,7 @@ function whenLabel(iso: string | null, t: (k: string) => string) {
 	const d = new Date(iso);
 	const now = new Date();
 	const hm = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
-	if (d.toDateString() === now.toDateString())
-		return `${t("today.todayLower")} ${hm}`;
+	if (d.toDateString() === now.toDateString()) return `${t("today.todayLower")} ${hm}`;
 	return `${d.getDate()}. ${d.getMonth() + 1}.`;
 }
 
@@ -196,10 +189,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			}
 			const el = document.activeElement as HTMLElement | null;
 			const typing =
-				!!el &&
-				(el.tagName === "INPUT" ||
-					el.tagName === "TEXTAREA" ||
-					el.isContentEditable);
+				!!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 			if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
 			const i = navIds.indexOf(id);
 			if (i < 0) return;
@@ -219,10 +209,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		return () => window.removeEventListener("keydown", h);
 	}, [onClose, navIds, id, open]);
 
-	const { data: rows } = usePsQuery<TaskRow>(
-		"SELECT * FROM tasks WHERE id = ? LIMIT 1",
-		[realId],
-	);
+	const { data: rows } = usePsQuery<TaskRow>("SELECT * FROM tasks WHERE id = ? LIMIT 1", [realId]);
 	const task = rows?.[0];
 	// Přístupnost: uzamkni fokus do modalu, dokud je otevřený; vrať fokus po zavření.
 	const trapRef = useFocusTrap<HTMLDivElement>(!!task);
@@ -258,10 +245,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		[realId],
 	);
 	// Rodič (vrstvení podúkolů — odkaz „↑ V úkolu").
-	const { data: parentRows } = usePsQuery<TaskRow>(
-		"SELECT * FROM tasks WHERE id = ? LIMIT 1",
-		[task?.parent_id ?? ""],
-	);
+	const { data: parentRows } = usePsQuery<TaskRow>("SELECT * FROM tasks WHERE id = ? LIMIT 1", [
+		task?.parent_id ?? "",
+	]);
 	const parent = task?.parent_id ? parentRows?.[0] : undefined;
 	const { data: depthRows } = usePsQuery<{ depth: number }>(
 		`WITH RECURSIVE anc(id, parent_id, lvl) AS (
@@ -278,17 +264,14 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		body: string | null;
 		author_id: string | null;
 		created_at: string | null;
-	}>(
-		"SELECT id, body, author_id, created_at FROM comments WHERE task_id = ? ORDER BY created_at",
-		[realId],
-	);
+	}>("SELECT id, body, author_id, created_at FROM comments WHERE task_id = ? ORDER BY created_at", [
+		realId,
+	]);
 	const { data: assignRows } = usePsQuery<{
 		id: string;
 		user_id: string | null;
 		completed_at: string | null;
-	}>("SELECT id, user_id, completed_at FROM assignments WHERE task_id = ?", [
-		realId,
-	]);
+	}>("SELECT id, user_id, completed_at FROM assignments WHERE task_id = ?", [realId]);
 	const { data: reminders } = usePsQuery<{
 		id: string;
 		type: string;
@@ -406,24 +389,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const acts = activity ?? [];
 
 	// Zápis jednoho záznamu do historie úprav.
-	const logActivity = async (
-		field: string,
-		oldVal: string | null,
-		newVal: string | null,
-	) => {
+	const logActivity = async (field: string, oldVal: string | null, newVal: string | null) => {
 		const uid = session?.user?.id;
 		if (!task || !uid) return;
 		await powerSync.execute(
 			"INSERT INTO task_activity (id, task_id, project_id, user_id, field, old_value, new_value, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?)",
-			[
-				realId,
-				task.project_id,
-				uid,
-				field,
-				oldVal,
-				newVal,
-				new Date().toISOString(),
-			],
+			[realId, task.project_id, uid, field, oldVal, newVal, new Date().toISOString()],
 		);
 		// task_activity se nesyncuje (insert-only) → po zápisu refetchni historii z API.
 		void qc.invalidateQueries({ queryKey: ["taskActivity", realId] });
@@ -437,11 +408,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			([k, v]) => String(cur[k] ?? "") !== String(v ?? ""),
 		);
 		if (changed.length === 0) return;
-		const oldData = Object.fromEntries(
-			changed.map(([k]) => [k, cur[k] ?? null]),
-		);
-		for (const [k, v] of changed)
-			await logActivity(k, fmtActVal(k, cur[k]), fmtActVal(k, v));
+		const oldData = Object.fromEntries(changed.map(([k]) => [k, cur[k] ?? null]));
+		for (const [k, v] of changed) await logActivity(k, fmtActVal(k, cur[k]), fmtActVal(k, v));
 		await patch(realId, data);
 		setSavedAt(Date.now());
 		const first = changed[0]?.[0] ?? "";
@@ -483,10 +451,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 
 	const toggleAssign = async (uid: string) => {
 		const existing = asg.find((a) => a.user_id === uid);
-		if (existing)
-			await powerSync.execute("DELETE FROM assignments WHERE id = ?", [
-				existing.id,
-			]);
+		if (existing) await powerSync.execute("DELETE FROM assignments WHERE id = ?", [existing.id]);
 		else
 			await powerSync.execute(
 				"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
@@ -494,10 +459,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			);
 	};
 	const togglePersonDone = (a: { id: string; completed_at: string | null }) =>
-		void powerSync.execute(
-			"UPDATE assignments SET completed_at = ? WHERE id = ?",
-			[a.completed_at ? null : new Date().toISOString(), a.id],
-		);
+		void powerSync.execute("UPDATE assignments SET completed_at = ? WHERE id = ?", [
+			a.completed_at ? null : new Date().toISOString(),
+			a.id,
+		]);
 
 	// Rychlé přidání (checklist styl) — dědí JEN projekt (žádné atributy rodiče),
 	// priorita základní P4; Enter přidá a nechá focus.
@@ -527,11 +492,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	/** Duplikace včetně podúkolů (rekurzivně) a přiřazení (prototyp kopíruje celý objekt). */
 	const duplicate = async () => {
 		const now = new Date().toISOString();
-		const copyOne = async (
-			srcId: string,
-			newParentId: string | null,
-			suffix: string,
-		) => {
+		const copyOne = async (srcId: string, newParentId: string | null, suffix: string) => {
 			const nid = crypto.randomUUID();
 			await powerSync.execute(
 				`INSERT INTO tasks (id, project_id, section_id, parent_id, name, description, priority, color,
@@ -554,18 +515,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			for (const k of kids) await copyOne(k.id, nid, "");
 			return nid;
 		};
-		const nid = await copyOne(
-			realId,
-			task?.parent_id ?? null,
-			` ${t("detail.copySuffix")}`,
-		);
+		const nid = await copyOne(realId, task?.parent_id ?? null, ` ${t("detail.copySuffix")}`);
 		setMenuOpen(false);
 		open(nid);
 	};
 	const copyLink = () => {
-		void navigator.clipboard.writeText(
-			`${location.origin}/ukoly?ukol=${realId}`,
-		);
+		void navigator.clipboard.writeText(`${location.origin}/ukoly?ukol=${realId}`);
 		setMenuOpen(false);
 		showToast(t("detail.linkCopied"));
 	};
@@ -675,13 +630,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								aria-label={t("detail.moreActions")}
 								className="grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 							>
-								<svg
-									width="16"
-									height="16"
-									viewBox="0 0 16 16"
-									fill="currentColor"
-									aria-hidden
-								>
+								<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
 									<circle cx="8" cy="3.5" r="1.4" />
 									<circle cx="8" cy="8" r="1.4" />
 									<circle cx="8" cy="12.5" r="1.4" />
@@ -731,10 +680,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					</div>
 
 					{/* body */}
-					<div
-						className="min-h-0 flex-1 overflow-y-auto"
-						style={{ padding: "0 18px 18px" }}
-					>
+					<div className="min-h-0 flex-1 overflow-y-auto" style={{ padding: "0 18px 18px" }}>
 						{/* vrstvení: odkaz na rodičovský úkol */}
 						{parent && (
 							<button
@@ -743,16 +689,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								className="mt-3 inline-flex items-center font-display font-semibold text-ink-3 hover:text-brass-text"
 								style={{ gap: 6, fontSize: 12 }}
 							>
-								↑ {t("detail.inTask")}:{" "}
-								<span className="text-ink-2">{parent.name}</span>
+								↑ {t("detail.inTask")}: <span className="text-ink-2">{parent.name}</span>
 							</button>
 						)}
 
 						{/* checkbox + název (ř. 993–997) */}
-						<div
-							className="flex items-start"
-							style={{ gap: 11, marginTop: 16 }}
-						>
+						<div className="flex items-start" style={{ gap: 11, marginTop: 16 }}>
 							<button
 								type="button"
 								onClick={toggleDone}
@@ -767,13 +709,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								}}
 							>
 								{done && (
-									<svg
-										width="12"
-										height="12"
-										viewBox="0 0 11 11"
-										fill="none"
-										aria-hidden
-									>
+									<svg width="12" height="12" viewBox="0 0 11 11" fill="none" aria-hidden>
 										<path
 											d="M2 5.7 L4.3 8 L9 2.7"
 											stroke="#fff"
@@ -789,9 +725,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								value={name}
 								onChange={(e) => setName(e.target.value)}
 								onBlur={() =>
-									name.trim() &&
-									name !== task.name &&
-									void patchLog({ name: name.trim() })
+									name.trim() && name !== task.name && void patchLog({ name: name.trim() })
 								}
 								className="w-full bg-transparent font-display text-ink outline-none"
 								style={{ fontWeight: 700, fontSize: 19, lineHeight: 1.25 }}
@@ -819,10 +753,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									>
 										↻ {t("detail.occSeries")}
 									</span>
-									<span
-										className="font-mono"
-										style={{ fontSize: 12, color: "var(--w-ink-2)" }}
-									>
+									<span className="font-mono" style={{ fontSize: 12, color: "var(--w-ink-2)" }}>
 										{occLabel(occ.iso)}
 									</span>
 								</div>
@@ -844,10 +775,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						)}
 
 						{/* řádek chipů (ř. 1010–1016) — klik otevře editaci polí */}
-						<div
-							className="flex flex-wrap"
-							style={{ gap: 8, margin: "16px 0 0" }}
-						>
+						<div className="flex flex-wrap" style={{ gap: 8, margin: "16px 0 0" }}>
 							<button
 								type="button"
 								onClick={() => setEditOpen((o) => !o)}
@@ -879,9 +807,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										borderRadius: 999,
 										background: "var(--w-panel-2)",
 										// u výskytu barva z occ overdue (makeOcc ř. 2652), ne z base úkolu
-										color: (occ ? overdue : due.overdue)
-											? "var(--w-overdue)"
-											: "var(--w-ink-2)",
+										color: (occ ? overdue : due.overdue) ? "var(--w-overdue)" : "var(--w-ink-2)",
 									}}
 								>
 									{occ ? occLabel(occ.iso) : due.label}
@@ -894,9 +820,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										fontSize: 11.5,
 										padding: "4px 10px",
 										borderRadius: 999,
-										background: (status.name ?? "")
-											.toLowerCase()
-											.includes("kontrol")
+										background: (status.name ?? "").toLowerCase().includes("kontrol")
 											? "var(--w-panel-2)"
 											: "var(--w-success-soft)",
 										color: (status.name ?? "").toLowerCase().includes("kontrol")
@@ -971,67 +895,22 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										padding: "11px 13px",
 									}}
 								>
-									<div className="flex items-center" style={{ gap: 8 }}>
-										<span
-											className="w-14 shrink-0 font-body text-ink-3"
-											style={{ fontSize: 11.5 }}
-										>
-											{t("detail.priority")}
-										</span>
-										{([1, 2, 3, 4] as Pri[]).map((p) => (
-											<button
-												key={p}
-												type="button"
-												onClick={() => void patchLog({ priority: p })}
-												className="font-display font-semibold"
-												style={{
-													fontSize: 12,
-													padding: "5px 13px",
-													borderRadius: 9,
-													border: `1px solid ${task.priority === p ? "var(--w-brass)" : "var(--w-line)"}`,
-													background:
-														task.priority === p
-															? "var(--w-brass-soft)"
-															: "transparent",
-													color:
-														task.priority === p
-															? "var(--w-brass-text)"
-															: "var(--w-ink-2)",
-												}}
-											>
-												P{p}
-											</button>
-										))}
-									</div>
-									<div
-										className="flex flex-wrap items-center"
-										style={{ gap: 8, marginTop: 9 }}
-									>
+									{/* kánon pořadí polí (= AddTaskModal): Termín → Priorita → Přiřazení */}
+									<div className="flex flex-wrap items-center" style={{ gap: 8 }}>
 										{(
 											[
 												["due_date", t("detail.due")],
 												["deadline", t("detail.deadline")],
 											] as const
 										).map(([col, label]) => (
-											<label
-												key={col}
-												className="flex items-center"
-												style={{ gap: 6 }}
-											>
-												<span
-													className="font-body text-ink-3"
-													style={{ fontSize: 11.5 }}
-												>
+											<label key={col} className="flex items-center" style={{ gap: 6 }}>
+												<span className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
 													{label}
 												</span>
 												<input
 													type="date"
-													value={
-														task[col] ? (task[col] ?? "").slice(0, 10) : ""
-													}
-													onChange={(e) =>
-														void patchLog({ [col]: e.target.value || null })
-													}
+													value={task[col] ? (task[col] ?? "").slice(0, 10) : ""}
+													onChange={(e) => void patchLog({ [col]: e.target.value || null })}
 													className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-ink-2 text-xs outline-none focus:border-brass"
 												/>
 											</label>
@@ -1046,9 +925,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											<button
 												key={key}
 												type="button"
-												onClick={() =>
-													void patchLog({ due_date: rescheduleDate(key) })
-												}
+												onClick={() => void patchLog({ due_date: rescheduleDate(key) })}
 												className="cursor-pointer whitespace-nowrap rounded-md border border-line bg-card font-mono text-ink-3 hover:border-brass hover:text-brass-text"
 												style={{ fontSize: 9.5, padding: "3px 7px" }}
 											>
@@ -1057,10 +934,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										))}
 										{/* čas + trvání (parita s AddTask — funguje i pro podúkoly) */}
 										<label className="flex items-center" style={{ gap: 6 }}>
-											<span
-												className="font-body text-ink-3"
-												style={{ fontSize: 11.5 }}
-											>
+											<span className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
 												{t("detail.time")}
 											</span>
 											<input
@@ -1076,23 +950,16 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 														task.due_date?.slice(0, 10) ??
 														`${_n.getFullYear()}-${String(_n.getMonth() + 1).padStart(2, "0")}-${String(_n.getDate()).padStart(2, "0")}`;
 													void patchLog({
-														start_date: e.target.value
-															? `${base}T${e.target.value}:00`
-															: null,
+														start_date: e.target.value ? `${base}T${e.target.value}:00` : null,
 														// čas bez termínu → nastavit i termín (jinak by blok neměl den)
-														...(e.target.value && !task.due_date
-															? { due_date: base }
-															: {}),
+														...(e.target.value && !task.due_date ? { due_date: base } : {}),
 													});
 												}}
 												className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-ink-2 text-xs outline-none focus:border-brass"
 											/>
 										</label>
 										<label className="flex items-center" style={{ gap: 6 }}>
-											<span
-												className="font-body text-ink-3"
-												style={{ fontSize: 11.5 }}
-											>
+											<span className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
 												{t("detail.duration")}
 											</span>
 											<input
@@ -1110,18 +977,35 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 												className="rounded-lg border border-line bg-card px-2 py-1 text-right font-mono text-ink-2 text-xs outline-none focus:border-brass"
 												style={{ width: 64 }}
 											/>
-											<span
-												className="font-body text-ink-3"
-												style={{ fontSize: 11 }}
-											>
+											<span className="font-body text-ink-3" style={{ fontSize: 11 }}>
 												{t("addmodal.min")}
 											</span>
 										</label>
 									</div>
-									<div
-										className="flex flex-wrap items-center"
-										style={{ gap: 6, marginTop: 9 }}
-									>
+									<div className="flex items-center" style={{ gap: 8, marginTop: 9 }}>
+										<span className="w-14 shrink-0 font-body text-ink-3" style={{ fontSize: 11.5 }}>
+											{t("detail.priority")}
+										</span>
+										{([1, 2, 3, 4] as Pri[]).map((p) => (
+											<button
+												key={p}
+												type="button"
+												onClick={() => void patchLog({ priority: p })}
+												className="font-display font-semibold"
+												style={{
+													fontSize: 12,
+													padding: "5px 13px",
+													borderRadius: 9,
+													border: `1px solid ${task.priority === p ? "var(--w-brass)" : "var(--w-line)"}`,
+													background: task.priority === p ? "var(--w-brass-soft)" : "transparent",
+													color: task.priority === p ? "var(--w-brass-text)" : "var(--w-ink-2)",
+												}}
+											>
+												P{p}
+											</button>
+										))}
+									</div>
+									<div className="flex flex-wrap items-center" style={{ gap: 6, marginTop: 9 }}>
 										<button
 											type="button"
 											onClick={() => void setUserColor(null)}
@@ -1129,12 +1013,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											className="grid place-items-center border border-line bg-card"
 											style={{ width: 20, height: 20, borderRadius: 6 }}
 										>
-											<svg
-												width="12"
-												height="12"
-												viewBox="0 0 14 14"
-												aria-hidden
-											>
+											<svg width="12" height="12" viewBox="0 0 14 14" aria-hidden>
 												<line
 													x1="3"
 													y1="11"
@@ -1167,6 +1046,168 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								</div>
 							</>
 						)}
+
+						{/* PŘIŘAZENÍ (R2) — jen přiřazení + „+ Přiřadit" popover (ř. 1050–1059) */}
+						<SectionLabel>{t("detail.assignment")}</SectionLabel>
+						{/* popisek režimu NAD seznamem (prototyp ř. 1040 assignAll / ř. 1051 assignAny) */}
+						{asg.length > 0 && mode !== "single" && (
+							<div className="font-body text-ink-3" style={{ fontSize: 12, marginBottom: 8 }}>
+								{mode === "shared_all"
+									? t("detail.assignAllHint", {
+											done: assignedDone,
+											total: asg.length,
+										})
+									: t("detail.assignAnyHint")}
+							</div>
+						)}
+						<ul>
+							{asg.map((a) => {
+								const m = memberOf(a.user_id);
+								const pdone = Boolean(a.completed_at);
+								return (
+									<li
+										key={a.id}
+										className="flex items-center"
+										style={{ gap: 10, padding: "5px 0" }}
+									>
+										{mode === "shared_all" && (
+											<BrassCheck
+												round
+												size={18}
+												done={pdone}
+												doneLabel={t("detail.ariaMarkUndone")}
+												undoneLabel={t("detail.ariaComplete")}
+												onClick={() => togglePersonDone(a)}
+											/>
+										)}
+										<span
+											className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
+											style={{
+												width: 24,
+												height: 24,
+												fontSize: 10,
+												color: "#fff",
+												background: "var(--w-avatar)",
+											}}
+										>
+											{initials(m?.name ?? "?")}
+										</span>
+										<span style={{ fontSize: 13, color: "var(--w-ink)" }}>{m?.name ?? "—"}</span>
+										<button
+											type="button"
+											onClick={() => a.user_id && void toggleAssign(a.user_id)}
+											aria-label={t("common.cancel")}
+											className="ml-auto text-ink-3 hover:text-overdue"
+											style={{ fontSize: 13 }}
+										>
+											✕
+										</button>
+									</li>
+								);
+							})}
+						</ul>
+						<div className="relative">
+							<button
+								type="button"
+								onClick={() => setAssignOpen((o) => !o)}
+								className="mt-1 inline-flex items-center font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
+								style={{
+									gap: 5,
+									fontSize: 12,
+									padding: "5px 10px",
+									borderRadius: 9,
+									border: "1px dashed var(--w-line)",
+								}}
+							>
+								+ {t("detail.assignBtn")}
+							</button>
+							{assignOpen && (
+								<div
+									className="absolute border border-line bg-card"
+									style={{
+										top: 34,
+										left: 0,
+										width: 240,
+										borderRadius: 11,
+										boxShadow: "var(--w-shadow)",
+										padding: 6,
+										zIndex: 10,
+										animation: "wPop .14s ease",
+									}}
+								>
+									{members.map((m) => {
+										const assigned = asg.some((a) => a.user_id === m.id);
+										return (
+											<button
+												key={m.id}
+												type="button"
+												onClick={() => void toggleAssign(m.id)}
+												className="flex w-full items-center rounded-lg text-left hover:bg-panel-2"
+												style={{ gap: 9, padding: "6px 8px" }}
+											>
+												<span
+													className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
+													style={{
+														width: 24,
+														height: 24,
+														fontSize: 10,
+														color: "#fff",
+														background: "var(--w-avatar)",
+														opacity: assigned ? 1 : 0.5,
+													}}
+												>
+													{initials(m.name)}
+												</span>
+												<span className="flex-1" style={{ fontSize: 13, color: "var(--w-ink)" }}>
+													{m.name}
+												</span>
+												{assigned && (
+													<svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden>
+														<path
+															d="M3 7.4 L6 10 L11 4"
+															stroke="var(--w-brass-text)"
+															strokeWidth="1.6"
+															strokeLinecap="round"
+															strokeLinejoin="round"
+														/>
+													</svg>
+												)}
+											</button>
+										);
+									})}
+									{asg.length >= 2 && (
+										<div
+											className="flex border-line border-t"
+											style={{ gap: 5, marginTop: 5, paddingTop: 6 }}
+										>
+											{(
+												[
+													["shared_any", t("detail.assignAny")],
+													["shared_all", t("detail.assignAll")],
+												] as const
+											).map(([m2, l]) => (
+												<button
+													key={m2}
+													type="button"
+													onClick={() => void patchLog({ assignment_mode: m2 })}
+													className="font-display font-semibold"
+													style={{
+														fontSize: 11.5,
+														padding: "5px 10px",
+														borderRadius: 8,
+														border: `1px solid ${mode === m2 ? "var(--w-brass)" : "var(--w-line)"}`,
+														background: mode === m2 ? "var(--w-brass-soft)" : "transparent",
+														color: mode === m2 ? "var(--w-brass-text)" : "var(--w-ink-2)",
+													}}
+												>
+													{l}
+												</button>
+											))}
+										</div>
+									)}
+								</div>
+							)}
+						</div>
 
 						{/* Watson hint (ř. 1018–1021) */}
 						<div
@@ -1270,9 +1311,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											gap: 10,
 											padding: "8px 4px 8px 9px",
 											borderRadius: "0 6px 6px 0",
-											boxShadow: sd
-												? undefined
-												: `inset 3px 0 0 var(--w-p${s.priority ?? 4})`,
+											boxShadow: sd ? undefined : `inset 3px 0 0 var(--w-p${s.priority ?? 4})`,
 											opacity: sd ? 0.55 : 1,
 										}}
 									>
@@ -1296,10 +1335,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											{s.name}
 										</span>
 										{sMeta.checklist && (
-											<span
-												className="shrink-0 font-mono text-ink-3"
-												style={{ fontSize: 11 }}
-											>
+											<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 11 }}>
 												⚏ {sMeta.checklist.done}/{sMeta.checklist.total}
 											</span>
 										)}
@@ -1308,18 +1344,13 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 												className="shrink-0 font-mono"
 												style={{
 													fontSize: 11.5,
-													color: sDue.overdue
-														? "var(--w-overdue)"
-														: "var(--w-ink-3)",
+													color: sDue.overdue ? "var(--w-overdue)" : "var(--w-ink-3)",
 												}}
 											>
 												{sDue.label}
 											</span>
 										)}
-										<span
-											className="shrink-0 text-ink-3"
-											style={{ fontSize: 12 }}
-										>
+										<span className="shrink-0 text-ink-3" style={{ fontSize: 12 }}>
 											›
 										</span>
 									</li>
@@ -1350,13 +1381,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									aria-label={t("detail.addSubtaskFull")}
 									className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line text-ink-3 hover:border-brass hover:text-brass-text"
 								>
-									<svg
-										width="16"
-										height="16"
-										viewBox="0 0 16 16"
-										fill="none"
-										aria-hidden
-									>
+									<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
 										<path
 											d="M8 3.5 V12.5 M3.5 8 H12.5"
 											stroke="currentColor"
@@ -1370,187 +1395,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							<p className="mt-2 text-ink-3 text-xs">{t("detail.maxDepth")}</p>
 						)}
 
-						{/* PŘIŘAZENÍ (R2) — jen přiřazení + „+ Přiřadit" popover (ř. 1050–1059) */}
-						<SectionLabel>{t("detail.assignment")}</SectionLabel>
-						{/* popisek režimu NAD seznamem (prototyp ř. 1040 assignAll / ř. 1051 assignAny) */}
-						{asg.length > 0 && mode !== "single" && (
-							<div
-								className="font-body text-ink-3"
-								style={{ fontSize: 12, marginBottom: 8 }}
-							>
-								{mode === "shared_all"
-									? t("detail.assignAllHint", {
-											done: assignedDone,
-											total: asg.length,
-										})
-									: t("detail.assignAnyHint")}
-							</div>
-						)}
-						<ul>
-							{asg.map((a) => {
-								const m = memberOf(a.user_id);
-								const pdone = Boolean(a.completed_at);
-								return (
-									<li
-										key={a.id}
-										className="flex items-center"
-										style={{ gap: 10, padding: "5px 0" }}
-									>
-										{mode === "shared_all" && (
-											<BrassCheck
-												round
-												size={18}
-												done={pdone}
-												doneLabel={t("detail.ariaMarkUndone")}
-												undoneLabel={t("detail.ariaComplete")}
-												onClick={() => togglePersonDone(a)}
-											/>
-										)}
-										<span
-											className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
-											style={{
-												width: 24,
-												height: 24,
-												fontSize: 10,
-												color: "#fff",
-												background: "var(--w-avatar)",
-											}}
-										>
-											{initials(m?.name ?? "?")}
-										</span>
-										<span style={{ fontSize: 13, color: "var(--w-ink)" }}>
-											{m?.name ?? "—"}
-										</span>
-										<button
-											type="button"
-											onClick={() => a.user_id && void toggleAssign(a.user_id)}
-											aria-label={t("common.cancel")}
-											className="ml-auto text-ink-3 hover:text-overdue"
-											style={{ fontSize: 13 }}
-										>
-											✕
-										</button>
-									</li>
-								);
-							})}
-						</ul>
-						<div className="relative">
-							<button
-								type="button"
-								onClick={() => setAssignOpen((o) => !o)}
-								className="mt-1 inline-flex items-center font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
-								style={{
-									gap: 5,
-									fontSize: 12,
-									padding: "5px 10px",
-									borderRadius: 9,
-									border: "1px dashed var(--w-line)",
-								}}
-							>
-								+ {t("detail.assignBtn")}
-							</button>
-							{assignOpen && (
-								<div
-									className="absolute border border-line bg-card"
-									style={{
-										top: 34,
-										left: 0,
-										width: 240,
-										borderRadius: 11,
-										boxShadow: "var(--w-shadow)",
-										padding: 6,
-										zIndex: 10,
-										animation: "wPop .14s ease",
-									}}
-								>
-									{members.map((m) => {
-										const assigned = asg.some((a) => a.user_id === m.id);
-										return (
-											<button
-												key={m.id}
-												type="button"
-												onClick={() => void toggleAssign(m.id)}
-												className="flex w-full items-center rounded-lg text-left hover:bg-panel-2"
-												style={{ gap: 9, padding: "6px 8px" }}
-											>
-												<span
-													className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
-													style={{
-														width: 24,
-														height: 24,
-														fontSize: 10,
-														color: "#fff",
-														background: "var(--w-avatar)",
-														opacity: assigned ? 1 : 0.5,
-													}}
-												>
-													{initials(m.name)}
-												</span>
-												<span
-													className="flex-1"
-													style={{ fontSize: 13, color: "var(--w-ink)" }}
-												>
-													{m.name}
-												</span>
-												{assigned && (
-													<svg
-														width="13"
-														height="13"
-														viewBox="0 0 14 14"
-														fill="none"
-														aria-hidden
-													>
-														<path
-															d="M3 7.4 L6 10 L11 4"
-															stroke="var(--w-brass-text)"
-															strokeWidth="1.6"
-															strokeLinecap="round"
-															strokeLinejoin="round"
-														/>
-													</svg>
-												)}
-											</button>
-										);
-									})}
-									{asg.length >= 2 && (
-										<div
-											className="flex border-line border-t"
-											style={{ gap: 5, marginTop: 5, paddingTop: 6 }}
-										>
-											{(
-												[
-													["shared_any", t("detail.assignAny")],
-													["shared_all", t("detail.assignAll")],
-												] as const
-											).map(([m2, l]) => (
-												<button
-													key={m2}
-													type="button"
-													onClick={() => void patchLog({ assignment_mode: m2 })}
-													className="font-display font-semibold"
-													style={{
-														fontSize: 11.5,
-														padding: "5px 10px",
-														borderRadius: 8,
-														border: `1px solid ${mode === m2 ? "var(--w-brass)" : "var(--w-line)"}`,
-														background:
-															mode === m2
-																? "var(--w-brass-soft)"
-																: "transparent",
-														color:
-															mode === m2
-																? "var(--w-brass-text)"
-																: "var(--w-ink-2)",
-													}}
-												>
-													{l}
-												</button>
-											))}
-										</div>
-									)}
-								</div>
-							)}
-						</div>
 						{/* PŘIPOMÍNKY — relativní (před termínem) / absolutní; doručení Web Push. */}
 						<SectionLabel>{t("detail.reminders")}</SectionLabel>
 						<div style={{ marginBottom: 4 }}>
@@ -1596,9 +1440,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											key={min}
 											type="button"
 											disabled={noBase}
-											onClick={() =>
-												void addReminder({ type: "relative", offsetMin: min })
-											}
+											onClick={() => void addReminder({ type: "relative", offsetMin: min })}
 											title={noBase ? t("detail.remNoDue") : undefined}
 											className="font-display font-semibold text-ink-2 hover:border-brass hover:text-brass-text"
 											style={{
@@ -1630,10 +1472,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								/>
 							</div>
 							{notificationPermission() === "denied" && (
-								<div
-									className="font-body text-overdue"
-									style={{ fontSize: 11, marginTop: 6 }}
-								>
+								<div className="font-body text-overdue" style={{ fontSize: 11, marginTop: 6 }}>
 									{t("detail.remPushDenied")}
 								</div>
 							)}
@@ -1646,11 +1485,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						{cmts.map((cm) => {
 							const m = memberOf(cm.author_id);
 							return (
-								<div
-									key={cm.id}
-									className="flex"
-									style={{ gap: 9, marginBottom: 11 }}
-								>
+								<div key={cm.id} className="flex" style={{ gap: 9, marginBottom: 11 }}>
 									<span
 										className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
 										style={{
@@ -1669,10 +1504,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											style={{ fontSize: 12.5, color: "var(--w-ink)" }}
 										>
 											{m?.name ?? "—"}{" "}
-											<span
-												className="font-body"
-												style={{ fontSize: 11, color: "var(--w-ink-3)" }}
-											>
+											<span className="font-body" style={{ fontSize: 11, color: "var(--w-ink-3)" }}>
 												· {whenLabel(cm.created_at, t)}
 											</span>
 										</div>
@@ -1736,11 +1568,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 														: `→ ${a.new_value}`
 													: null;
 											return (
-												<div
-													key={a.id}
-													className="flex"
-													style={{ gap: 8, marginBottom: 10 }}
-												>
+												<div key={a.id} className="flex" style={{ gap: 8, marginBottom: 10 }}>
 													<span
 														className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
 														style={{
@@ -1760,16 +1588,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 														>
 															{m?.name ?? "—"}
 														</span>{" "}
-														<span
-															className="font-body text-ink-2"
-															style={{ fontSize: 12 }}
-														>
+														<span className="font-body text-ink-2" style={{ fontSize: 12 }}>
 															{verb}
 														</span>
-														<span
-															className="font-body text-ink-3"
-															style={{ fontSize: 11 }}
-														>
+														<span className="font-body text-ink-3" style={{ fontSize: 11 }}>
 															{" · "}
 															{whenLabel(a.created_at, t)}
 														</span>
@@ -1792,10 +1614,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					</div>
 
 					{/* footer akce (ř. 1073–1077) */}
-					<div
-						className="flex border-line border-t"
-						style={{ gap: 9, padding: "13px 18px" }}
-					>
+					<div className="flex border-line border-t" style={{ gap: 9, padding: "13px 18px" }}>
 						<button
 							type="button"
 							onClick={toggleDone}

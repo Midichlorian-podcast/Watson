@@ -679,8 +679,13 @@
 		"cardMail": "Mail — urgency and SLA",
 		"openMail": "Open mail"
 	},
+	"swipe": {
+		"revert": "Reopen"
+	},
 	"notif": {
 		"markAll": "mark all as seen",
+		"quickTitle": "Open quick card (handle it here)",
+		"moduleTitle": "Go to module",
 		"foot": "Click an item to handle it right here — task detail and mail open in place.",
 		"overdueSince": "overdue since {{date}}",
 		"slaRunning": "SLA running",
@@ -730,16 +735,26 @@
 		"memberTasks_one": "1 open task",
 		"memberTasks_other": "{{count}} open tasks",
 		"memberOpen": "Open tasks",
-		"memberEmpty": "No open assigned tasks."
+		"memberEmpty": "No open assigned tasks.",
+		"chat": "Internal discussion",
+		"chatPh": "Message the team… (never leaves the org)",
+		"chatEmpty": "No internal messages yet — the team coordinates here.",
+		"chatSend": "Send to team"
 	},
 	"lists": {
 		"intro": "Recurring event checklists — championships, shows, recruiting, camps. Template → instance per event, tick things off, reset after the event.",
 		"emptyActive": "No active list — create a new one, or start from a template below.",
+		"personalGroup": "Personal lists",
+		"teamGroup": "Team lists",
 		"newList": "New list",
 		"newName": "New list",
 		"defaultSection": "Items",
 		"sectionPh": "New section name…",
 		"addSection": "Add section",
+		"deleteSection": "Delete section incl. items — ⌘Z undoes",
+		"sectionDeletedToast": "Section deleted — ⌘Z undoes",
+		"deleteItem": "Delete item — ⌘Z undoes",
+		"itemDeletedToast": "Item deleted — ⌘Z undoes",
 		"doneSort": "Checked to bottom",
 		"doneSortTitle": "Sort completed items to the end of each section (display only — stored order is unchanged). Off = they stay in place.",
 		"templates": "Templates",
