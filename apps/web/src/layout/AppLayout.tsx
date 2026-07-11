@@ -1,5 +1,5 @@
-import { Outlet, useRouterState } from "@tanstack/react-router";
-import { Suspense, useEffect, useState } from "react";
+import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { BulkBar } from "../components/BulkBar";
 import { SyncGate } from "../components/Loading";
 import { ProjectDetailPanel } from "../components/ProjectDetailPanel";
@@ -32,6 +32,20 @@ export function AppLayout() {
 	// Mail zabírá celou plochu MAIN místo topbaru (prototyp screenNotMail, ř. 357).
 	const path = useRouterState({ select: (s) => s.location.pathname });
 	const onMail = path.startsWith("/mail");
+	// Výchozí obrazovka po startu (prototyp prop vychoziObrazovka: Přehled | Dnes) —
+	// jen při prvním načtení na "/", volba v Nastavení (watson.landing).
+	const navigate = useNavigate();
+	const landed = useRef(false);
+	useEffect(() => {
+		if (landed.current) return;
+		landed.current = true;
+		if (
+			window.location.pathname === "/" &&
+			localStorage.getItem("watson.landing") === "prehled"
+		) {
+			void navigate({ to: "/prehled", replace: true });
+		}
+	}, [navigate]);
 	useEffect(applyTweaks, []);
 	useEffect(() => {
 		localStorage.setItem("watson.rail", collapsed ? "1" : "0");

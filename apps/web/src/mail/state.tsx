@@ -22,6 +22,7 @@ import {
 	ADM_SEED,
 	GK,
 	type MailThread,
+	MB,
 	NAST_SEED,
 	P,
 	SLA,
@@ -47,6 +48,16 @@ export interface ThreadOv {
 	snip?: string;
 	time?: string;
 	bounceFixed?: boolean;
+	/** Odhlášeno z odběru (list-unsubscribe) — jen news skupina. */
+	unsub?: boolean;
+}
+
+/** Sdílený koncept + schvalování (prototyp state.sd, ř. 4035–4046) — IDENTICKÉ klíče. */
+export interface SdState {
+	shared?: boolean;
+	pending?: boolean;
+	approved?: boolean;
+	returned?: boolean;
 }
 
 export interface ThreadEff {
@@ -87,8 +98,8 @@ export interface ChatExtra {
 
 export type MailFolder = string; // vse|pinned|odlozene|gatekeeper|osobni|f_*|d_*|<mbId>
 
-/** Vnitřní obrazovka mail modulu (prototyp state.scr, ř. 2282): seznam+vlákno | Dění | Administrace | Nastavení. */
-export type MailScr = "mail" | "deni" | "admin" | "nastaveni";
+/** Vnitřní obrazovka mail modulu (prototyp state.scr, ř. 2282): seznam+vlákno | Dění | Administrace | Nastavení | Příručka. */
+export type MailScr = "mail" | "deni" | "admin" | "nastaveni" | "prirucka";
 
 interface UndoState {
 	on: boolean;
@@ -106,12 +117,18 @@ export interface MailBridge {
 		string,
 		{ n: string; owner: string; prio: string; app: string }[]
 	>;
+	/** Projekty aplikace pro Email → úkol formulář (L-19: osobní vlákno smí jen osobní). */
+	projects?: { id: string; name: string; color: string | null; personal: boolean }[];
 	onCreateTask?: (payload: {
 		id: string;
 		name: string;
 		mailTh: string;
 		mailLabel: string;
 		priority?: number;
+		/** Volitelná pole plného formuláře Email → úkol (Modul 10). */
+		description?: string;
+		dueISO?: string;
+		projectId?: string;
 	}) => void | Promise<void>;
 }
 
@@ -178,6 +195,21 @@ interface MailCtxValue {
 	detach: (id: string) => void;
 	sentX: Record<string, SentMsg[]>;
 	checkSend: (t: MailThread, markDone: boolean) => void;
+	// sdílené koncepty + schvalování (prototyp sd, ř. 1272–1291 + 4035–4046)
+	sd: Record<string, SdState>;
+	sdShare: (id: string) => void;
+	sdAsk: (id: string) => void;
+	sdApprove: (id: string) => void;
+	sdReturn: (id: string) => void;
+	/** Hledání zúžené na jedno vlákno (prototyp soTh, ř. 2097–2102). */
+	soTh: string | null;
+	setSoTh: (v: string | null) => void;
+	/** Předvyplnění Nové zprávy (Přeposlat → Fwd:). Nastaví MailThread, čte NewMessage/MailScreen. */
+	newMsg: { fwd?: { subj: string; body: string } } | null;
+	setNewMsg: (v: { fwd?: { subj: string; body: string } } | null) => void;
+	/** Plovoucí composer (prototyp float, ř. 2052–2087) — psaní vedle procházení pošty. */
+	float: { id: string; min: boolean } | null;
+	setFloat: (v: { id: string; min: boolean } | null) => void;
 	undo: UndoState | null;
 	undoBack: () => void;
 	warn: { id: string; markDone: boolean } | null;
@@ -278,6 +310,7 @@ export function MailProvider({
 	);
 	const [attached, setAttached] = useState<Record<string, string>>({});
 	const [sentX, setSentX] = useState<Record<string, SentMsg[]>>({});
+	const [float, setFloat] = useState<{ id: string; min: boolean } | null>(null);
 	const [chatX, setChatX] = useState<Record<string, ChatExtra[]>>({});
 	const [chatOff, setChatOffRaw] = useState(
 		() => localStorage.getItem(LS.chatOff) === "1",
@@ -289,6 +322,11 @@ export function MailProvider({
 		() => loadJSON(LS.mbRead, {}),
 	);
 	const [gkDone, setGkDone] = useState<Record<string, string>>({});
+	const [sd, setSdState] = useState<Record<string, SdState>>({});
+	const [soTh, setSoTh] = useState<string | null>(null);
+	const [newMsg, setNewMsg] = useState<{
+		fwd?: { subj: string; body: string };
+	} | null>(null);
 	const [exp, setExp] = useState<Record<string, boolean>>({});
 	const [translated, setTranslated] = useState(false);
 	const [imgOk, setImgOk] = useState<Record<string, boolean>>({});
@@ -611,6 +649,20 @@ export function MailProvider({
 	/** Řetěz ochran před odesláním (prototyp checkSend, ř. 3406–3429). */
 	const checkSend = useCallback(
 		(t: MailThread, markDone: boolean) => {
+			// sdílený koncept ve schvalování — pending && !approved blokuje odeslání
+			const sdt = sd[t.id];
+			if (sdt?.pending && !sdt.approved) {
+				showToast(
+					"Koncept čeká na schválení — odeslat ho půjde až po schválení pověřenou osobou.",
+				);
+				return;
+			}
+			if (sdt?.returned && !sdt.approved) {
+				showToast(
+					"Koncept je vrácený s komentářem — uprav ho a vyžádej schválení znovu.",
+				);
+				return;
+			}
 			// kolizní pojistka — kolega právě dopisuje (seed t.coll); druhý klik do 6 s odešle
 			if (t.coll && !collArmed) {
 				setCollArmed(true);
@@ -628,7 +680,49 @@ export function MailProvider({
 			}
 			doSend(t, markDone);
 		},
-		[collArmed, drafts, attached, doSend],
+		[collArmed, drafts, attached, doSend, sd],
+	);
+
+	/* Sdílené koncepty + schvalování (prototyp sdShare/sdAsk/sdApprove/sdReturn,
+	 * ř. 4042–4045). Demo: schvaluje „Tereza" kliknutím v tomtéž UI. */
+	const sdPatch = useCallback((id: string, patch: SdState) => {
+		setSdState((s) => ({ ...s, [id]: { ...s[id], ...patch } }));
+	}, []);
+	const sdShare = useCallback(
+		(id: string) => {
+			const t = TH.find((x) => x.id === id);
+			setSdState((s) => ({ ...s, [id]: { shared: true } }));
+			showToast(
+				`Koncept sdílen s týmem ${(t && !t.personal && MB[t.mb]?.short) || ""} — píšete ho spolu, změny se slévají živě.`,
+			);
+		},
+		[],
+	);
+	const sdAsk = useCallback(
+		(id: string) => {
+			sdPatch(id, { pending: true, returned: false });
+			showToast("Odesláno ke schválení Tereze — do té doby koncept nejde odeslat.");
+		},
+		[sdPatch],
+	);
+	const sdApprove = useCallback(
+		(id: string) => {
+			const t = TH.find((x) => x.id === id);
+			sdPatch(id, { approved: true, pending: false, returned: false });
+			showToast(
+				`Schváleno (Tereza) — koncept je odemčený k odeslání. Odejde za ${(t && !t.personal && MB[t.mb]?.short) || ""}; audit zaznamená autora i schvalovatele.`,
+			);
+		},
+		[sdPatch],
+	);
+	const sdReturn = useCallback(
+		(id: string) => {
+			sdPatch(id, { returned: true, pending: false });
+			showToast(
+				"Vráceno s komentářem — autor koncept upraví a vyžádá schválení znovu. Zapsáno do Dění.",
+			);
+		},
+		[sdPatch],
 	);
 
 	/** Zpět vzetí odeslání — obnoví koncept i stav (prototyp undoBack, ř. 4148). */
@@ -777,6 +871,17 @@ export function MailProvider({
 			detach,
 			sentX,
 			checkSend,
+			sd,
+			sdShare,
+			sdAsk,
+			sdApprove,
+			sdReturn,
+			soTh,
+			setSoTh,
+			newMsg,
+			setNewMsg,
+			float,
+			setFloat,
 			undo,
 			undoBack,
 			warn,
@@ -844,6 +949,14 @@ export function MailProvider({
 			detach,
 			sentX,
 			checkSend,
+			sd,
+			sdShare,
+			sdAsk,
+			sdApprove,
+			sdReturn,
+			soTh,
+			newMsg,
+			float,
 			undo,
 			undoBack,
 			warn,

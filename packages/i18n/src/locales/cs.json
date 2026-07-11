@@ -294,6 +294,8 @@
 		"accentLabel": "Akcent projektů",
 		"accentMulti": "Více barev",
 		"accentBrass": "Jen brass",
+		"landing": "Výchozí obrazovka",
+		"landingDesc": "Kam tě Watson vezme po otevření aplikace.",
 		"inviteTitle": "Pozvat člena",
 		"inviteName": "Jméno",
 		"inviteEmail": "E-mail",
@@ -681,7 +683,32 @@
 		"openFlows": "Postupy",
 		"stuckNow": "Na řadě: {{name}} · {{who}}",
 		"cardFeed": "Dnes se stalo",
-		"feedDone": "{{who}} dokončil(a) „{{name}}“ · {{project}}"
+		"feedDone": "{{who}} dokončil(a) „{{name}}“ · {{project}}",
+		"cardMail": "Pošta — urgence a SLA",
+		"openMail": "Otevřít mail"
+	},
+	"peek": {
+		"open": "Otevřít naplno",
+		"close": "Zavřít náhled",
+		"goal": "Cíl",
+		"flow": "Postup",
+		"mail": "Pošta",
+		"list": "Seznam",
+		"member": "Člen týmu",
+		"goalRisk": "Cíl je v ohrožení — tempo plnění zaostává za uplynulým časem.",
+		"steps": "Kroky postupu",
+		"stepNow": "na řadě",
+		"mailPersonal": "osobní",
+		"mailMsgs": "Poslední zprávy",
+		"mailChat_one": "+ 1 zpráva v interní diskusi",
+		"mailChat_few": "+ {{count}} zprávy v interní diskusi",
+		"mailChat_other": "+ {{count}} zpráv v interní diskusi",
+		"listItems": "Položky",
+		"memberTasks_one": "1 otevřený úkol",
+		"memberTasks_few": "{{count}} otevřené úkoly",
+		"memberTasks_other": "{{count}} otevřených úkolů",
+		"memberOpen": "Otevřené úkoly",
+		"memberEmpty": "Žádné otevřené přiřazené úkoly."
 	},
 	"lists": {
 		"intro": "Opakované checklisty na akce — MČR, show, nábory, soustředění. Šablona → instance k akci, odškrtáváš, po akci reset.",
@@ -721,6 +748,8 @@
 		"synMailOne": "V poště čeká urgentní vlákno: {{names}}.",
 		"synMailMany": "V poště čekají urgentní vlákna: {{names}}.",
 		"actMail": "Otevřít poštu",
+		"layoutGrid": "Mřížka",
+		"layoutFeed": "Ranní feed",
 		"cardMail": "Pošta",
 		"openMail": "Otevřít mail",
 		"mailUnread_one": "1 nepřečtená čeká v poště",
@@ -748,6 +777,9 @@
 		"emptyFeed": "Zatím ticho — žádné dnešní dokončené úkoly.",
 		"feedDone": "{{who}} dokončil(a) „{{name}}“",
 		"feedFlow": "Postup „{{flow}}“ je teď na: {{name}}"
+	},
+	"qsched": {
+		"nextWeekShort": "Př. týden"
 	},
 	"bulk": {
 		"selected": "{{count}} vybráno",

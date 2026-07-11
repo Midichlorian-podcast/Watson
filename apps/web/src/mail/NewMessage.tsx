@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { showToast } from "../lib/toast";
 import { MB, TPL } from "./data";
+import { useMail } from "./state";
 
 /** Regex „text slibuje přílohu" — shodný se state.checkSend (prototyp ř. 3417). */
 const ATT_RE = /příloh|příloz|přikládám|přiložen|attach/i;
@@ -44,6 +45,16 @@ export function NewMessage({
 	const [tplOpen, setTplOpen] = useState(false);
 	const taRef = useRef<HTMLTextAreaElement>(null);
 	const tplRef = useRef<HTMLDivElement>(null);
+	const m = useMail();
+
+	// Přeposlat z vlákna (m.newMsg.fwd) — předvyplní předmět a citaci; rozepsaný
+	// text se NIKDY nepřepisuje (L-50), proto jen do prázdných polí
+	const fwd = m.newMsg?.fwd;
+	useEffect(() => {
+		if (!open || !fwd) return;
+		setSubj((s) => s || fwd.subj);
+		setBody((b) => b || fwd.body);
+	}, [open, fwd]);
 
 	// Esc zavírá okno (prototyp globální Escape, ř. 2746) — vlastní listener
 	useEffect(() => {

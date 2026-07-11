@@ -6,10 +6,14 @@ import { type KeyboardEvent, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
 import { useProjects } from "../lib/projects";
 import { useViewMode } from "../lib/viewMode";
-import { useWorkspace } from "../lib/workspace";
+import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Route =
 	| "/"
+	| "/prehled"
+	| "/mail"
+	| "/seznamy"
+	| "/velin"
 	| "/ukoly"
 	| "/nadchazejici"
 	| "/projekty"
@@ -43,6 +47,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 	const navigate = useNavigate();
 	const projects = useProjects();
 	const { activeWs } = useWorkspace();
+	const { data: workspaces } = useWorkspaces();
 	const { setView } = useViewMode();
 	const [q, setQ] = useState("");
 	const [idx, setIdx] = useState(0);
@@ -69,13 +74,21 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
 	const items = useMemo(() => {
 		const query = q.trim().toLowerCase();
+		// Nové obrazovky handoffu (prototyp SCN, ř. 2933): Přehled/Mail/Seznamy/Velín;
+		// Velín jen pro vedení (stejný gating jako sidebar).
 		const screens: PalItem[] = (
 			[
+				[t("nav.overview"), "/prehled"],
+				[t("nav.mail"), "/mail"],
 				[t("nav.today"), "/"],
 				[t("nav.inbox"), "/schranka"],
 				[t("nav.upcoming"), "/nadchazejici"],
 				[t("nav.tasks"), "/ukoly"],
 				[t("nav.projects"), "/projekty"],
+				[t("nav.lists"), "/seznamy"],
+				...(isLeadership(workspaces)
+					? ([[t("nav.velin"), "/velin"]] as [string, Route][])
+					: []),
 				[t("nav.goals"), "/cile"],
 				[t("nav.reports"), "/reporty"],
 				[t("nav.flows"), "/postupy"],
@@ -88,8 +101,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 			label,
 			run: go(to),
 		}));
-		// Kalendář = pohled Úkolů (prototyp SCN ř. 2282, jako g+k).
-		screens.splice(4, 0, {
+		// Kalendář = pohled Úkolů (prototyp SCN ř. 2282, jako g+k) — hned za Úkoly.
+		screens.splice(6, 0, {
 			key: "s:kalendar",
 			kind: t("palette.kindGoto"),
 			label: t("calendar.viewCalendar"),

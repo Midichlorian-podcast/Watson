@@ -2,6 +2,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
 import { useFlowSteps } from "../lib/flowSteps";
 import { initials } from "../lib/format";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
@@ -92,6 +93,16 @@ export function Prehled() {
 	const openMailThread = useOpenMailThread();
 	// ovFirm — filtr firmy (prototyp: null = Vše)
 	const [firm, setFirm] = useState<string | null>(null);
+	// peek — náhled položky na místě (feedback: neodvádět z Přehledu pryč)
+	const [peek, setPeek] = useState<PeekTarget | null>(null);
+	// ovLayout (prototyp prop prehledLayout: Mřížka | Ranní feed) — per-user volba
+	const [layout, setLayout] = useState<"grid" | "feed">(
+		() => (localStorage.getItem("watson.ovLayout") === "feed" ? "feed" : "grid"),
+	);
+	const switchLayout = (v: "grid" | "feed") => {
+		setLayout(v);
+		localStorage.setItem("watson.ovLayout", v);
+	};
 
 	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks");
 	// Seznamy (checklisty) — karta „Nejbližší akce" (prototyp akce, ř. 3863).
@@ -101,6 +112,11 @@ export function Prehled() {
 	const { data: allListItems } = usePsQuery<ListItemRow>(
 		"SELECT id, list_id, done FROM list_items",
 	);
+	// pro feed „kdo dokončil" — první přiřazený, fallback tvůrce (jako Velín)
+	const { data: assignments } = usePsQuery<{
+		task_id: string | null;
+		user_id: string | null;
+	}>("SELECT task_id, user_id FROM assignments");
 
 	const projById = useMemo(
 		() => new Map(projects.map((p) => [p.id, p])),
@@ -207,8 +223,14 @@ export function Prehled() {
 
 		// Dění týmu: dnes dokončené (kdo = první přiřazený, fallback tvůrce) + aktivní kroky postupů
 		const feed: { key: string; ini: string; txt: string; t: string }[] = [];
+		// completed_at je UTC ISO → formátovat lokálně (slice by ukázal čas o 2 h jinak)
 		const hhmm = (iso: string | null) =>
-			iso && iso.length >= 16 ? iso.slice(11, 16) : "";
+			iso && iso.length >= 16
+				? new Intl.DateTimeFormat(i18n.language, {
+						hour: "2-digit",
+						minute: "2-digit",
+					}).format(new Date(iso))
+				: "";
 		(allTasks ?? [])
 			.filter(
 				(tk) => fOk(tk) && tk.completed_at && tk.completed_at.slice(0, 10) === tdy,
@@ -216,7 +238,10 @@ export function Prehled() {
 			.sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))
 			.slice(0, 3)
 			.forEach((tk) => {
-				const who = tk.created_by ? (members.get(tk.created_by) ?? "") : "";
+				const uid =
+					(assignments ?? []).find((a) => a.task_id === tk.id)?.user_id ??
+					tk.created_by;
+				const who = uid ? (members.get(uid) ?? "") : "";
 				feed.push({
 					key: `d${tk.id}`,
 					ini: who ? initials(who) : "✓",
@@ -299,6 +324,7 @@ export function Prehled() {
 		allTasks,
 		allLists,
 		allListItems,
+		assignments,
 		digest,
 		projects,
 		projById,
@@ -385,6 +411,35 @@ export function Prehled() {
 						onClick={() => setFirm(firm === w.id ? null : w.id)}
 					/>
 				))}
+				<div className="flex-1" />
+				{/* přepínač layoutu (prototyp prop prehledLayout: Mřížka | Ranní feed) */}
+				<div
+					className="flex rounded-lg border border-line bg-panel-2"
+					style={{ padding: 2 }}
+				>
+					{(
+						[
+							["grid", t("prehled.layoutGrid")],
+							["feed", t("prehled.layoutFeed")],
+						] as const
+					).map(([k, label]) => (
+						<button
+							key={k}
+							type="button"
+							onClick={() => switchLayout(k)}
+							className="rounded-md font-display font-semibold"
+							style={{
+								fontSize: 10.5,
+								padding: "3px 9px",
+								background: layout === k ? "var(--w-card)" : "transparent",
+								color: layout === k ? "var(--w-ink)" : "var(--w-ink-3)",
+								boxShadow: layout === k ? "var(--w-shadow-sm)" : undefined,
+							}}
+						>
+							{label}
+						</button>
+					))}
+				</div>
 			</div>
 
 			{/* Watsonova syntéza dne */}
@@ -434,14 +489,24 @@ export function Prehled() {
 				</div>
 			</div>
 
-			{/* grid karet (data-ovlay Mřížka) */}
+			{/* karty — Mřížka / Ranní feed (prototyp data-ovlay, CSS ř. 118–119) */}
 			<div
-				style={{
-					display: "grid",
-					gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))",
-					gap: 14,
-					alignItems: "start",
-				}}
+				style={
+					layout === "feed"
+						? {
+								display: "flex",
+								flexDirection: "column",
+								gap: 14,
+								maxWidth: 680,
+								margin: "0 auto",
+							}
+						: {
+								display: "grid",
+								gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))",
+								gap: 14,
+								alignItems: "start",
+							}
+				}
 			>
 				{/* Dnes */}
 				<div className={cardCls} style={cardStyle}>
@@ -540,10 +605,16 @@ export function Prehled() {
 						{digest.items.slice(0, 4).map((mm) => (
 							<OvRow
 								key={mm.id}
-								onClick={() => {
-									openMailThread?.(mm.id);
-									void navigate({ to: "/mail" });
-								}}
+								onClick={() =>
+									setPeek({
+										kind: "mail",
+										id: mm.id,
+										openFull: () => {
+											openMailThread?.(mm.id);
+											void navigate({ to: "/mail" });
+										},
+									})
+								}
 							>
 								<span
 									className="flex shrink-0 items-center justify-center rounded-lg border border-line bg-panel-2 font-display font-bold text-ink-2"
@@ -617,7 +688,16 @@ export function Prehled() {
 								key={l.id}
 								column
 								onClick={() =>
-									void navigate({ to: "/seznamy", search: { seznam: l.id } })
+									setPeek({
+										kind: "list",
+										id: l.id,
+										name: l.name,
+										openFull: () =>
+											void navigate({
+												to: "/seznamy",
+												search: { seznam: l.id },
+											}),
+									})
 								}
 							>
 								<div className="flex w-full items-center" style={{ gap: 8 }}>
@@ -672,7 +752,17 @@ export function Prehled() {
 							onFoot={() => void navigate({ to: "/cile" })}
 						/>
 						{view.risk.map((g) => (
-							<OvRow key={g.id} column onClick={() => void navigate({ to: "/cile" })}>
+							<OvRow
+								key={g.id}
+								column
+								onClick={() =>
+									setPeek({
+										kind: "goal",
+										goal: g,
+										openFull: () => void navigate({ to: "/cile" }),
+									})
+								}
+							>
 								<div className="flex w-full items-center" style={{ gap: 8 }}>
 									<span
 										className="min-w-0 flex-1 truncate font-display font-semibold text-ink"
@@ -714,7 +804,15 @@ export function Prehled() {
 								key={f.id}
 								column
 								onClick={() =>
-									void navigate({ to: "/postupy", search: { postup: f.id } })
+									setPeek({
+										kind: "flow",
+										flow: f,
+										openFull: () =>
+											void navigate({
+												to: "/postupy",
+												search: { postup: f.id },
+											}),
+									})
 								}
 							>
 								<div className="flex w-full items-center" style={{ gap: 8 }}>
@@ -792,6 +890,8 @@ export function Prehled() {
 					))}
 				</div>
 			</div>
+
+			<PeekPanel target={peek} onClose={() => setPeek(null)} />
 		</div>
 	);
 }

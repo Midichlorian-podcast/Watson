@@ -15,6 +15,7 @@ import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { showToast } from "../lib/toast";
+import { useWorkspaces } from "../lib/workspace";
 import { type MailBridge, MailProvider } from "./state";
 
 /** on-nav cíle prototypu → routy aplikace (WatsonApp mailNav, ř. 4033). */
@@ -35,6 +36,7 @@ export function MailBridgeProvider({ children }: { children: ReactNode }) {
 	const { data: session } = useSession();
 	const { t } = useTranslation();
 	const projects = useProjects();
+	const { data: workspaces } = useWorkspaces();
 	const { data: linked } = usePsQuery<{
 		id: string;
 		name: string | null;
@@ -61,9 +63,18 @@ export function MailBridgeProvider({ children }: { children: ReactNode }) {
 			];
 			taskStates[row.id] = { done: !!row.completed_at };
 		}
+		const personalWs = new Set(
+			(workspaces ?? []).filter((w) => w.isPersonal).map((w) => w.id),
+		);
 		return {
 			taskLinks,
 			taskStates,
+			projects: projects.map((p) => ({
+				id: p.id,
+				name: p.name ?? "",
+				color: p.color,
+				personal: !!p.workspace_id && personalWs.has(p.workspace_id),
+			})),
 			onNav: (target: string) => {
 				if (target.startsWith("task:")) {
 					open(target.slice(5));
@@ -73,24 +84,32 @@ export function MailBridgeProvider({ children }: { children: ReactNode }) {
 			},
 			onCreateTask: async (p) => {
 				// R8: bez projektu → osobní inbox (triage v Schránce); L-19: osobní
-				// vlákno nesmí nabídnout týmový projekt — inbox je osobní vždy.
+				// vlákno nesmí nabídnout týmový projekt — inbox VÝHRADNĚ z osobního
+				// prostoru, jinak by úkol s předmětem soukromého mailu viděl celý tým.
+				const personalProjects = projects.filter(
+					(pr) => !!pr.workspace_id && personalWs.has(pr.workspace_id),
+				);
 				const inboxId =
-					pickInboxId(projects) ?? [...inboxProjectIds(projects)][0] ?? null;
-				if (!inboxId) {
+					pickInboxId(personalProjects) ??
+					[...inboxProjectIds(personalProjects)][0] ??
+					null;
+				const projectId = p.projectId ?? inboxId;
+				if (!projectId) {
 					showToast(t("mail.taskNoInbox"));
 					return;
 				}
 				const now = new Date();
 				const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 				await powerSync.execute(
-					`INSERT INTO tasks (id, project_id, name, priority, due_date, mail_th, mail_label, assignment_mode, created_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'single', ?, ?)`,
+					`INSERT INTO tasks (id, project_id, name, description, priority, due_date, mail_th, mail_label, assignment_mode, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'single', ?, ?)`,
 					[
 						p.id,
-						inboxId,
+						projectId,
 						p.name,
+						p.description ?? null,
 						p.priority ?? 3,
-						iso,
+						p.dueISO ?? iso,
 						p.mailTh,
 						p.mailLabel,
 						session?.user?.id ?? null,
@@ -103,7 +122,7 @@ export function MailBridgeProvider({ children }: { children: ReactNode }) {
 				});
 			},
 		};
-	}, [linked, navigate, open, projects, session, t]);
+	}, [linked, navigate, open, projects, workspaces, session, t]);
 
 	return <MailProvider bridge={bridge}>{children}</MailProvider>;
 }

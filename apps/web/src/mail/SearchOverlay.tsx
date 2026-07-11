@@ -3,6 +3,8 @@
  * + logika soVals ř. 4233–4274). Operátory from:, schranka:/mailbox:,
  * has:priloha/attachment, is:neprectene/unread + fulltext přes předmět, snippet,
  * odesílatele i těla zpráv. Max 8 výsledků, Enter otevře první.
+ * Režim „ve vlákně" (soTh, prototyp ř. 2097–2102): ⌘F / „Hledat ve vlákně"
+ * nastaví m.soTh — hledá se pak JEN v tom vlákně (vč. těl zpráv), chip ho zruší.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MailThread } from "./data";
@@ -31,6 +33,7 @@ export function SearchOverlay({
 
 	const close = () => {
 		setQ("");
+		m.setSoTh(null); // zavření ruší i zúžení na vlákno (prototyp so.close)
 		onClose();
 	};
 
@@ -40,13 +43,14 @@ export function SearchOverlay({
 		const h = (e: globalThis.KeyboardEvent) => {
 			if (e.key === "Escape") {
 				setQ("");
+				m.setSoTh(null);
 				onClose();
 			}
 		};
 		document.addEventListener("keydown", h);
 		inputRef.current?.focus();
 		return () => document.removeEventListener("keydown", h);
-	}, [open, onClose]);
+	}, [open, onClose, m.setSoTh]);
 
 	/** Parsování operátorů + filtr (prototyp soVals, ř. 4237–4262). */
 	const results = useMemo<SearchHit[]>(() => {
@@ -76,6 +80,8 @@ export function SearchOverlay({
 		return m.threads
 			.filter((t) => {
 				const e = m.eff(t);
+				// režim „ve vlákně" — hledá se JEN v jednom vlákně (prototyp soVals, ř. 4250)
+				if (m.soTh && t.id !== m.soTh) return false;
 				if (e.trash) return false;
 				if (ops.from && !`${t.from.n} ${t.from.addr}`.toLowerCase().includes(ops.from))
 					return false;
@@ -174,6 +180,25 @@ export function SearchOverlay({
 						Esc
 					</span>
 				</div>
+
+				{/* chip „ve vlákně" — hledání zúžené na jedno vlákno (ř. 2097–2102) */}
+				{m.soTh && (
+					<div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px 0" }}>
+						<span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-2)", background: "var(--brass-soft)", borderRadius: 999, padding: "3px 6px 3px 10px" }}>
+							ve vlákně: {m.threads.find((x) => x.id === m.soTh)?.subj ?? ""}
+							<span
+								onClick={() => m.setSoTh(null)}
+								title="Zrušit zúžení — hledat v celé poště"
+								style={{ cursor: "pointer", opacity: 0.7, fontSize: 12, lineHeight: 1 }}
+							>
+								×
+							</span>
+						</span>
+						<span style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)" }}>
+							hledá se i v textu zpráv tohohle vlákna
+						</span>
+					</div>
+				)}
 
 				{/* prázdný stav — rada s operátory (ř. 2103–2110) */}
 				{empty && (

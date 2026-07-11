@@ -10,6 +10,7 @@ import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
 import { initials } from "../lib/format";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
+import { rescheduleDate } from "../lib/reschedule";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 
 /** Řádek historie z API /api/tasks/:id/activity (task_activity se nesyncuje). */
@@ -1034,6 +1035,25 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 													className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-ink-2 text-xs outline-none focus:border-brass"
 												/>
 											</label>
+										))}
+										{/* rychlý posun termínu (prototyp data-qsbtn v detailu) */}
+										{(
+											[
+												["tomorrow", t("bulk.tomorrow")],
+												["nextMonday", t("qsched.nextWeekShort")],
+											] as const
+										).map(([key, label]) => (
+											<button
+												key={key}
+												type="button"
+												onClick={() =>
+													void patchLog({ due_date: rescheduleDate(key) })
+												}
+												className="cursor-pointer whitespace-nowrap rounded-md border border-line bg-card font-mono text-ink-3 hover:border-brass hover:text-brass-text"
+												style={{ fontSize: 9.5, padding: "3px 7px" }}
+											>
+												{label}
+											</button>
 										))}
 										{/* čas + trvání (parita s AddTask — funguje i pro podúkoly) */}
 										<label className="flex items-center" style={{ gap: 6 }}>

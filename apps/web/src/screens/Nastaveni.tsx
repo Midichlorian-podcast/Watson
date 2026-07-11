@@ -72,6 +72,10 @@ export function Nastaveni() {
 	const { data: session } = useSession();
 	const [openRoleId, setOpenRoleId] = useState<string | null>(null);
 	const [density, setDensityState] = useState<Density>(getDensity);
+	// výchozí obrazovka po startu (watson.landing; čte AppLayout při prvním načtení)
+	const [landing, setLandingState] = useState<"dnes" | "prehled">(() =>
+		localStorage.getItem("watson.landing") === "prehled" ? "prehled" : "dnes",
+	);
 	const [accent, setAccentState] = useState<Accent>(getAccent);
 	const [inviteOpen, setInviteOpen] = useState(false);
 	const [invited, setInvited] = useState<{ name: string; email: string }[]>([]);
@@ -109,6 +113,8 @@ export function Nastaveni() {
 			: undefined;
 	const accountWsName = activeWorkspace?.name ?? workspaces?.[0]?.name ?? "";
 
+	// POZOR: klíč ["wsMembersFull", id] sdílí BulkBar/overview/Seznamy/paleta a
+	// všichni čekají Member[] — vracet stejný tvar, jinak jim přepis cache spadne.
 	const { data: team, refetch } = useQuery({
 		queryKey: ["wsMembersFull", teamWs?.id],
 		enabled: !!teamWs,
@@ -117,10 +123,7 @@ export function Nastaveni() {
 				credentials: "include",
 			});
 			if (!r.ok) throw new Error("members");
-			return (await r.json()) as {
-				workspace: { name: string };
-				members: Member[];
-			};
+			return (await r.json()).members as Member[];
 		},
 	});
 
@@ -216,6 +219,24 @@ export function Nastaveni() {
 						options={[
 							["multi", t("settings.accentMulti")],
 							["brass", t("settings.accentBrass")],
+						]}
+					/>
+				</div>
+				{/* výchozí obrazovka po startu (prototyp prop vychoziObrazovka: Přehled | Dnes) */}
+				<div style={{ ...ROW, borderTop: "1px solid var(--w-line)" }}>
+					<div style={{ flex: 1 }}>
+						<RowTitle>{t("settings.landing")}</RowTitle>
+						<RowDesc>{t("settings.landingDesc")}</RowDesc>
+					</div>
+					<Segments
+						value={landing}
+						onChange={(v) => {
+							setLandingState(v as "dnes" | "prehled");
+							localStorage.setItem("watson.landing", v);
+						}}
+						options={[
+							["prehled", t("nav.overview")],
+							["dnes", t("nav.today")],
 						]}
 					/>
 				</div>
@@ -320,7 +341,7 @@ export function Nastaveni() {
 						</span>
 					</div>
 					<div style={{ ...CARD, overflow: "visible", marginBottom: 10 }}>
-						{(team?.members ?? []).map((m) => {
+						{(team ?? []).map((m) => {
 							const label = roleLabel(m, t);
 							const menuOpen = openRoleId === m.id;
 							return (

@@ -19,12 +19,9 @@ import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
 import type { TaskRow } from "../lib/powersync/AppSchema";
-import { powerSync } from "../lib/powersync/db";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
-import { toggleTask } from "../lib/tasks";
-import { deleteTaskWithUndo, pushColumnUndo } from "../lib/undo";
 import { useViewMode } from "../lib/viewMode";
 
 /**

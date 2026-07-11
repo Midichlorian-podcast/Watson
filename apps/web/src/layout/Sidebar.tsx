@@ -2,7 +2,7 @@ import { useQuery as usePsQuery, useStatus } from "@powersync/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { type CSSProperties, useMemo } from "react";
+import { type CSSProperties, Fragment, useMemo } from "react";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
@@ -333,24 +333,26 @@ export function Sidebar({
 				}}
 			>
 				{MAIN_NAV.map((item) => (
-					<NavRow
-						key={item.to}
-						item={item}
-						active={isActive(item.to)}
-						collapsed={collapsed}
-						count={item.count ? counts[item.to] : undefined}
-					/>
+					<Fragment key={item.to}>
+						<NavRow
+							item={item}
+							active={isActive(item.to)}
+							collapsed={collapsed}
+							count={item.count ? counts[item.to] : undefined}
+						/>
+						{/* Velín mezi Reporty a Postupy (prototyp ř. 251–257) — jen pro
+						    vedení (Vlastník/Admin), odznak VEDENÍ */}
+						{item.to === "/reporty" && isLeadership(workspaces) && (
+							<NavRow
+								item={VELIN_NAV}
+								active={isActive("/velin")}
+								collapsed={collapsed}
+								badge={t("velin.badge")}
+								title={t("velin.navTitle")}
+							/>
+						)}
+					</Fragment>
 				))}
-				{/* Velín — jen pro vedení (Vlastník/Admin), odznak VEDENÍ (prototyp ř. 251–257) */}
-				{isLeadership(workspaces) && (
-					<NavRow
-						item={VELIN_NAV}
-						active={isActive("/velin")}
-						collapsed={collapsed}
-						badge={t("velin.badge")}
-						title={t("velin.navTitle")}
-					/>
-				)}
 
 				{!collapsed && (
 					<>

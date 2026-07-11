@@ -2,6 +2,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
@@ -99,6 +100,8 @@ export function Velin() {
 		(x) => x.flag === "p1" || x.flag === "p2",
 	);
 	const [firm, setFirm] = useState<string | null>(null); // velFirm
+	// peek — náhled položky na místě (feedback: neodvádět z Velína pryč)
+	const [peek, setPeek] = useState<PeekTarget | null>(null);
 
 	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks");
 	const { data: assignments } = usePsQuery<{
@@ -107,7 +110,12 @@ export function Velin() {
 	}>("SELECT task_id, user_id FROM assignments");
 
 	const leadership = isLeadership(workspaces);
-	const firmsWs = (workspaces ?? []).filter((w) => !w.isPersonal);
+	// memoizace — firmsWs je dependency těžkého view memo níž; nová identita
+	// každý render by memo zrušila (celý výpočet by běžel při každém renderu)
+	const firmsWs = useMemo(
+		() => (workspaces ?? []).filter((w) => !w.isPersonal),
+		[workspaces],
+	);
 
 	const view = useMemo(() => {
 		const tdy = todayISO();
@@ -200,8 +208,14 @@ export function Velin() {
 		const stuck = flowsAll.filter((f) => f.stuck);
 
 		const feed: { key: string; ini: string; txt: string; t: string }[] = [];
+		// completed_at je UTC ISO → formátovat lokálně (slice by ukázal čas o 2 h jinak)
 		const hhmm = (iso: string | null) =>
-			iso && iso.length >= 16 ? iso.slice(11, 16) : "";
+			iso && iso.length >= 16
+				? new Intl.DateTimeFormat(i18n.language, {
+						hour: "2-digit",
+						minute: "2-digit",
+					}).format(new Date(iso))
+				: "";
 		allT
 			.filter(
 				(tk) =>
@@ -481,9 +495,15 @@ export function Velin() {
 						<Row
 							key={p.id}
 							onClick={() =>
-								void navigate({
-									to: "/reporty",
-									search: { tab: "lide", clen: p.id },
+								setPeek({
+									kind: "member",
+									id: p.id,
+									name: p.name,
+									openFull: () =>
+										void navigate({
+											to: "/reporty",
+											search: { tab: "lide", clen: p.id },
+										}),
 								})
 							}
 							pad="7px 16px"
@@ -537,10 +557,16 @@ export function Velin() {
 						{urgMails.map((mm) => (
 							<Row
 								key={mm.id}
-								onClick={() => {
-									openMailThread?.(mm.id);
-									void navigate({ to: "/mail" });
-								}}
+								onClick={() =>
+									setPeek({
+										kind: "mail",
+										id: mm.id,
+										openFull: () => {
+											openMailThread?.(mm.id);
+											void navigate({ to: "/mail" });
+										},
+									})
+								}
 							>
 								<span
 									className="shrink-0 font-mono"
@@ -585,10 +611,16 @@ export function Velin() {
 							<Row
 								key={g.id}
 								column
-								onClick={() => {
-									if (g.wsId) setActiveWs(g.wsId);
-									void navigate({ to: "/cile" });
-								}}
+								onClick={() =>
+									setPeek({
+										kind: "goal",
+										goal: g,
+										openFull: () => {
+											if (g.wsId) setActiveWs(g.wsId);
+											void navigate({ to: "/cile" });
+										},
+									})
+								}
 							>
 								<div className="flex w-full items-center" style={{ gap: 8 }}>
 									<span
@@ -641,7 +673,15 @@ export function Velin() {
 								key={f.id}
 								column
 								onClick={() =>
-									void navigate({ to: "/postupy", search: { postup: f.id } })
+									setPeek({
+										kind: "flow",
+										flow: f,
+										openFull: () =>
+											void navigate({
+												to: "/postupy",
+												search: { postup: f.id },
+											}),
+									})
 								}
 							>
 								<div className="flex w-full items-center" style={{ gap: 8 }}>
@@ -706,6 +746,8 @@ export function Velin() {
 					</div>
 				)}
 			</div>
+
+			<PeekPanel target={peek} onClose={() => setPeek(null)} />
 		</div>
 	);
 }

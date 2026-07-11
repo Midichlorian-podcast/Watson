@@ -290,6 +290,8 @@
 		"accentLabel": "Project accent",
 		"accentMulti": "Multi-color",
 		"accentBrass": "Brass only",
+		"landing": "Default screen",
+		"landingDesc": "Where Watson takes you when the app opens.",
 		"inviteTitle": "Invite member",
 		"inviteName": "Name",
 		"inviteEmail": "E-mail",
@@ -673,7 +675,30 @@
 		"openFlows": "Flows",
 		"stuckNow": "Up next: {{name}} · {{who}}",
 		"cardFeed": "Happened today",
-		"feedDone": "{{who}} finished “{{name}}” · {{project}}"
+		"feedDone": "{{who}} finished “{{name}}” · {{project}}",
+		"cardMail": "Mail — urgency and SLA",
+		"openMail": "Open mail"
+	},
+	"peek": {
+		"open": "Open full view",
+		"close": "Close preview",
+		"goal": "Goal",
+		"flow": "Flow",
+		"mail": "Mail",
+		"list": "List",
+		"member": "Team member",
+		"goalRisk": "This goal is at risk — completion pace is behind elapsed time.",
+		"steps": "Flow steps",
+		"stepNow": "up next",
+		"mailPersonal": "personal",
+		"mailMsgs": "Latest messages",
+		"mailChat_one": "+ 1 internal discussion message",
+		"mailChat_other": "+ {{count}} internal discussion messages",
+		"listItems": "Items",
+		"memberTasks_one": "1 open task",
+		"memberTasks_other": "{{count}} open tasks",
+		"memberOpen": "Open tasks",
+		"memberEmpty": "No open assigned tasks."
 	},
 	"lists": {
 		"intro": "Recurring event checklists — championships, shows, recruiting, camps. Template → instance per event, tick things off, reset after the event.",
@@ -711,6 +736,8 @@
 		"synMailOne": "An urgent thread awaits in mail: {{names}}.",
 		"synMailMany": "Urgent threads await in mail: {{names}}.",
 		"actMail": "Open mail",
+		"layoutGrid": "Grid",
+		"layoutFeed": "Morning feed",
 		"cardMail": "Mail",
 		"openMail": "Open mail",
 		"mailUnread_one": "1 unread waiting in mail",
@@ -736,6 +763,9 @@
 		"emptyFeed": "Quiet so far — no tasks finished today.",
 		"feedDone": "{{who}} finished “{{name}}”",
 		"feedFlow": "Flow “{{flow}}” is now at: {{name}}"
+	},
+	"qsched": {
+		"nextWeekShort": "Next wk"
 	},
 	"bulk": {
 		"selected": "{{count}} selected",

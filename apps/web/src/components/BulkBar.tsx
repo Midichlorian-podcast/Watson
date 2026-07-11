@@ -135,9 +135,10 @@ function Bar() {
 		return () => window.removeEventListener("keydown", h);
 	}, [openId, menu, clear]);
 
-	/** Aplikuj UPDATE jednoho sloupce na všechny vybrané s JEDNÍM undo záznamem. */
+	/** Aplikuj UPDATE jednoho sloupce na všechny vybrané s JEDNÍM undo záznamem.
+	 * (Projekt má vlastní bulkProject — kaskáda na podúkoly a denorm child řádky.) */
 	const bulkColumn = async (
-		col: "due_date" | "project_id" | "priority",
+		col: "due_date" | "priority",
 		value: unknown,
 		toast: string,
 	) => {
@@ -158,6 +159,84 @@ function Bar() {
 		const next = prev.map((p) => ({ id: p.id, val: value }));
 		await write(next);
 		pushUndo({ undo: () => write(prev), redo: () => write(next) });
+		setMenu(null);
+		clear();
+		showToast(toast);
+	};
+
+	/** Tabulky s denormalizovaným project_id, podle kterého PowerSync bucketuje. */
+	const CHILD_PROJECT_TABLES = [
+		"assignments",
+		"comments",
+		"task_occurrence_overrides",
+		"task_user_colors",
+		"reminders",
+		"task_activity",
+	] as const;
+
+	/**
+	 * Přesun do projektu — NE přes bulkColumn: podúkoly musí jet s rodičem
+	 * (rekurzivně) a denormalizovaný project_id child řádků se musí přepsat
+	 * taky, jinak se rozjedou sync buckety (členové cílového projektu by
+	 * dostali úkol bez komentářů/přiřazení a původní by je dál syncovali — R5).
+	 */
+	const bulkProject = async (value: string, toast: string) => {
+		const all = await powerSync.getAll<{
+			id: string;
+			project_id: string | null;
+		}>(
+			`WITH RECURSIVE sub(id) AS (
+				SELECT id FROM tasks WHERE id IN (${ph})
+				UNION SELECT t.id FROM tasks t JOIN sub s ON t.parent_id = s.id
+			) SELECT t.id, t.project_id FROM tasks t JOIN sub s ON t.id = s.id`,
+			ids,
+		);
+		const allIds = all.map((r) => r.id);
+		const phAll = allIds.map(() => "?").join(", ");
+		const prevChild: Record<
+			string,
+			{ id: string; project_id: string | null }[]
+		> = {};
+		for (const tb of CHILD_PROJECT_TABLES) {
+			prevChild[tb] = await powerSync.getAll(
+				`SELECT id, project_id FROM ${tb} WHERE task_id IN (${phAll})`,
+				allIds,
+			);
+		}
+		const apply = async () => {
+			await powerSync.writeTransaction(async (tx) => {
+				await tx.execute(
+					`UPDATE tasks SET project_id = ? WHERE id IN (${phAll})`,
+					[value, ...allIds],
+				);
+				for (const tb of CHILD_PROJECT_TABLES) {
+					await tx.execute(
+						`UPDATE ${tb} SET project_id = ? WHERE task_id IN (${phAll})`,
+						[value, ...allIds],
+					);
+				}
+			});
+		};
+		const revert = async () => {
+			await powerSync.writeTransaction(async (tx) => {
+				for (const r of all) {
+					await tx.execute("UPDATE tasks SET project_id = ? WHERE id = ?", [
+						r.project_id,
+						r.id,
+					]);
+				}
+				for (const tb of CHILD_PROJECT_TABLES) {
+					for (const r of prevChild[tb] ?? []) {
+						await tx.execute(
+							`UPDATE ${tb} SET project_id = ? WHERE id = ?`,
+							[r.project_id, r.id],
+						);
+					}
+				}
+			});
+		};
+		await apply();
+		pushUndo({ undo: revert, redo: apply });
 		setMenu(null);
 		clear();
 		showToast(toast);
@@ -328,8 +407,7 @@ function Bar() {
 								key={p.id}
 								type="button"
 								onClick={() =>
-									void bulkColumn(
-										"project_id",
+									void bulkProject(
 										p.id,
 										t("bulk.projToast", { count, name: p.name ?? "" }),
 									)

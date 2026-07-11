@@ -1,13 +1,14 @@
 /**
  * Mail — panel 2: seznam konverzací (prototyp data-listpane, ř. 452–778 +
- * mailVals ř. 3510–3630): hlavička s titulem a filtry, záložky Inbox/Oznámení/
- * Newslettery, blok Připnuté (3 + rozbalit), Rozpracované, řádky s hover
- * akcemi, urgencí, stavem, per-osoba štítkem „už četl(a)" a chipem úkolu.
- * Hledání a Napsat přijdou s další várkou (⌘K, plovoucí composery).
+ * mailVals ř. 3510–3630): hlavička s titulem, zvonkem (NotifCenter), Ask
+ * Watsonem a filtry, řádek aktivních chipů, záložky Inbox/Oznámení/Newslettery
+ * (+ Dispečink s počty), AI fronta návrhů (banner, ř. 629–652), syncWarn,
+ * blok Připnuté (3 + rozbalit), Rozpracované, řádky s hover akcemi, urgencí,
+ * stavem, per-osoba štítkem „už četl(a)" a chipem úkolu; kontextové prázdné
+ * stavy (empties, ř. 3657–3672) a Gatekeeper karty s verdiktem.
  */
 import {
 	type CSSProperties,
-	Fragment,
 	type MouseEvent,
 	type ReactNode,
 	useMemo,
@@ -15,12 +16,88 @@ import {
 	useState,
 	useEffect,
 } from "react";
+import { showToast } from "../lib/toast";
+import { AskWatson } from "./AskWatson";
 import { CtxMenu } from "./CtxMenu";
-import { GK, MB, P, SLA, STL, type MailThread } from "./data";
+import {
+	AI_QUEUE_SEED,
+	type AiQueueItem,
+	GK,
+	MB,
+	P,
+	SLA,
+	STL,
+	SW_LONG,
+	SW_SHORT,
+	SWL,
+	type MailThread,
+} from "./data";
+import { NotifCenter } from "./NotifCenter";
 import { type ThreadEff, useMail } from "./state";
 
 /** Ženská příjmení v seed světě (prototyp FEM — „už četla" vs „už četl"). */
 const FEM: Record<string, 1> = { tm: 1, mh: 1, ps: 1 };
+
+/** AI fronta návrhů (prototyp state.aiQ) — module cache, přežije přepnutí složek. */
+const aiCache: { rows: AiQueueItem[]; open: boolean } = {
+	rows: AI_QUEUE_SEED.map((q) => ({ ...q })),
+	open: false,
+};
+
+/** Zvonek: tečka „neviděno" zmizí prvním otevřením (prototyp notifSeen). */
+let bellSeen = false;
+
+/** Bezpečné čtení localStorage (privátní režimy prohlížeče). */
+const lsGet = (key: string): string | null => {
+	try {
+		return localStorage.getItem(key);
+	} catch {
+		return null;
+	}
+};
+const lsSet = (key: string, val: string) => {
+	try {
+		localStorage.setItem(key, val);
+	} catch {
+		/* plné/blokované úložiště — volba platí jen pro session */
+	}
+};
+
+/** Kontextové prázdné stavy per složka/skupina (prototyp empties, ř. 3657–3672). */
+const EMPTY_FALLBACK: [string, string] = ["Nic tu není", "Zatím žádné položky."];
+const EMPTIES: Record<string, [string, string]> = {
+	inbox: ["Inbox je prázdný", "Nové konverzace od přijatých odesílatelů se objeví tady."],
+	ozn: ["Žádná oznámení", "Faktury, potvrzení a výpisy se třídí sem — mimo hlavní proud."],
+	news: ["Žádné newslettery", "Hromadné odběry se drží stranou, dokud na ně nemáš čas."],
+	archiv: ["Archiv je prázdný", "Archivované konverzace zůstávají dohledatelné hledáním."],
+	f_sent: ["Nic odeslaného", "Odeslané odpovědi i nové zprávy se řadí sem."],
+	f_drafts: [
+		"Žádné koncepty",
+		"Rozepsané odpovědi se ukládají samy — najdeš je tady i v chipech vpravo dole.",
+	],
+	f_arch: ["Archiv je prázdný", "Archivované konverzace zůstávají dohledatelné hledáním."],
+	f_trash: ["Koš je prázdný", "Smazané konverzace tu drží 30 dní, pak zmizí."],
+	f_block: ["Nikdo není blokovaný", "Blokovaní odesílatelé a spam končí tady — bez upozornění."],
+	d_nepr: [
+		"Vše je rozebrané",
+		"Týmové konverzace bez vlastníka se objeví tady — u P1/P2 sem míří i eskalace.",
+	],
+	d_moje: ["Nic ti nevisí", "Konverzace předané tobě se objeví tady."],
+	d_ost: ["Kolegové nic nedrží", "Co vyřizují ostatní, vidíš tady — bez zásahů do jejich práce."],
+	d_done: [
+		"Zatím nic dokončeného",
+		"Hotové konverzace se ukládají sem a stav se zrcadlí do úkolů.",
+	],
+	jine: EMPTY_FALLBACK,
+};
+
+/** Labely chipů aktivních filtrů (prototyp fLbl, ř. 3632). */
+const CHIP_LBL: Record<string, string> = {
+	unread: "Nepřečtené",
+	att: "S přílohou",
+	mine: "Přiřazené mně",
+	fu: "Follow-up",
+};
 
 export interface RowVM {
 	t: MailThread;
@@ -288,6 +365,24 @@ function RowActs({ vm }: { vm: RowVM }) {
 	);
 }
 
+/** Konfigurace swipe akcí (prototyp swCfg default: r1 hotovo · r2 pin · l1 snooze · l2 archiv). */
+const SW_CFG: Record<string, "done" | "pin" | "snooze" | "arch"> = {
+	r1: "done",
+	r2: "pin",
+	l1: "snooze",
+	l2: "arch",
+};
+
+/** Klasifikace tahu (prototyp swMag, ř. 2932): none | r0/l0 (náznak) | r1/l1 | r2/l2. */
+const swMag = (dx: number): string => {
+	const a = Math.abs(dx);
+	if (a < 12) return "none";
+	const side = dx > 0 ? "r" : "l";
+	if (a < SW_SHORT) return `${side}0`;
+	if (a < SW_LONG) return `${side}1`;
+	return `${side}2`;
+};
+
 function MailRow({
 	vm,
 	compactPin,
@@ -302,22 +397,116 @@ function MailRow({
 	const t = vm.t;
 	const e = vm.e;
 	const selOn = !!m.selIds[t.id];
+	// swipe gesta (touch; prototyp swApply/swFinish, ř. 2932–2987) — gumový odpor,
+	// akce až po puštění, klik po tahu se blokuje (prototyp _swBlock 350 ms)
+	const swcRef = useRef<HTMLDivElement>(null);
+	const swuRef = useRef<HTMLDivElement>(null);
+	const sw = useRef({ startX: 0, dx: 0, on: false });
+	const swBlock = useRef(0);
+	// trackpad wheel = swipe (prototyp wheel delegace ř. 2551–2571; feedback:
+	// na touchpadu swipe nefungoval) — akumulace deltaX, dokončení po 140 ms klidu
+	const swWheelT = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const swApply = (dx: number) => {
+		const swc = swcRef.current;
+		const swu = swuRef.current;
+		if (!swc || !swu) return;
+		const a = Math.abs(dx);
+		const eased = a <= SW_LONG ? dx : Math.sign(dx) * (SW_LONG + (a - SW_LONG) * 0.2);
+		swc.style.transform = `translateX(${eased}px)`;
+		const mag = swMag(eased);
+		const act = mag === "none" ? "none" : SW_CFG[`${mag[0]}${mag[1] === "0" ? "1" : mag[1]}`];
+		swu.setAttribute("data-mag", mag);
+		swu.setAttribute("data-act", act ?? "none");
+		const pill = swu.querySelector<HTMLElement>(
+			`[data-swpill="${dx > 0 ? "r" : "l"}"]`,
+		);
+		const other = swu.querySelector<HTMLElement>(
+			`[data-swpill="${dx > 0 ? "l" : "r"}"]`,
+		);
+		if (pill) {
+			pill.style.width = `${Math.max(0, Math.abs(eased) - 16)}px`;
+			const txt = pill.querySelector("[data-swtxt]");
+			if (txt) txt.textContent = act && act !== "none" ? (SWL[act] ?? "") : "";
+		}
+		if (other) other.style.width = "0px";
+	};
+	const swFinish = () => {
+		const swc = swcRef.current;
+		const { dx } = sw.current;
+		sw.current.on = false;
+		if (swc) {
+			swc.style.transition = "transform .18s ease";
+			swc.style.transform = "translateX(0)";
+			setTimeout(() => {
+				if (swc) swc.style.transition = "";
+			}, 200);
+		}
+		swApply(0);
+		const mag = swMag(dx);
+		const act = SW_CFG[mag];
+		if (act) {
+			swBlock.current = Date.now();
+			m.rowAct(t.id, act);
+		} else if (Math.abs(dx) > 12) {
+			swBlock.current = Date.now();
+		}
+		sw.current.dx = 0;
+	};
 	return (
 		<div
-			onClick={() => m.openThread(t.id)}
+			onClick={() => {
+				if (Date.now() - swBlock.current < 350) return;
+				m.openThread(t.id);
+			}}
 			onContextMenu={(ev) => {
 				if (!onCtx) return;
 				ev.preventDefault();
 				onCtx(t.id, ev.clientX, ev.clientY);
+			}}
+			onPointerDown={(ev) => {
+				if (ev.pointerType !== "touch") return;
+				sw.current = { startX: ev.clientX, dx: 0, on: true };
+			}}
+			onPointerMove={(ev) => {
+				if (!sw.current.on || ev.pointerType !== "touch") return;
+				sw.current.dx = ev.clientX - sw.current.startX;
+				swApply(sw.current.dx);
+			}}
+			onPointerUp={(ev) => {
+				if (ev.pointerType !== "touch" || !sw.current.on) return;
+				swFinish();
+			}}
+			onPointerCancel={() => {
+				if (sw.current.on) swFinish();
+			}}
+			onWheel={(ev) => {
+				// jen horizontálně dominantní scroll; obsah jede proti prstům (natural)
+				if (Math.abs(ev.deltaX) <= Math.abs(ev.deltaY) || sw.current.on) return;
+				sw.current.dx -= ev.deltaX;
+				swApply(sw.current.dx);
+				if (swWheelT.current) clearTimeout(swWheelT.current);
+				swWheelT.current = setTimeout(() => {
+					swWheelT.current = null;
+					swFinish();
+				}, 140);
 			}}
 			data-tid={t.id}
 			tabIndex={0}
 			data-mrow
 			data-sel={m.sel === t.id || undefined}
 			data-unread={vm.unread || undefined}
-			style={{ touchAction: "pan-y" }}
+			style={{ touchAction: "pan-y", position: "relative", overflow: "hidden" }}
 		>
-			<div data-swc style={{ display: "flex", gap: 10, padding: "12px 14px 11px" }}>
+			{/* podklad swipe akcí (prototyp data-swu + pilulky, CSS ř. 76–86) */}
+			<div ref={swuRef} data-swu data-mag="none" data-act="none">
+				<span data-swpill="r">
+					<span data-swtxt />
+				</span>
+				<span data-swpill="l">
+					<span data-swtxt />
+				</span>
+			</div>
+			<div ref={swcRef} data-swc style={{ display: "flex", gap: 10, padding: "12px 14px 11px" }}>
 				<RowActs vm={vm} />
 				<span
 					data-pbar={e.flag}
@@ -606,6 +795,17 @@ function MailRow({
 	);
 }
 
+/** Pilulky voleb Zobrazení ve vmenu (prototyp data-statepill, ř. 485–491). */
+const densPill: CSSProperties = {
+	fontFamily: "var(--w-font-display)",
+	fontWeight: 600,
+	fontSize: 10.5,
+	padding: "4px 10px",
+	borderRadius: 999,
+	whiteSpace: "nowrap",
+	cursor: "pointer",
+};
+
 const secHead: CSSProperties = {
 	padding: "2px 14px 4px",
 	fontFamily: "var(--w-font-display)",
@@ -655,12 +855,76 @@ export function MailList({
 	onCompose: () => void;
 }) {
 	const m = useMail();
-	const { isDorView, gN, pinRows, rozRows, rows } = useListRows();
+	const { isDorView, gN, pinRows, rozRows, rows, order } = useListRows();
 	const [vmenu, setVmenu] = useState(false);
 	// kontextové menu řádku (pravý klik); hledání a Napsat řídí MailScreen (⌘K/C)
 	const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(
 		null,
 	);
+	// zvonek (NotifCenter) + Ask Watson — overlaye ukotvené na hlavičce seznamu
+	const [notifOn, setNotifOn] = useState(false);
+	const [askOn, setAskOn] = useState(false);
+	const [bellDot, setBellDot] = useState(!bellSeen);
+	// zobrazení: hustota + počet řádků náhledu (prototyp dens/lines, persist)
+	const [dens, setDensRaw] = useState<"comfort" | "compact">(() =>
+		lsGet("watson-mail.dens") === "compact" ? "compact" : "comfort",
+	);
+	const [lines, setLinesRaw] = useState<1 | 2>(() =>
+		lsGet("watson-mail.lines") === "1" ? 1 : 2,
+	);
+	const setDens = (v: "comfort" | "compact") => {
+		setDensRaw(v);
+		lsSet("watson-mail.dens", v);
+	};
+	const setLines = (v: 1 | 2) => {
+		setLinesRaw(v);
+		lsSet("watson-mail.lines", String(v));
+	};
+	// šířka seznamu z resize táhla (MailScreen) — při mountu se obnoví z localStorage
+	const [listW] = useState<string | undefined>(
+		() => lsGet("watson-mail.listW") || undefined,
+	);
+	// AI fronta návrhů (prototyp aiQ + aiDecide, ř. 3316–3336)
+	const [aiQ, setAiQ] = useState<AiQueueItem[]>(aiCache.rows);
+	const [aiOpen, setAiOpenRaw] = useState(aiCache.open);
+	const setAiOpen = (v: boolean) => {
+		aiCache.open = v;
+		setAiOpenRaw(v);
+	};
+	const setAiRows = (rowsN: AiQueueItem[]) => {
+		aiCache.rows = rowsN;
+		setAiQ(rowsN);
+	};
+	/** Provedení schváleného návrhu (prototyp aiDecide — route/flag/grp/draftall). */
+	const applyAi = (q: AiQueueItem) => {
+		if (q.k === "route") m.setOwner(q.th, q.who ?? null);
+		else if (q.k === "flag") m.setFlag(q.th, q.flag ?? "p3");
+		else if (q.k === "grp") m.setOv(q.th, { grp: "ozn" });
+		else if ((q.k as string) === "draftall") {
+			m.setDraft(q.th, "", "draft");
+			showToast("Návrh odpovědi čeká v editoru vlákna");
+		}
+	};
+	const aiDecide = (i: number, yes: boolean) => {
+		const q = aiQ[i];
+		if (!q || q.st !== "ceka") return;
+		if (yes) applyAi(q);
+		setAiRows(aiQ.map((z, j) => (j === i ? { ...z, st: yes ? "ok" : "no" } : z)));
+		showToast(
+			yes
+				? "Schváleno a provedeno — zapsáno do Dění."
+				: "Zamítnuto — AI si korekci zapíše.",
+		);
+	};
+	const aiAll = () => {
+		const waiting = aiQ.filter((q) => q.st === "ceka");
+		for (const q of waiting) applyAi(q);
+		setAiRows(aiQ.map((z) => (z.st === "ceka" ? { ...z, st: "ok" } : z)));
+		showToast(`Schváleno ${waiting.length} návrhů najednou — zapsáno do Dění.`);
+	};
+	const aiWait = aiQ.filter((q) => q.st === "ceka").length;
+	const aiPlural =
+		aiWait === 1 ? "AI návrh čeká" : aiWait < 5 ? "AI návrhy čekají" : "AI návrhů čeká";
 	const vmenuRef = useRef<HTMLDivElement>(null);
 	useEffect(() => {
 		if (!vmenu) return;
@@ -685,13 +949,79 @@ export function MailList({
 		{ k: "mine", label: "Přiřazené mně" },
 		{ k: "fu", label: "Follow-up" },
 	];
+	const activeF = FROWS.filter((f) => m.filters[f.k]);
+
+	/** Počty Dispečinku na záložkách (prototyp dCounts, ř. 3709–3716). */
+	const dC = useMemo(() => {
+		const team = m.threads.filter((t) => !t.personal);
+		const isDorT = (t: MailThread) => {
+			const e = m.eff(t);
+			return !t.sentF && !t.draftF && !e.arch && !e.snoozed && !e.spam && !e.trash;
+		};
+		const base = team.filter((t) => isDorT(t) && t.grp === "inbox");
+		const n = base.filter((t) => {
+			const e = m.eff(t);
+			return !e.owner && !e.closed;
+		}).length;
+		const mo = base.filter((t) => {
+			const e = m.eff(t);
+			return e.owner === "ad" && !e.closed;
+		}).length;
+		const o = base.filter((t) => {
+			const e = m.eff(t);
+			return !!e.owner && e.owner !== "ad" && !e.closed;
+		}).length;
+		const d = team.filter((t) => {
+			const e = m.eff(t);
+			return e.closed && !e.trash;
+		}).length;
+		return {
+			n: n ? String(n) : "",
+			m: mo ? String(mo) : "",
+			o: o ? String(o) : "",
+			d: d ? String(d) : "",
+		};
+	}, [m]);
+
+	/** Zvonek má co ukázat — zrcadlí odvození položek NotifCenteru. */
+	const hasNotif =
+		m.gkLeft > 0 ||
+		m.threads.some((t) => {
+			if (t.personal) return false;
+			const e = m.eff(t);
+			if ((e.flag === "p1" || e.flag === "p2") && !e.closed && !e.sent) return true;
+			if (t.bounce && !m.ovOf(t.id).bounceFixed) return true;
+			return t.chat.some((c) => c.m === "@Adam" && c.who !== "ad");
+		});
+
+	// AI banner jen v Inboxu složky Vše (prototyp aiBan.show, ř. 3728)
+	const aiShow = isDorView && m.grp === "inbox" && m.folder === "vse" && aiWait > 0;
+	// podcast@ token — banner nad seznamem, dokud admin neobnoví (prototyp ř. 3794)
+	const syncWarn = m.folder === "vse" && !!MB.podcast?.warn && !m.adm.fixed;
+
+	/** Prázdný stav dle složky/skupiny (prototyp ek, ř. 3673). */
+	const ekey = EMPTIES[m.folder]
+		? m.folder
+		: m.fdr === "archiv"
+			? "archiv"
+			: isDorView
+				? m.grp
+				: "jine";
+	const [emptyT, emptyS] = EMPTIES[ekey] ?? EMPTY_FALLBACK;
+
+	/** Označit vše v aktuálním pohledu jako přečtené (prototyp markAllRead, ř. 3699). */
+	const markAllRead = () => {
+		for (const id of order) m.setOv(id, { read: true });
+		setVmenu(false);
+		showToast("Vše v aktuálním pohledu označeno jako přečtené.");
+	};
 
 	return (
 		<div
 			data-listpane
-			data-dens="comfort"
-			data-lines={2}
-			style={{ display: "flex", flexDirection: "column", minHeight: 0, background: "var(--panel)", position: "relative" }}
+			data-dens={dens}
+			data-lines={lines}
+			style={{ display: "flex", flexDirection: "column", minHeight: 0, background: "var(--panel)", position: "relative", width: listW }}
 		>
 			<div style={{ flex: "none", padding: "11px 14px 0", display: "flex", flexDirection: "column", gap: 9 }}>
 				<div ref={vmenuRef} style={{ display: "flex", alignItems: "center", gap: 7, position: "relative", zIndex: 45 }}>
@@ -748,6 +1078,62 @@ export function MailList({
 							<circle cx="10.5" cy="10.5" r="6" />
 							<line x1="15" y1="15" x2="20" y2="20" />
 						</svg>
+					</span>
+					{/* zvonek — NotifCenter (prototyp ui.bell, ř. 329) */}
+					<span
+						data-rowbtn
+						onClick={() => {
+							bellSeen = true;
+							setBellDot(false);
+							setNotifOn(true);
+						}}
+						title="Oznámení"
+						style={{ border: "1px solid var(--line)", background: "var(--panel)", position: "relative" }}
+					>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+							<path d="M6.6 17 C6.6 11.2 7.8 8.6 12 8.6 C16.2 8.6 17.4 11.2 17.4 17 Z" />
+							<line x1="5" y1="17" x2="19" y2="17" />
+							<path d="M10.2 20 A2.1 2.1 0 0 0 13.8 20" />
+							<line x1="12" y1="6" x2="12" y2="8.6" />
+						</svg>
+						{bellDot && hasNotif && (
+							<span
+								style={{
+									position: "absolute",
+									top: 2,
+									right: 3,
+									width: 6,
+									height: 6,
+									borderRadius: "50%",
+									background: "var(--overdue)",
+									boxShadow: "0 0 0 2px var(--panel)",
+								}}
+							/>
+						)}
+					</span>
+					{/* Ask Watson — mosazné W (prototyp ui.ask, ř. 330) */}
+					<span
+						data-rowbtn
+						onClick={() => setAskOn(true)}
+						title="Ask Watson — zeptej se pošty"
+						style={{ border: "1px solid var(--brass)", background: "var(--brass-soft)", color: "var(--brass-text)" }}
+					>
+						<span
+							style={{
+								width: 14,
+								height: 14,
+								borderRadius: "50%",
+								border: "1.6px solid currentColor",
+								display: "inline-flex",
+								alignItems: "center",
+								justifyContent: "center",
+								fontSize: 8,
+								fontWeight: 800,
+								fontFamily: "var(--w-font-display)",
+							}}
+						>
+							W
+						</span>
 					</span>
 					<span
 						data-rowbtn
@@ -826,9 +1212,85 @@ export function MailList({
 									)}
 								</div>
 							))}
+							{/* Zobrazení — hustota a náhled (prototyp ř. 483–492) */}
+							<div
+								style={{
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 700,
+									fontSize: 10,
+									letterSpacing: ".05em",
+									textTransform: "uppercase",
+									color: "var(--ink-3)",
+									padding: "8px 9px 5px",
+									borderTop: "1px solid var(--line)",
+									marginTop: 5,
+								}}
+							>
+								Zobrazení
+							</div>
+							<div style={{ display: "flex", gap: 4, padding: "2px 8px 4px" }}>
+								<span onClick={() => setDens("comfort")} data-statepill data-on={dens === "comfort" || undefined} style={densPill}>
+									Komfortní
+								</span>
+								<span onClick={() => setDens("compact")} data-statepill data-on={dens === "compact" || undefined} style={densPill}>
+									Kompaktní
+								</span>
+							</div>
+							<div style={{ display: "flex", gap: 4, padding: "2px 8px 5px", alignItems: "center" }}>
+								<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11, color: "var(--ink-3)", flex: 1 }}>Náhled</span>
+								<span onClick={() => setLines(1)} data-statepill data-on={lines === 1 || undefined} style={densPill}>
+									1 řádek
+								</span>
+								<span onClick={() => setLines(2)} data-statepill data-on={lines === 2 || undefined} style={densPill}>
+									2 řádky
+								</span>
+							</div>
+							<div onClick={markAllRead} data-menuitem style={{ borderTop: "1px solid var(--line)", marginTop: 5 }}>
+								Označit vše jako přečtené
+							</div>
 						</div>
 					)}
 				</div>
+
+				{/* řádek aktivních filtrů (prototyp ř. 497–504) */}
+				{fCount > 0 && (
+					<div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+						{activeF.map((f) => (
+							<span
+								key={f.k}
+								data-chip
+								data-on="true"
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 6,
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 600,
+									fontSize: 11,
+									padding: "3px 6px 3px 10px",
+									borderRadius: 999,
+									border: "1px solid var(--line)",
+								}}
+							>
+								{CHIP_LBL[f.k]}
+								<span
+									onClick={() => m.toggleFilter(f.k)}
+									style={{ cursor: "pointer", fontSize: 12, lineHeight: 1, opacity: 0.7 }}
+								>
+									×
+								</span>
+							</span>
+						))}
+						<span
+							onClick={() => {
+								for (const f of activeF) m.toggleFilter(f.k);
+							}}
+							style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)", cursor: "pointer" }}
+						>
+							zrušit vše
+						</span>
+					</div>
+				)}
 
 				{isDorView && !isGk && (
 					<div style={{ display: "flex", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 10, padding: 3 }}>
@@ -870,12 +1332,12 @@ export function MailList({
 					<div style={{ display: "flex", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 10, padding: 3 }}>
 						{(
 							[
-								["d_nepr", "Nepřiřazené"],
-								["d_moje", "Moje"],
-								["d_ost", "Ostatních"],
-								["d_done", "Hotové"],
+								["d_nepr", "Nepřiřazené", dC.n, true],
+								["d_moje", "Moje", dC.m, false],
+								["d_ost", "Ostatních", dC.o, false],
+								["d_done", "Hotové", dC.d, false],
 							] as const
-						).map(([k, label]) => (
+						).map(([k, label, n, brass]) => (
 							<span
 								key={k}
 								onClick={() => m.setFolder(k)}
@@ -897,6 +1359,18 @@ export function MailList({
 								}}
 							>
 								{label}
+								{/* počty záložek Dispečinku (prototyp dCounts, ř. 514–517) */}
+								{!!n && (
+									<span
+										style={{
+											fontFamily: "var(--w-font-mono)",
+											fontSize: 10,
+											...(brass ? { color: "var(--brass-text)" } : { opacity: 0.65 }),
+										}}
+									>
+										{n}
+									</span>
+								)}
 							</span>
 						))}
 					</div>
@@ -922,8 +1396,33 @@ export function MailList({
 						{selCount} vybráno
 					</span>
 					<span style={{ flex: 1 }} />
+					<span
+						data-ghost
+						onClick={() => {
+							const ids = Object.keys(m.selIds);
+							for (const id of ids) m.quickTask(id);
+							m.clearSel();
+							if (ids.length > 1) showToast(`${ids.length} úkolů založeno z vybraných vláken`);
+						}}
+						title="Z každého vybraného vlákna vznikne úkol s předvyplněním"
+						style={{ fontSize: 11, padding: "5px 10px", color: "var(--brass-text)" }}
+					>
+						→ úkoly
+					</span>
 					<span data-ghost onClick={() => m.bulkAct("done")} style={{ fontSize: 11, padding: "5px 10px" }}>Hotovo</span>
 					<span data-ghost onClick={() => m.bulkAct("unread")} style={{ fontSize: 11, padding: "5px 10px" }}>Přečtené</span>
+					<span
+						data-ghost
+						onClick={() => {
+							const ids = Object.keys(m.selIds);
+							for (const id of ids) m.setOv(id, { snoozed: "zítra 8:00" });
+							m.clearSel();
+							showToast(`${ids.length} odloženo na zítra 8:00`);
+						}}
+						style={{ fontSize: 11, padding: "5px 10px" }}
+					>
+						Odložit
+					</span>
 					<span data-ghost onClick={() => m.bulkAct("arch")} style={{ fontSize: 11, padding: "5px 10px" }}>Archiv</span>
 					<span data-ghost onClick={() => m.bulkAct("trash")} style={{ fontSize: 11, padding: "5px 10px", color: "var(--overdue)" }}>Koš</span>
 					<span data-rowbtn onClick={m.clearSel} title="Zrušit výběr (Esc)" style={{ border: "1px solid var(--line)", background: "var(--panel)" }}>×</span>
@@ -963,6 +1462,140 @@ export function MailList({
 					<GkQueue />
 				) : (
 					<>
+						{/* syncWarn — podcast@ token (prototyp ř. 622–628) */}
+						{syncWarn && (
+							<div
+								onClick={() => m.setScr("admin")}
+								style={{
+									margin: "0 14px 8px",
+									display: "flex",
+									alignItems: "center",
+									gap: 8,
+									border: "1px solid var(--line)",
+									borderRadius: 10,
+									padding: "6px 11px",
+									cursor: "pointer",
+									background: "var(--panel-2)",
+								}}
+							>
+								<span data-health="warn" style={{ width: 7, height: 7, borderRadius: "50%", flex: "none" }} />
+								<span style={{ flex: 1, fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-2)" }}>
+									podcast@ se nedaří synchronizovat (token vyprší) — ostatní schránky jedou normálně
+								</span>
+								<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10.5, color: "var(--brass-text)", flex: "none" }}>
+									Obnovit →
+								</span>
+							</div>
+						)}
+
+						{/* AI fronta návrhů — banner ke schválení (prototyp aiBan, ř. 629–652) */}
+						{aiShow && (
+							<div
+								style={{
+									margin: "0 14px 10px",
+									border: "1px dashed var(--brass)",
+									borderRadius: 11,
+									background: "var(--brass-soft)",
+									overflow: "hidden",
+								}}
+							>
+								<div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 12px", flexWrap: "wrap" }}>
+									<span
+										style={{
+											width: 16,
+											height: 16,
+											borderRadius: "50%",
+											border: "1.6px solid var(--brass-text)",
+											color: "var(--brass-text)",
+											display: "inline-flex",
+											alignItems: "center",
+											justifyContent: "center",
+											fontSize: 8.5,
+											fontWeight: 800,
+											fontFamily: "var(--w-font-display)",
+											flex: "none",
+										}}
+									>
+										W
+									</span>
+									<span style={{ flex: 1, minWidth: 120, fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-2)" }}>
+										<span style={{ fontWeight: 600, color: "var(--brass-text)" }}>{aiWait}</span> {aiPlural} na schválení
+									</span>
+									<span
+										onClick={() => setAiOpen(!aiOpen)}
+										data-ghost
+										style={{ fontSize: 10.5, padding: "4px 11px", background: "var(--panel)", flex: "none" }}
+									>
+										{aiOpen ? "Skrýt" : "Projít"}
+									</span>
+									<span onClick={aiAll} data-primary style={{ fontSize: 10.5, padding: "4px 12px", flex: "none" }}>
+										Schválit vše ({aiWait})
+									</span>
+								</div>
+								{aiOpen &&
+									aiQ.map((q, i) =>
+										q.st !== "ceka" ? null : (
+											<div
+												key={`${q.k}:${q.th}`}
+												style={{
+													display: "flex",
+													gap: 9,
+													padding: "9px 12px",
+													borderTop: "1px solid var(--line)",
+													background: "var(--panel)",
+													alignItems: "flex-start",
+												}}
+											>
+												<div style={{ flex: 1, minWidth: 0 }}>
+													<div
+														onClick={() => m.openThread(q.th)}
+														style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink)", cursor: "pointer" }}
+													>
+														{q.txt}
+													</div>
+													<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", marginTop: 2, lineHeight: 1.45 }}>
+														<span
+															style={{
+																fontFamily: "var(--w-font-mono)",
+																fontSize: 9,
+																border: "1px solid var(--line)",
+																borderRadius: 4,
+																padding: "0 4px",
+																marginRight: 5,
+															}}
+														>
+															proč
+														</span>
+														{q.why}
+													</div>
+												</div>
+												<span
+													onClick={() => aiDecide(i, true)}
+													data-ghost
+													style={{
+														fontSize: 10,
+														padding: "3px 10px",
+														color: "var(--success-ink)",
+														borderColor: "var(--success)",
+														flex: "none",
+														background: "var(--panel)",
+													}}
+												>
+													Schválit
+												</span>
+												<span
+													onClick={() => aiDecide(i, false)}
+													data-ghost
+													style={{ fontSize: 10, padding: "3px 10px", flex: "none", background: "var(--panel)" }}
+												>
+													Zamítnout
+												</span>
+											</div>
+										),
+									)}
+							</div>
+						)}
+
 						{isDorView && m.grp === "inbox" && pinRows.length > 0 && (
 							<>
 								<div style={secHead}>Připnuté</div>
@@ -1007,6 +1640,19 @@ export function MailList({
 								<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)", flex: 1 }}>
 									Automatické zprávy — faktury, potvrzení, výpisy.
 								</span>
+								{/* označit oznámení jako viděná (prototyp oznBar, ř. 546–551) */}
+								{rows.length > 0 && (
+									<span
+										data-ghost
+										onClick={() => {
+											for (const r of rows) m.setOv(r.t.id, { read: true });
+											showToast("Oznámení označena jako viděná.");
+										}}
+										style={{ fontSize: 11, padding: "4px 10px" }}
+									>
+										Označit vše jako viděné
+									</span>
+								)}
 							</div>
 						)}
 
@@ -1021,10 +1667,10 @@ export function MailList({
 						{rows.length === 0 && pinRows.length === 0 && (
 							<div style={{ textAlign: "center", padding: "44px 20px" }}>
 								<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 13.5, color: "var(--ink)", marginBottom: 4 }}>
-									Prázdno
+									{emptyT}
 								</div>
 								<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink-3)" }}>
-									V této složce teď nic není.
+									{emptyS}
 								</div>
 							</div>
 						)}
@@ -1089,74 +1735,102 @@ export function MailList({
 
 			{/* kontextové menu řádku (pravý klik) */}
 			<CtxMenu ctx={ctx} onClose={() => setCtx(null)} />
+			{/* overlaye hlavičky: notifikační centrum + Ask Watson */}
+			<NotifCenter open={notifOn} onClose={() => setNotifOn(false)} />
+			<AskWatson open={askOn} onClose={() => setAskOn(false)} />
 		</div>
 	);
 }
 
-/** Gatekeeper — fronta nových odesílatelů (seed GK + rozhodnutí; prototyp gkRows). */
+/** Verdikty rozhodnutých karet Gatekeeperu (prototyp verdicts, ř. 3637). */
+const GK_VERDICTS: Record<string, string> = {
+	accept: "Přijato — příště padá rovnou do Inboxu.",
+	acceptDone: "Přijato a rovnou označeno Hotovo.",
+	block: "Blokováno — odesílatel míří do složky Blocked.",
+	blockDom: "Blokována celá doména.",
+};
+
+/** Gatekeeper — karty nových odesílatelů (prototyp gkRows, ř. 592–620).
+ * Rozhodnutá karta nemizí: zůstává ztlumená se zobrazeným verdiktem. */
 function GkQueue() {
 	const m = useMail();
-	const waiting = GK.filter((g) => !m.gkDone[g.id]);
 	return (
-		<div>
-			<div style={{ padding: "2px 14px 10px", fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
-				Noví odesílatelé čekají na screening — rozhodnutí platí pro všechny další zprávy od nich.
-			</div>
-			{waiting.length === 0 && (
-				<div style={{ textAlign: "center", padding: "44px 20px", fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink-3)" }}>
-					Fronta je prázdná — všichni noví odesílatelé jsou rozhodnutí.
-				</div>
-			)}
-			{waiting.map((g) => (
-				<Fragment key={g.id}>
-					<div style={{ display: "flex", gap: 10, padding: "12px 14px 11px", borderBottom: "1px solid var(--line)" }}>
-						<span
-							data-av="ext"
-							style={{
-								width: 32,
-								height: 32,
-								borderRadius: "50%",
-								background: "var(--avatar-navy)",
-								color: "#fff",
-								fontFamily: "var(--w-font-display)",
-								fontWeight: 700,
-								fontSize: 11,
-								display: "flex",
-								alignItems: "center",
-								justifyContent: "center",
-								flex: "none",
-							}}
-						>
-							{g.ini}
-						</span>
-						<div style={{ flex: 1, minWidth: 0 }}>
-							<div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-								<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 13, color: "var(--ink)" }}>{g.name}</span>
-								<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+		<div style={{ padding: "0 14px 12px" }}>
+			<p style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-3)", lineHeight: 1.55, margin: "2px 0 12px" }}>
+				Čekající zprávy nemají SLA ani nepočítají do nepřečtených — pokud něco vypadá
+				urgentně, fronta zvedne upozornění. Noví odesílatelé zůstávají před branou,
+				dokud je nepustíš dál. Rozhodnutí platí i pro všechny jejich další zprávy.
+			</p>
+			{GK.map((g) => {
+				const d = m.gkDone[g.id];
+				return (
+					<div
+						key={g.id}
+						style={{
+							border: "1px solid var(--line)",
+							borderRadius: 12,
+							padding: "11px 13px",
+							marginBottom: 9,
+							background: "var(--panel)",
+							boxShadow: "var(--shadow-sm)",
+							opacity: d ? 0.6 : undefined,
+						}}
+					>
+						<div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+							<span
+								data-av="ext"
+								style={{
+									width: 28,
+									height: 28,
+									borderRadius: "50%",
+									color: "#fff",
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 700,
+									fontSize: 10,
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "center",
+									flex: "none",
+								}}
+							>
+								{g.ini}
+							</span>
+							<div style={{ flex: 1, minWidth: 0 }}>
+								<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 12.5, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+									{g.name}
+								</div>
+								<div style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
 									{g.addr}
-								</span>
-								<span style={{ flex: 1 }} />
-								<span data-mbdot={g.mb} style={{ width: 8, height: 8, borderRadius: "50%", flex: "none" }} />
+								</div>
 							</div>
-							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink-2)", marginTop: 2 }}>{g.subj}</div>
-							<div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-								<span data-ghost onClick={() => m.gkDecide(g.id, "accept")} style={{ fontSize: 11, padding: "5px 10px", color: "var(--success-ink)" }}>
-									Povolit
+							<span data-mbdot={g.mb} title={MB[g.mb]?.short} style={{ width: 8, height: 8, borderRadius: "50%", flex: "none" }} />
+						</div>
+						<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-2)", margin: "7px 0 0 37px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+							{g.subj}
+						</div>
+						{!d ? (
+							<div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "10px 0 0 37px" }}>
+								<span data-primary onClick={() => m.gkDecide(g.id, "accept")} style={{ fontSize: 11, padding: "5px 11px" }}>
+									Přijmout
 								</span>
-								<span data-ghost onClick={() => m.gkDecide(g.id, "acceptDone")} style={{ fontSize: 11, padding: "5px 10px" }}>
-									Povolit a vyřídit
+								<span data-ghost onClick={() => m.gkDecide(g.id, "acceptDone")} style={{ fontSize: 11, padding: "5px 11px" }}>
+									Přijmout a Hotovo
 								</span>
-								<span data-ghost onClick={() => m.gkDecide(g.id, "block")} style={{ fontSize: 11, padding: "5px 10px", color: "var(--overdue)" }}>
+								<span data-ghost onClick={() => m.gkDecide(g.id, "block")} style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)" }}>
 									Blokovat
 								</span>
-								<span data-ghost onClick={() => m.gkDecide(g.id, "blockDom")} style={{ fontSize: 11, padding: "5px 10px", color: "var(--overdue)" }}>
+								<span data-ghost onClick={() => m.gkDecide(g.id, "blockDom")} style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)" }}>
 									Blokovat doménu
 								</span>
 							</div>
-						</div>
+						) : (
+							<div style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)", margin: "9px 0 0 37px" }}>
+								{GK_VERDICTS[d]}
+							</div>
+						)}
 					</div>
-				</Fragment>
-			))}
+				);
+			})}
 		</div>
 	);
 }

@@ -1,22 +1,41 @@
 /**
  * Mail — shell obrazovky: 3-panelový layout (účty a složky / seznam / thread
- * workspace) dle prototypu data-mailroot + mobilní krok list↔thread (data-mstep)
+ * workspace) dle prototypu data-mailroot + mobilní krok list↔thread (data-mstep),
+ * mobilní spodní lišta (data-moonly, ř. 1784–1800), resize táhlo seznamu +
+ * Full Screen čtení (rz, ř. 779–784 + 2624–2652), sbalený panel složek (sube)
  * a vlastní klávesnice mailu (prototyp kbd, ř. 2740–2769). Motiv se propisuje
  * z aplikace (kontrakt `vzhled`) přes data-wm-theme scope.
  */
-import { useEffect, useRef, useState } from "react";
+import {
+	type PointerEvent as ReactPointerEvent,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { useTheme } from "../layout/useTheme";
 import "./mail.css";
+import { showToast } from "../lib/toast";
 import { AdminScreen } from "./AdminScreen";
 import { CheatSheet } from "./CheatSheet";
 import { DeniScreen } from "./DeniScreen";
+import { FloatComposer } from "./FloatComposer";
 import { MailList, useListRows } from "./MailList";
 import { MailSub } from "./MailSub";
 import { MailThread } from "./MailThread";
 import { NastaveniScreen } from "./NastaveniScreen";
 import { NewMessage } from "./NewMessage";
+import { PriruckaScreen } from "./PriruckaScreen";
 import { SearchOverlay } from "./SearchOverlay";
 import { useMail } from "./state";
+
+const lsSet = (key: string, val: string) => {
+	try {
+		localStorage.setItem(key, val);
+	} catch {
+		/* blokované úložiště — volba platí jen pro session */
+	}
+};
 
 export function MailScreen() {
 	const m = useMail();
@@ -26,11 +45,80 @@ export function MailScreen() {
 	const [searchOn, setSearchOn] = useState(false);
 	const [newOn, setNewOn] = useState(false);
 	const [cheatOn, setCheatOn] = useState(false);
+	// Full Screen čtení (lcol) + drag resize seznamu (prototyp rz, ř. 2624–2652)
+	const [lcol, setLcol] = useState(false);
+	const [dragging, setDragging] = useState(false);
+	const lwRef = useRef<string | null>(null);
+	// sbalený panel složek na ikony (prototyp sube, ř. 347–350; persist)
+	const [sube, setSube] = useState(() => {
+		try {
+			// bez uložené volby zůstává panel rozbalený (kontinuita modulu)
+			return localStorage.getItem("watson-mail.sube") !== "0";
+		} catch {
+			return true;
+		}
+	});
+	const toggleSube = useCallback(() => {
+		setSube((v) => !v);
+	}, []);
+	useEffect(() => {
+		lsSet("watson-mail.sube", sube ? "1" : "0");
+	}, [sube]);
 	const { order } = useListRows();
 	const orderRef = useRef(order);
 	orderRef.current = order;
 	const mRef = useRef(m);
 	mRef.current = m;
+
+	/** Drag táhla — mění šířku [data-listpane] 300–620 px (prototyp rzDown). */
+	const rzDown = useCallback(
+		(e: ReactPointerEvent) => {
+			if (lcol) return;
+			e.preventDefault();
+			const el = document.querySelector<HTMLElement>("[data-listpane]");
+			const startW = el ? el.getBoundingClientRect().width : 340;
+			const startX = e.clientX;
+			setDragging(true);
+			const mv = (ev: PointerEvent) => {
+				const nw = Math.round(
+					Math.max(300, Math.min(620, startW + (ev.clientX - startX))),
+				);
+				lwRef.current = `${nw}px`;
+				if (el) el.style.width = lwRef.current;
+			};
+			const up = () => {
+				document.removeEventListener("pointermove", mv);
+				document.removeEventListener("pointerup", up);
+				setDragging(false);
+				if (lwRef.current) lsSet("watson-mail.listW", lwRef.current);
+			};
+			document.addEventListener("pointermove", mv);
+			document.addEventListener("pointerup", up);
+		},
+		[lcol],
+	);
+	/** Dvojklik táhla — reset šířky na výchozí (prototyp rzReset). */
+	const rzReset = useCallback(() => {
+		lwRef.current = null;
+		const el = document.querySelector<HTMLElement>("[data-listpane]");
+		if (el) el.style.width = "";
+		setLcol(false);
+		lsSet("watson-mail.listW", "");
+		showToast("Šířka seznamu vrácena na výchozí.");
+	}, []);
+
+	// ⌘F ve vlákně dispatchuje 'watson-mail:search' → otevři hledání
+	useEffect(() => {
+		const h = () => setSearchOn(true);
+		window.addEventListener("watson-mail:search", h);
+		return () => window.removeEventListener("watson-mail:search", h);
+	}, []);
+
+	// forward z vlákna (Přeposlat → m.newMsg): jakmile se objeví, otevři Novou zprávu
+	const newMsgReq = m.newMsg;
+	useEffect(() => {
+		if (newMsgReq) setNewOn(true);
+	}, [newMsgReq]);
 
 	// klávesnice mailu — jen když je obrazovka aktivní (mount = aktivní route)
 	useEffect(() => {
@@ -132,14 +220,22 @@ export function MailScreen() {
 			data-mailapp
 			data-embedded="true"
 			data-wm-theme={theme === "dark" ? "dark" : "light"}
-			style={{ display: "flex", flex: 1, minHeight: 0, height: "100%" }}
+			style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}
 		>
 			<div
 				data-mailroot
 				data-mstep={m.mstep}
+				data-lcol={lcol ? "true" : "false"}
+				data-sube={sube ? "true" : "false"}
+				data-drag={dragging ? "true" : undefined}
 				style={{ display: "flex", flex: 1, minWidth: 0, minHeight: 0 }}
 			>
-				<MailSub drawer={drawer} onCloseDrawer={() => setDrawer(false)} />
+				<MailSub
+					drawer={drawer}
+					onCloseDrawer={() => setDrawer(false)}
+					sube={sube}
+					onToggleSube={toggleSube}
+				/>
 				{/* vnitřní obrazovky nahrazují seznam+vlákno; panel složek zůstává */}
 				{m.scr === "mail" ? (
 					<>
@@ -148,21 +244,138 @@ export function MailScreen() {
 							onSearch={() => setSearchOn(true)}
 							onCompose={() => setNewOn(true)}
 						/>
+						{/* táhlo šířky seznamu + Full Screen čtení (prototyp ř. 779–784) */}
+						<div
+							data-rz
+							data-tabup
+							onPointerDown={rzDown}
+							onDoubleClick={rzReset}
+							title="Táhni pro změnu šířky seznamu · dvojklik vrátí výchozí"
+							style={{ width: 9, flex: "none", cursor: "col-resize", position: "relative", margin: "0 -5px 0 -4px", zIndex: 6 }}
+						>
+							<span data-rzline style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1 }} />
+							<span
+								onClick={() => {
+									const n = !lcol;
+									setLcol(n);
+									showToast(
+										n
+											? "Full Screen — čtení na celou šířku. Šipkou na děliči se vrátíš."
+											: "Split View — seznam vedle čtení.",
+									);
+								}}
+								title={lcol ? "Zobrazit seznam (Split View)" : "Skrýt seznam — čtení na celou šířku"}
+								style={{
+									position: "absolute",
+									top: "50%",
+									left: -4,
+									transform: "translateY(-50%)",
+									width: 17,
+									height: 38,
+									borderRadius: 9,
+									border: "1px solid var(--line)",
+									background: "var(--panel)",
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "center",
+									cursor: "pointer",
+									color: "var(--ink-3)",
+									boxShadow: "var(--shadow-sm)",
+									fontFamily: "var(--w-font-mono)",
+									fontSize: 11,
+								}}
+							>
+								{lcol ? "›" : "‹"}
+							</span>
+						</div>
 						<MailThread />
 					</>
 				) : m.scr === "deni" ? (
 					<DeniScreen />
 				) : m.scr === "admin" ? (
 					<AdminScreen />
+				) : m.scr === "prirucka" ? (
+					<PriruckaScreen />
 				) : (
 					<NastaveniScreen />
 				)}
 			</div>
 
-			{/* overlaye modulu: hledání ⌘K, Nová zpráva, tahák zkratek */}
+			{/* mobilní spodní lišta (prototyp data-moonly, ř. 1784–1800) — jen ≤879 px */}
+			{m.scr === "mail" && (
+				<div
+					data-moonly
+					style={{
+						display: "flex",
+						borderTop: "1px solid var(--line)",
+						background: "var(--panel)",
+						flex: "none",
+						paddingBottom: "env(safe-area-inset-bottom)",
+					}}
+				>
+					<div
+						onClick={() => m.setMstep("list")}
+						data-mnav
+						data-active={m.mstep === "list" || undefined}
+						style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "9px 0 7px", cursor: "pointer" }}
+					>
+						<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+							<rect x="3.5" y="5" width="17" height="14" rx="1.6" />
+							<path d="M4.2 6.4 L12 12.6 L19.8 6.4" />
+						</svg>
+						<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10 }}>Doručené</span>
+					</div>
+					<div
+						onClick={() => setNewOn(true)}
+						style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "9px 0 7px", cursor: "pointer" }}
+					>
+						<span
+							style={{
+								width: 34,
+								height: 34,
+								marginTop: -14,
+								borderRadius: "50%",
+								background: "var(--brass)",
+								color: "#fff",
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+								boxShadow: "var(--shadow)",
+							}}
+						>
+							<svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden>
+								<path d="M2 12 L2.8 9.2 L9.8 2.2 A1.1 1.1 0 0 1 11.4 2.2 L11.8 2.6 A1.1 1.1 0 0 1 11.8 4.2 L4.8 11.2 Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+							</svg>
+						</span>
+						<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10, color: "var(--brass-text)" }}>Napsat</span>
+					</div>
+					<div
+						onClick={() => setDrawer(true)}
+						data-mnav
+						style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "9px 0 7px", cursor: "pointer" }}
+					>
+						<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+							<circle cx="7" cy="7" r="2.6" />
+							<circle cx="17" cy="7" r="2.6" />
+							<circle cx="7" cy="17" r="2.6" />
+							<circle cx="17" cy="17" r="2.6" />
+						</svg>
+						<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10 }}>Schránky</span>
+					</div>
+				</div>
+			)}
+
+			{/* overlaye modulu: hledání ⌘K, Nová zpráva, tahák zkratek, plovoucí composer */}
 			<SearchOverlay open={searchOn} onClose={() => setSearchOn(false)} />
-			<NewMessage open={newOn} onClose={() => setNewOn(false)} />
+			<NewMessage
+				open={newOn}
+				onClose={() => {
+					setNewOn(false);
+					m.setNewMsg(null);
+				}}
+			/>
 			<CheatSheet open={cheatOn} onClose={() => setCheatOn(false)} />
+			<FloatComposer />
 		</div>
 	);
 }

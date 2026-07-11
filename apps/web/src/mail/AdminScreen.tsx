@@ -5,11 +5,14 @@
  * (osobní schránky v ní NEJSOU — audit L-48), Nepřečtené per schránka (čte a
  * zapisuje SDÍLENÝ m.mbRead/m.setMbRead — stejná data jako řádky seznamu),
  * Pravidla a Šablony. Stav mimo mbRead je demo vrstva držená lokálně
- * (useState z ADM_SEED); průvodce připojením a karta osoby zjednodušeny na toast.
+ * (useState z ADM_SEED); „+ Připojit schránku" otevírá MailboxWizard a avatary
+ * v matici Přístupů kartu osoby (PersonCard) s offboardingem.
  */
 import { useState } from "react";
 import { showToast } from "../lib/toast";
 import { ADM_SEED, type AdmSeed, MB, P, TPL } from "./data";
+import { MailboxWizard } from "./MailboxWizard";
+import { PersonCard } from "./PersonCard";
 import { useMail } from "./state";
 
 const ROLE = ["bez přístupu", "člen", "správce"];
@@ -68,6 +71,9 @@ export function AdminScreen() {
 	const [adm, setAdmRaw] = useState<AdmSeed>(cache.adm);
 	const [tplDel, setTplDel] = useState<Record<string, true>>(cache.tplDel);
 	const [tplAdd, setTplAdd] = useState(cache.tplAdd);
+	// overlaye: průvodce připojením schránky + karta osoby z matice Přístupů
+	const [wizOn, setWizOn] = useState(false);
+	const [person, setPerson] = useState<string | null>(null);
 
 	const setAdm = (patch: Partial<AdmSeed>) => {
 		cache.adm = { ...cache.adm, ...patch };
@@ -234,9 +240,7 @@ export function AdminScreen() {
 					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
 						<span
 							data-ghost
-							onClick={() =>
-								showToast("Průvodce připojením schránky přijde s reálným mail backendem (M1) — Gmail/M365 přes OAuth, IMAP+SMTP kdekoli")
-							}
+							onClick={() => setWizOn(true)}
 							style={{ fontSize: 11.5, padding: "6px 12px", flex: "none" }}
 						>
 							+ Připojit schránku
@@ -262,7 +266,7 @@ export function AdminScreen() {
 									<div
 										key={pid}
 										data-pcol
-										onClick={() => showToast("Karta osoby s offboardingem přijde s další várkou mailu")}
+										onClick={() => setPerson(pid)}
 										title="Otevřít kartu osoby"
 										style={{ width: 76, flex: "none", textAlign: "center", padding: "6px 0 7px", cursor: "pointer", borderRadius: 9 }}
 									>
@@ -453,6 +457,10 @@ export function AdminScreen() {
 					</div>
 				</div>
 			</div>
+
+			{/* overlaye: průvodce připojením schránky + karta osoby */}
+			<MailboxWizard open={wizOn} onClose={() => setWizOn(false)} />
+			<PersonCard pid={person} onClose={() => setPerson(null)} />
 		</div>
 	);
 }

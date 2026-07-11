@@ -54,6 +54,11 @@ export interface TaskCardProps {
 	 * Vybraný řádek má podklad brass-soft (data-selrow).
 	 */
 	sel?: { on: boolean; onToggle: (shiftKey: boolean) => void; title?: string };
+	/**
+	 * Rychlé přeplánování na hover (prototyp data-qsched/data-qsbtn, CSS ř. 112–115):
+	 * chipy „Dnes / Zítra / Př. týden" před termínem. Lokalizuje konzument.
+	 */
+	sched?: { items: { key: string; label: string }[]; onShift: (key: string) => void };
 	/** aria pro zaškrtávátko když je hotovo (klik → odškrtne). Lokalizuje konzument. */
 	doneLabel?: string;
 	/** aria pro zaškrtávátko když není hotovo (klik → dokončí). Lokalizuje konzument. */
@@ -101,6 +106,7 @@ export function TaskCard({
 	parentName,
 	done,
 	sel,
+	sched,
 	// packages/ui nemá i18n → EN neutrální fallback; konzument (TaskItem) předává lokalizované.
 	doneLabel = "Mark as not done",
 	undoneLabel = "Complete",
@@ -374,6 +380,30 @@ export function TaskCard({
 					</div>
 				)}
 			</div>
+
+			{/* rychlé přeplánování — jen na hover (prototyp data-qsched) */}
+			{sched && !done && (
+				<span
+					data-qsched
+					className="hidden shrink-0 items-center group-hover:inline-flex"
+					style={{ gap: 3 }}
+				>
+					{sched.items.map((it) => (
+						<button
+							key={it.key}
+							type="button"
+							onClick={(e) => {
+								e.stopPropagation();
+								sched.onShift(it.key);
+							}}
+							className="cursor-pointer whitespace-nowrap rounded-md border border-line bg-card font-mono text-ink-3 hover:border-brass hover:text-brass-text"
+							style={{ fontSize: 9.5, padding: "2px 6px" }}
+						>
+							{it.label}
+						</button>
+					))}
+				</span>
+			)}
 
 			{/* termín (mono) */}
 			{due && (

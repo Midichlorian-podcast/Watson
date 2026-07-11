@@ -90,7 +90,18 @@ const mbIni = (short: string) =>
 		.map((w) => (w[0] ?? "").toUpperCase())
 		.join("");
 
-export function MailSub({ drawer, onCloseDrawer }: { drawer: boolean; onCloseDrawer: () => void }) {
+export function MailSub({
+	drawer,
+	onCloseDrawer,
+	sube,
+	onToggleSube,
+}: {
+	drawer: boolean;
+	onCloseDrawer: () => void;
+	/** Rozbalený panel složek; false = režim ikon 58 px (prototyp sube, CSS ≥1100 px). */
+	sube: boolean;
+	onToggleSube: () => void;
+}) {
 	const m = useMail();
 	const un = m.unreadStats();
 
@@ -146,6 +157,20 @@ export function MailSub({ drawer, onCloseDrawer }: { drawer: boolean; onCloseDra
 						}}
 					>
 						Doručené
+					</span>
+					{/* přepínač sbalení panelu na ikony (prototyp subToggle, ř. 349) */}
+					<span
+						data-rowbtn
+						onClick={onToggleSube}
+						title={sube ? "Sbalit složky na ikony" : "Rozbalit panel složek"}
+						style={{
+							border: "1px solid var(--line)",
+							background: "var(--panel)",
+							fontFamily: "var(--w-font-mono)",
+							fontSize: 11,
+						}}
+					>
+						{sube ? "«" : "»"}
 					</span>
 				</div>
 
@@ -398,6 +423,19 @@ export function MailSub({ drawer, onCloseDrawer }: { drawer: boolean; onCloseDra
 						<path d="M12 4.2 V6.6 M12 17.4 V19.8 M4.2 12 H6.6 M17.4 12 H19.8 M6.5 6.5 L8.2 8.2 M15.8 15.8 L17.5 17.5 M17.5 6.5 L15.8 8.2 M8.2 15.8 L6.5 17.5" />
 					</svg>
 					<span data-sublbl style={{ flex: 1 }}>Nastavení</span>
+				</SRow>
+				{/* Příručka — co se stane s mailem, když přistane (prototyp ř. 441–444) */}
+				<SRow
+					active={m.scr === "prirucka"}
+					onClick={() => m.setScr("prirucka")}
+					title="Příručka — co se stane s mailem, když přistane"
+				>
+					<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinejoin="round" style={{ flex: "none" }} aria-hidden>
+						<path d="M5 4.5 A1.8 1.8 0 0 1 6.8 3 H19 V19 H6.8 A1.8 1.8 0 0 0 5 20.8 Z" />
+						<path d="M5 19 A1.8 1.8 0 0 1 6.8 17.2 H19" />
+						<line x1="9" y1="7.5" x2="15" y2="7.5" />
+					</svg>
+					<span data-sublbl style={{ flex: 1 }}>Příručka</span>
 				</SRow>
 			</div>
 			{drawer && (

@@ -7,10 +7,14 @@ import { useListSearch } from "./listSearch";
 import { redo, undo } from "./undo";
 import { useViewMode } from "./viewMode";
 
-/** g + písmeno → route (plná mapa prototypu, ř. 2216: d/n/u/k/p/c/r/s/i/h). */
+/** g + písmeno → route (plná mapa prototypu, ř. 2216 + gmap: a/l/v/m pro nové obrazovky). */
 const G_ROUTES: Record<
 	string,
 	| "/"
+	| "/prehled"
+	| "/mail"
+	| "/seznamy"
+	| "/velin"
 	| "/ukoly"
 	| "/nadchazejici"
 	| "/projekty"
@@ -21,11 +25,15 @@ const G_ROUTES: Record<
 	| "/reporty"
 	| "/postupy"
 > = {
+	a: "/prehled",
 	d: "/",
 	u: "/ukoly",
 	k: "/ukoly", // kalendář = pohled Úkolů (view switcher v headeru)
 	n: "/nadchazejici",
 	p: "/projekty",
+	l: "/seznamy",
+	v: "/velin", // Velín — ne-vedení uvidí zamčenou obrazovku (gating na obrazovce)
+	m: "/mail",
 	c: "/cile",
 	r: "/reporty",
 	s: "/postupy",
