@@ -18,7 +18,18 @@ import {
 	useState,
 } from "react";
 import { showToast } from "../lib/toast";
-import { ADM_SEED, GK, type MailThread, MB, NAST_SEED, P, SLA, STL, TH } from "./data";
+import {
+	ADM_SEED,
+	type AdmSeed,
+	GK,
+	type MailThread,
+	MB,
+	NAST_SEED,
+	P,
+	SLA,
+	STL,
+	TH,
+} from "./data";
 
 /** Per-thread overrides (prototyp `ov` + eff, ř. 3449–3465). */
 export interface ThreadOv {
@@ -112,9 +123,11 @@ export interface MailBridge {
 		mailTh: string;
 		mailLabel: string;
 		priority?: number;
-		/** Volitelná pole plného formuláře Email → úkol (Modul 10). */
+		/** Volitelná pole plného formuláře Email → úkol (Modul 10).
+		 * dueISO: undefined = pole nebylo v UI (fallback dnešek), null = uživatel
+		 * termín vymazal → úkol bez termínu (audit S8). */
 		description?: string;
-		dueISO?: string;
+		dueISO?: string | null;
 		projectId?: string;
 	}) => void | Promise<void>;
 }
@@ -192,7 +205,8 @@ interface MailCtxValue {
 	undoBack: () => void;
 	warn: { id: string; markDone: boolean } | null;
 	setWarn: (w: { id: string; markDone: boolean } | null) => void;
-	collArmed: boolean;
+	/** Kolizní pojistka per vlákno — globální bool platil napříč vlákny (audit D6). */
+	collArmed: Record<string, boolean>;
 	// chat
 	chatX: Record<string, ChatExtra[]>;
 	sendChat: (id: string, text: string) => void;
@@ -213,6 +227,9 @@ interface MailCtxValue {
 	// zobrazení
 	exp: Record<string, boolean>;
 	toggleExp: (key: string) => void;
+	/** Explicitní zápis (ne flip) — sbalení zpráv má default „poslední otevřená",
+	 * který se odesláním posouvá; flip přes toggleExp se pak četl obráceně (audit D2). */
+	setExp: (key: string, open: boolean) => void;
 	translated: boolean;
 	setTranslated: (v: boolean) => void;
 	imgOk: Record<string, boolean>;
@@ -224,8 +241,11 @@ interface MailCtxValue {
 	/** Email → úkol jedním klikem (prototyp quickTask, ř. 2594) — přes bridge.onCreateTask. */
 	quickTask: (id: string) => void;
 	bridge: MailBridge;
-	// admin/nastavení seedy (čtou je vrstvy modulu)
-	adm: typeof ADM_SEED;
+	// admin/nastavení: adm = seed + živé overrides (fixed, ai) — banner v seznamu
+	// a warn tečky sidebaru musí vidět, co správce přepnul (audit S5)
+	adm: AdmSeed;
+	setAdmFixed: (v: boolean) => void;
+	setAdmAi: (mb: string, lvl: "off" | "read" | "triage") => void;
 	nast: typeof NAST_SEED;
 }
 
@@ -299,13 +319,20 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const [newMsg, setNewMsg] = useState<{
 		fwd?: { subj: string; body: string };
 	} | null>(null);
-	const [exp, setExp] = useState<Record<string, boolean>>({});
+	const [exp, setExpState] = useState<Record<string, boolean>>({});
 	const [translated, setTranslated] = useState(false);
 	const [imgOk, setImgOk] = useState<Record<string, boolean>>({});
 	const [sum, setSum] = useState(true);
 	const [undo, setUndo] = useState<UndoState | null>(null);
 	const [warn, setWarn] = useState<{ id: string; markDone: boolean } | null>(null);
-	const [collArmed, setCollArmed] = useState(false);
+	const [collArmed, setCollArmed] = useState<Record<string, boolean>>({});
+	// S5: admin přepínače žijí v provideru (ov nad ADM_SEED, vzor mbRead) — lokální
+	// cache AdminScreen neuměla zhasnout syncWarn banner ani warn tečky sidebaru.
+	// Efemérní jako ov, v souladu s prototypem.
+	const [admOv, setAdmOv] = useState<{
+		fixed?: boolean;
+		ai: Record<string, "off" | "read" | "triage">;
+	}>({ ai: {} });
 	// Reálné vazby z tasks.mail_th (bridge); seed jen jako fallback bez aplikace.
 	const taskLinks = bridge?.taskLinks ?? TASK_LINKS_SEED;
 
@@ -348,7 +375,17 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 		att: string | undefined;
 		sent: SentMsg[] | undefined;
 	} | null>(null);
-	const collTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// per vlákno (D6) — jeden sdílený timer by odjištění jednoho vlákna zrušil jinému
+	const collTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+	// D11: timery nesmí přežít provider — setState po unmountu + únik intervalu
+	useEffect(
+		() => () => {
+			if (undoTimer.current) clearInterval(undoTimer.current);
+			for (const timer of Object.values(collTimer.current)) clearTimeout(timer);
+		},
+		[],
+	);
 
 	const ovOf = useCallback((id: string): ThreadOv => ov[id] ?? {}, [ov]);
 	const setOv = useCallback((id: string, patch: ThreadOv) => {
@@ -643,15 +680,20 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 				showToast("Koncept je vrácený s komentářem — uprav ho a vyžádej schválení znovu.");
 				return;
 			}
-			// kolizní pojistka — kolega právě dopisuje (seed t.coll); druhý klik do 6 s odešle
-			if (t.coll && !collArmed) {
-				setCollArmed(true);
+			// kolizní pojistka — kolega právě dopisuje (seed t.coll); druhý klik do 6 s
+			// odešle. Odjištění platí JEN pro tohle vlákno (D6) — globální bool by
+			// nechal projít bez varování i odeslání v jiném kolizním vlákně.
+			if (t.coll && !collArmed[t.id]) {
+				setCollArmed((s) => ({ ...s, [t.id]: true }));
 				showToast("Petra právě dopisuje odpověď — kliknutím znovu odešleš i tak");
-				if (collTimer.current) clearTimeout(collTimer.current);
-				collTimer.current = setTimeout(() => setCollArmed(false), 6000);
+				if (collTimer.current[t.id]) clearTimeout(collTimer.current[t.id]);
+				collTimer.current[t.id] = setTimeout(
+					() => setCollArmed((s) => ({ ...s, [t.id]: false })),
+					6000,
+				);
 				return;
 			}
-			setCollArmed(false);
+			setCollArmed((s) => (s[t.id] ? { ...s, [t.id]: false } : s));
 			// hlídání přílohy: text slibuje přílohu, ale žádná není
 			const text = drafts[t.id]?.text ?? (t.draft ?? []).join("\n");
 			if (/příloh|příloz|přikládám|přiložen|attach/i.test(text) && !attached[t.id]) {
@@ -775,8 +817,29 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	}, []);
 
 	const toggleExp = useCallback((key: string) => {
-		setExp((s) => ({ ...s, [key]: !s[key] }));
+		setExpState((s) => ({ ...s, [key]: !s[key] }));
 	}, []);
+	// D2: explicitní hodnota — volající si drží vlastní default (poslední zpráva
+	// otevřená), flip by se po posunu „poslední" interpretoval obráceně
+	const setExp = useCallback((key: string, open: boolean) => {
+		setExpState((s) => ({ ...s, [key]: open }));
+	}, []);
+	const setAdmFixed = useCallback((v: boolean) => {
+		setAdmOv((s) => ({ ...s, fixed: v }));
+	}, []);
+	const setAdmAi = useCallback((mb: string, lvl: "off" | "read" | "triage") => {
+		setAdmOv((s) => ({ ...s, ai: { ...s.ai, [mb]: lvl } }));
+	}, []);
+	// S5: merge seed + ov drží tvar ADM_SEED — konzumenti (MailList banner,
+	// MailSub tečky, MailThread AI) čtou m.adm beze změny a vidí živý stav
+	const adm = useMemo<AdmSeed>(
+		() => ({
+			...ADM_SEED,
+			fixed: admOv.fixed ?? ADM_SEED.fixed,
+			ai: { ...ADM_SEED.ai, ...admOv.ai },
+		}),
+		[admOv],
+	);
 	const allowImgs = useCallback((id: string) => {
 		setImgOk((s) => ({ ...s, [id]: true }));
 	}, []);
@@ -886,6 +949,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			gkLeft,
 			exp,
 			toggleExp,
+			setExp,
 			translated,
 			setTranslated,
 			imgOk,
@@ -895,7 +959,9 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			taskLinks,
 			quickTask,
 			bridge: bridge ?? {},
-			adm: ADM_SEED,
+			adm,
+			setAdmFixed,
+			setAdmAi,
 			nast: NAST_SEED,
 		}),
 		[
@@ -962,6 +1028,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			gkLeft,
 			exp,
 			toggleExp,
+			setExp,
 			translated,
 			imgOk,
 			allowImgs,
@@ -969,6 +1036,9 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			taskLinks,
 			quickTask,
 			bridge,
+			adm,
+			setAdmFixed,
+			setAdmAi,
 		],
 	);
 

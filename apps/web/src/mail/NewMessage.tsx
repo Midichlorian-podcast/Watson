@@ -29,13 +29,44 @@ const hasExternal = (to: string): boolean =>
 		.filter((tok) => tok.includes("@"))
 		.some((tok) => !/@t-group-dance\.cz$/i.test(tok.trim()));
 
+/** Persistence rozepsané Nové zprávy (audit D10) — koncepty vláken už reload
+ * přežívají (watson-mail.drafts), tohle okno drželo text jen v useState. */
+const LS_NEW = "watson-mail.newDraft";
+
+interface NewDraft {
+	from: string;
+	to: string;
+	subj: string;
+	body: string;
+	atts: string[];
+}
+
+const loadNewDraft = (): NewDraft | null => {
+	try {
+		const raw = localStorage.getItem(LS_NEW);
+		if (!raw) return null;
+		const d = JSON.parse(raw) as Partial<NewDraft>;
+		return {
+			from: typeof d.from === "string" ? d.from : "info",
+			to: typeof d.to === "string" ? d.to : "",
+			subj: typeof d.subj === "string" ? d.subj : "",
+			body: typeof d.body === "string" ? d.body : "",
+			atts: Array.isArray(d.atts) ? d.atts.filter((a) => typeof a === "string") : [],
+		};
+	} catch {
+		return null;
+	}
+};
+
 export function NewMessage({ open, onClose }: { open: boolean; onClose: () => void }) {
+	// rozepsaný koncept z minula (D10); lazy init — čte se jen při mountu
+	const [saved] = useState(loadNewDraft);
 	// výchozí identita info@ (prototyp state.newFrom: 'info', ř. 2284)
-	const [from, setFrom] = useState("info");
-	const [to, setTo] = useState("");
-	const [subj, setSubj] = useState("");
-	const [body, setBody] = useState("");
-	const [atts, setAtts] = useState<string[]>([]);
+	const [from, setFrom] = useState(saved?.from ?? "info");
+	const [to, setTo] = useState(saved?.to ?? "");
+	const [subj, setSubj] = useState(saved?.subj ?? "");
+	const [body, setBody] = useState(saved?.body ?? "");
+	const [atts, setAtts] = useState<string[]>(saved?.atts ?? []);
 	const [warnAtt, setWarnAtt] = useState(false);
 	const [tplOpen, setTplOpen] = useState(false);
 	const taRef = useRef<HTMLTextAreaElement>(null);
@@ -74,6 +105,20 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 		return () => document.removeEventListener("mousedown", h);
 	}, [tplOpen]);
 
+	// koncept přežije zavření okna i reload (D10) — debounce 1 s; prázdný
+	// formulář záznam maže, ať nestraší starý koncept po odeslání/resetu
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			try {
+				if (!to && !subj && !body && atts.length === 0) localStorage.removeItem(LS_NEW);
+				else localStorage.setItem(LS_NEW, JSON.stringify({ from, to, subj, body, atts }));
+			} catch {
+				/* plné úložiště — koncept zůstává aspoň v paměti */
+			}
+		}, 1000);
+		return () => clearTimeout(timer);
+	}, [from, to, subj, body, atts]);
+
 	const isFwd = subj.startsWith("Fwd:");
 	const extOn = hasExternal(to);
 	const tpls = TPL[from] ?? [];
@@ -86,6 +131,12 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 		setAtts([]);
 		setWarnAtt(false);
 		setTplOpen(false);
+		// odeslaný/zahozený koncept nesmí obživnout při dalším otevření (D10)
+		try {
+			localStorage.removeItem(LS_NEW);
+		} catch {
+			/* bez úložiště není co mazat */
+		}
 	};
 
 	/** Odeslání (prototyp nw.send, ř. 4220) — s pojistkou na slíbenou přílohu.

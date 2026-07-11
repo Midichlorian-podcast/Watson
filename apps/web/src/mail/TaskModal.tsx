@@ -6,7 +6,7 @@
  * (audit L-19: osobní vlákno smí jen do osobních projektů), Poznámka.
  * Vytvoření jde přes m.bridge.onCreateTask — payload už tato pole podporuje.
  */
-import { type CSSProperties, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { showToast } from "../lib/toast";
 import type { MailThread } from "./data";
 import { useMail } from "./state";
@@ -40,13 +40,7 @@ const isoPlusDays = (days: number): string => {
 	return d.toISOString().slice(0, 10);
 };
 
-export function TaskModal({
-	t,
-	onClose,
-}: {
-	t: MailThread;
-	onClose: () => void;
-}) {
+export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }) {
 	const m = useMail();
 	const e = m.eff(t);
 	const flag = e.flag;
@@ -69,6 +63,16 @@ export function TaskModal({
 		return t.personal ? all.filter((p) => p.personal) : all;
 	}, [m.bridge.projects, t.personal]);
 
+	// Esc zavírá JEN modal (vzor NewMessage) — bez data-esc-layer by globální Esc
+	// v MailScreen zavřel i vlákno/výběr pod ním (audit S10)
+	useEffect(() => {
+		const h = (ev: globalThis.KeyboardEvent) => {
+			if (ev.key === "Escape") onClose();
+		};
+		document.addEventListener("keydown", h);
+		return () => document.removeEventListener("keydown", h);
+	}, [onClose]);
+
 	const create = () => {
 		const name = title.trim() || t.subj;
 		if (!m.bridge.onCreateTask) {
@@ -87,13 +91,12 @@ export function TaskModal({
 			mailLabel: t.subj,
 			priority: prio === "p1" ? 1 : prio === "p2" ? 2 : prio === "p3" ? 3 : 4,
 			description: description || undefined,
-			dueISO: due || undefined,
+			// null = vymazaný termín → úkol BEZ termínu; undefined by v bridge
+			// spadlo na dnešek (audit S8)
+			dueISO: due || null,
 			projectId: projId ?? undefined,
 		});
-		const pj = projects.find((p) => p.id === projId);
-		showToast(
-			`Úkol vytvořen${pj ? ` v projektu ${pj.name}` : ""}${due ? ` · termín ${due}` : ""} — propojený s vláknem.`,
-		);
+		// toast hlásí bridge (s akcí Otevřít) — druhý odsud by se dubloval (S8)
 		onClose();
 	};
 
@@ -101,21 +104,61 @@ export function TaskModal({
 		<>
 			<div
 				onClick={onClose}
-				style={{ position: "fixed", inset: 0, zIndex: 79, background: "rgba(23,40,63,.32)", animation: "wFade .12s ease" }}
+				style={{
+					position: "fixed",
+					inset: 0,
+					zIndex: 79,
+					background: "rgba(23,40,63,.32)",
+					animation: "wFade .12s ease",
+				}}
 			/>
 			<div
+				data-esc-layer
 				data-screen-label="Email → úkol"
-				style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 80, width: "min(460px, 94vw)", maxHeight: "88vh", overflow: "auto", background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "var(--shadow)", animation: "wPop .14s ease", padding: "17px 18px 15px" }}
+				style={{
+					position: "fixed",
+					top: "50%",
+					left: "50%",
+					transform: "translate(-50%,-50%)",
+					zIndex: 80,
+					width: "min(460px, 94vw)",
+					maxHeight: "88vh",
+					overflow: "auto",
+					background: "var(--panel)",
+					border: "1px solid var(--line)",
+					borderRadius: 16,
+					boxShadow: "var(--shadow)",
+					animation: "wPop .14s ease",
+					padding: "17px 18px 15px",
+				}}
 			>
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 800, fontSize: 14.5, color: "var(--ink)", flex: 1 }}>
+					<span
+						style={{
+							fontFamily: "var(--w-font-display)",
+							fontWeight: 800,
+							fontSize: 14.5,
+							color: "var(--ink)",
+							flex: 1,
+						}}
+					>
 						Udělat z mailu úkol
 					</span>
-					<span onClick={onClose} style={{ fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}>
+					<span
+						onClick={onClose}
+						style={{ fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
+					>
 						×
 					</span>
 				</div>
-				<div style={{ fontFamily: "var(--w-font-body)", fontSize: 11, color: "var(--ink-3)", marginTop: 2 }}>
+				<div
+					style={{
+						fontFamily: "var(--w-font-body)",
+						fontSize: 11,
+						color: "var(--ink-3)",
+						marginTop: 2,
+					}}
+				>
 					Úkol dostane odkaz zpět na vlákno, přílohy a tvůj komentář. Stav se provazuje obousměrně.
 				</div>
 
@@ -123,7 +166,12 @@ export function TaskModal({
 				<input
 					value={title}
 					onChange={(ev) => setTitle(ev.target.value)}
-					style={{ ...inputBox, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 13 }}
+					style={{
+						...inputBox,
+						fontFamily: "var(--w-font-display)",
+						fontWeight: 600,
+						fontSize: 13,
+					}}
 				/>
 
 				<div style={lbl}>
@@ -146,7 +194,13 @@ export function TaskModal({
 									onClick={() => setPrio(p)}
 									data-statepill
 									data-on={prio === p || undefined}
-									style={{ fontFamily: "var(--w-font-mono)", fontWeight: 600, fontSize: 10, padding: "3px 8px", borderRadius: 999 }}
+									style={{
+										fontFamily: "var(--w-font-mono)",
+										fontWeight: 600,
+										fontSize: 10,
+										padding: "3px 8px",
+										borderRadius: 999,
+									}}
 								>
 									{p.toUpperCase()}
 								</span>
@@ -161,14 +215,22 @@ export function TaskModal({
 							type="date"
 							value={due}
 							onChange={(ev) => setDue(ev.target.value)}
-							style={{ ...inputBox, width: "auto", fontFamily: "var(--w-font-mono)", fontSize: 11, padding: "5px 9px" }}
+							style={{
+								...inputBox,
+								width: "auto",
+								fontFamily: "var(--w-font-mono)",
+								fontSize: 11,
+								padding: "5px 9px",
+							}}
 						/>
 					</div>
 				</div>
 
 				<div style={{ ...lbl, margin: "11px 0 5px" }}>
 					PROJEKT{" "}
-					{t.personal && <span style={{ opacity: 0.7 }}>· osobní vlákno → jen osobní projekty</span>}
+					{t.personal && (
+						<span style={{ opacity: 0.7 }}>· osobní vlákno → jen osobní projekty</span>
+					)}
 				</div>
 				{projects.length > 0 ? (
 					<div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -176,7 +238,13 @@ export function TaskModal({
 							onClick={() => setProjId(null)}
 							data-statepill
 							data-on={projId === null || undefined}
-							style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10.5, padding: "3px 10px", borderRadius: 999 }}
+							style={{
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 600,
+								fontSize: 10.5,
+								padding: "3px 10px",
+								borderRadius: 999,
+							}}
 						>
 							Bez projektu
 						</span>
@@ -186,10 +254,27 @@ export function TaskModal({
 								onClick={() => setProjId(p.id)}
 								data-statepill
 								data-on={projId === p.id || undefined}
-								style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10.5, padding: "3px 10px", borderRadius: 999 }}
+								style={{
+									display: "inline-flex",
+									alignItems: "center",
+									gap: 5,
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 600,
+									fontSize: 10.5,
+									padding: "3px 10px",
+									borderRadius: 999,
+								}}
 							>
 								{p.color && (
-									<span style={{ width: 8, height: 8, borderRadius: "50%", background: p.color, flex: "none" }} />
+									<span
+										style={{
+											width: 8,
+											height: 8,
+											borderRadius: "50%",
+											background: p.color,
+											flex: "none",
+										}}
+									/>
 								)}
 								{p.name}
 							</span>

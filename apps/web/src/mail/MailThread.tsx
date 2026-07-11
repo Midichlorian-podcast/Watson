@@ -360,6 +360,18 @@ export function MailThread() {
 		m.checkSend(th, pend.markDone);
 	}, [pend, m]);
 
+	// Esc zavírá JEN warn modal přílohy (vzor NewMessage) — bez data-esc-layer
+	// by globální Esc v MailScreen zavřel i vlákno pod modalem (audit S10)
+	const warnOn = !!m.warn;
+	useEffect(() => {
+		if (!warnOn) return;
+		const h = (e: globalThis.KeyboardEvent) => {
+			if (e.key === "Escape") m.setWarn(null);
+		};
+		document.addEventListener("keydown", h);
+		return () => document.removeEventListener("keydown", h);
+	}, [warnOn, m.setWarn]);
+
 	// ── prázdný stav (prototyp ř. 1369–1377) ──
 	if (!t) {
 		return (
@@ -519,24 +531,19 @@ export function MailThread() {
 	const nchat = t.chat.length + (m.chatX[t.id] ?? []).length;
 
 	/**
-	 * Sbalování zpráv: state API má jen toggleExp (flip od false), ale poslední
-	 * zpráva má být výchozí rozbalená. Proto u poslední zprávy klíč
-	 * interpretujeme obráceně (exp=true → sbaleno) — toggleExp pak přepíná
-	 * správně na první klik u všech zpráv (prototyp default `i === last`).
+	 * Sbalování zpráv (audit D2): klíč = stabilní identita zprávy (seed index /
+	 * index v sentX — obojí append-only), hodnota = explicitní „otevřeno".
+	 * Dřívější index-klíče s obrácenou interpretací u poslední zprávy se po
+	 * odeslání (přibude zpráva, „poslední" se posune) četly opačně. Default
+	 * bez záznamu zůstává prototypový: otevřená je jen poslední zpráva.
 	 */
-	const expKey = (i: number) => `${t.id}:${i}`;
-	const isOpen = (i: number) => (i === last ? !m.exp[expKey(i)] : !!m.exp[expKey(i)]);
+	const expKey = (i: number) =>
+		i < t.msgs.length ? `${t.id}:m:${i}` : `${t.id}:x:${i - t.msgs.length}`;
+	const isOpen = (i: number) => m.exp[expKey(i)] ?? i === last;
 	const anyCollapsed = msgsAll.some((_, i) => !isOpen(i));
 	const expAll = () => {
-		if (anyCollapsed) {
-			msgsAll.forEach((_, i) => {
-				if (!isOpen(i)) m.toggleExp(expKey(i));
-			});
-		} else {
-			msgsAll.forEach((_, i) => {
-				if (i !== last && isOpen(i)) m.toggleExp(expKey(i));
-			});
-		}
+		if (anyCollapsed) msgsAll.forEach((_, i) => m.setExp(expKey(i), true));
+		else msgsAll.forEach((_, i) => m.setExp(expKey(i), i === last));
 	};
 
 	/* ── composer (prototyp comp, ř. 3986–4104) ── */
@@ -1906,7 +1913,9 @@ export function MailThread() {
 														);
 												}}
 												data-pflag={tk.prio}
-												title={`vyřizuje ${P[tk.owner]?.n ?? tk.owner} · klik otevře úkol v aplikaci`}
+												// reálné vazby z bridge vlastníka nenesou (owner="") —
+												// tooltip spadne na název úkolu, ať není prázdný (audit D8)
+												title={`${tk.owner ? `vyřizuje ${P[tk.owner]?.n ?? tk.owner}` : tk.n} · klik otevře úkol v aplikaci`}
 												style={{
 													display: "inline-flex",
 													alignItems: "center",
@@ -2047,7 +2056,7 @@ export function MailThread() {
 									return (
 										<div
 											key={key}
-											onClick={() => m.toggleExp(key)}
+											onClick={() => m.setExp(key, true)}
 											title="Rozbalit zprávu"
 											style={{
 												display: "flex",
@@ -2108,7 +2117,7 @@ export function MailThread() {
 										style={{ padding: "15px 0 10px", borderBottom: "1px solid var(--line)" }}
 									>
 										<div
-											onClick={() => m.toggleExp(key)}
+											onClick={() => m.setExp(key, false)}
 											style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
 										>
 											<span data-av={av} style={avStyle(32, 11)}>
@@ -2701,7 +2710,7 @@ export function MailThread() {
 							flex: "none",
 						}}
 					>
-						{m.collArmed ? "další klik na Odeslat odešle i tak" : "kolizní hlídka"}
+						{m.collArmed[t.id] ? "další klik na Odeslat odešle i tak" : "kolizní hlídka"}
 					</span>
 				</div>
 			)}
@@ -3926,6 +3935,7 @@ export function MailThread() {
 						}}
 					/>
 					<div
+						data-esc-layer
 						data-screen-label="Varování — příloha"
 						style={{
 							position: "fixed",

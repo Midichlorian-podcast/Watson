@@ -46,9 +46,7 @@ export function MailBridgeProvider({ children }: { children: ReactNode }) {
 		priority: number | null;
 		completed_at: string | null;
 		mail_th: string | null;
-	}>(
-		"SELECT id, name, priority, completed_at, mail_th FROM tasks WHERE mail_th IS NOT NULL",
-	);
+	}>("SELECT id, name, priority, completed_at, mail_th FROM tasks WHERE mail_th IS NOT NULL");
 
 	const bridge = useMemo<MailBridge>(() => {
 		const taskLinks: NonNullable<MailBridge["taskLinks"]> = {};
@@ -66,9 +64,7 @@ export function MailBridgeProvider({ children }: { children: ReactNode }) {
 			];
 			taskStates[row.id] = { done: !!row.completed_at };
 		}
-		const personalWs = new Set(
-			(workspaces ?? []).filter((w) => w.isPersonal).map((w) => w.id),
-		);
+		const personalWs = new Set((workspaces ?? []).filter((w) => w.isPersonal).map((w) => w.id));
 		return {
 			taskLinks,
 			taskStates,
@@ -93,9 +89,7 @@ export function MailBridgeProvider({ children }: { children: ReactNode }) {
 					(pr) => !!pr.workspace_id && personalWs.has(pr.workspace_id),
 				);
 				const inboxId =
-					pickInboxId(personalProjects) ??
-					[...inboxProjectIds(personalProjects)][0] ??
-					null;
+					pickInboxId(personalProjects) ?? [...inboxProjectIds(personalProjects)][0] ?? null;
 				const projectId = p.projectId ?? inboxId;
 				if (!projectId) {
 					showToast(t("mail.taskNoInbox"));
@@ -112,7 +106,9 @@ export function MailBridgeProvider({ children }: { children: ReactNode }) {
 						p.name,
 						p.description ?? null,
 						p.priority ?? 3,
-						p.dueISO ?? iso,
+						// dnešek jen když termín v payloadu vůbec nebyl (quickTask);
+						// null = uživatel termín vymazal → úkol bez termínu (audit S8)
+						p.dueISO === undefined ? iso : p.dueISO,
 						p.mailTh,
 						p.mailLabel,
 						session?.user?.id ?? null,
