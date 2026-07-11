@@ -1,20 +1,26 @@
 /**
- * Peek panel — rychlý náhled položky z Přehledu/Velína NA MÍSTĚ (bez odchodu
- * z obrazovky). Boční panel vpravo: Esc / klik mimo zavírá, „Otevřít naplno"
+ * Peek — rychlé odbavení položky z Přehledu/Velína NA MÍSTĚ. Feedback
+ * 2026-07-11 (2. kolo): centrovaná karta jako detail úkolu (ne boční panel)
+ * a položky jdou rovnou VYŘÍDIT — mail Hotovo/Odložit/→úkol, seznam
+ * odškrtávání, úkoly členů a kroky postupů zaškrtnout. „Otevřít naplno"
  * provede původní navigaci (closure `openFull` dodá obrazovka — může nést
  * setActiveWs apod.). Vrstvení: z-40/41 = pod detailem úkolu (z-70), takže
- * klik na úkol v peeku vyskočí modal NAD panelem.
+ * klik na úkol v peeku vyskočí modal NAD kartou; Esc zavírá odshora.
  */
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
 import { type ReactNode, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
 import type { FlowOverviewRow, GoalOverviewRow } from "../lib/overview";
 import type { ListItemRow, ListRow, TaskRow } from "../lib/powersync/AppSchema";
+import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
+import { toggleTask } from "../lib/tasks";
 import { SLA, TH } from "../mail/data";
+import { useMail } from "../mail/state";
 
 export type PeekTarget =
 	| { kind: "goal"; goal: GoalOverviewRow & { firm?: string }; openFull: () => void }
@@ -30,6 +36,42 @@ const KIND_LABEL: Record<PeekTarget["kind"], string> = {
 	list: "peek.list",
 	member: "peek.member",
 };
+
+/** Akční tlačítko peeku (styl akcí syntézy na Přehledu). */
+function ActBtn({
+	label,
+	onClick,
+	primary,
+}: {
+	label: string;
+	onClick: () => void;
+	primary?: boolean;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className={
+				primary
+					? "rounded-lg font-display font-semibold"
+					: "rounded-lg border border-line bg-card font-display font-semibold text-ink-2 hover:border-brass hover:text-ink"
+			}
+			style={{
+				fontSize: 12,
+				padding: "6px 13px",
+				...(primary
+					? {
+							background: "var(--w-brass-soft)",
+							color: "var(--w-brass-text)",
+							border: "1px solid rgba(198,138,62,.32)",
+						}
+					: {}),
+			}}
+		>
+			{label}
+		</button>
+	);
+}
 
 export function PeekPanel({
 	target,
@@ -65,31 +107,40 @@ export function PeekPanel({
 					: target.name;
 
 	return createPortal(
-		// průhledný scrim — klik mimo zavírá, stránka pod ním zůstává vidět
+		// ztmavený scrim jako u detailu úkolu — klik mimo zavírá
 		<div
 			onClick={onClose}
-			style={{ position: "fixed", inset: 0, zIndex: 40 }}
+			style={{
+				position: "fixed",
+				inset: 0,
+				zIndex: 40,
+				background: "rgba(10,14,20,.42)",
+				display: "flex",
+				alignItems: "flex-start",
+				justifyContent: "center",
+				paddingTop: "7vh",
+			}}
 		>
-			<aside
+			<section
 				onClick={(e) => e.stopPropagation()}
-				className="border-line border-l bg-card"
+				role="dialog"
+				aria-label={title}
+				className="border border-line bg-card"
 				style={{
-					position: "fixed",
-					top: 0,
-					right: 0,
-					bottom: 0,
-					zIndex: 41,
-					width: "min(430px, 94vw)",
-					boxShadow: "var(--w-shadow)",
+					width: "min(620px, 94vw)",
+					maxHeight: "82vh",
 					display: "flex",
 					flexDirection: "column",
-					animation: "wPeekIn .16s ease",
+					borderRadius: 16,
+					boxShadow: "var(--w-shadow)",
+					animation: "wPeekPop .16s ease",
+					overflow: "hidden",
 				}}
 			>
 				{/* hlavička: druh + titulek + Otevřít naplno + × */}
 				<div
 					className="border-line border-b"
-					style={{ padding: "14px 18px 12px" }}
+					style={{ padding: "14px 18px 12px", flex: "none" }}
 				>
 					<div className="flex items-center" style={{ gap: 8 }}>
 						<span
@@ -144,14 +195,16 @@ export function PeekPanel({
 				<div className="min-h-0 flex-1 overflow-y-auto" style={{ padding: 18 }}>
 					{target.kind === "goal" && <GoalPeek goal={target.goal} />}
 					{target.kind === "flow" && <FlowPeek flow={target.flow} />}
-					{target.kind === "mail" && <MailPeek id={target.id} />}
+					{target.kind === "mail" && (
+						<MailPeek id={target.id} onClose={onClose} openFull={target.openFull} />
+					)}
 					{target.kind === "list" && <ListPeek id={target.id} />}
 					{target.kind === "member" && (
 						<MemberPeek id={target.id} name={target.name} />
 					)}
 				</div>
-			</aside>
-			<style>{`@keyframes wPeekIn{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}`}</style>
+			</section>
+			<style>{`@keyframes wPeekPop{from{transform:translateY(8px) scale(.985);opacity:0}to{transform:none;opacity:1}}`}</style>
 		</div>,
 		document.body,
 	);
@@ -165,6 +218,47 @@ function SectionLabel({ children }: { children: ReactNode }) {
 		>
 			{children}
 		</div>
+	);
+}
+
+/** Zaškrtávátko úkolu v peeku (vzor karta Dnes na Přehledu). */
+function PeekCheck({
+	done,
+	onToggle,
+	label,
+}: {
+	done?: boolean;
+	onToggle: () => void;
+	label: string;
+}) {
+	return (
+		<button
+			type="button"
+			aria-label={label}
+			title={label}
+			onClick={(e) => {
+				e.stopPropagation();
+				onToggle();
+			}}
+			className="grid shrink-0 place-items-center rounded-full hover:border-brass"
+			style={{
+				width: 17,
+				height: 17,
+				background: done ? "var(--w-brass)" : "var(--w-card)",
+				border: done ? "none" : "1.6px solid var(--w-line)",
+				color: done ? "#fff" : "transparent",
+			}}
+		>
+			<svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden>
+				<path
+					d="M1.5 5.5 L4 8 L8.5 2.5"
+					stroke="currentColor"
+					strokeWidth="1.8"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
+			</svg>
+		</button>
 	);
 }
 
@@ -231,10 +325,12 @@ function GoalPeek({ goal }: { goal: GoalOverviewRow & { firm?: string } }) {
 	);
 }
 
-/** Postup — kroky řetězce s živými stavy (dotaz na chain_steps + názvy úkolů). */
+/** Postup — kroky řetězce; aktivní krok jde dokončit rovnou zaškrtnutím. */
 function FlowPeek({ flow }: { flow: FlowOverviewRow }) {
 	const { t } = useTranslation();
 	const { open } = useTaskDetail();
+	const { data: session } = useSession();
+	const myId = session?.user?.id;
 	const { data: steps } = usePsQuery<{
 		task_id: string | null;
 		position: number | null;
@@ -247,6 +343,14 @@ function FlowPeek({ flow }: { flow: FlowOverviewRow }) {
 		 WHERE cs.chain_id = ? ORDER BY cs.position`,
 		[flow.id],
 	);
+	// dokončení kroku = dokončení jeho úkolu (posun štafety řídí server)
+	const completeStep = async (taskId: string) => {
+		const rows = await powerSync.getAll<TaskRow>(
+			"SELECT * FROM tasks WHERE id = ?",
+			[taskId],
+		);
+		if (rows[0]) await toggleTask(rows[0], myId);
+	};
 	return (
 		<div>
 			<div className="font-mono text-ink-2" style={{ fontSize: 12 }}>
@@ -281,26 +385,27 @@ function FlowPeek({ flow }: { flow: FlowOverviewRow }) {
 						className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"
 						style={{ gap: 10, padding: "6px 8px" }}
 					>
-						<span
-							className="grid shrink-0 place-items-center rounded-full font-mono"
-							style={{
-								width: 20,
-								height: 20,
-								fontSize: 9.5,
-								background: done
-									? "var(--w-success-soft)"
-									: active
-										? "var(--w-brass)"
+						{active && s.task_id ? (
+							<PeekCheck
+								onToggle={() => void completeStep(s.task_id as string)}
+								label={t("peek.stepDone")}
+							/>
+						) : (
+							<span
+								className="grid shrink-0 place-items-center rounded-full font-mono"
+								style={{
+									width: 17,
+									height: 17,
+									fontSize: 9,
+									background: done
+										? "var(--w-success-soft)"
 										: "var(--w-panel-2)",
-								color: done
-									? "var(--w-success-ink)"
-									: active
-										? "#fff"
-										: "var(--w-ink-3)",
-							}}
-						>
-							{done ? "✓" : i + 1}
-						</span>
+									color: done ? "var(--w-success-ink)" : "var(--w-ink-3)",
+								}}
+							>
+								{done ? "✓" : i + 1}
+							</span>
+						)}
 						<span
 							className={
 								done
@@ -326,12 +431,22 @@ function FlowPeek({ flow }: { flow: FlowOverviewRow }) {
 	);
 }
 
-/** Pošta — náhled vlákna ze seedu (demo modul; poslední 2 zprávy + interní diskuse). */
-function MailPeek({ id }: { id: string }) {
+/** Pošta — náhled vlákna + přímé odbavení (Hotovo / Odložit / → úkol). */
+function MailPeek({
+	id,
+	onClose,
+	openFull,
+}: {
+	id: string;
+	onClose: () => void;
+	openFull: () => void;
+}) {
 	const { t } = useTranslation();
+	const m = useMail();
 	const th = TH.find((x) => x.id === id);
 	if (!th) return null;
 	const sla = th.flag ? SLA[th.flag] : undefined;
+	const hasTask = (m.taskLinks[id] ?? []).length > 0;
 	return (
 		<div>
 			<div className="flex items-center" style={{ gap: 8 }}>
@@ -368,6 +483,36 @@ function MailPeek({ id }: { id: string }) {
 					</span>
 				)}
 			</div>
+
+			{/* přímé odbavení — akce mail modulu (rowAct/quickTask přes provider) */}
+			<div className="flex flex-wrap" style={{ gap: 8, marginTop: 14 }}>
+				<ActBtn
+					primary
+					label={t("peek.mailReply")}
+					onClick={() => {
+						onClose();
+						openFull();
+					}}
+				/>
+				<ActBtn
+					label={t("bulk.done")}
+					onClick={() => {
+						m.rowAct(id, "done");
+						onClose();
+					}}
+				/>
+				<ActBtn
+					label={t("peek.mailSnooze")}
+					onClick={() => {
+						m.rowAct(id, "snooze");
+						onClose();
+					}}
+				/>
+				{!hasTask && (
+					<ActBtn label={t("peek.mailTask")} onClick={() => m.quickTask(id)} />
+				)}
+			</div>
+
 			{th.sum && (
 				<div
 					className="font-body text-ink-2"
@@ -417,7 +562,7 @@ function MailPeek({ id }: { id: string }) {
 	);
 }
 
-/** Seznam (checklist) — položky s progresem, jen ke čtení (editace v Seznamech). */
+/** Seznam (checklist) — položky jdou odškrtávat rovnou v peeku. */
 function ListPeek({ id }: { id: string }) {
 	const { t } = useTranslation();
 	const { data: lists } = usePsQuery<ListRow>(
@@ -431,6 +576,12 @@ function ListPeek({ id }: { id: string }) {
 	const l = lists?.[0];
 	if (!l) return null;
 	const done = (items ?? []).filter((x) => x.done).length;
+	// stejný zápis jako Seznamy.tsx toggleItem
+	const toggleItem = (it: ListItemRow) =>
+		void powerSync.execute("UPDATE list_items SET done = ? WHERE id = ?", [
+			it.done ? 0 : 1,
+			it.id,
+		]);
 	return (
 		<div>
 			<div className="flex items-center" style={{ gap: 9 }}>
@@ -460,8 +611,9 @@ function ListPeek({ id }: { id: string }) {
 			{(items ?? []).map((it) => (
 				<div
 					key={it.id}
-					className="flex items-center"
-					style={{ gap: 9, padding: "4px 2px" }}
+					onClick={() => toggleItem(it)}
+					className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"
+					style={{ gap: 9, padding: "5px 8px" }}
 				>
 					<span
 						className="grid shrink-0 place-items-center rounded-[5px]"
@@ -493,10 +645,12 @@ function ListPeek({ id }: { id: string }) {
 	);
 }
 
-/** Člen týmu (Velín „Zátěž lidí") — jeho otevřené úkoly; klik = detail nad peekem. */
+/** Člen týmu (Velín „Zátěž lidí") — úkoly jdou rovnou dokončit; klik = detail. */
 function MemberPeek({ id, name }: { id: string; name: string }) {
 	const { t } = useTranslation();
 	const { open } = useTaskDetail();
+	const { data: session } = useSession();
+	const myId = session?.user?.id;
 	const projects = useProjects();
 	const { data: rows } = usePsQuery<TaskRow>(
 		`SELECT t.* FROM tasks t JOIN assignments a ON a.task_id = t.id
@@ -541,6 +695,10 @@ function MemberPeek({ id, name }: { id: string; name: string }) {
 						className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"
 						style={{ gap: 9, padding: "6px 8px" }}
 					>
+						<PeekCheck
+							onToggle={() => void toggleTask(tk, myId)}
+							label={t("detail.ariaComplete")}
+						/>
 						<span
 							className="shrink-0 rounded-full"
 							style={{

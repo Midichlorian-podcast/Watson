@@ -421,6 +421,8 @@ export const TPL: Record<string, MailTemplate[]> = {
   osobni: []
 };
 
-/* ── Prahy swipe gest (px) — krátký/dlouhý tah ── */
-export const SW_SHORT = 56;
-export const SW_LONG = 190;
+/* ── Prahy swipe gest (px) — krátký/dlouhý tah. Feedback 2026-07-11:
+ * prototypové 56/190 bylo moc citlivé (omylné akce) → zvednuto na 110/260,
+ * shodné s prahy úkolů (lib/useSwipe). ── */
+export const SW_SHORT = 110;
+export const SW_LONG = 260;

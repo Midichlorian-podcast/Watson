@@ -403,9 +403,15 @@ function MailRow({
 	const swuRef = useRef<HTMLDivElement>(null);
 	const sw = useRef({ startX: 0, dx: 0, on: false });
 	const swBlock = useRef(0);
-	// trackpad wheel = swipe (prototyp wheel delegace ř. 2551–2571; feedback:
-	// na touchpadu swipe nefungoval) — akumulace deltaX, dokončení po 140 ms klidu
-	const swWheelT = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// trackpad wheel = swipe (feedback: na touchpadu nefungoval; podruhé: moc
+	// omylných akcí) — gesto se ozbrojí jen výrazně horizontálním pohybem,
+	// svislý scroll ho ruší, akce se potvrdí až po 280 ms klidu (≈ puštění)
+	const swWheel = useRef({
+		armed: false,
+		timer: null as ReturnType<typeof setTimeout> | null,
+	});
+	// haptika při překročení prahu (mobil; desktop = vizuální pilulka)
+	const swTier = useRef("none");
 	const swApply = (dx: number) => {
 		const swc = swcRef.current;
 		const swu = swuRef.current;
@@ -414,6 +420,10 @@ function MailRow({
 		const eased = a <= SW_LONG ? dx : Math.sign(dx) * (SW_LONG + (a - SW_LONG) * 0.2);
 		swc.style.transform = `translateX(${eased}px)`;
 		const mag = swMag(eased);
+		if (/^[rl][12]$/.test(mag) && mag !== swTier.current && "vibrate" in navigator) {
+			navigator.vibrate(8);
+		}
+		swTier.current = mag;
 		const act = mag === "none" ? "none" : SW_CFG[`${mag[0]}${mag[1] === "0" ? "1" : mag[1]}`];
 		swu.setAttribute("data-mag", mag);
 		swu.setAttribute("data-act", act ?? "none");
@@ -480,15 +490,30 @@ function MailRow({
 				if (sw.current.on) swFinish();
 			}}
 			onWheel={(ev) => {
-				// jen horizontálně dominantní scroll; obsah jede proti prstům (natural)
-				if (Math.abs(ev.deltaX) <= Math.abs(ev.deltaY) || sw.current.on) return;
+				if (sw.current.on) return;
+				const ax = Math.abs(ev.deltaX);
+				const ay = Math.abs(ev.deltaY);
+				if (!swWheel.current.armed) {
+					// vstup: zřetelně do strany, ne šikmý scroll
+					if (ax < 8 || ax <= 2 * ay) return;
+					swWheel.current.armed = true;
+				} else if (ay >= ax) {
+					// svislý pohyb během gesta = omyl → zrušit bez akce
+					if (swWheel.current.timer) clearTimeout(swWheel.current.timer);
+					swWheel.current = { armed: false, timer: null };
+					sw.current.dx = 0;
+					swTier.current = "none";
+					swApply(0);
+					return;
+				}
+				// obsah jede proti směru prstů (natural scroll)
 				sw.current.dx -= ev.deltaX;
 				swApply(sw.current.dx);
-				if (swWheelT.current) clearTimeout(swWheelT.current);
-				swWheelT.current = setTimeout(() => {
-					swWheelT.current = null;
+				if (swWheel.current.timer) clearTimeout(swWheel.current.timer);
+				swWheel.current.timer = setTimeout(() => {
+					swWheel.current = { armed: false, timer: null };
 					swFinish();
-				}, 140);
+				}, 280);
 			}}
 			data-tid={t.id}
 			tabIndex={0}

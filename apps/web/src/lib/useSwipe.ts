@@ -1,57 +1,95 @@
 /**
- * Řádkový swipe — dotyk (pointer) i trackpad (horizontální wheel, vzor
- * prototyp WatsonMail delegace pointer+wheel, ř. 2516–2571). Krátký/dlouhý
- * tah doprava/doleva (prahy SW_SHORT/SW_LONG jako mail: 56/190 px), gumový
- * odpor za dlouhým prahem, akce až po DOKONČENÍ gesta, klik po tahu se
- * blokuje (350 ms). Vizuál kreslí konzument přes onUpdate(dx, mag).
+ * Řádkový swipe — dotyk (pointer) i trackpad (horizontální wheel). Feedback
+ * 2026-07-11: prahy zvednuté (malé 110 px / velké 260 px), akce se provede
+ * VÝHRADNĚ po dokončení gesta (puštění prstů / 280 ms klidu kolečka), wheel
+ * gesto se musí „ozbrojit" výrazně horizontálním prvním pohybem a svislý
+ * scroll ho okamžitě ruší — jinak vznikala spousta omylných akcí. Při
+ * překročení prahu krátká vibrace (podpora dle zařízení; desktop trackpad
+ * web rozvibrovat neumí). Vizuál kreslí konzument přes onUpdate(dx, mag).
  */
 import { useCallback, useRef } from "react";
 
 export type SwipeMag = "none" | "r0" | "r1" | "r2" | "l0" | "l1" | "l2";
 
-const SHORT = 56;
-const LONG = 190;
+/** Malé potažení — pod ním se nic neprovede (jen náznak r0/l0). */
+export const SWIPE_SHORT = 110;
+/** Velké potažení — druhá úroveň akce. */
+export const SWIPE_LONG = 260;
+
+const ACTION_TIERS = new Set<SwipeMag>(["r1", "r2", "l1", "l2"]);
 
 export const swipeMag = (dx: number): SwipeMag => {
 	const a = Math.abs(dx);
-	if (a < 12) return "none";
+	if (a < 16) return "none";
 	const side = dx > 0 ? "r" : "l";
-	if (a < SHORT) return `${side}0` as SwipeMag;
-	if (a < LONG) return `${side}1` as SwipeMag;
+	if (a < SWIPE_SHORT) return `${side}0` as SwipeMag;
+	if (a < SWIPE_LONG) return `${side}1` as SwipeMag;
 	return `${side}2` as SwipeMag;
 };
 
-/** Gumový odpor za dlouhým prahem (prototyp swRubber). */
+/** Gumový odpor za velkým prahem (prototyp swRubber). */
 export const swipeEase = (dx: number): number => {
 	const a = Math.abs(dx);
-	return a <= LONG ? dx : Math.sign(dx) * (LONG + (a - LONG) * 0.2);
+	return a <= SWIPE_LONG ? dx : Math.sign(dx) * (SWIPE_LONG + (a - SWIPE_LONG) * 0.2);
+};
+
+/** Krátká vibrace při překročení prahu (Android/mobil; jinde tiché no-op). */
+export const swipeBuzz = (): void => {
+	if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+		navigator.vibrate(8);
+	}
 };
 
 export function useSwipe(opts: {
 	/** Živý vizuál během tahu — dx už s gumovým odporem; mag pro barvy/text. */
 	onUpdate: (dx: number, mag: SwipeMag) => void;
-	/** Dokončený tah přes práh (r1/r2/l1/l2). */
+	/** Dokončený tah přes práh (r1/r2/l1/l2) — až PO puštění/usazení. */
 	onSwipe: (mag: "r1" | "r2" | "l1" | "l2") => void;
 	disabled?: boolean;
 }) {
 	const { onUpdate, onSwipe, disabled } = opts;
 	const st = useRef({ startX: 0, dx: 0, on: false });
-	const wheel = useRef({ acc: 0, timer: 0 as ReturnType<typeof setTimeout> | 0 });
+	const wheel = useRef({
+		acc: 0,
+		armed: false,
+		timer: null as ReturnType<typeof setTimeout> | null,
+	});
+	const lastTier = useRef<SwipeMag>("none");
 	const blockUntil = useRef(0);
+
+	/** Vizuál + haptika při změně úrovně (náznak → malé → velké potažení). */
+	const emit = useCallback(
+		(dx: number) => {
+			const eased = swipeEase(dx);
+			const mag = swipeMag(eased);
+			if (ACTION_TIERS.has(mag) && mag !== lastTier.current) swipeBuzz();
+			lastTier.current = mag;
+			onUpdate(eased, mag);
+		},
+		[onUpdate],
+	);
 
 	const finish = useCallback(
 		(dx: number) => {
+			lastTier.current = "none";
 			onUpdate(0, "none");
 			const mag = swipeMag(swipeEase(dx));
 			if (mag === "r1" || mag === "r2" || mag === "l1" || mag === "l2") {
 				blockUntil.current = Date.now() + 350;
 				onSwipe(mag);
-			} else if (Math.abs(dx) > 12) {
+			} else if (Math.abs(dx) > 16) {
 				blockUntil.current = Date.now() + 350;
 			}
 		},
 		[onUpdate, onSwipe],
 	);
+
+	const cancelWheel = useCallback(() => {
+		if (wheel.current.timer) clearTimeout(wheel.current.timer);
+		wheel.current = { acc: 0, armed: false, timer: null };
+		lastTier.current = "none";
+		onUpdate(0, "none");
+	}, [onUpdate]);
 
 	const onPointerDown = useCallback(
 		(e: React.PointerEvent) => {
@@ -64,10 +102,9 @@ export function useSwipe(opts: {
 		(e: React.PointerEvent) => {
 			if (!st.current.on || e.pointerType !== "touch") return;
 			st.current.dx = e.clientX - st.current.startX;
-			const eased = swipeEase(st.current.dx);
-			onUpdate(eased, swipeMag(eased));
+			emit(st.current.dx);
 		},
-		[onUpdate],
+		[emit],
 	);
 	const onPointerUp = useCallback(
 		(e: React.PointerEvent) => {
@@ -85,24 +122,33 @@ export function useSwipe(opts: {
 		st.current.dx = 0;
 	}, [finish]);
 
-	/** Trackpad: horizontální dvouprstý scroll = swipe (deltaX dominantní). */
+	/** Trackpad: gesto se ozbrojí jen VÝRAZNĚ horizontálním pohybem, svislý
+	 * scroll ho ruší; akce se potvrdí až po 280 ms klidu (≈ puštění prstů). */
 	const onWheel = useCallback(
 		(e: React.WheelEvent) => {
 			if (disabled) return;
-			if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-			// obsah jede proti směru prstů (natural scroll): deltaX > 0 = tah doleva
+			const ax = Math.abs(e.deltaX);
+			const ay = Math.abs(e.deltaY);
+			if (!wheel.current.armed) {
+				// vstupní podmínka: zřetelně do strany, ne šikmý scroll
+				if (ax < 8 || ax <= 2 * ay) return;
+				wheel.current.armed = true;
+			} else if (ay >= ax) {
+				// svislý pohyb během gesta = omyl → zrušit bez akce
+				cancelWheel();
+				return;
+			}
+			// obsah jede proti směru prstů (natural scroll)
 			wheel.current.acc -= e.deltaX;
-			const eased = swipeEase(wheel.current.acc);
-			onUpdate(eased, swipeMag(eased));
+			emit(wheel.current.acc);
 			if (wheel.current.timer) clearTimeout(wheel.current.timer);
 			wheel.current.timer = setTimeout(() => {
 				const dx = wheel.current.acc;
-				wheel.current.acc = 0;
-				wheel.current.timer = 0;
+				wheel.current = { acc: 0, armed: false, timer: null };
 				finish(dx);
-			}, 140);
+			}, 280);
 		},
-		[disabled, onUpdate, finish],
+		[disabled, emit, finish, cancelWheel],
 	);
 
 	/** Klik těsně po tahu ignorovat (prototyp _swBlock). */

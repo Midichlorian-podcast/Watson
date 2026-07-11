@@ -88,12 +88,15 @@ export function TaskItem({
 		},
 	});
 	const armed = sw.mag === "r1" || sw.mag === "r2" || sw.mag === "l1" || sw.mag === "l2";
+	// „cvaknutí" při překročení prahu: pilulka se zbarví a zvětší (vizuální
+	// náhrada haptiky na desktopu; na mobilu k tomu hook krátce zavibruje)
 	const pillStyle: CSSProperties = {
 		fontSize: 10.5,
 		padding: "3px 10px",
 		borderRadius: 999,
 		fontWeight: 600,
-		transition: "background .1s ease, color .1s ease",
+		transition: "background .1s ease, color .1s ease, transform .12s ease",
+		transform: armed ? "scale(1.12)" : "scale(1)",
 		...(armed
 			? sw.dx > 0
 				? { background: "var(--w-success)", color: "#fff" }
