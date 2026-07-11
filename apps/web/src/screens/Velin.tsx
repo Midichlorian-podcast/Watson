@@ -178,7 +178,15 @@ export function Velin() {
 			new Intl.DateTimeFormat(i18n.language, { weekday: "short" }).format(
 				new Date(`${iso}T00:00:00`),
 			);
-		const ovRowsAll = allT.filter((tk) => isOver(tk) && inF(tk));
+		// deterministické řazení (stejný důvod jako Přehled — stabilita po UPDATE)
+		const ovRowsAll = allT
+			.filter((tk) => isOver(tk) && inF(tk))
+			.sort(
+				(a, b) =>
+					(a.due_date ?? "").localeCompare(b.due_date ?? "") ||
+					(a.priority ?? 4) - (b.priority ?? 4) ||
+					(a.name ?? "").localeCompare(b.name ?? ""),
+			);
 		const ovRows = ovRowsAll.slice(0, 7).map((tk) => {
 			const uid = asgByTask.get(tk.id)?.[0];
 			const p = tk.project_id ? projById.get(tk.project_id) : undefined;

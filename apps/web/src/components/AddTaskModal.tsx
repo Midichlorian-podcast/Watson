@@ -819,12 +819,14 @@ export function AddTaskModal({
 		wordBreak: "break-word",
 	};
 
+	// z-75 = NAD detailem úkolu (z-70/71): „přidat podúkol" otevřený z detailu
+	// se musí kreslit před ním, ne za ním (feedback 2026-07-11)
 	return (
 		<div
 			onClick={onClose}
 			data-esc-layer
 			data-add-layer
-			className="fixed inset-0 z-50 flex justify-center"
+			className="fixed inset-0 z-[75] flex justify-center"
 			style={{
 				background: "rgba(10,14,20,.42)",
 				alignItems: "flex-start",

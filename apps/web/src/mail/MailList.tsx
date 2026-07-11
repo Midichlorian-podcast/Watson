@@ -17,6 +17,7 @@ import {
 	useEffect,
 } from "react";
 import { showToast } from "../lib/toast";
+import { claimGesture, releaseGesture } from "../lib/useSwipe";
 import { AskWatson } from "./AskWatson";
 import { CtxMenu } from "./CtxMenu";
 import {
@@ -406,15 +407,27 @@ function MailRow({
 	const swuRef = useRef<HTMLDivElement>(null);
 	const sw = useRef({ startX: 0, dx: 0, on: false });
 	const swBlock = useRef(0);
-	// trackpad wheel = swipe (feedback: na touchpadu nefungoval; podruhé: moc
-	// omylných akcí) — gesto se ozbrojí jen výrazně horizontálním pohybem,
-	// svislý scroll ho ruší, akce se potvrdí až po 280 ms klidu (≈ puštění)
+	// trackpad wheel = swipe — gesto se ozbrojí prvním převážně horizontálním
+	// pohybem, zřetelně svislý scroll ho ruší, akce po 160 ms klidu (≈ puštění)
 	const swWheel = useRef({
 		armed: false,
 		timer: null as ReturnType<typeof setTimeout> | null,
 	});
+	// tažení myší / stiskem jednoho prstu (feedback: „uchycení jedním prstem")
+	// — aktivace po 6 px do strany + pointer capture, potvrzení puštěním
+	const swMouse = useRef({ startX: 0, startY: 0, active: false });
 	// haptika při překročení prahu (mobil; desktop = vizuální pilulka)
 	const swTier = useRef("none");
+	// globální vlastník gesta (jen jeden řádek smí táhnout) + úklid timeru
+	const swGid = useRef(Symbol("mailswipe"));
+	useEffect(() => {
+		const w = swWheel.current;
+		const g = swGid.current;
+		return () => {
+			if (w.timer) clearTimeout(w.timer);
+			releaseGesture(g);
+		};
+	}, []);
 	const swApply = (dx: number) => {
 		const swc = swcRef.current;
 		const swu = swuRef.current;
@@ -444,6 +457,7 @@ function MailRow({
 		if (other) other.style.width = "0px";
 	};
 	const swFinish = () => {
+		releaseGesture(swGid.current);
 		const swc = swcRef.current;
 		const { dx } = sw.current;
 		sw.current.on = false;
@@ -477,20 +491,57 @@ function MailRow({
 				onCtx(t.id, ev.clientX, ev.clientY);
 			}}
 			onPointerDown={(ev) => {
-				if (ev.pointerType !== "touch") return;
-				sw.current = { startX: ev.clientX, dx: 0, on: true };
+				if (ev.pointerType === "touch") {
+					if (!claimGesture(swGid.current)) return;
+					sw.current = { startX: ev.clientX, dx: 0, on: true };
+				} else if (ev.button === 0) {
+					swMouse.current = {
+						startX: ev.clientX,
+						startY: ev.clientY,
+						active: false,
+					};
+					sw.current = { startX: ev.clientX, dx: 0, on: false };
+				}
 			}}
 			onPointerMove={(ev) => {
-				if (!sw.current.on || ev.pointerType !== "touch") return;
-				sw.current.dx = ev.clientX - sw.current.startX;
-				swApply(sw.current.dx);
+				if (ev.pointerType === "touch") {
+					if (!sw.current.on) return;
+					sw.current.dx = ev.clientX - sw.current.startX;
+					swApply(sw.current.dx);
+					return;
+				}
+				// tažení myší/jedním prstem — aktivace po 6 px do strany
+				if (ev.buttons !== 1) return;
+				const dx = ev.clientX - swMouse.current.startX;
+				const dy = ev.clientY - swMouse.current.startY;
+				if (!swMouse.current.active) {
+					if (Math.abs(dx) < 6 || Math.abs(dx) <= Math.abs(dy)) return;
+					if (!claimGesture(swGid.current)) return;
+					swMouse.current.active = true;
+					try {
+						(ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+					} catch {
+						/* capture není podmínkou gesta */
+					}
+				}
+				ev.preventDefault();
+				sw.current.dx = dx;
+				swApply(dx);
 			}}
 			onPointerUp={(ev) => {
-				if (ev.pointerType !== "touch" || !sw.current.on) return;
+				if (ev.pointerType === "touch") {
+					if (sw.current.on) swFinish();
+					return;
+				}
+				if (!swMouse.current.active) return;
+				swMouse.current.active = false;
 				swFinish();
 			}}
 			onPointerCancel={() => {
-				if (sw.current.on) swFinish();
+				if (sw.current.on || swMouse.current.active) {
+					swMouse.current.active = false;
+					swFinish();
+				}
 			}}
 			onWheel={(ev) => {
 				if (sw.current.on) return;
@@ -499,6 +550,7 @@ function MailRow({
 				if (!swWheel.current.armed) {
 					// ozbrojení prvním převážně horizontálním pohybem
 					if (ax < 4 || ax <= ay) return;
+					if (!claimGesture(swGid.current)) return;
 					swWheel.current.armed = true;
 				} else if (ay > 12 && ay > 2 * ax) {
 					// zřetelně svislý scroll během gesta = omyl → zrušit bez akce
@@ -506,6 +558,7 @@ function MailRow({
 					swWheel.current = { armed: false, timer: null };
 					sw.current.dx = 0;
 					swTier.current = "none";
+					releaseGesture(swGid.current);
 					swApply(0);
 					return;
 				}

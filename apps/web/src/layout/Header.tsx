@@ -2,8 +2,8 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useMemo, useState } from "react";
+import { NotifCenter, useNotifItems } from "../components/NotifCenter";
 import { useAddTask } from "../lib/addTask";
-import { useSession } from "../lib/auth-client";
 import { INBOX_NAMES } from "../lib/inbox";
 import { useListSearch } from "../lib/listSearch";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -35,26 +35,10 @@ export function Header() {
 	// motiv = Nastavení, zámek pohledu = pokročilé); zbytek se ve výjimečném případě odscrolluje.
 	const isMobile = useIsMobile();
 
-	// In-app notifikace: štafetové kroky, které jsou TEĎ aktivní a přiřazené mně
-	// („přišlo na tebe"). Odvozeno ze synced dat — bez extra tabulky.
-	const { data: session } = useSession();
-	const myId = session?.user?.id ?? "";
+	// Notifikační centrum — agregace štafet, po termínu a pošty (components/NotifCenter);
+	// odznak = položky, které uživatel ještě neviděl.
 	const [notifOpen, setNotifOpen] = useState(false);
-	const { data: handoffs } = usePsQuery<{
-		chain_id: string;
-		task_name: string | null;
-		chain_name: string | null;
-	}>(
-		`SELECT cs.chain_id, t.name AS task_name, c.name AS chain_name
-     FROM chain_steps cs
-     JOIN tasks t ON t.id = cs.task_id AND t.completed_at IS NULL
-     JOIN chains c ON c.id = cs.chain_id AND c.state = 'active'
-     JOIN assignments a ON a.task_id = cs.task_id AND a.user_id = ?
-     WHERE cs.step_state = 'active'
-     ORDER BY cs.activated_at DESC`,
-		[myId],
-	);
-	const notifs = handoffs ?? [];
+	const { unseen } = useNotifItems();
 
 	// Podtitulek „{n} úkolů · {x,x} h" pro workspace obrazovky (prototyp ř. 269–274 + 3090–3092):
 	// count = úkoly aktuální obrazovky, hodiny = součet trvání úkolů s časem.
@@ -374,8 +358,8 @@ export function Header() {
 							<path d="M10.2 20 A2.1 2.1 0 0 0 13.8 20" />
 							<line x1="12" y1="6" x2="12" y2="8.6" />
 						</svg>
-						{/* odznak jen když na tebe reálně čeká krok štafety */}
-						{notifs.length > 0 && (
+						{/* odznak = neviděné položky (štafeta + po termínu + pošta) */}
+						{unseen > 0 && (
 							<span
 								className="absolute grid place-items-center font-display font-bold text-white"
 								style={{
@@ -390,91 +374,11 @@ export function Header() {
 									boxShadow: "0 0 0 2px var(--w-card)",
 								}}
 							>
-								{notifs.length}
+								{unseen > 99 ? "99+" : unseen}
 							</span>
 						)}
 					</button>
-					{notifOpen && (
-						<>
-							{/* biome-ignore lint/a11y/useKeyWithClickEvents: overlay pro zavření */}
-							{/* biome-ignore lint/a11y/noStaticElementInteractions: overlay */}
-							<div
-								className="fixed inset-0"
-								style={{ zIndex: 49 }}
-								onClick={() => setNotifOpen(false)}
-							/>
-							<div
-								className="absolute right-0 rounded-xl border border-line bg-card"
-								style={{
-									top: 42,
-									width: 280,
-									maxHeight: 360,
-									overflowY: "auto",
-									padding: 6,
-									zIndex: 50,
-									boxShadow: "var(--w-shadow)",
-								}}
-							>
-								<div
-									className="font-display font-bold text-ink-3 uppercase"
-									style={{
-										fontSize: 9.5,
-										letterSpacing: ".05em",
-										padding: "5px 9px 7px",
-									}}
-								>
-									{t("shell.notifTitle")}
-								</div>
-								{notifs.length === 0 ? (
-									<div
-										className="font-body text-ink-3"
-										style={{ fontSize: 12.5, padding: "6px 9px 10px" }}
-									>
-										{t("shell.notifEmpty")}
-									</div>
-								) : (
-									notifs.map((n) => (
-										<button
-											key={n.chain_id}
-											type="button"
-											onClick={() => {
-												setNotifOpen(false);
-												void navigate({
-													to: "/postupy",
-													search: { postup: n.chain_id },
-												});
-											}}
-											className="flex w-full items-start rounded-lg text-left hover:bg-panel-2"
-											style={{ gap: 8, padding: "7px 9px" }}
-										>
-											<span
-												className="mt-1 shrink-0 rounded-full"
-												style={{
-													width: 7,
-													height: 7,
-													background: "var(--w-brass)",
-												}}
-											/>
-											<span className="min-w-0">
-												<span
-													className="block truncate font-display font-semibold text-ink"
-													style={{ fontSize: 12.5 }}
-												>
-													{n.task_name}
-												</span>
-												<span
-													className="block truncate font-body text-ink-3"
-													style={{ fontSize: 11 }}
-												>
-													{t("shell.notifWaiting")} · {n.chain_name}
-												</span>
-											</span>
-										</button>
-									))
-								)}
-							</div>
-						</>
-					)}
+					<NotifCenter open={notifOpen} onClose={() => setNotifOpen(false)} />
 				</div>
 
 				{!isMobile && (

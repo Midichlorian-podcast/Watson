@@ -1,27 +1,27 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon, type IconName } from "@watson/ui";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWatson } from "../lib/watson";
 import { isLeadership, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
 
-/** Hlavní taby = nejdůležitější moduly Watsonu (feedback 2026-07-11):
- * Přehled (domovská syntéza), Dnes, Mail (s počtem nepřečtených), Úkoly. */
+/** Hlavní taby = nejdůležitější moduly Watsonu (feedback 2026-07-11, 2. kolo:
+ * Nadcházející je zásadnější než Úkoly): Přehled, Dnes, Mail, Nadcházející. */
 const TABS: {
-	to: "/prehled" | "/" | "/mail" | "/ukoly";
+	to: "/prehled" | "/" | "/mail" | "/nadchazejici";
 	icon: IconName;
 	labelKey: string;
 }[] = [
 	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
 	{ to: "/", icon: "dnes", labelKey: "nav.today" },
 	{ to: "/mail", icon: "mail", labelKey: "nav.mail" },
-	{ to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks" },
+	{ to: "/nadchazejici", icon: "nadchazejici", labelKey: "nav.upcoming" },
 ];
 
 /** Sekce dostupné přes „Více" (na mobilu není sidebar → jinak nedosažitelné). */
 const MORE: { to: string; icon: IconName; labelKey: string }[] = [
-	{ to: "/nadchazejici", icon: "nadchazejici", labelKey: "nav.upcoming" },
+	{ to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks" },
 	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
@@ -42,6 +42,16 @@ export function MobileTabBar() {
 	const [moreOpen, setMoreOpen] = useState(false);
 	const { data: workspaces } = useWorkspaces();
 	const mailUnread = useMailUnread();
+
+	// Esc zavírá sheet „Více" (nese data-esc-layer → ostatní vrstvy mu ustupují)
+	useEffect(() => {
+		if (!moreOpen) return;
+		const h = (e: globalThis.KeyboardEvent) => {
+			if (e.key === "Escape") setMoreOpen(false);
+		};
+		document.addEventListener("keydown", h);
+		return () => document.removeEventListener("keydown", h);
+	}, [moreOpen]);
 
 	// Velín jen pro vedení (Vlastník/Admin) — stejný gating jako sidebar.
 	const more = isLeadership(workspaces)

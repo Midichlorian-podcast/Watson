@@ -17,6 +17,9 @@ import { useTaskDetail } from "../lib/taskDetail";
 import { showToast } from "../lib/toast";
 import { useWorkspaces } from "../lib/workspace";
 import { type MailBridge, MailProvider } from "./state";
+// mail styly jsou scopované na [data-wm-theme] — musí být načtené app-wide,
+// protože mail UI žije i mimo /mail (peek na Přehledu/Velíně, notifikace)
+import "./mail.css";
 
 /** on-nav cíle prototypu → routy aplikace (WatsonApp mailNav, ř. 4033). */
 const NAV_MAP: Record<string, string> = {

@@ -352,6 +352,23 @@ export function MailProvider({
 		}, 1500);
 		return () => clearTimeout(t);
 	}, [drafts]);
+	// flush při zavření/skrytí stránky — jinak reload do 1,5 s od posledního
+	// úhozu ztratí text (audit S9; UI slibuje průběžné ukládání)
+	useEffect(() => {
+		const flush = () => {
+			try {
+				localStorage.setItem(LS.drafts, JSON.stringify(draftsRef.current));
+			} catch {
+				/* plné úložiště */
+			}
+		};
+		window.addEventListener("beforeunload", flush);
+		document.addEventListener("visibilitychange", flush);
+		return () => {
+			window.removeEventListener("beforeunload", flush);
+			document.removeEventListener("visibilitychange", flush);
+		};
+	}, []);
 
 	const undoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 	const prevSend = useRef<{
@@ -406,15 +423,17 @@ export function MailProvider({
 		[mbRead, perOsoba],
 	);
 
-	/** Per-osoba nepřečtenost (prototyp unreadFor, ř. 3472). */
+	/** Per-osoba nepřečtenost (prototyp unreadFor, ř. 3472). Explicitní override
+	 * ov.read má přednost před seedem — jinak „Označit jako nepřečtené" nefunguje
+	 * u vláken bez seed unread (audit K2). */
 	const unreadFor = useCallback(
 		(t: MailThread): boolean => {
-			const e = eff(t);
-			const mine = !!t.unread && !e.read;
+			const o = ov[t.id];
+			const mine = o?.read !== undefined ? !o.read : !!t.unread;
 			if (readModeOf(t) === "per") return mine;
 			return mine && !(t.readBy ?? []).length;
 		},
-		[eff, readModeOf],
+		[ov, readModeOf],
 	);
 
 	/** Souhrn nepřečtených (badge sidebar + per schránka; prototyp ř. 3473–3484). */
@@ -532,11 +551,13 @@ export function MailProvider({
 		(kind) => {
 			const ids = Object.keys(selIds);
 			for (const id of ids) {
-				if (kind === "unread") setOv(id, { read: false });
+				// bulk tlačítko se jmenuje „Přečtené" → označ jako PŘEČTENÉ
+				// (dřív dělalo opak — audit K3; per-řádkový toggle zůstává v rowAct)
+				if (kind === "unread") setOv(id, { read: true });
 				else rowAct(id, kind);
 			}
 			setSelIds({});
-			if (kind === "unread") showToast(`${ids.length} označeno jako nepřečtené`);
+			if (kind === "unread") showToast(`${ids.length} označeno jako přečtené`);
 		},
 		[selIds, rowAct, setOv],
 	);

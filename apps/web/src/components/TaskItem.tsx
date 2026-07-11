@@ -88,21 +88,21 @@ export function TaskItem({
 		},
 	});
 	const armed = sw.mag === "r1" || sw.mag === "r2" || sw.mag === "l1" || sw.mag === "l2";
-	// „cvaknutí" při překročení prahu: pilulka se zbarví a zvětší (vizuální
-	// náhrada haptiky na desktopu; na mobilu k tomu hook krátce zavibruje)
-	const pillStyle: CSSProperties = {
-		fontSize: 10.5,
-		padding: "3px 10px",
-		borderRadius: 999,
-		fontWeight: 600,
-		transition: "background .1s ease, color .1s ease, transform .12s ease",
-		transform: armed ? "scale(1.12)" : "scale(1)",
-		...(armed
-			? sw.dx > 0
-				? { background: "var(--w-success)", color: "#fff" }
-				: { background: "var(--w-brass)", color: "#fff" }
-			: { background: "var(--w-card)", color: "var(--w-ink-2)" }),
-	};
+	// vizuál dle mail modulu (feedback: sjednotit s mailem): rostoucí barevná
+	// pilulka od kraje; před prahem ztlumená, po překročení plná barva
+	// (+ vibrace z hooku na zařízeních, která ji umí)
+	const swColor =
+		sw.dx > 0
+			? "var(--w-success)"
+			: sw.mag === "l2"
+				? "var(--w-avatar)"
+				: "var(--w-brass)";
+	const swLabel =
+		sw.dx > 0
+			? `✓ ${t("bulk.done")}`
+			: sw.mag === "l2"
+				? t("qsched.nextWeekShort")
+				: t("bulk.tomorrow");
 
 	return (
 		<li
@@ -113,7 +113,7 @@ export function TaskItem({
 				overflow: sw.dx !== 0 ? "hidden" : undefined,
 			}}
 		>
-			{/* podklad swipe — viditelný jen během tahu (TaskCard má marginBottom 5) */}
+			{/* podklad swipe — rostoucí pilulka jako v mailu (TaskCard má marginBottom 5) */}
 			{sw.dx !== 0 && (
 				<div
 					aria-hidden
@@ -122,19 +122,33 @@ export function TaskItem({
 						position: "absolute",
 						inset: "0 0 5px 0",
 						borderRadius: 10,
+						overflow: "hidden",
 						display: "flex",
-						alignItems: "center",
-						padding: "0 14px",
-						background: sw.dx > 0 ? "var(--w-success-soft)" : "var(--w-brass-soft)",
+						alignItems: "stretch",
+						justifyContent: sw.dx > 0 ? "flex-start" : "flex-end",
+						background: "var(--w-panel-2)",
 					}}
 				>
-					{sw.dx > 0 ? (
-						<span style={pillStyle}>✓ {t("bulk.done")}</span>
-					) : (
-						<span style={{ ...pillStyle, marginLeft: "auto" }}>
-							{sw.mag === "l2" ? t("qsched.nextWeekShort") : t("bulk.tomorrow")} →
-						</span>
-					)}
+					<span
+						style={{
+							display: "flex",
+							alignItems: "center",
+							justifyContent: sw.dx > 0 ? "flex-end" : "flex-start",
+							width: Math.max(0, Math.abs(sw.dx) - 14),
+							padding: "0 12px",
+							boxSizing: "border-box",
+							whiteSpace: "nowrap",
+							overflow: "hidden",
+							fontSize: 11,
+							fontWeight: 600,
+							color: "#fff",
+							background: swColor,
+							filter: armed ? undefined : "saturate(.7) opacity(.85)",
+							transition: "background .1s ease, filter .1s ease",
+						}}
+					>
+						{swLabel}
+					</span>
 				</div>
 			)}
 			<div

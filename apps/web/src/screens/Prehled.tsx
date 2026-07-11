@@ -2,6 +2,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import { CalendarWidget } from "../components/CalendarWidget";
 import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
 import { useFlowSteps } from "../lib/flowSteps";
 import { initials } from "../lib/format";
@@ -137,9 +138,16 @@ export function Prehled() {
 			const fs = flowSteps.get(tk.id);
 			return !(fs && (fs.state === "waiting" || fs.state === "dormant"));
 		});
-		const ovd = openT.filter(
-			(tk) => fOk(tk) && !!tk.due_date && tk.due_date.slice(0, 10) < tdy,
-		);
+		// deterministické řazení — bez něj po UPDATE řádku (např. přejmenování
+		// v detailu) přeskočí pořadí SQL výsledku a úkol „zmizí" z top-6 výřezu
+		const ovd = openT
+			.filter((tk) => fOk(tk) && !!tk.due_date && tk.due_date.slice(0, 10) < tdy)
+			.sort(
+				(a, b) =>
+					(a.due_date ?? "").localeCompare(b.due_date ?? "") ||
+					(a.priority ?? 4) - (b.priority ?? 4) ||
+					(a.name ?? "").localeCompare(b.name ?? ""),
+			);
 		const tdyRows = openT
 			.filter((tk) => fOk(tk) && tk.due_date?.slice(0, 10) === tdy)
 			.sort(
@@ -588,6 +596,29 @@ export function Prehled() {
 							</span>
 						</OvRow>
 					))}
+				</div>
+
+				{/* Kalendář — měsíční widget s denní agendou (feedback 2026-07-11) */}
+				<div className={cardCls} style={cardStyle}>
+					<CardHead
+						title={t("prehled.cardCalendar")}
+						footLabel={t("prehled.openUpcoming")}
+						onFoot={() => void navigate({ to: "/nadchazejici" })}
+					/>
+					<CalendarWidget
+						onDay={(dateISO) =>
+							setPeek({
+								kind: "day",
+								dateISO,
+								name: new Intl.DateTimeFormat(i18n.language, {
+									weekday: "long",
+									day: "numeric",
+									month: "long",
+								}).format(new Date(`${dateISO}T00:00:00`)),
+								openFull: () => void navigate({ to: "/nadchazejici" }),
+							})
+						}
+					/>
 				</div>
 
 				{/* Pošta — z digestu mail modulu (prototyp mails, ř. 741–765) */}

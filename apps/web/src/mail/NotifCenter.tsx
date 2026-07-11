@@ -122,10 +122,21 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 	};
 
 	// Portál do <body>: uvnitř mail panelů vznikají stacking contexty (transform,
-	// z-index vrstvy) a fixed overlay by se kreslil ZA stránkou.
+	// z-index vrstvy) a fixed overlay by se kreslil ZA stránkou. POZOR: mimo
+	// mailroot neplatí mail proměnné (--panel/--ink/--line jsou scopované na
+	// [data-wm-theme]) → scrim MUSÍ scope nést sám, jinak je karta průhledná
+	// a text se slévá se stránkou (feedback 2026-07-11).
+	const wmTheme =
+		document.querySelector("[data-wm-theme]")?.getAttribute("data-wm-theme") ??
+		"light";
 	return createPortal(
 		// scrim bez pozadí (prototyp ř. 2170 — jen klik mimo zavírá)
-		<div data-esc-layer onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 80 }}>
+		<div
+			data-esc-layer
+			data-wm-theme={wmTheme}
+			onClick={onClose}
+			style={{ position: "fixed", inset: 0, zIndex: 80 }}
+		>
 			<div
 				data-screen-label="Notifikace"
 				onClick={(e) => e.stopPropagation()}

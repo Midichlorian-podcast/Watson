@@ -1,15 +1,28 @@
 /**
- * Řádkový swipe — dotyk (pointer) i trackpad (horizontální wheel). Feedback
- * 2026-07-11: prahy zvednuté (malé 110 px / velké 260 px), akce se provede
- * VÝHRADNĚ po dokončení gesta (puštění prstů / 280 ms klidu kolečka), wheel
- * gesto se musí „ozbrojit" výrazně horizontálním prvním pohybem a svislý
- * scroll ho okamžitě ruší — jinak vznikala spousta omylných akcí. Při
- * překročení prahu krátká vibrace (podpora dle zařízení; desktop trackpad
- * web rozvibrovat neumí). Vizuál kreslí konzument přes onUpdate(dx, mag).
+ * Řádkový swipe — TŘI vstupy: dotyk (pointer touch), tažení myší/stiskem
+ * jednoho prstu (pointer mouse + capture — gesto drží i mimo řádek a potvrdí
+ * se puštěním tlačítka) a trackpad dvouprstý (horizontální wheel; konec gesta
+ * web nehlásí → usazení 160 ms). Prahy malé 110 / velké 260 px, gumový odpor,
+ * akce VÝHRADNĚ po dokončení gesta, svislý scroll wheel gesto ruší. Při
+ * překročení prahu krátká vibrace (kde zařízení umí). Vizuál kreslí konzument
+ * přes onUpdate(dx, mag).
  */
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 export type SwipeMag = "none" | "r0" | "r1" | "r2" | "l0" | "l1" | "l2";
+
+/* Globální vlastník gesta — v jednu chvíli smí táhnout JEN JEDEN řádek.
+ * Bez toho kurzor sjíždějící přes řádky akumuloval na několika naráz a po
+ * usazení vystřelily dvě akce (audit S1). Sdílí i mail modul. */
+let gestureOwner: symbol | null = null;
+export function claimGesture(id: symbol): boolean {
+	if (gestureOwner && gestureOwner !== id) return false;
+	gestureOwner = id;
+	return true;
+}
+export function releaseGesture(id: symbol): void {
+	if (gestureOwner === id) gestureOwner = null;
+}
 
 /** Malé potažení — pod ním se nic neprovede (jen náznak r0/l0). */
 export const SWIPE_SHORT = 110;
@@ -56,6 +69,18 @@ export function useSwipe(opts: {
 	});
 	const lastTier = useRef<SwipeMag>("none");
 	const blockUntil = useRef(0);
+	const gid = useRef(Symbol("swipe"));
+
+	// unmount: zrušit timer BEZ provedení akce a pustit vlastnictví gesta
+	// (jinak akce „do zad" na odmountovaném řádku — audit S1)
+	useEffect(() => {
+		const w = wheel.current;
+		const g = gid.current;
+		return () => {
+			if (w.timer) clearTimeout(w.timer);
+			releaseGesture(g);
+		};
+	}, []);
 
 	/** Vizuál + haptika při změně úrovně (náznak → malé → velké potažení). */
 	const emit = useCallback(
@@ -71,6 +96,7 @@ export function useSwipe(opts: {
 
 	const finish = useCallback(
 		(dx: number) => {
+			releaseGesture(gid.current);
 			lastTier.current = "none";
 			onUpdate(0, "none");
 			const mag = swipeMag(swipeEase(dx));
@@ -88,39 +114,72 @@ export function useSwipe(opts: {
 		if (wheel.current.timer) clearTimeout(wheel.current.timer);
 		wheel.current = { acc: 0, armed: false, timer: null };
 		lastTier.current = "none";
+		releaseGesture(gid.current);
 		onUpdate(0, "none");
 	}, [onUpdate]);
 
+	// Tažení: dotyk hned; myš/jeden prst (stisk + tah) se aktivuje až po 6 px
+	// do strany, aby nekolidoval s klikem — pak si vezme pointer capture,
+	// takže gesto drží i mimo řádek/trackpad a potvrdí se AŽ puštěním.
+	const ms = useRef({ startX: 0, startY: 0, active: false });
 	const onPointerDown = useCallback(
 		(e: React.PointerEvent) => {
-			if (disabled || e.pointerType !== "touch") return;
-			st.current = { startX: e.clientX, dx: 0, on: true };
+			if (disabled) return;
+			if (e.pointerType === "touch") {
+				if (!claimGesture(gid.current)) return;
+				st.current = { startX: e.clientX, dx: 0, on: true };
+			} else if (e.button === 0) {
+				ms.current = { startX: e.clientX, startY: e.clientY, active: false };
+				st.current = { startX: e.clientX, dx: 0, on: false };
+			}
 		},
 		[disabled],
 	);
 	const onPointerMove = useCallback(
 		(e: React.PointerEvent) => {
-			if (!st.current.on || e.pointerType !== "touch") return;
-			st.current.dx = e.clientX - st.current.startX;
-			emit(st.current.dx);
+			if (e.pointerType === "touch") {
+				if (!st.current.on) return;
+				st.current.dx = e.clientX - st.current.startX;
+				emit(st.current.dx);
+				return;
+			}
+			if (e.buttons !== 1 || disabled) return;
+			const dx = e.clientX - ms.current.startX;
+			const dy = e.clientY - ms.current.startY;
+			if (!ms.current.active) {
+				if (Math.abs(dx) < 6 || Math.abs(dx) <= Math.abs(dy)) return;
+				if (!claimGesture(gid.current)) return;
+				ms.current.active = true;
+				try {
+					(e.currentTarget as Element).setPointerCapture(e.pointerId);
+				} catch {
+					/* capture není podmínkou gesta */
+				}
+			}
+			e.preventDefault();
+			st.current.dx = dx;
+			emit(dx);
 		},
-		[emit],
+		[emit, disabled],
 	);
-	const onPointerUp = useCallback(
+	const endPointer = useCallback(
 		(e: React.PointerEvent) => {
-			if (e.pointerType !== "touch" || !st.current.on) return;
-			st.current.on = false;
+			if (e.pointerType === "touch") {
+				if (!st.current.on) return;
+				st.current.on = false;
+				finish(st.current.dx);
+				st.current.dx = 0;
+				return;
+			}
+			if (!ms.current.active) return;
+			ms.current.active = false;
 			finish(st.current.dx);
 			st.current.dx = 0;
 		},
 		[finish],
 	);
-	const onPointerCancel = useCallback(() => {
-		if (!st.current.on) return;
-		st.current.on = false;
-		finish(st.current.dx);
-		st.current.dx = 0;
-	}, [finish]);
+	const onPointerUp = endPointer;
+	const onPointerCancel = endPointer;
 
 	/** Trackpad: ozbrojí se prvním převážně horizontálním pohybem a pak jede
 	 * PLYNULE (drobné svislé chvění gesto neruší — ruší ho jen zřetelně svislý
@@ -132,6 +191,7 @@ export function useSwipe(opts: {
 			const ay = Math.abs(e.deltaY);
 			if (!wheel.current.armed) {
 				if (ax < 4 || ax <= ay) return;
+				if (!claimGesture(gid.current)) return;
 				wheel.current.armed = true;
 			} else if (ay > 12 && ay > 2 * ax) {
 				// zřetelně svislý scroll během gesta = omyl → zrušit bez akce
