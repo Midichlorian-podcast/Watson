@@ -41,8 +41,10 @@ export function ActionToast() {
 	}, []);
 	if (!toast) return null;
 	return (
+		// z-90 = nejvyšší „feedback" vrstva — toast musí být vidět i nad mail
+		// overlayi (62–81) a modály; dřív z-60 mizel pod oknem Nové zprávy
 		<div
-			className="-translate-x-1/2 fixed bottom-6 left-1/2 z-[60] flex items-center font-display font-semibold"
+			className="-translate-x-1/2 fixed bottom-6 left-1/2 z-[90] flex items-center font-display font-semibold"
 			style={{
 				gap: 8,
 				background: "var(--w-navy)",

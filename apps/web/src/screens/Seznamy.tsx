@@ -64,11 +64,13 @@ export function Seznamy() {
 	const { data: lists } = usePsQuery<ListRow>(
 		"SELECT * FROM lists ORDER BY created_at DESC",
 	);
+	// tiebreaker id: položky šablony sdílejí created_at → bez něj se pořadí
+	// remízových řádků po UPDATE (odškrtnutí) měnilo o pár míst (feedback)
 	const { data: sections } = usePsQuery<ListSectionRow>(
-		"SELECT * FROM list_sections ORDER BY position, created_at",
+		"SELECT * FROM list_sections ORDER BY position, created_at, id",
 	);
 	const { data: items } = usePsQuery<ListItemRow>(
-		"SELECT * FROM list_items ORDER BY position, created_at",
+		"SELECT * FROM list_items ORDER BY position, created_at, id",
 	);
 	const { data: templates } = usePsQuery<ListTemplateRow>(
 		"SELECT * FROM list_templates ORDER BY created_at",
@@ -140,6 +142,38 @@ export function Seznamy() {
 		void navigate({ to: "/seznamy", search: { seznam: listId } });
 	};
 
+	/** Prázdný seznam (feedback 2026-07-11) — jedna výchozí sekce; název a akce
+	 * se editují rovnou v detailu (inputy v hlavičce). */
+	const createBlank = async () => {
+		const wsId =
+			activeWs &&
+			!(workspaces ?? []).find((w) => w.id === activeWs)?.isPersonal
+				? activeWs
+				: (workspaces ?? []).find((w) => !w.isPersonal)?.id;
+		if (!wsId) return;
+		const listId = crypto.randomUUID();
+		const now = new Date().toISOString();
+		await powerSync.writeTransaction(async (tx) => {
+			await tx.execute(
+				`INSERT INTO lists (id, workspace_id, name, event, archived, created_by, created_at)
+         VALUES (?, ?, ?, ?, 0, ?, ?)`,
+				[
+					listId,
+					wsId,
+					t("lists.newName"),
+					t("lists.eventPlaceholderNew"),
+					session?.user?.id ?? null,
+					now,
+				],
+			);
+			await tx.execute(
+				"INSERT INTO list_sections (id, list_id, workspace_id, name, position, created_at) VALUES (?, ?, ?, ?, 0, ?)",
+				[crypto.randomUUID(), listId, wsId, t("lists.defaultSection"), now],
+			);
+		});
+		void navigate({ to: "/seznamy", search: { seznam: listId } });
+	};
+
 	if (selected) {
 		return (
 			<ListDetail
@@ -183,6 +217,15 @@ export function Seznamy() {
 					gap: 12,
 				}}
 			>
+				{/* nový prázdný seznam (feedback — dřív šlo zakládat jen ze šablon) */}
+				<button
+					type="button"
+					onClick={() => void createBlank()}
+					className="flex items-center justify-center rounded-[14px] border border-line border-dashed font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
+					style={{ minHeight: 92, fontSize: 13, gap: 7 }}
+				>
+					+ {t("lists.newList")}
+				</button>
 				{active.map((l) => {
 					const st = statsOf.list(l.id);
 					const complete = st.total > 0 && st.done >= st.total;
@@ -391,10 +434,24 @@ function ListDetail({
 	const [event, setEvent] = useState(list.event ?? "");
 	const [assignOpen, setAssignOpen] = useState<string | null>(null);
 	const [inputs, setInputs] = useState<Record<string, string>>({});
+	// nová sekce (feedback — sekce šly dřív jen ze šablon)
+	const [secName, setSecName] = useState("");
+	// řazení odškrtnutých (feedback): dolů v sekci × zůstat na místě — per seznam,
+	// per uživatel (jen zobrazení, pozice v DB se nemění)
+	const [doneDown, setDoneDown] = useState(
+		() => localStorage.getItem(`watson.listDoneSort.${list.id}`) === "1",
+	);
 	useEffect(() => {
 		setName(list.name ?? "");
 		setEvent(list.event ?? "");
+		setDoneDown(localStorage.getItem(`watson.listDoneSort.${list.id}`) === "1");
 	}, [list.id, list.name, list.event]);
+	const toggleDoneSort = () =>
+		setDoneDown((v) => {
+			const n = !v;
+			localStorage.setItem(`watson.listDoneSort.${list.id}`, n ? "1" : "0");
+			return n;
+		});
 
 	// členové prostoru seznamu (assign popover — prototyp roster = wsMembers(l.ws))
 	const { data: team } = useQuery({
@@ -438,6 +495,26 @@ function ListDetail({
 			uid,
 			it.id,
 		]);
+	};
+
+	const addSection = async () => {
+		const val = secName.trim();
+		if (!val) return;
+		const pos = sections.length
+			? Math.max(...sections.map((s) => s.position ?? 0)) + 1
+			: 0;
+		setSecName("");
+		await powerSync.execute(
+			"INSERT INTO list_sections (id, list_id, workspace_id, name, position, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+			[
+				crypto.randomUUID(),
+				list.id,
+				list.workspace_id,
+				val,
+				pos,
+				new Date().toISOString(),
+			],
+		);
 	};
 
 	const addItem = async (sec: ListSectionRow) => {
@@ -531,6 +608,25 @@ function ListDetail({
 					{t("nav.lists")}
 				</button>
 				<div className="flex-1" />
+				<button
+					type="button"
+					onClick={toggleDoneSort}
+					title={t("lists.doneSortTitle")}
+					aria-pressed={doneDown}
+					className={pillBtnCls}
+					style={{
+						...pillBtnStyle,
+						...(doneDown
+							? {
+									borderColor: "var(--w-brass)",
+									background: "var(--w-brass-soft)",
+									color: "var(--w-brass-text)",
+								}
+							: {}),
+					}}
+				>
+					{t("lists.doneSort")}
+				</button>
 				<button type="button" onClick={() => void reset()} className={pillBtnCls} style={pillBtnStyle}>
 					{t("lists.reset")}
 				</button>
@@ -604,6 +700,10 @@ function ListDetail({
 			{/* sekce */}
 			{sections.map((sec) => {
 				const its = itemsBySection.get(sec.id) ?? [];
+				// „Odškrtnuté dolů": stabilní sort zachovává pořadí uvnitř skupin
+				const shown = doneDown
+					? [...its].sort((a, b) => Number(!!a.done) - Number(!!b.done))
+					: its;
 				const secDone = its.filter((x) => x.done).length;
 				const complete = its.length > 0 && secDone >= its.length;
 				return (
@@ -627,7 +727,7 @@ function ListDetail({
 								{secDone}/{its.length}
 							</span>
 						</div>
-						{its.map((it) => {
+						{shown.map((it) => {
 							const who = (team ?? []).find((m) => m.id === it.who_id);
 							const key = it.id;
 							return (
@@ -785,6 +885,29 @@ function ListDetail({
 					</div>
 				);
 			})}
+
+			{/* nová sekce (feedback — jako v šablonách, teď i ručně) */}
+			<div
+				className="flex items-center rounded-[14px] border border-line border-dashed bg-card"
+				style={{ gap: 10, padding: "10px 16px" }}
+			>
+				<input
+					value={secName}
+					onChange={(e) => setSecName(e.target.value)}
+					onKeyDown={(e) => e.key === "Enter" && void addSection()}
+					placeholder={t("lists.sectionPh")}
+					className="flex-1 border-none bg-transparent font-display font-semibold text-ink outline-none"
+					style={{ fontSize: 13 }}
+				/>
+				<button
+					type="button"
+					onClick={() => void addSection()}
+					className={pillBtnCls}
+					style={pillBtnStyle}
+				>
+					{t("lists.addSection")}
+				</button>
+			</div>
 		</div>
 	);
 }
