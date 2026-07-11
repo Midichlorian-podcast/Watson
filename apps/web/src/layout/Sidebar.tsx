@@ -66,10 +66,8 @@ function NavRow({
 				...NAV_BASE,
 				justifyContent: collapsed ? "center" : undefined,
 				background: active ? "rgba(255,255,255,.09)" : "transparent",
-				borderLeftColor:
-					active && !collapsed ? "var(--w-brass)" : "transparent",
-				boxShadow:
-					active && collapsed ? "inset 2px 0 0 var(--w-brass)" : undefined,
+				borderLeftColor: active && !collapsed ? "var(--w-brass)" : "transparent",
+				boxShadow: active && collapsed ? "inset 2px 0 0 var(--w-brass)" : undefined,
 			}}
 		>
 			{marker ? (
@@ -77,9 +75,7 @@ function NavRow({
 			) : (
 				<Icon name={item.icon} size={17} />
 			)}
-			{!collapsed && (
-				<span style={{ flex: 1, minWidth: 0 }}>{t(item.labelKey)}</span>
-			)}
+			{!collapsed && <span style={{ flex: 1, minWidth: 0 }}>{t(item.labelKey)}</span>}
 			{!collapsed && count != null && <span style={BADGE}>{count}</span>}
 			{!collapsed && badge && (
 				<span
@@ -102,13 +98,7 @@ function NavRow({
 }
 
 /** Levý sidebar — 1:1 dle Cloud Design (brass „Přidat úkol", počty, aktivní brass okraj, footer). */
-export function Sidebar({
-	collapsed,
-	onToggle,
-}: {
-	collapsed: boolean;
-	onToggle: () => void;
-}) {
+export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const { openAdd } = useAddTask();
@@ -158,40 +148,30 @@ export function Sidebar({
 
 	const counts = useMemo<Record<string, number>>(() => {
 		const tasks = openTasks ?? [];
-		const assigned = new Set(
-			(myAssignments ?? []).map((a) => a.task_id).filter(Boolean),
-		);
+		const assigned = new Set((myAssignments ?? []).map((a) => a.task_id).filter(Boolean));
 		const today = todayIso();
 		const inbox = new Set(
-			projects
-				.filter((p) => p.name === "Doručené" || p.name === "Inbox")
-				.map((p) => p.id),
+			projects.filter((p) => p.name === "Doručené" || p.name === "Inbox").map((p) => p.id),
 		);
 		const day = (d: string | null) => d?.slice(0, 10) ?? null;
 		// Netriážovaná Schránka (inbox bez termínu) patří jen do počtu /schranka.
-		const inboxTask = (t: {
-			project_id: string | null;
-			due_date: string | null;
-		}) => !t.due_date && !!t.project_id && inbox.has(t.project_id);
+		const inboxTask = (t: { project_id: string | null; due_date: string | null }) =>
+			!t.due_date && !!t.project_id && inbox.has(t.project_id);
 		// Stejné pravidlo viditelnosti podúkolů jako obrazovky: bez termínu žijí jen v rodiči.
-		const visible = tasks.filter(
-			(t) => (!t.parent_id || t.due_date) && !inboxTask(t),
-		);
+		const visible = tasks.filter((t) => (!t.parent_id || t.due_date) && !inboxTask(t));
 		return {
 			"/schranka": tasks.filter(
-				(t) =>
-					t.project_id &&
-					inbox.has(t.project_id) &&
-					!t.due_date &&
-					!t.parent_id,
+				(t) => t.project_id && inbox.has(t.project_id) && !t.due_date && !t.parent_id,
 			).length,
 			"/": visible.filter((t) => {
 				const dd = day(t.due_date);
 				return !dd || dd <= today;
 			}).length,
+			// D3 — kánon = filtr obrazovky Nadcházející (>= dnes, viz Nadchazejici.tsx
+			// a Header): dřívější `> dnes` dával jiné číslo než header a obsah.
 			"/nadchazejici": visible.filter((t) => {
 				const dd = day(t.due_date);
-				return dd != null && dd > today;
+				return dd != null && dd >= today;
 			}).length,
 			// Úkoly (seznam) skrývá podúkoly úplně — reprezentuje je ⚏ rodiče.
 			"/ukoly": tasks.filter((t) => !t.parent_id && !inboxTask(t)).length,
@@ -203,8 +183,7 @@ export function Sidebar({
 		};
 	}, [openTasks, myAssignments, projects, userId, activeLists, mailUnread]);
 
-	const isActive = (to: string) =>
-		to === "/" ? path === "/" : path.startsWith(to);
+	const isActive = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
 	const userName = session?.user?.name ?? "";
 
 	return (
@@ -235,9 +214,7 @@ export function Sidebar({
 						height: 9,
 						borderRadius: "50%",
 						flex: "none",
-						background: status?.connected
-							? "var(--w-brass)"
-							: "var(--w-sidebar-ink-2)",
+						background: status?.connected ? "var(--w-brass)" : "var(--w-sidebar-ink-2)",
 					}}
 				/>
 				{!collapsed && (
@@ -269,13 +246,7 @@ export function Sidebar({
 						flex: "none",
 					}}
 				>
-					<svg
-						width="15"
-						height="15"
-						viewBox="0 0 15 15"
-						fill="none"
-						aria-hidden
-					>
+					<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
 						<rect
 							x="2"
 							y="2.5"
@@ -285,14 +256,7 @@ export function Sidebar({
 							stroke="currentColor"
 							strokeWidth="1.3"
 						/>
-						<line
-							x1="6"
-							y1="2.5"
-							x2="6"
-							y2="12.5"
-							stroke="currentColor"
-							strokeWidth="1.3"
-						/>
+						<line x1="6" y1="2.5" x2="6" y2="12.5" stroke="currentColor" strokeWidth="1.3" />
 					</svg>
 				</button>
 			</div>
@@ -407,9 +371,7 @@ export function Sidebar({
 							{t("nav.workspaces")}
 						</div>
 						{(workspaces ?? []).map((ws) => {
-							const wsProjects = projects.filter(
-								(p) => p.workspace_id === ws.id,
-							);
+							const wsProjects = projects.filter((p) => p.workspace_id === ws.id);
 							const wsCollapsed = isCollapsed(ws.id);
 							const wsActive = ws.id === activeWs;
 							return (
@@ -421,9 +383,7 @@ export function Sidebar({
 											padding: "7px 8px 6px",
 											marginTop: 10,
 											borderRadius: 8,
-											background: wsActive
-												? "rgba(255,255,255,.05)"
-												: "transparent",
+											background: wsActive ? "rgba(255,255,255,.05)" : "transparent",
 										}}
 									>
 										<button
@@ -475,9 +435,7 @@ export function Sidebar({
 												fontSize: 10.5,
 												letterSpacing: ".05em",
 												textTransform: "uppercase",
-												color: wsActive
-													? "var(--w-sidebar-ink)"
-													: "var(--w-sidebar-ink-2)",
+												color: wsActive ? "var(--w-sidebar-ink)" : "var(--w-sidebar-ink-2)",
 											}}
 										>
 											{ws.name}
@@ -513,10 +471,7 @@ export function Sidebar({
 														activeProjekt === p.id
 															? "var(--w-sidebar-ink)"
 															: "var(--w-sidebar-ink-2)",
-													background:
-														activeProjekt === p.id
-															? "rgba(255,255,255,.10)"
-															: undefined,
+													background: activeProjekt === p.id ? "rgba(255,255,255,.10)" : undefined,
 													fontWeight: 600,
 													fontSize: 13,
 												}}
@@ -533,10 +488,7 @@ export function Sidebar({
 												<span className="truncate" style={{ flex: 1 }}>
 													{p.name}
 												</span>
-												<span
-													className="font-mono"
-													style={{ fontSize: 11, opacity: 0.7 }}
-												>
+												<span className="font-mono" style={{ fontSize: 11, opacity: 0.7 }}>
 													{projOpen[p.id] ?? 0}
 												</span>
 											</button>
@@ -593,10 +545,7 @@ export function Sidebar({
 						>
 							{userName}
 						</div>
-						<div
-							className="font-body"
-							style={{ fontSize: 11, color: "var(--w-sidebar-ink-2)" }}
-						>
+						<div className="font-body" style={{ fontSize: 11, color: "var(--w-sidebar-ink-2)" }}>
 							{wsName}
 						</div>
 					</div>
@@ -610,20 +559,8 @@ export function Sidebar({
 						style={{ color: "var(--w-sidebar-ink-2)", flex: "none" }}
 						aria-hidden
 					>
-						<circle
-							cx="7.5"
-							cy="7.5"
-							r="5.3"
-							stroke="currentColor"
-							strokeWidth="1.3"
-						/>
-						<circle
-							cx="7.5"
-							cy="7.5"
-							r="1.9"
-							stroke="currentColor"
-							strokeWidth="1.3"
-						/>
+						<circle cx="7.5" cy="7.5" r="5.3" stroke="currentColor" strokeWidth="1.3" />
+						<circle cx="7.5" cy="7.5" r="1.9" stroke="currentColor" strokeWidth="1.3" />
 					</svg>
 				)}
 			</Link>

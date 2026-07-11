@@ -40,7 +40,9 @@ export async function redo(): Promise<boolean> {
 	return true;
 }
 
-/** Jednoduchá inverze UPDATE jednoho sloupce (completed_at, priority, due_date…). */
+/** Jednoduchá inverze UPDATE jednoho sloupce (completed_at, priority, due_date…).
+ * Volat až PO úspěšném zápisu (D9) — push před execute by při selhání zápisu
+ * nechal v zásobníku falešný záznam, jehož ⌘Z „vrací" změnu, která se nestala. */
 export function pushColumnUndo(
 	table: string,
 	id: string,
@@ -50,16 +52,10 @@ export function pushColumnUndo(
 ) {
 	pushUndo({
 		undo: async () => {
-			await powerSync.execute(`UPDATE ${table} SET ${col} = ? WHERE id = ?`, [
-				prev,
-				id,
-			]);
+			await powerSync.execute(`UPDATE ${table} SET ${col} = ? WHERE id = ?`, [prev, id]);
 		},
 		redo: async () => {
-			await powerSync.execute(`UPDATE ${table} SET ${col} = ? WHERE id = ?`, [
-				next,
-				id,
-			]);
+			await powerSync.execute(`UPDATE ${table} SET ${col} = ? WHERE id = ?`, [next, id]);
 		},
 	});
 }
@@ -75,9 +71,7 @@ type Exec = { execute: (sql: string, params?: unknown[]) => Promise<unknown> };
 
 const reinsert = async (db: Exec, table: string, rows: Row[]) => {
 	for (const r of rows) {
-		const cols = Object.keys(r).filter(
-			(c) => r[c] !== null && r[c] !== undefined,
-		);
+		const cols = Object.keys(r).filter((c) => r[c] !== null && r[c] !== undefined);
 		await db.execute(
 			`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
 			cols.map((c) => r[c]),
@@ -150,16 +144,10 @@ export async function deleteTasksWithUndo(taskIds: string[]): Promise<void> {
 	const ids = [...seen];
 	if (!ids.length) return;
 	const ph = ids.map(() => "?").join(", ");
-	const tasks = await snapshotRows(
-		`SELECT * FROM tasks WHERE id IN (${ph})`,
-		ids,
-	);
+	const tasks = await snapshotRows(`SELECT * FROM tasks WHERE id IN (${ph})`, ids);
 	const children: Record<string, Row[]> = {};
 	for (const table of CHILD_TABLES) {
-		children[table] = await snapshotRows(
-			`SELECT * FROM ${table} WHERE task_id IN (${ph})`,
-			ids,
-		);
+		children[table] = await snapshotRows(`SELECT * FROM ${table} WHERE task_id IN (${ph})`, ids);
 	}
 	// Lokální atomicita: smazání úkolu + všech podřízených dat v JEDNÉ transakci (pád uprostřed
 	// jinak nechá sirotky / half-deleted stav). Upload fronta to pošle jako jednu CRUD transakci.

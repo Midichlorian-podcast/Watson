@@ -163,9 +163,11 @@ export function TaskCard({
 					aria-pressed={sel.on}
 					className={cn(
 						"grid shrink-0 place-items-center border-[1.6px] border-line transition-opacity hover:border-brass",
+						// skrytý checkbox nesmí být klikatelný (opacity-0 na dotyku =
+						// neviditelný cíl) → pointer-events-none; hover/focus/vybraný vrací auto
 						sel.on
 							? "opacity-100"
-							: "opacity-0 focus-visible:opacity-100 group-hover:opacity-100",
+							: "pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100",
 					)}
 					style={{ width: 16, height: 16, borderRadius: 5, marginRight: -4 }}
 				>
@@ -202,13 +204,7 @@ export function TaskCard({
 				}}
 			>
 				{done && (
-					<svg
-						width="11"
-						height="11"
-						viewBox="0 0 11 11"
-						fill="none"
-						aria-hidden
-					>
+					<svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden>
 						<path
 							d="M2 5.7 L4.3 8 L9 2.7"
 							stroke="#fff"
@@ -244,10 +240,7 @@ export function TaskCard({
 					{name}
 				</div>
 				{hasSub && (
-					<div
-						className="flex items-center"
-						style={{ gap: 10, marginTop: 1, lineHeight: 1.2 }}
-					>
+					<div className="flex items-center" style={{ gap: 10, marginTop: 1, lineHeight: 1.2 }}>
 						{parentName && (
 							<span
 								className="min-w-0 truncate font-body text-ink-3"
@@ -269,10 +262,7 @@ export function TaskCard({
 										}}
 									/>
 								)}
-								<span
-									className="font-body text-ink-3"
-									style={{ fontSize: 11.5 }}
-								>
+								<span className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
 									{projectName}
 								</span>
 							</span>
@@ -298,13 +288,7 @@ export function TaskCard({
 								className="inline-flex items-center font-mono text-ink-3"
 								style={{ gap: 3, fontSize: 11 }}
 							>
-								<svg
-									width="11"
-									height="11"
-									viewBox="0 0 12 12"
-									fill="none"
-									aria-hidden
-								>
+								<svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
 									<path
 										d="M2.5 3 H9.5 M2.5 6 H9.5 M2.5 9 H6.5"
 										stroke="currentColor"
@@ -329,11 +313,7 @@ export function TaskCard({
 								aria-hidden
 								style={{ color: "var(--w-ink-3)", flexShrink: 0 }}
 							>
-								<path
-									d="M3 9 V5.6 a3 3 0 0 1 6 0 V9"
-									stroke="currentColor"
-									strokeWidth="1.2"
-								/>
+								<path d="M3 9 V5.6 a3 3 0 0 1 6 0 V9" stroke="currentColor" strokeWidth="1.2" />
 								<line
 									x1="2.2"
 									y1="9"
@@ -350,13 +330,7 @@ export function TaskCard({
 								className="inline-flex items-center font-mono text-ink-3"
 								style={{ gap: 3, fontSize: 11 }}
 							>
-								<svg
-									width="11"
-									height="11"
-									viewBox="0 0 12 12"
-									fill="none"
-									aria-hidden
-								>
+								<svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
 									<rect
 										x="1.3"
 										y="2"
@@ -431,13 +405,7 @@ export function TaskCard({
 						borderRadius: 999,
 					}}
 				>
-					<svg
-						width="10"
-						height="10"
-						viewBox="0 0 12 12"
-						fill="none"
-						aria-hidden
-					>
+					<svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
 						<path
 							d="M3 1.5 V10.5 M3 2 H9 L7.4 4 L9 6 H3"
 							stroke="currentColor"
@@ -460,11 +428,7 @@ export function TaskCard({
 					background: "var(--w-card)",
 					border: `1px solid ${priority === 1 ? "var(--w-ink-3)" : "var(--w-line)"}`,
 					color:
-						priority === 1
-							? "var(--w-ink)"
-							: priority === 4
-								? "var(--w-ink-3)"
-								: "var(--w-ink-2)",
+						priority === 1 ? "var(--w-ink)" : priority === 4 ? "var(--w-ink-3)" : "var(--w-ink-2)",
 				}}
 			>
 				P{priority}
@@ -478,14 +442,8 @@ export function TaskCard({
 						fontSize: 11,
 						padding: "3px 9px",
 						borderRadius: 999,
-						background:
-							status.kind === "success"
-								? "var(--w-success-soft)"
-								: "var(--w-panel-2)",
-						color:
-							status.kind === "success"
-								? "var(--w-success-ink)"
-								: "var(--w-ink-2)",
+						background: status.kind === "success" ? "var(--w-success-soft)" : "var(--w-panel-2)",
+						color: status.kind === "success" ? "var(--w-success-ink)" : "var(--w-ink-2)",
 					}}
 				>
 					{status.label}
@@ -610,8 +568,7 @@ function FlowChip({ flow }: { flow: NonNullable<TaskCardProps["flow"]> }) {
 								width: 5,
 								height: 5,
 								background: fill,
-								boxShadow:
-									idx > flow.pos ? "inset 0 0 0 1px var(--w-line)" : "none",
+								boxShadow: idx > flow.pos ? "inset 0 0 0 1px var(--w-line)" : "none",
 							}}
 						/>
 					);

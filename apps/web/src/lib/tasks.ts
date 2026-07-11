@@ -13,8 +13,7 @@ export const todayISO = () => {
 };
 
 /** Den termínu úkolu (YYYY-MM-DD) nebo null. */
-export const dayOf = (x: TaskRow) =>
-	x.due_date ? x.due_date.slice(0, 10) : null;
+export const dayOf = (x: TaskRow) => (x.due_date ? x.due_date.slice(0, 10) : null);
 
 /**
  * Upsert per-výskyt výjimky (exceptions prototypu) — done/skip jednoho výskytu.
@@ -70,10 +69,7 @@ export async function setOccurrenceOverride(
 		await insert();
 		pushUndo({
 			undo: async () => {
-				await powerSync.execute(
-					"DELETE FROM task_occurrence_overrides WHERE id = ?",
-					[nid],
-				);
+				await powerSync.execute("DELETE FROM task_occurrence_overrides WHERE id = ?", [nid]);
 			},
 			redo: insert,
 		});
@@ -141,38 +137,67 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 			id: string;
 			user_id: string | null;
 			completed_at: string | null;
-		}>(
-			"SELECT id, user_id, completed_at FROM assignments WHERE task_id = ?",
-			[task.id],
-		);
+		}>("SELECT id, user_id, completed_at FROM assignments WHERE task_id = ?", [task.id]);
 		const mine = asg.find((a) => a.user_id === actorId);
-		if (asg.length >= 2 && mine) {
-			const nowMineDone = !mine.completed_at;
-			const myTs = nowMineDone ? new Date().toISOString() : null;
-			const allDone = asg.every((a) =>
-				a.id === mine.id ? nowMineDone : !!a.completed_at,
-			);
+		// S3 (R2) — aktér BEZ účasti (např. manažer přes hromadné „Hotovo" nebo detail
+		// cizího úkolu) dřív propadl do obecné větve a nastavil tasks.completed_at
+		// všem, čímž obešel odvozené dokončení. Správně: dokončení neúčastníkem =
+		// dokončit VŠECHNY účasti (per-osoba completed_at) v jedné transakci
+		// a tasks.completed_at nastavit jen ODVOZENĚ; un-toggle symetricky vše zruší.
+		if (asg.length > 0 && !mine) {
+			const nowDone = !task.completed_at;
+			const ts = new Date().toISOString();
+			const prevAsg = asg.map((a) => ({ id: a.id, val: a.completed_at }));
+			// už dokončené účasti si při dokončování nechají původní čas
+			const nextAsg = asg.map((a) => ({
+				id: a.id,
+				val: nowDone ? (a.completed_at ?? ts) : null,
+			}));
 			const prevTaskDone = task.completed_at;
 			const prevStatus = task.status_id;
-			const newTaskDone = allDone ? new Date().toISOString() : null;
-			const nextStatus = await resolveStatusForDone(
-				task.id,
-				allDone,
-				task.status_id,
-			);
+			const newTaskDone = nowDone ? ts : null;
+			const nextStatus = await resolveStatusForDone(task.id, nowDone, task.status_id);
 			const apply = async (
-				myVal: string | null,
+				vals: { id: string; val: string | null }[],
 				taskDone: string | null,
 				st: string | null,
 			) => {
-				await powerSync.execute(
-					"UPDATE assignments SET completed_at = ? WHERE id = ?",
-					[myVal, mine.id],
-				);
-				await powerSync.execute(
-					"UPDATE tasks SET completed_at = ?, status_id = ? WHERE id = ?",
-					[taskDone, st, task.id],
-				);
+				await powerSync.writeTransaction(async (tx) => {
+					for (const v of vals)
+						await tx.execute("UPDATE assignments SET completed_at = ? WHERE id = ?", [v.val, v.id]);
+					await tx.execute("UPDATE tasks SET completed_at = ?, status_id = ? WHERE id = ?", [
+						taskDone,
+						st,
+						task.id,
+					]);
+				});
+			};
+			await apply(nextAsg, newTaskDone, nextStatus);
+			pushUndo({
+				undo: () => apply(prevAsg, prevTaskDone, prevStatus),
+				redo: () => apply(nextAsg, newTaskDone, nextStatus),
+			});
+			if (nowDone !== !!prevTaskDone) await advanceChainForTask(task.id, nowDone);
+			return;
+		}
+		if (asg.length >= 2 && mine) {
+			const nowMineDone = !mine.completed_at;
+			const myTs = nowMineDone ? new Date().toISOString() : null;
+			const allDone = asg.every((a) => (a.id === mine.id ? nowMineDone : !!a.completed_at));
+			const prevTaskDone = task.completed_at;
+			const prevStatus = task.status_id;
+			const newTaskDone = allDone ? new Date().toISOString() : null;
+			const nextStatus = await resolveStatusForDone(task.id, allDone, task.status_id);
+			const apply = async (myVal: string | null, taskDone: string | null, st: string | null) => {
+				await powerSync.execute("UPDATE assignments SET completed_at = ? WHERE id = ?", [
+					myVal,
+					mine.id,
+				]);
+				await powerSync.execute("UPDATE tasks SET completed_at = ?, status_id = ? WHERE id = ?", [
+					taskDone,
+					st,
+					task.id,
+				]);
 			};
 			await apply(myTs, newTaskDone, nextStatus);
 			pushUndo({
@@ -192,53 +217,35 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 		// Konec opakování z rule JSON (endKind/until/count + doneCount).
 		let rule: Record<string, unknown> = {};
 		try {
-			rule = JSON.parse(task.recurrence_rule ?? "{}") as Record<
-				string,
-				unknown
-			>;
+			rule = JSON.parse(task.recurrence_rule ?? "{}") as Record<string, unknown>;
 		} catch {
 			/* ponech prázdné */
 		}
-		const doneCount =
-			(typeof rule.doneCount === "number" ? rule.doneCount : 0) + 1;
+		const doneCount = (typeof rule.doneCount === "number" ? rule.doneCount : 0) + 1;
 		const endKind = typeof rule.endKind === "string" ? rule.endKind : "never";
 		const reachedCount =
-			endKind === "count" &&
-			typeof rule.count === "number" &&
-			doneCount >= rule.count;
+			endKind === "count" && typeof rule.count === "number" && doneCount >= rule.count;
 		const [next] = expandOccurrences({
 			baseISO: due,
 			kind,
 			weekday: typeof rule.weekday === "number" ? rule.weekday : undefined,
 			nth: typeof rule.nth === "number" ? rule.nth : undefined,
 			day: typeof rule.day === "number" ? rule.day : undefined,
-			parity:
-				rule.parity === "even" || rule.parity === "odd"
-					? rule.parity
-					: undefined,
+			parity: rule.parity === "even" || rule.parity === "odd" ? rule.parity : undefined,
 			fromISO: isoPlus(due, 1),
 			toISO: isoPlus(due, 800),
 			cap: 1,
 		});
 		const pastUntil =
-			endKind === "until" &&
-			typeof rule.until === "string" &&
-			next &&
-			next > rule.until;
+			endKind === "until" && typeof rule.until === "string" && next && next > rule.until;
 		if (next && !reachedCount && !pastUntil) {
-			const nextStart = task.start_date
-				? `${next}T${task.start_date.slice(11)}`
-				: null;
+			const nextStart = task.start_date ? `${next}T${task.start_date.slice(11)}` : null;
 			const prev = {
 				due_date: task.due_date,
 				start_date: task.start_date,
 				recurrence_rule: task.recurrence_rule,
 			};
-			const write = async (
-				d: string | null,
-				sd: string | null,
-				rr: string | null,
-			) => {
+			const write = async (d: string | null, sd: string | null, rr: string | null) => {
 				await powerSync.execute(
 					"UPDATE tasks SET due_date = ?, start_date = ?, recurrence_rule = ? WHERE id = ?",
 					[d, sd, rr, task.id],
@@ -248,27 +255,23 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 			// ⌘Z vrátí posun řady zpět (prototyp verzuje každou změnu tasks, ř. 2239).
 			pushUndo({
 				undo: () => write(prev.due_date, prev.start_date, prev.recurrence_rule),
-				redo: () =>
-					write(next, nextStart, JSON.stringify({ ...rule, doneCount })),
+				redo: () => write(next, nextStart, JSON.stringify({ ...rule, doneCount })),
 			});
 			showToast(`${i18n.t("detail.movedTo")} ${occLabel(next)}`);
 			return;
 		}
 	}
 	// R9: zaškrtnutí ⇄ stav „Hotovo" — synchronizovat i status sloupec (prototyp toggleDone).
-	const nextStatus = await resolveStatusForDone(
-		task.id,
-		nowDone,
-		task.status_id,
-	);
+	const nextStatus = await resolveStatusForDone(task.id, nowDone, task.status_id);
 	const prevDone = task.completed_at;
 	const prevStatus = task.status_id;
 	const newDone = nowDone ? new Date().toISOString() : null;
 	const writeDone = async (c: string | null, st: string | null) => {
-		await powerSync.execute(
-			"UPDATE tasks SET completed_at = ?, status_id = ? WHERE id = ?",
-			[c, st, task.id],
-		);
+		await powerSync.execute("UPDATE tasks SET completed_at = ?, status_id = ? WHERE id = ?", [
+			c,
+			st,
+			task.id,
+		]);
 	};
 	await writeDone(newDone, nextStatus);
 	pushUndo({
@@ -289,9 +292,7 @@ const fromISO = (d: string) => {
 	return new Date(y ?? 1970, (m ?? 1) - 1, day ?? 1);
 };
 const wdShort = (d: string) =>
-	new Intl.DateTimeFormat(i18n.language, { weekday: "short" }).format(
-		fromISO(d),
-	);
+	new Intl.DateTimeFormat(i18n.language, { weekday: "short" }).format(fromISO(d));
 
 /**
  * Štítek termínu pro TaskCard (1:1 dle designu): po termínu = „po termínu · {den}" (červeně),
@@ -332,10 +333,7 @@ export function deadlineLabel(deadlineRaw: string | null) {
  * dnes s časem = „09:00–10:30" (konec = start + trvání), jiné dny s časem = „zítra · 13:00",
  * vícedenní = „N dní", datum v příštím týdnu = „{den} · příští týden".
  */
-export function rowDue(
-	task: TaskRow,
-	t: (k: string, o?: Record<string, unknown>) => string,
-) {
+export function rowDue(task: TaskRow, t: (k: string, o?: Record<string, unknown>) => string) {
 	const dueRaw = task.due_date;
 	if (!dueRaw) return undefined;
 	const d = dueRaw.slice(0, 10);
@@ -356,9 +354,7 @@ export function rowDue(
 		};
 	if (d === tdy) {
 		if (start) {
-			const end = new Date(
-				start.getTime() + (task.duration_min ?? 30) * 60_000,
-			);
+			const end = new Date(start.getTime() + (task.duration_min ?? 30) * 60_000);
 			return { label: `${hhmm(start)}–${hhmm(end)}`, overdue: false };
 		}
 		return { label: t("today.todayLower"), overdue: false };

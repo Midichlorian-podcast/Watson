@@ -925,7 +925,16 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											<button
 												key={key}
 												type="button"
-												onClick={() => void patchLog({ due_date: rescheduleDate(key) })}
+												onClick={() => {
+													// S4 (R4) — quick-shift by u opakovaného úkolu tiše
+													// posunul kotvu CELÉ řady bez dotazu „tento / tento
+													// a další / celá řada"; posun proto neprovádíme.
+													if (task.recurrence_rule) {
+														showToast(t("bulk.recurringSkipped", { count: 1 }));
+														return;
+													}
+													void patchLog({ due_date: rescheduleDate(key) });
+												}}
 												className="cursor-pointer whitespace-nowrap rounded-md border border-line bg-card font-mono text-ink-3 hover:border-brass hover:text-brass-text"
 												style={{ fontSize: 9.5, padding: "3px 7px" }}
 											>

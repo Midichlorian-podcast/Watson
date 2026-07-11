@@ -1,13 +1,7 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "@watson/i18n";
-import {
-	type CSSProperties,
-	type ReactNode,
-	useEffect,
-	useRef,
-	useState,
-} from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useBulkSelect } from "../lib/bulkSelect";
@@ -93,11 +87,16 @@ function Bar() {
 
 	const ids = Object.keys(selected);
 	const ph = ids.map(() => "?").join(", ");
-	const { data: rows } = usePsQuery<TaskRow>(
-		`SELECT * FROM tasks WHERE id IN (${ph})`,
-		ids,
-	);
+	const { data: rows } = usePsQuery<TaskRow>(`SELECT * FROM tasks WHERE id IN (${ph})`, ids);
 	const tasks = rows ?? [];
+
+	/**
+	 * D5 — usePsQuery nemusí mít těsně po výběru (shift-rozsah) načtené všechny
+	 * vybrané řádky → akce by chybějící tiše přeskočily a toast by hlásil plný
+	 * počet. Každá akce si proto komplet vybraných načte přímo z DB.
+	 */
+	const loadSelected = () =>
+		powerSync.getAll<TaskRow>(`SELECT * FROM tasks WHERE id IN (${ph})`, ids);
 
 	const { data: team } = useQuery({
 		queryKey: ["wsMembersFull", activeWs],
@@ -110,6 +109,33 @@ function Bar() {
 			return (await r.json()).members as { id: string; name: string }[];
 		},
 	});
+
+	// S2 (R2/R5) — „Přiřadit" smí nabídnout jen PRŮNIK členů projektů vybraných
+	// úkolů: člen workspace mimo projekt by na serveru spadl na 403 a op by se
+	// po checkpointu tiše zahodil (lokálně by akce „vyšla"). Členství čteme
+	// z lokální project_members (syncuje se), jména z members workspace.
+	const projIds = [...new Set(tasks.map((tk) => tk.project_id).filter((x): x is string => !!x))];
+	const projPh = projIds.map(() => "?").join(", ");
+	const { data: pmRows } = usePsQuery<{
+		project_id: string | null;
+		user_id: string | null;
+	}>(
+		projIds.length
+			? `SELECT project_id, user_id FROM project_members WHERE project_id IN (${projPh})`
+			: "SELECT '' AS project_id, '' AS user_id WHERE 0",
+		projIds,
+	);
+	const byProj = new Map<string, Set<string>>();
+	for (const r of pmRows ?? []) {
+		if (!r.project_id || !r.user_id) continue;
+		const s = byProj.get(r.project_id) ?? new Set<string>();
+		s.add(r.user_id);
+		byProj.set(r.project_id, s);
+	}
+	// úkoly bez projektu neomezují (osobní inbox) — průnik jen přes projekty
+	const assignable = projIds.length
+		? (team ?? []).filter((m) => projIds.every((pid) => byProj.get(pid)?.has(m.id)))
+		: (team ?? []);
 
 	// klik mimo lištu zavírá dropdown (ne výběr)
 	useEffect(() => {
@@ -135,33 +161,52 @@ function Bar() {
 		return () => window.removeEventListener("keydown", h);
 	}, [openId, menu, clear]);
 
-	/** Aplikuj UPDATE jednoho sloupce na všechny vybrané s JEDNÍM undo záznamem.
+	/** Aplikuj UPDATE jednoho sloupce na dané úkoly s JEDNÍM undo záznamem.
 	 * (Projekt má vlastní bulkProject — kaskáda na podúkoly a denorm child řádky.) */
-	const bulkColumn = async (
-		col: "due_date" | "priority",
-		value: unknown,
-		toast: string,
-	) => {
-		const prev = tasks.map((tk) => ({
+	const applyColumn = async (targets: TaskRow[], col: "due_date" | "priority", value: unknown) => {
+		const prev = targets.map((tk) => ({
 			id: tk.id,
 			val: (tk as unknown as Record<string, unknown>)[col] ?? null,
 		}));
 		const write = async (vals: { id: string; val: unknown }[]) => {
 			await powerSync.writeTransaction(async (tx) => {
 				for (const v of vals) {
-					await tx.execute(`UPDATE tasks SET ${col} = ? WHERE id = ?`, [
-						v.val,
-						v.id,
-					]);
+					await tx.execute(`UPDATE tasks SET ${col} = ? WHERE id = ?`, [v.val, v.id]);
 				}
 			});
 		};
 		const next = prev.map((p) => ({ id: p.id, val: value }));
 		await write(next);
+		// undo záznam až PO úspěšném zápisu — selhání nesmí nechat falešný krok v ⌘Z (D9)
 		pushUndo({ undo: () => write(prev), redo: () => write(next) });
+	};
+
+	const bulkPriority = async (p: number) => {
+		const rowsAll = await loadSelected(); // D5 — komplet, ne jen syncnutý výřez
+		await applyColumn(rowsAll, "priority", p);
 		setMenu(null);
 		clear();
-		showToast(toast);
+		showToast(t("bulk.priToast", { count: rowsAll.length, p }));
+	};
+
+	/**
+	 * Termín — S4 (R4): hromadný posun by u opakovaného úkolu přepsal kotvu CELÉ
+	 * řady bez dotazu „tento / tento a další / celá řada". Opakované úkoly proto
+	 * vynecháváme a hlásíme kolik jich bylo (řadu uživatel upraví v detailu).
+	 */
+	const bulkTerm = async (key: RescheduleKey, day: string) => {
+		const rowsAll = await loadSelected(); // D5
+		const movable = rowsAll.filter((tk) => !tk.recurrence_rule);
+		const skipped = rowsAll.length - movable.length;
+		if (movable.length) await applyColumn(movable, "due_date", rescheduleDate(key));
+		setMenu(null);
+		clear();
+		showToast(
+			[
+				...(movable.length ? [t("bulk.movedToast", { count: movable.length, day })] : []),
+				...(skipped ? [t("bulk.recurringSkipped", { count: skipped })] : []),
+			].join(" · "),
+		);
 	};
 
 	/** Tabulky s denormalizovaným project_id, podle kterého PowerSync bucketuje. */
@@ -193,10 +238,7 @@ function Bar() {
 		);
 		const allIds = all.map((r) => r.id);
 		const phAll = allIds.map(() => "?").join(", ");
-		const prevChild: Record<
-			string,
-			{ id: string; project_id: string | null }[]
-		> = {};
+		const prevChild: Record<string, { id: string; project_id: string | null }[]> = {};
 		for (const tb of CHILD_PROJECT_TABLES) {
 			prevChild[tb] = await powerSync.getAll(
 				`SELECT id, project_id FROM ${tb} WHERE task_id IN (${phAll})`,
@@ -205,32 +247,26 @@ function Bar() {
 		}
 		const apply = async () => {
 			await powerSync.writeTransaction(async (tx) => {
-				await tx.execute(
-					`UPDATE tasks SET project_id = ? WHERE id IN (${phAll})`,
-					[value, ...allIds],
-				);
+				await tx.execute(`UPDATE tasks SET project_id = ? WHERE id IN (${phAll})`, [
+					value,
+					...allIds,
+				]);
 				for (const tb of CHILD_PROJECT_TABLES) {
-					await tx.execute(
-						`UPDATE ${tb} SET project_id = ? WHERE task_id IN (${phAll})`,
-						[value, ...allIds],
-					);
+					await tx.execute(`UPDATE ${tb} SET project_id = ? WHERE task_id IN (${phAll})`, [
+						value,
+						...allIds,
+					]);
 				}
 			});
 		};
 		const revert = async () => {
 			await powerSync.writeTransaction(async (tx) => {
 				for (const r of all) {
-					await tx.execute("UPDATE tasks SET project_id = ? WHERE id = ?", [
-						r.project_id,
-						r.id,
-					]);
+					await tx.execute("UPDATE tasks SET project_id = ? WHERE id = ?", [r.project_id, r.id]);
 				}
 				for (const tb of CHILD_PROJECT_TABLES) {
 					for (const r of prevChild[tb] ?? []) {
-						await tx.execute(
-							`UPDATE ${tb} SET project_id = ? WHERE id = ?`,
-							[r.project_id, r.id],
-						);
+						await tx.execute(`UPDATE ${tb} SET project_id = ? WHERE id = ?`, [r.project_id, r.id]);
 					}
 				}
 			});
@@ -244,71 +280,75 @@ function Bar() {
 
 	const bulkDone = async () => {
 		const uid = session?.user?.id;
+		const rowsAll = await loadSelected(); // D5
+		const open = rowsAll.filter((tk) => !tk.completed_at);
 		// toggleTask drží invarianty (R2 shared_all = jen má účast, R4 posun řady, R9 status).
-		for (const tk of tasks) {
-			if (!tk.completed_at) await toggleTask(tk, uid);
-		}
+		for (const tk of open) await toggleTask(tk, uid);
 		clear();
-		showToast(t("bulk.doneToast", { count }));
+		showToast(t("bulk.doneToast", { count: open.length }));
 	};
 
+	/**
+	 * S2 (R2) — shared_all („každý zvlášť") drží per-osoba completed_at
+	 * v assignments; DELETE + INSERT jednoho člověka by účasti (a rozpracovaný
+	 * stav kolegů) nenávratně smazal. Takové úkoly z hromadného přiřazení
+	 * VYNECHÁVÁME a hlásíme kolik a proč; ostatní přejdou na režim single.
+	 */
 	const bulkAssign = async (uid: string, name: string) => {
-		type AsgRow = Record<string, unknown>;
-		const prevAsg = await powerSync.getAll<AsgRow>(
-			`SELECT * FROM assignments WHERE task_id IN (${ph})`,
-			ids,
-		);
-		const prevModes = tasks.map((tk) => ({
-			id: tk.id,
-			mode: tk.assignment_mode ?? null,
-			project: tk.project_id ?? null,
-		}));
-		const apply = async () => {
-			await powerSync.writeTransaction(async (tx) => {
-				await tx.execute(
-					`DELETE FROM assignments WHERE task_id IN (${ph})`,
-					ids,
-				);
-				for (const tk of prevModes) {
-					await tx.execute(
-						"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
-						[tk.id, tk.project, uid, new Date().toISOString()],
-					);
-					await tx.execute(
-						"UPDATE tasks SET assignment_mode = 'single' WHERE id = ?",
-						[tk.id],
-					);
-				}
-			});
-		};
-		const revert = async () => {
-			await powerSync.writeTransaction(async (tx) => {
-				await tx.execute(
-					`DELETE FROM assignments WHERE task_id IN (${ph})`,
-					ids,
-				);
-				for (const r of prevAsg) {
-					const cols = Object.keys(r).filter(
-						(c) => r[c] !== null && r[c] !== undefined,
-					);
-					await tx.execute(
-						`INSERT INTO assignments (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
-						cols.map((c) => r[c]),
-					);
-				}
-				for (const tk of prevModes) {
-					await tx.execute(
-						"UPDATE tasks SET assignment_mode = ? WHERE id = ?",
-						[tk.mode, tk.id],
-					);
-				}
-			});
-		};
-		await apply();
-		pushUndo({ undo: revert, redo: apply });
+		const rowsAll = await loadSelected(); // D5
+		const targets = rowsAll.filter((tk) => tk.assignment_mode !== "shared_all");
+		const skipped = rowsAll.length - targets.length;
+		if (targets.length) {
+			const tIds = targets.map((tk) => tk.id);
+			const tPh = tIds.map(() => "?").join(", ");
+			type AsgRow = Record<string, unknown>;
+			const prevAsg = await powerSync.getAll<AsgRow>(
+				`SELECT * FROM assignments WHERE task_id IN (${tPh})`,
+				tIds,
+			);
+			const prevModes = targets.map((tk) => ({
+				id: tk.id,
+				mode: tk.assignment_mode ?? null,
+				project: tk.project_id ?? null,
+			}));
+			const apply = async () => {
+				await powerSync.writeTransaction(async (tx) => {
+					await tx.execute(`DELETE FROM assignments WHERE task_id IN (${tPh})`, tIds);
+					for (const tk of prevModes) {
+						await tx.execute(
+							"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
+							[tk.id, tk.project, uid, new Date().toISOString()],
+						);
+						await tx.execute("UPDATE tasks SET assignment_mode = 'single' WHERE id = ?", [tk.id]);
+					}
+				});
+			};
+			const revert = async () => {
+				await powerSync.writeTransaction(async (tx) => {
+					await tx.execute(`DELETE FROM assignments WHERE task_id IN (${tPh})`, tIds);
+					for (const r of prevAsg) {
+						const cols = Object.keys(r).filter((c) => r[c] !== null && r[c] !== undefined);
+						await tx.execute(
+							`INSERT INTO assignments (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`,
+							cols.map((c) => r[c]),
+						);
+					}
+					for (const tk of prevModes) {
+						await tx.execute("UPDATE tasks SET assignment_mode = ? WHERE id = ?", [tk.mode, tk.id]);
+					}
+				});
+			};
+			await apply();
+			pushUndo({ undo: revert, redo: apply });
+		}
 		setMenu(null);
 		clear();
-		showToast(t("bulk.assignToast", { count, name }));
+		showToast(
+			[
+				...(targets.length ? [t("bulk.assignToast", { count: targets.length, name })] : []),
+				...(skipped ? [t("bulk.assignSkippedShared", { count: skipped })] : []),
+			].join(" · "),
+		);
 	};
 
 	const bulkDelete = async () => {
@@ -322,9 +362,7 @@ function Bar() {
 		{ key: "tomorrow", label: t("bulk.tomorrow") },
 		{ key: "nextMonday", label: t("bulk.nextWeek") },
 	];
-	const wsProjects = projects.filter(
-		(p) => !activeWs || p.workspace_id === activeWs,
-	);
+	const wsProjects = projects.filter((p) => !activeWs || p.workspace_id === activeWs);
 
 	return (
 		<div
@@ -373,13 +411,7 @@ function Bar() {
 							<button
 								key={o.key}
 								type="button"
-								onClick={() =>
-									void bulkColumn(
-										"due_date",
-										rescheduleDate(o.key),
-										t("bulk.movedToast", { count, day: o.label }),
-									)
-								}
+								onClick={() => void bulkTerm(o.key, o.label)}
 								className={dropItemCls}
 								style={dropItemStyle}
 							>
@@ -407,10 +439,7 @@ function Bar() {
 								key={p.id}
 								type="button"
 								onClick={() =>
-									void bulkProject(
-										p.id,
-										t("bulk.projToast", { count, name: p.name ?? "" }),
-									)
+									void bulkProject(p.id, t("bulk.projToast", { count, name: p.name ?? "" }))
 								}
 								className={dropItemCls}
 								style={dropItemStyle}
@@ -446,13 +475,7 @@ function Bar() {
 							<button
 								key={p}
 								type="button"
-								onClick={() =>
-									void bulkColumn(
-										"priority",
-										p,
-										t("bulk.priToast", { count, p }),
-									)
-								}
+								onClick={() => void bulkPriority(p)}
 								className="rounded-lg border border-line font-display font-bold text-ink hover:border-brass"
 								style={{ fontSize: 12, padding: "6px 10px" }}
 							>
@@ -475,7 +498,13 @@ function Bar() {
 				</button>
 				{menu === "assign" && (
 					<Drop minWidth={190}>
-						{(team ?? []).map((m) => (
+						{/* prázdný průnik — vybrané úkoly nesdílejí žádného člena projektů */}
+						{assignable.length === 0 && (
+							<div className="font-body text-ink-3" style={{ fontSize: 12, padding: "7px 11px" }}>
+								{t("bulk.assignNone")}
+							</div>
+						)}
+						{assignable.map((m) => (
 							<button
 								key={m.id}
 								type="button"

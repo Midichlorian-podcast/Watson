@@ -40,10 +40,7 @@ function CardHead({
 }) {
 	return (
 		<div className="flex items-center" style={{ gap: 8, padding: "13px 16px 9px" }}>
-			<span
-				className="flex-1 font-display font-bold text-ink"
-				style={{ fontSize: 13.5 }}
-			>
+			<span className="flex-1 font-display font-bold text-ink" style={{ fontSize: 13.5 }}>
 				{title}
 			</span>
 			{footLabel && (
@@ -62,10 +59,7 @@ function CardHead({
 
 function Bar({ pct, color }: { pct: number; color?: string }) {
 	return (
-		<div
-			className="overflow-hidden rounded-full bg-panel-2"
-			style={{ height: 5 }}
-		>
+		<div className="overflow-hidden rounded-full bg-panel-2" style={{ height: 5 }}>
 			<div
 				style={{
 					height: "100%",
@@ -97,8 +91,8 @@ export function Prehled() {
 	// peek — náhled položky na místě (feedback: neodvádět z Přehledu pryč)
 	const [peek, setPeek] = useState<PeekTarget | null>(null);
 	// ovLayout (prototyp prop prehledLayout: Mřížka | Ranní feed) — per-user volba
-	const [layout, setLayout] = useState<"grid" | "feed">(
-		() => (localStorage.getItem("watson.ovLayout") === "feed" ? "feed" : "grid"),
+	const [layout, setLayout] = useState<"grid" | "feed">(() =>
+		localStorage.getItem("watson.ovLayout") === "feed" ? "feed" : "grid",
 	);
 	const switchLayout = (v: "grid" | "feed") => {
 		setLayout(v);
@@ -119,10 +113,7 @@ export function Prehled() {
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
 
-	const projById = useMemo(
-		() => new Map(projects.map((p) => [p.id, p])),
-		[projects],
-	);
+	const projById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 	const wsOfTask = (tk: TaskRow) =>
 		tk.project_id ? (projById.get(tk.project_id)?.workspace_id ?? null) : null;
 	const firms = (workspaces ?? []).filter((w) => !w.isPersonal);
@@ -172,9 +163,7 @@ export function Prehled() {
 				return {
 					id: tk.id,
 					name: tk.name ?? "",
-					color: tk.project_id
-						? (projById.get(tk.project_id)?.color ?? null)
-						: null,
+					color: tk.project_id ? (projById.get(tk.project_id)?.color ?? null) : null,
 					p1: (tk.priority ?? 4) === 1,
 					isOver,
 					due,
@@ -200,9 +189,7 @@ export function Prehled() {
 				(f) =>
 					f.stuck &&
 					(!firm ||
-						(f.projectId
-							? projById.get(f.projectId)?.workspace_id === firm
-							: f.wsId === firm)),
+						(f.projectId ? projById.get(f.projectId)?.workspace_id === firm : f.wsId === firm)),
 			)
 			.slice(0, 2);
 
@@ -240,15 +227,11 @@ export function Prehled() {
 					}).format(new Date(iso))
 				: "";
 		(allTasks ?? [])
-			.filter(
-				(tk) => fOk(tk) && tk.completed_at && tk.completed_at.slice(0, 10) === tdy,
-			)
+			.filter((tk) => fOk(tk) && tk.completed_at && tk.completed_at.slice(0, 10) === tdy)
 			.sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))
 			.slice(0, 3)
 			.forEach((tk) => {
-				const uid =
-					(assignments ?? []).find((a) => a.task_id === tk.id)?.user_id ??
-					tk.created_by;
+				const uid = (assignments ?? []).find((a) => a.task_id === tk.id)?.user_id ?? tk.created_by;
 				const who = uid ? (members.get(uid) ?? "") : "";
 				feed.push({
 					key: `d${tk.id}`,
@@ -265,9 +248,7 @@ export function Prehled() {
 				(f) =>
 					f.hasNow &&
 					(!firm ||
-						(f.projectId
-							? projById.get(f.projectId)?.workspace_id === firm
-							: f.wsId === firm)),
+						(f.projectId ? projById.get(f.projectId)?.workspace_id === firm : f.wsId === firm)),
 			)
 			.slice(0, 2)
 			.forEach((f) => {
@@ -291,9 +272,7 @@ export function Prehled() {
 			);
 		}
 		// urgentní vlákna v poště (prototyp: p1/p2 max 2 jména)
-		const urgM = (digest?.items ?? []).filter(
-			(x) => x.flag === "p1" || x.flag === "p2",
-		);
+		const urgM = (digest?.items ?? []).filter((x) => x.flag === "p1" || x.flag === "p2");
 		if (urgM.length) {
 			const names = urgM
 				.slice(0, 2)
@@ -349,15 +328,19 @@ export function Prehled() {
 	// „Přeplánovat zpožděné" — všechny zpožděné na dnes, jedním undo záznamem (prototyp reschedule)
 	const rescheduleOverdue = async () => {
 		const tdy = todayISO();
-		const rows = view.ovd.map((tk) => ({ id: tk.id, prev: tk.due_date }));
-		if (!rows.length) return;
+		// S4 (R4) — opakované úkoly VYNECHAT: posun due_date by přepsal kotvu celé
+		// řady bez dotazu „tento / tento a další / celá řada" (uprav řadu v detailu).
+		const movable = view.ovd.filter((tk) => !tk.recurrence_rule);
+		const skipped = view.ovd.length - movable.length;
+		const rows = movable.map((tk) => ({ id: tk.id, prev: tk.due_date }));
+		if (!rows.length) {
+			if (skipped) showToast(t("bulk.recurringSkipped", { count: skipped }));
+			return;
+		}
 		const write = async (vals: { id: string; val: string | null }[]) => {
 			await powerSync.writeTransaction(async (tx) => {
 				for (const v of vals)
-					await tx.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [
-						v.val,
-						v.id,
-					]);
+					await tx.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [v.val, v.id]);
 			});
 		};
 		await write(rows.map((r) => ({ id: r.id, val: tdy })));
@@ -365,7 +348,12 @@ export function Prehled() {
 			undo: () => write(rows.map((r) => ({ id: r.id, val: r.prev }))),
 			redo: () => write(rows.map((r) => ({ id: r.id, val: tdy }))),
 		});
-		showToast(t("prehled.rescheduledToast", { count: rows.length }));
+		showToast(
+			[
+				t("prehled.rescheduledToast", { count: rows.length }),
+				...(skipped ? [t("bulk.recurringSkipped", { count: skipped })] : []),
+			].join(" · "),
+		);
 	};
 
 	const todayLabel = useMemo(() => {
@@ -405,10 +393,7 @@ export function Prehled() {
 	return (
 		<div className="mx-auto" style={{ maxWidth: 1120, padding: "18px 22px 90px" }}>
 			{/* chipy firem (prototyp data-ovchip) */}
-			<div
-				className="flex flex-wrap items-center"
-				style={{ gap: 8, marginBottom: 14 }}
-			>
+			<div className="flex flex-wrap items-center" style={{ gap: 8, marginBottom: 14 }}>
 				<FirmChip label={t("prehled.chipAll")} on={!firm} onClick={() => setFirm(null)} />
 				{firms.map((w) => (
 					<FirmChip
@@ -421,10 +406,7 @@ export function Prehled() {
 				))}
 				<div className="flex-1" />
 				{/* přepínač layoutu (prototyp prop prehledLayout: Mřížka | Ranní feed) */}
-				<div
-					className="flex rounded-lg border border-line bg-panel-2"
-					style={{ padding: 2 }}
-				>
+				<div className="flex rounded-lg border border-line bg-panel-2" style={{ padding: 2 }}>
 					{(
 						[
 							["grid", t("prehled.layoutGrid")],
@@ -565,10 +547,7 @@ export function Prehled() {
 									background: r.color ?? "var(--w-ink-3)",
 								}}
 							/>
-							<span
-								className="min-w-0 flex-1 truncate font-body text-ink"
-								style={{ fontSize: 13 }}
-							>
+							<span className="min-w-0 flex-1 truncate font-body text-ink" style={{ fontSize: 13 }}>
 								{r.name}
 							</span>
 							{r.p1 && (
@@ -667,10 +646,7 @@ export function Prehled() {
 										>
 											{mm.from}
 										</span>
-										<span
-											className="shrink-0 font-mono text-ink-3"
-											style={{ fontSize: 10.5 }}
-										>
+										<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 10.5 }}>
 											{mm.mbShort}
 										</span>
 									</div>
@@ -695,10 +671,7 @@ export function Prehled() {
 										{mm.flag.toUpperCase()}
 									</span>
 								)}
-								<span
-									className="shrink-0 font-mono text-ink-3"
-									style={{ fontSize: 11 }}
-								>
+								<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 11 }}>
 									{mm.time}
 								</span>
 							</OvRow>
@@ -738,17 +711,11 @@ export function Prehled() {
 									>
 										{l.name}
 									</span>
-									<span
-										className="shrink-0 font-mono text-ink-3"
-										style={{ fontSize: 11 }}
-									>
+									<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 11 }}>
 										{l.event}
 									</span>
 								</div>
-								<div
-									className="flex items-center"
-									style={{ gap: 9, marginTop: 7 }}
-								>
+								<div className="flex items-center" style={{ gap: 9, marginTop: 7 }}>
 									<div
 										className="flex-1 overflow-hidden rounded-full bg-panel-2"
 										style={{ height: 5 }}
@@ -762,10 +729,7 @@ export function Prehled() {
 											}}
 										/>
 									</div>
-									<span
-										className="shrink-0 font-mono text-ink-2"
-										style={{ fontSize: 11 }}
-									>
+									<span className="shrink-0 font-mono text-ink-2" style={{ fontSize: 11 }}>
 										{l.label}
 									</span>
 								</div>
@@ -811,10 +775,7 @@ export function Prehled() {
 								<div style={{ marginTop: 7, width: "100%" }}>
 									<Bar pct={g.pct} />
 								</div>
-								<div
-									className="font-body text-ink-3"
-									style={{ fontSize: 11.5, marginTop: 5 }}
-								>
+								<div className="font-body text-ink-3" style={{ fontSize: 11.5, marginTop: 5 }}>
 									{g.label} · {t("prehled.elapsed", { elapsed: g.elapsed })}
 								</div>
 							</OvRow>
@@ -857,17 +818,11 @@ export function Prehled() {
 									>
 										{f.name}
 									</span>
-									<span
-										className="shrink-0 font-mono text-ink-3"
-										style={{ fontSize: 11 }}
-									>
+									<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 11 }}>
 										{f.done}/{f.total}
 									</span>
 								</div>
-								<div
-									className="font-body text-ink-3"
-									style={{ fontSize: 11.5, marginTop: 4 }}
-								>
+								<div className="font-body text-ink-3" style={{ fontSize: 11.5, marginTop: 4 }}>
 									{t("prehled.stuckNow", {
 										name: f.nowName,
 										who: f.nowWho || t("flows.anyoneTeam"),
@@ -911,10 +866,7 @@ export function Prehled() {
 							>
 								{f.txt}
 							</span>
-							<span
-								className="shrink-0 font-mono text-ink-3"
-								style={{ fontSize: 10.5 }}
-							>
+							<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 10.5 }}>
 								{f.t}
 							</span>
 						</div>
@@ -956,10 +908,7 @@ function FirmChip({
 			}}
 		>
 			{dot && (
-				<span
-					className="shrink-0 rounded-full"
-					style={{ width: 7, height: 7, background: dot }}
-				/>
+				<span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: dot }} />
 			)}
 			{label}
 		</button>

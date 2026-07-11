@@ -23,10 +23,7 @@ export function useKbNav(list: TaskRow[], enabled: boolean) {
 		const h = (e: KeyboardEvent) => {
 			const el = document.activeElement as HTMLElement | null;
 			const typing =
-				!!el &&
-				(el.tagName === "INPUT" ||
-					el.tagName === "TEXTAREA" ||
-					el.isContentEditable);
+				!!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 			if (typing || e.metaKey || e.ctrlKey || e.altKey || openId) return;
 			// Otevřená vrstva (tahák/⌘K/modal, [data-esc-layer]) — seznam nereaguje (prototyp ř. 2263).
 			if (document.querySelector("[data-esc-layer]")) return;
@@ -62,11 +59,12 @@ export function useKbNav(list: TaskRow[], enabled: boolean) {
 			if (["1", "2", "3", "4"].includes(e.key) && !virtual) {
 				e.preventDefault();
 				const prev = rows.find((x) => x.id === cur)?.priority ?? 4;
-				pushColumnUndo("tasks", cur, "priority", prev, +e.key);
-				void powerSync.execute("UPDATE tasks SET priority = ? WHERE id = ?", [
-					+e.key,
-					cur,
-				]);
+				const next = +e.key;
+				// D9 — undo záznam až PO úspěšném zápisu; push před execute by při
+				// selhání nechal v ⌘Z falešný krok, který „vrací" nic.
+				void powerSync
+					.execute("UPDATE tasks SET priority = ? WHERE id = ?", [next, cur])
+					.then(() => pushColumnUndo("tasks", cur, "priority", prev, next));
 				return;
 			}
 			if ((e.key === "Backspace" || e.key === "Delete") && !virtual) {
