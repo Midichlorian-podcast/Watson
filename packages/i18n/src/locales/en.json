@@ -821,7 +821,8 @@
 		"feedFlow": "Flow “{{flow}}” is now at: {{name}}"
 	},
 	"qsched": {
-		"nextWeekShort": "Next wk"
+		"nextWeekShort": "Next wk",
+		"recurringBlocked": "Recurring task — this would shift the whole series. Edit recurrence in the detail."
 	},
 	"bulk": {
 		"selected": "{{count}} selected",
@@ -843,7 +844,12 @@
 		"movedToast": "Due · {{day}} ({{count}})",
 		"projToast": "Project · {{name}} ({{count}})",
 		"priToast": "Priority · P{{p}} ({{count}})",
-		"assignToast": "Assigned · {{name}} ({{count}})"
+		"assignToast": "Assigned · {{name}} ({{count}})",
+		"recurringSkipped_one": "1 recurring task skipped — edit the series in its detail",
+		"recurringSkipped_other": "{{count}} recurring tasks skipped — edit the series in their detail",
+		"assignSkippedShared_one": "1 “each separately” task skipped — bulk assign would erase per-person progress",
+		"assignSkippedShared_other": "{{count}} “each separately” tasks skipped — bulk assign would erase per-person progress",
+		"assignNone": "Selected tasks share no common project member"
 	},
 	"toolbar": {
 		"filter": "Filter",

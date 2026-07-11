@@ -13,7 +13,7 @@ import { useTaskDetail } from "../lib/taskDetail";
 import { deadlineLabel, rowDue, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { pushColumnUndo } from "../lib/undo";
-import { type SwipeMag, type SwipeSide, useSwipe } from "../lib/useSwipe";
+import { type SwipeMag, useSwipe } from "../lib/useSwipe";
 import { useWorkspaces } from "../lib/workspace";
 
 type Pri = 1 | 2 | 3 | 4;
@@ -62,16 +62,20 @@ export function TaskItem({
 	const handedOff =
 		flow?.state === "active" && !!myId && meta.assigneeIds.includes(myId) && !task.completed_at;
 
-	// Swipe na řádku — jednotný systém s mailem (lib/useSwipe): tah+puštění
-	// provede akci, dvouprstý trackpad UKOTVÍ řádek s klikacími tlačítky.
+	// Swipe na řádku — jednotný systém s mailem (lib/useSwipe): akce se
+	// provede PŘI PUŠTĚNÍ (žádná potvrzovací tlačítka — 6. kolo feedbacku).
 	// Akce jsou stavové (reverzní): hotový úkol → „Vrátit".
 	const doneTask = Boolean(task.completed_at);
 	const [sw, setSw] = useState<{ dx: number; mag: SwipeMag }>({
 		dx: 0,
 		mag: "none",
 	});
-	const [latch, setLatch] = useState<SwipeSide | null>(null);
 	const reschedule = (key: "tomorrow" | "nextMonday") => {
+		// R4: posun by přepsal kotvu celé opakovací řady — řadu uprav v detailu
+		if (task.recurrence) {
+			showToast(t("qsched.recurringBlocked"));
+			return;
+		}
 		const iso = rescheduleDate(key);
 		pushColumnUndo("tasks", task.id, "due_date", task.due_date, iso);
 		void powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [iso, task.id]);
@@ -82,7 +86,7 @@ export function TaskItem({
 			}),
 		);
 	};
-	/** Akce stran — pro tlačítka kotvy i tah; reverzní stav mění popisek. */
+	/** Akce stran — tah je provede při puštění; reverzní stav mění popisek. */
 	const rightActs = [
 		{
 			key: "toggle",
@@ -110,7 +114,6 @@ export function TaskItem({
 	const swipe = useSwipe({
 		disabled: !selectable,
 		onUpdate: (dx, mag) => setSw({ dx, mag }),
-		onLatch: setLatch,
 		onSwipe: (mag) => {
 			if (mag === "r1" || mag === "r2") {
 				rightActs[0]?.run();
@@ -123,8 +126,7 @@ export function TaskItem({
 	});
 	const armed = sw.mag === "r1" || sw.mag === "r2" || sw.mag === "l1" || sw.mag === "l2";
 	// vizuál během tahu: rostoucí barevná pilulka od kraje (jako mail)
-	const dragAct =
-		sw.dx > 0 ? rightActs[0] : sw.mag === "l2" ? leftActs[1] : leftActs[0];
+	const dragAct = sw.dx > 0 ? rightActs[0] : sw.mag === "l2" ? leftActs[1] : leftActs[0];
 
 	return (
 		<li
@@ -135,11 +137,11 @@ export function TaskItem({
 				overflow: sw.dx !== 0 ? "hidden" : undefined,
 			}}
 		>
-			{/* podklad swipe (TaskCard má marginBottom 5): během tahu rostoucí
-			    pilulka; po ukotvení (trackpad) KLIKACÍ tlačítka akcí strany */}
+			{/* podklad swipe (TaskCard má marginBottom 5): rostoucí barevná
+			    pilulka od kraje (jako mail) — akce se provede puštěním */}
 			{sw.dx !== 0 && (
 				<div
-					aria-hidden={latch ? undefined : true}
+					aria-hidden
 					className="font-display"
 					style={{
 						position: "absolute",
@@ -152,62 +154,27 @@ export function TaskItem({
 						background: "var(--w-panel-2)",
 					}}
 				>
-					{latch ? (
+					{dragAct && (
 						<span
 							style={{
 								display: "flex",
 								alignItems: "center",
-								gap: 6,
-								padding: "0 8px",
-								width: "100%",
-								justifyContent: latch === "r" ? "flex-start" : "flex-end",
+								justifyContent: sw.dx > 0 ? "flex-end" : "flex-start",
+								width: Math.max(0, Math.abs(sw.dx) - 14),
+								padding: "0 12px",
+								boxSizing: "border-box",
+								whiteSpace: "nowrap",
+								overflow: "hidden",
+								fontSize: 11,
+								fontWeight: 600,
+								color: "#fff",
+								background: dragAct.color,
+								filter: armed ? undefined : "saturate(.7) opacity(.85)",
+								transition: "background .1s ease, filter .1s ease",
 							}}
 						>
-							{(latch === "r" ? rightActs : leftActs).map((a) => (
-								<button
-									key={a.key}
-									type="button"
-									onClick={(e) => {
-										e.stopPropagation();
-										a.run();
-										swipe.unlatch();
-									}}
-									className="rounded-full font-display font-semibold"
-									style={{
-										fontSize: 11,
-										padding: "5px 12px",
-										color: "#fff",
-										background: a.color,
-										whiteSpace: "nowrap",
-									}}
-								>
-									{a.label}
-								</button>
-							))}
+							{dragAct.label}
 						</span>
-					) : (
-						dragAct && (
-							<span
-								style={{
-									display: "flex",
-									alignItems: "center",
-									justifyContent: sw.dx > 0 ? "flex-end" : "flex-start",
-									width: Math.max(0, Math.abs(sw.dx) - 14),
-									padding: "0 12px",
-									boxSizing: "border-box",
-									whiteSpace: "nowrap",
-									overflow: "hidden",
-									fontSize: 11,
-									fontWeight: 600,
-									color: "#fff",
-									background: dragAct.color,
-									filter: armed ? undefined : "saturate(.7) opacity(.85)",
-									transition: "background .1s ease, filter .1s ease",
-								}}
-							>
-								{dragAct.label}
-							</span>
-						)
 					)}
 				</div>
 			)}

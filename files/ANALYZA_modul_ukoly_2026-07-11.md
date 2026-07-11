@@ -127,3 +127,70 @@ Sloučení do Nadcházejících **nedoporučuji**: (a) Nadcházející jsou defi
 13. Projektový kalendář přesunout do detailu projektu (v2) a `?projekt=` zjednodušit na Seznam+Nástěnku. — **M**
 
 **Rizika:** krok 6 mění chování Dnes, které tým zná — udělat až po kroku 5 (ať mají nedatované viditelný domov) a ohlásit; krok 2 zvýší počet řádků v kalendáři Nadcházejících (výkonově kryto tím, že Calendar filtruje na viditelný rozsah, ř. 348–393); zámek pohledu (`watson.lockedView`) je globální pro všechny obrazovky — po zavedení allowlistu ošetřit fallback, když je zamčený pohled na dané obrazovce nedostupný.
+
+---
+
+# Dodatek (2026-07-12): sloučení Dnes + Úkoly do jednoho modulu
+
+> Otázka uživatele: *„Odvážná myšlenka — není možné sloučit v jeden komplexní
+> modul Dnes a Úkoly? Dnes je částečně i v Přehledu."*
+
+## Verdikt: ANO, dává to smysl — jako JEDEN modul se TŘEMI záložkami, ne jako jeden dlouhý seznam
+
+Sloučení řeší tři reálné problémy najednou: (1) překryv Dnes×Přehled (denní
+výřez žije na dvou místech), (2) rozstřelený zásobník nedatovaných (dnes padají
+do Dnes, viz nález 3 výše), (3) „k čemu jsou Úkoly" — dostanou jasnou roli
+místo konkurence s Nadcházejícími.
+
+## Návrh: modul „Úkoly" se záložkami **Dnes · Vše · Zásobník**
+
+```
+ÚKOLY
+├── Dnes        ← denní ZÁVAZEK: zpožděné + dnešní (BEZ nedatovaných)
+│                 Watson strip, QuickAdd, hromadné přeplánování — vše zůstává
+├── Vše         ← inventář po projektech (dnešní Úkoly), filtry, bulk, CAP
+└── Zásobník    ← nedatované s projektem: triage („dej termín / deleguj /
+                  zahoď") + drag na Nadcházející kalendář; badge = počet
+```
+
+- **Routa „/" zůstává** a renderuje záložku Dnes (nulová ztráta svalové
+  paměti, deep-linky žijí: `/` = Dnes, `/ukoly` = Vše, `/ukoly?tab=zasobnik`).
+- **Přehled se nemění** — jeho karta „Dnes" je digest (syntéza), ne modul;
+  po sloučení odkazuje do záložky Dnes. Duplicitní POCIT zmizí tím, že Dnes
+  přestane být samostatná položka navigace vedle Přehledu.
+- **Sidebar a mobilní lišta**: jedna položka „Úkoly" (rozbalitelně Dnes/Vše/
+  Zásobník v sidebaru); badge = počet DNES (akční číslo), ne celkový inventář.
+  Mobilní lišta: Přehled · Úkoly(=Dnes) · Mail · Nadcházející · Více · Watson.
+- **Pohledy**: Seznam+Nástěnka jen pro Vše; kalendář z Úkolů ODCHÁZÍ do
+  Nadcházejících (jediný celoapkový kalendář, oprava minulosti — nález 1);
+  `g+k` míří tam. Záložky Dnes/Zásobník jsou jen Seznam (Board/kalendář tam
+  nemají práci).
+- **Nadcházející zůstávají samostatné** — jsou to „kdy", sloučený modul je
+  „co". Slučovat všechny tři by vytvořilo mega-modul s vnitřní navigací
+  složitější než sidebar (přesně to, čemu se vyhýbá Things i Todoist).
+
+## Proč záložky a ne jeden seznam
+
+Jeden nekonečný seznam se sekcemi (Dnes ↑, pak projekty, pak nedatované)
+zkouší Asana My Tasks — funguje jen díky auto-promoci podle data a JEN nad
+„přiřazeno mně". Nad celotýmovým inventářem by scroll pohřbil denní závazek
+a zabil rychlost („co mám dnes" nesmí soutěžit s 400 řádky inventáře).
+Záložky drží tři otázky oddělené, ale pod jednou střechou a jedním URL prostorem.
+
+## Fázování (navazuje na plán výše, nahrazuje jeho krok 6)
+
+1. **F1 — skořápka** (S): záložky v hlavičce modulu Úkoly; `/` renderuje
+   Dnes-tab; sidebar sloučí položky; mobilní lišta beze změny cílů. Žádná
+   změna dat.
+2. **F2 — Zásobník** (M): nedatované s projektem VEN z Dnes do záložky
+   Zásobník s triage akcemi (chipy Dnes/Zítra/Př. týden, přiřaď, smaž);
+   badge zásobníku; prázdný stav s vysvětlením.
+3. **F3 — kalendář** (M): oprava kalendáře Nadcházejících (minulost) →
+   přesun `g+k` a odebrání kalendáře z Vše; plánovací panel kalendáře
+   nabídne Zásobník (drag na den) — uzavře smyčku plánování.
+4. **F4 — úklid** (S): Header počty, palety příkazů, testy R4 projekcí
+   v Dnes-tabu.
+
+**Rizika:** zvyk na samostatné „Dnes" v navigaci (mitigace: „/" se nemění,
+jen se položka vizuálně zanoří pod Úkoly); Zásobník nesmí být skládka —
+Watson strip může 1× denně navrhnout triage 3 nejstarších nedatovaných.

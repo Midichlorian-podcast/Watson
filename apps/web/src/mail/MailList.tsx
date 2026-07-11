@@ -20,16 +20,7 @@ import { showToast } from "../lib/toast";
 import { type SwipeSide, useSwipe } from "../lib/useSwipe";
 import { AskWatson } from "./AskWatson";
 import { CtxMenu } from "./CtxMenu";
-import {
-	AI_QUEUE_SEED,
-	type AiQueueItem,
-	GK,
-	MB,
-	P,
-	SLA,
-	STL,
-	type MailThread,
-} from "./data";
+import { AI_QUEUE_SEED, type AiQueueItem, GK, MB, P, SLA, STL, type MailThread } from "./data";
 import { NotifCenter } from "./NotifCenter";
 import { type ThreadEff, useMail } from "./state";
 
@@ -174,9 +165,7 @@ export function useListRows() {
 		else if (f === "d_ost")
 			scope = team.filter((t) => {
 				const e = m.eff(t);
-				return (
-					isDor(t, e) && t.grp === "inbox" && !!e.owner && e.owner !== "ad" && !e.closed
-				);
+				return isDor(t, e) && t.grp === "inbox" && !!e.owner && e.owner !== "ad" && !e.closed;
 			});
 		else if (f === "d_done")
 			scope = team.filter((t) => {
@@ -190,8 +179,7 @@ export function useListRows() {
 				if (m.fdr === "odeslane") return !!t.sentF;
 				// koncepty: seed koncepty + ŽIVĚ rozepsané odpovědi odkudkoli
 				// (vlákno, plovoucí okno, peek z Přehledu/Velína — persist drafts)
-				if (m.fdr === "koncepty")
-					return !!t.draftF || !!m.drafts[t.id]?.text?.trim();
+				if (m.fdr === "koncepty") return !!t.draftF || !!m.drafts[t.id]?.text?.trim();
 				if (m.fdr === "archiv") return !!e.arch;
 				return isDor(t, e);
 			});
@@ -214,9 +202,7 @@ export function useListRows() {
 				const pOrd: Record<string, number> = { p1: 0, p2: 1, p3: 2, p4: 3 };
 				pinList = main
 					.filter((t) => m.eff(t).pin)
-					.sort(
-						(a, b) => (pOrd[m.eff(a).flag] ?? 4) - (pOrd[m.eff(b).flag] ?? 4),
-					);
+					.sort((a, b) => (pOrd[m.eff(a).flag] ?? 4) - (pOrd[m.eff(b).flag] ?? 4));
 				rozList = main.filter((t) => t.roz && !m.eff(t).pin);
 				main = main.filter((t) => !m.eff(t).pin && !t.roz);
 			}
@@ -224,16 +210,13 @@ export function useListRows() {
 
 		const vm = (t: MailThread): RowVM => {
 			const e = m.eff(t);
-			const isInbox =
-				grpOf(t) === "inbox" && !t.personal && !t.sentF && !t.draftF;
+			const isInbox = grpOf(t) === "inbox" && !t.personal && !t.sentF && !t.draftF;
 			const hasDraftRaw = !!m.drafts[t.id]?.text?.trim();
 			const stRaw =
-				(isInbox || !!t.sentF) &&
-				(e.st === "ceka" || e.st === "odeslano" || e.st === "hotovo");
+				(isInbox || !!t.sentF) && (e.st === "ceka" || e.st === "odeslano" || e.st === "hotovo");
 			const links = m.taskLinks[t.id] ?? [];
 			const ts = m.bridge.taskStates;
-			const taskDone =
-				links.length > 0 && links.every((x) => ts?.[x.app]?.done);
+			const taskDone = links.length > 0 && links.every((x) => ts?.[x.app]?.done);
 			const rb = t.readBy ?? [];
 			const rbL =
 				rb.length === 0
@@ -251,19 +234,12 @@ export function useListRows() {
 						: (e.flag === "p1" || e.flag === "p2") && !e.sent && !e.closed
 							? `${SLA[e.flag]?.chip ?? ""} · ${e.flag === "p1" ? "6 h" : "31 h"}`
 							: (SLA[e.flag]?.chip ?? ""),
-				stLabel:
-					e.closed && m.unreadFor(t)
-						? "Hotovo · nová odpověď"
-						: (STL[e.st] ?? e.st),
+				stLabel: e.closed && m.unreadFor(t) ? "Hotovo · nová odpověď" : (STL[e.st] ?? e.st),
 				showSt: stRaw || (e.closed && m.unreadFor(t)),
 				showMb: m.folder === "vse" && !t.personal,
 				isInbox,
 				hasDraft: hasDraftRaw,
-				rbOn:
-					m.readModeOf(t) === "per" &&
-					m.unreadFor(t) &&
-					rb.length > 0 &&
-					!t.personal,
+				rbOn: m.readModeOf(t) === "per" && m.unreadFor(t) && rb.length > 0 && !t.personal,
 				rbIni: rb.length ? (P[rb[0] ?? ""]?.ini ?? "") : "",
 				rbL,
 				hasTaskB: links.length > 0,
@@ -287,11 +263,7 @@ export function useListRows() {
 	}, [m]);
 }
 
-const rowBtn = (
-	onClick: (e: MouseEvent) => void,
-	title: string,
-	child: ReactNode,
-) => (
+const rowBtn = (onClick: (e: MouseEvent) => void, title: string, child: ReactNode) => (
 	<span data-rowbtn onClick={onClick} title={title}>
 		{child}
 	</span>
@@ -312,7 +284,16 @@ function RowActs({ vm }: { vm: RowVM }) {
 			{rowBtn(
 				stop(() => m.quickTask(id)),
 				"Vytvořit úkol z vlákna — priorita a termín se předvyplní, přistane v osobní Schránce",
-				<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden>
+				<svg
+					width="13"
+					height="13"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="1.9"
+					strokeLinecap="round"
+					aria-hidden
+				>
 					<path d="M4 7 L5.4 8.4 L7.8 6" />
 					<line x1="10.5" y1="7.3" x2="19" y2="7.3" />
 					<path d="M4 13 L5.4 14.4 L7.8 12" />
@@ -325,13 +306,27 @@ function RowActs({ vm }: { vm: RowVM }) {
 				stop(() => m.rowAct(id, "done")),
 				"Hotovo (H)",
 				<svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden>
-					<path d="M2.5 7.4 L5.5 10.4 L11.5 3.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+					<path
+						d="M2.5 7.4 L5.5 10.4 L11.5 3.6"
+						stroke="currentColor"
+						strokeWidth="1.7"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					/>
 				</svg>,
 			)}
 			{rowBtn(
 				stop(() => m.rowAct(id, "pin")),
 				"Připnout (D)",
-				<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+				<svg
+					width="13"
+					height="13"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="1.9"
+					aria-hidden
+				>
 					<path d="M9 4 H15 L14.2 10 C16 10.8 17 12.2 17.2 14 H6.8 C7 12.2 8 10.8 9.8 10 Z" />
 					<line x1="12" y1="14" x2="12" y2="20" />
 				</svg>,
@@ -339,7 +334,15 @@ function RowActs({ vm }: { vm: RowVM }) {
 			{rowBtn(
 				stop(() => m.rowAct(id, "snooze")),
 				"Odložit na zítra (S)",
-				<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+				<svg
+					width="13"
+					height="13"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					strokeWidth="1.9"
+					aria-hidden
+				>
 					<circle cx="12" cy="12" r="8" />
 					<path d="M12 7.5 V12 L15.2 14.4" />
 				</svg>,
@@ -348,7 +351,16 @@ function RowActs({ vm }: { vm: RowVM }) {
 				? rowBtn(
 						stop(() => m.rowAct(id, "restore")),
 						"Vrátit do Inboxu",
-						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden>
+						<svg
+							width="13"
+							height="13"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.9"
+							strokeLinecap="round"
+							aria-hidden
+						>
 							<rect x="4" y="10" width="16" height="9" rx="1.4" />
 							<path d="M12 14 V4 M8.5 7.5 L12 4 L15.5 7.5" />
 						</svg>,
@@ -356,7 +368,15 @@ function RowActs({ vm }: { vm: RowVM }) {
 				: rowBtn(
 						stop(() => m.rowAct(id, "arch")),
 						"Archivovat (E)",
-						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+						<svg
+							width="13"
+							height="13"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.9"
+							aria-hidden
+						>
 							<rect x="4" y="8" width="16" height="11" rx="1.4" />
 							<path d="M3.4 5 H20.6 V8 H3.4 Z" />
 							<line x1="10" y1="12" x2="14" y2="12" />
@@ -380,11 +400,10 @@ function MailRow({
 	const t = vm.t;
 	const e = vm.e;
 	const selOn = !!m.selIds[t.id];
-	// Swipe — JEDNOTNÝ systém s úkoly (lib/useSwipe): tah+puštění provede akci,
-	// dvouprstý trackpad UKOTVÍ řádek s klikacími tlačítky (akce nikdy „sama").
+	// Swipe — JEDNOTNÝ systém s úkoly (lib/useSwipe): akce se provede PŘI
+	// PUŠTĚNÍ (dotyk/stisk/trackpad po usazení) — bez potvrzovacích tlačítek.
 	const swcRef = useRef<HTMLDivElement>(null);
 	const swuRef = useRef<HTMLDivElement>(null);
-	const [swLatch, setSwLatch] = useState<SwipeSide | null>(null);
 
 	// stavové akce stran — reverzní pro reverzní stav (feedback: pin↔odepnout…)
 	const sideActs = (side: SwipeSide) =>
@@ -443,9 +462,7 @@ function MailRow({
 		swu.setAttribute("data-mag", mag);
 		swu.setAttribute("data-act", tierAct ? tierAct.css : "none");
 		const pill = swu.querySelector<HTMLElement>(`[data-swpill="${side}"]`);
-		const other = swu.querySelector<HTMLElement>(
-			`[data-swpill="${side === "r" ? "l" : "r"}"]`,
-		);
+		const other = swu.querySelector<HTMLElement>(`[data-swpill="${side === "r" ? "l" : "r"}"]`);
 		if (pill) {
 			pill.style.width = dx === 0 ? "0px" : `${Math.max(0, Math.abs(dx) - 16)}px`;
 			const txt = pill.querySelector("[data-swtxt]");
@@ -456,19 +473,11 @@ function MailRow({
 
 	const swipe = useSwipe({
 		onUpdate: swApply,
-		onLatch: setSwLatch,
 		onSwipe: (mag: "r1" | "r2" | "l1" | "l2") => {
 			const acts = sideActs(mag[0] === "r" ? "r" : "l");
 			acts[mag.endsWith("2") ? 1 : 0]?.run();
 		},
 	});
-	/** Barvy kotvených tlačítek — stejné jako [data-act] podklady v mail.css. */
-	const actColor: Record<string, string> = {
-		done: "var(--success)",
-		pin: "var(--brass)",
-		snooze: "#24395a",
-		arch: "#8c8a82",
-	};
 	return (
 		<div
 			onClick={() => {
@@ -498,50 +507,18 @@ function MailRow({
 				</span>
 			</div>
 
-			{/* kotva (trackpad): akce dané strany jako KLIKACÍ tlačítka */}
-			{swLatch && (
-				<div
-					style={{
-						position: "absolute",
-						top: 0,
-						bottom: 0,
-						zIndex: 2,
-						display: "flex",
-						alignItems: "center",
-						gap: 6,
-						...(swLatch === "r" ? { left: 10 } : { right: 10 }),
-					}}
-				>
-					{sideActs(swLatch).map((a) => (
-						<span
-							key={a.label}
-							onClick={(ev) => {
-								ev.stopPropagation();
-								a.run();
-								swipe.unlatch();
-							}}
-							style={{
-								background: actColor[a.css] ?? "var(--brass)",
-								color: "#fff",
-								fontFamily: "var(--w-font-display)",
-								fontWeight: 700,
-								fontSize: 11.5,
-								padding: "6px 13px",
-								borderRadius: 11,
-								cursor: "pointer",
-								whiteSpace: "nowrap",
-							}}
-						>
-							{a.label}
-						</span>
-					))}
-				</div>
-			)}
 			<div ref={swcRef} data-swc style={{ display: "flex", gap: 10, padding: "12px 14px 11px" }}>
 				<RowActs vm={vm} />
 				<span
 					data-pbar={e.flag}
-					style={{ position: "absolute", left: 0, top: 8, bottom: 8, width: 3, borderRadius: "0 2px 2px 0" }}
+					style={{
+						position: "absolute",
+						left: 0,
+						top: 8,
+						bottom: 8,
+						width: 3,
+						borderRadius: "0 2px 2px 0",
+					}}
 				/>
 				<span
 					data-mainav
@@ -553,9 +530,26 @@ function MailRow({
 					style={{ flex: "none", marginTop: 1, cursor: "pointer" }}
 				>
 					{selOn ? (
-						<span style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--brass)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+						<span
+							style={{
+								width: 32,
+								height: 32,
+								borderRadius: "50%",
+								background: "var(--brass)",
+								color: "#fff",
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+							}}
+						>
 							<svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden>
-								<path d="M2.5 7.4 L5.5 10.4 L11.5 3.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+								<path
+									d="M2.5 7.4 L5.5 10.4 L11.5 3.6"
+									stroke="currentColor"
+									strokeWidth="2"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								/>
 							</svg>
 						</span>
 					) : (
@@ -582,7 +576,14 @@ function MailRow({
 				<div style={{ flex: 1, minWidth: 0 }}>
 					<div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
 						{e.pin && (
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="var(--brass)" style={{ flex: "none" }} aria-hidden>
+							<svg
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="var(--brass)"
+								style={{ flex: "none" }}
+								aria-hidden
+							>
 								<path d="M8.6 2.8 H15.4 L14.6 10 C16.7 11 17.8 12.5 18 14.6 H6 C6.2 12.5 7.3 11 9.4 10 Z" />
 								<rect x="11.1" y="14.4" width="1.8" height="6.6" rx="0.9" />
 							</svg>
@@ -605,24 +606,60 @@ function MailRow({
 							{t.from.n}
 						</span>
 						{vm.nmsg > 1 && !compactPin && (
-							<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)", flex: "none" }}>
+							<span
+								style={{
+									fontFamily: "var(--w-font-mono)",
+									fontSize: 10,
+									color: "var(--ink-3)",
+									flex: "none",
+								}}
+							>
 								{vm.nmsg}
 							</span>
 						)}
 						<span style={{ flex: 1 }} />
 						{t.att && !compactPin && (
-							<svg width="11" height="11" viewBox="0 0 14 14" fill="none" style={{ color: "var(--ink-3)", flex: "none" }} aria-hidden>
-								<path d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+							<svg
+								width="11"
+								height="11"
+								viewBox="0 0 14 14"
+								fill="none"
+								style={{ color: "var(--ink-3)", flex: "none" }}
+								aria-hidden
+							>
+								<path
+									d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4"
+									stroke="currentColor"
+									strokeWidth="1.2"
+									strokeLinecap="round"
+								/>
 							</svg>
 						)}
 						{e.muted && (
-							<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" style={{ color: "var(--ink-3)", flex: "none" }} aria-hidden>
+							<svg
+								width="11"
+								height="11"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="1.8"
+								strokeLinecap="round"
+								style={{ color: "var(--ink-3)", flex: "none" }}
+								aria-hidden
+							>
 								<path d="M9.5 19 A2.6 2.6 0 0 0 14.5 19" />
 								<path d="M6 16.4 V11 A6 6 0 0 1 14.8 5.7 M17.9 9.4 C18 9.9 18 10.4 18 11 V16.4 L19.4 18 H8" />
 								<line x1="4" y1="4" x2="20" y2="20" />
 							</svg>
 						)}
-						<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)", flex: "none" }}>
+						<span
+							style={{
+								fontFamily: "var(--w-font-mono)",
+								fontSize: 10.5,
+								color: "var(--ink-3)",
+								flex: "none",
+							}}
+						>
 							{m.ovOf(t.id).time ?? t.time}
 						</span>
 					</div>
@@ -657,7 +694,15 @@ function MailRow({
 						</div>
 					)}
 					{(vm.isInbox || !!t.sentF || m.folder === "vse") && !t.personal && (
-						<div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 7 }}>
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 6,
+								flexWrap: "wrap",
+								marginTop: 7,
+							}}
+						>
 							{vm.showMb && (
 								<span
 									data-mbdot={t.mb}
@@ -669,7 +714,12 @@ function MailRow({
 							{e.flag !== "none" && !e.closed && vm.isInbox && (
 								<span data-pflag={e.flag} style={{ fontSize: 10, padding: "2px 8px" }}>
 									<svg width="9" height="10" viewBox="0 0 10 12" fill="none" aria-hidden>
-										<path d="M2 1 V11 M2 1.5 H8.6 L7 4.25 L8.6 7 H2" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+										<path
+											d="M2 1 V11 M2 1.5 H8.6 L7 4.25 L8.6 7 H2"
+											stroke="currentColor"
+											strokeWidth="1.4"
+											strokeLinejoin="round"
+										/>
 									</svg>
 									{vm.flagL}
 								</span>
@@ -693,7 +743,13 @@ function MailRow({
 									}}
 								>
 									<svg width="9" height="9" viewBox="0 0 14 14" fill="none" aria-hidden>
-										<path d="M2.5 7.4 L5.5 10.4 L11.5 3.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+										<path
+											d="M2.5 7.4 L5.5 10.4 L11.5 3.6"
+											stroke="currentColor"
+											strokeWidth="1.8"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
 									</svg>
 									{vm.taskBL}
 								</span>
@@ -774,7 +830,12 @@ function MailRow({
 									}}
 								>
 									<svg width="9" height="9" viewBox="0 0 14 14" fill="none" aria-hidden>
-										<path d="M2 12 L2.8 9.2 L9.8 2.2 A1.1 1.1 0 0 1 11.4 2.2 L11.8 2.6 A1.1 1.1 0 0 1 11.8 4.2 L4.8 11.2 Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+										<path
+											d="M2 12 L2.8 9.2 L9.8 2.2 A1.1 1.1 0 0 1 11.4 2.2 L11.8 2.6 A1.1 1.1 0 0 1 11.8 4.2 L4.8 11.2 Z"
+											stroke="currentColor"
+											strokeWidth="1.3"
+											strokeLinejoin="round"
+										/>
 									</svg>
 									koncept
 								</span>
@@ -889,9 +950,7 @@ export function MailList({
 	const { isDorView, gN, pinRows, rozRows, rows, order } = useListRows();
 	const [vmenu, setVmenu] = useState(false);
 	// kontextové menu řádku (pravý klik); hledání a Napsat řídí MailScreen (⌘K/C)
-	const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(
-		null,
-	);
+	const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(null);
 	// zvonek (NotifCenter) + Ask Watson — overlaye ukotvené na hlavičce seznamu
 	const [notifOn, setNotifOn] = useState(false);
 	const [askOn, setAskOn] = useState(false);
@@ -900,9 +959,7 @@ export function MailList({
 	const [dens, setDensRaw] = useState<"comfort" | "compact">(() =>
 		lsGet("watson-mail.dens") === "compact" ? "compact" : "comfort",
 	);
-	const [lines, setLinesRaw] = useState<1 | 2>(() =>
-		lsGet("watson-mail.lines") === "1" ? 1 : 2,
-	);
+	const [lines, setLinesRaw] = useState<1 | 2>(() => (lsGet("watson-mail.lines") === "1" ? 1 : 2));
 	const setDens = (v: "comfort" | "compact") => {
 		setDensRaw(v);
 		lsSet("watson-mail.dens", v);
@@ -912,9 +969,7 @@ export function MailList({
 		lsSet("watson-mail.lines", String(v));
 	};
 	// šířka seznamu z resize táhla (MailScreen) — při mountu se obnoví z localStorage
-	const [listW] = useState<string | undefined>(
-		() => lsGet("watson-mail.listW") || undefined,
-	);
+	const [listW] = useState<string | undefined>(() => lsGet("watson-mail.listW") || undefined);
 	// AI fronta návrhů (prototyp aiQ + aiDecide, ř. 3316–3336)
 	const [aiQ, setAiQ] = useState<AiQueueItem[]>(aiCache.rows);
 	const [aiOpen, setAiOpenRaw] = useState(aiCache.open);
@@ -942,9 +997,7 @@ export function MailList({
 		if (yes) applyAi(q);
 		setAiRows(aiQ.map((z, j) => (j === i ? { ...z, st: yes ? "ok" : "no" } : z)));
 		showToast(
-			yes
-				? "Schváleno a provedeno — zapsáno do Dění."
-				: "Zamítnuto — AI si korekci zapíše.",
+			yes ? "Schváleno a provedeno — zapsáno do Dění." : "Zamítnuto — AI si korekci zapíše.",
 		);
 	};
 	const aiAll = () => {
@@ -960,8 +1013,7 @@ export function MailList({
 	useEffect(() => {
 		if (!vmenu) return;
 		const h = (e: globalThis.MouseEvent) => {
-			if (vmenuRef.current && !vmenuRef.current.contains(e.target as Node))
-				setVmenu(false);
+			if (vmenuRef.current && !vmenuRef.current.contains(e.target as Node)) setVmenu(false);
 		};
 		document.addEventListener("mousedown", h);
 		return () => document.removeEventListener("mousedown", h);
@@ -1052,10 +1104,34 @@ export function MailList({
 			data-listpane
 			data-dens={dens}
 			data-lines={lines}
-			style={{ display: "flex", flexDirection: "column", minHeight: 0, background: "var(--panel)", position: "relative", width: listW }}
+			style={{
+				display: "flex",
+				flexDirection: "column",
+				minHeight: 0,
+				background: "var(--panel)",
+				position: "relative",
+				width: listW,
+			}}
 		>
-			<div style={{ flex: "none", padding: "11px 14px 0", display: "flex", flexDirection: "column", gap: 9 }}>
-				<div ref={vmenuRef} style={{ display: "flex", alignItems: "center", gap: 7, position: "relative", zIndex: 45 }}>
+			<div
+				style={{
+					flex: "none",
+					padding: "11px 14px 0",
+					display: "flex",
+					flexDirection: "column",
+					gap: 9,
+				}}
+			>
+				<div
+					ref={vmenuRef}
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: 7,
+						position: "relative",
+						zIndex: 45,
+					}}
+				>
 					<span
 						data-msubbtn
 						onClick={onOpenDrawer}
@@ -1074,9 +1150,33 @@ export function MailList({
 						}}
 					>
 						<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
-							<line x1="2.5" y1="4.5" x2="13.5" y2="4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-							<line x1="2.5" y1="8" x2="13.5" y2="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-							<line x1="2.5" y1="11.5" x2="10" y2="11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+							<line
+								x1="2.5"
+								y1="4.5"
+								x2="13.5"
+								y2="4.5"
+								stroke="currentColor"
+								strokeWidth="1.5"
+								strokeLinecap="round"
+							/>
+							<line
+								x1="2.5"
+								y1="8"
+								x2="13.5"
+								y2="8"
+								stroke="currentColor"
+								strokeWidth="1.5"
+								strokeLinecap="round"
+							/>
+							<line
+								x1="2.5"
+								y1="11.5"
+								x2="10"
+								y2="11.5"
+								stroke="currentColor"
+								strokeWidth="1.5"
+								strokeLinecap="round"
+							/>
 						</svg>
 					</span>
 					<span
@@ -1091,7 +1191,14 @@ export function MailList({
 							padding: "6px 2px",
 						}}
 					>
-						<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+						<span
+							style={{
+								overflow: "hidden",
+								textOverflow: "ellipsis",
+								whiteSpace: "nowrap",
+								minWidth: 0,
+							}}
+						>
 							{listTitle(m.folder, m.fdr)}
 						</span>
 					</span>
@@ -1105,7 +1212,15 @@ export function MailList({
 						title="Hledat v poště ( / nebo ⌘K )"
 						style={{ border: "1px solid var(--line)", background: "var(--panel)" }}
 					>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+						<svg
+							width="14"
+							height="14"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.9"
+							aria-hidden
+						>
 							<circle cx="10.5" cy="10.5" r="6" />
 							<line x1="15" y1="15" x2="20" y2="20" />
 						</svg>
@@ -1119,9 +1234,21 @@ export function MailList({
 							setNotifOn(true);
 						}}
 						title="Oznámení"
-						style={{ border: "1px solid var(--line)", background: "var(--panel)", position: "relative" }}
+						style={{
+							border: "1px solid var(--line)",
+							background: "var(--panel)",
+							position: "relative",
+						}}
 					>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+						<svg
+							width="14"
+							height="14"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.9"
+							aria-hidden
+						>
 							<path d="M6.6 17 C6.6 11.2 7.8 8.6 12 8.6 C16.2 8.6 17.4 11.2 17.4 17 Z" />
 							<line x1="5" y1="17" x2="19" y2="17" />
 							<path d="M10.2 20 A2.1 2.1 0 0 0 13.8 20" />
@@ -1147,7 +1274,11 @@ export function MailList({
 						data-rowbtn
 						onClick={() => setAskOn(true)}
 						title="Ask Watson — zeptej se pošty"
-						style={{ border: "1px solid var(--brass)", background: "var(--brass-soft)", color: "var(--brass-text)" }}
+						style={{
+							border: "1px solid var(--brass)",
+							background: "var(--brass-soft)",
+							color: "var(--brass-text)",
+						}}
 					>
 						<span
 							style={{
@@ -1170,9 +1301,22 @@ export function MailList({
 						data-rowbtn
 						onClick={() => setVmenu((v) => !v)}
 						title="Filtry a zobrazení"
-						style={{ border: "1px solid var(--line)", background: "var(--panel)", position: "relative" }}
+						style={{
+							border: "1px solid var(--line)",
+							background: "var(--panel)",
+							position: "relative",
+						}}
 					>
-						<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+						<svg
+							width="14"
+							height="14"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.5"
+							strokeLinecap="round"
+							aria-hidden
+						>
 							<line x1="2.5" y1="4.5" x2="13.5" y2="4.5" />
 							<circle cx="6" cy="4.5" r="1.7" fill="var(--panel)" />
 							<line x1="2.5" y1="8" x2="13.5" y2="8" />
@@ -1206,10 +1350,21 @@ export function MailList({
 					<span
 						data-primary
 						onClick={onCompose}
-						style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "7px 13px" }}
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 6,
+							fontSize: 12,
+							padding: "7px 13px",
+						}}
 					>
 						<svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden>
-							<path d="M2 12 L2.8 9.2 L9.8 2.2 A1.1 1.1 0 0 1 11.4 2.2 L11.8 2.6 A1.1 1.1 0 0 1 11.8 4.2 L4.8 11.2 Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+							<path
+								d="M2 12 L2.8 9.2 L9.8 2.2 A1.1 1.1 0 0 1 11.4 2.2 L11.8 2.6 A1.1 1.1 0 0 1 11.8 4.2 L4.8 11.2 Z"
+								stroke="currentColor"
+								strokeWidth="1.3"
+								strokeLinejoin="round"
+							/>
 						</svg>
 						<span data-npslbl>Napsat</span>
 					</span>
@@ -1230,15 +1385,38 @@ export function MailList({
 								animation: "wPop .14s ease",
 							}}
 						>
-							<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 10, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--ink-3)", padding: "4px 9px 5px" }}>
+							<div
+								style={{
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 700,
+									fontSize: 10,
+									letterSpacing: ".05em",
+									textTransform: "uppercase",
+									color: "var(--ink-3)",
+									padding: "4px 9px 5px",
+								}}
+							>
 								Filtry
 							</div>
 							{FROWS.map((f) => (
 								<div key={f.k} onClick={() => m.toggleFilter(f.k)} data-menuitem>
 									<span style={{ flex: 1 }}>{f.label}</span>
 									{m.filters[f.k] && (
-										<svg width="12" height="12" viewBox="0 0 14 14" fill="none" style={{ color: "var(--brass-text)" }} aria-hidden>
-											<path d="M2.5 7.4 L5.5 10.4 L11.5 3.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+										<svg
+											width="12"
+											height="12"
+											viewBox="0 0 14 14"
+											fill="none"
+											style={{ color: "var(--brass-text)" }}
+											aria-hidden
+										>
+											<path
+												d="M2.5 7.4 L5.5 10.4 L11.5 3.6"
+												stroke="currentColor"
+												strokeWidth="1.8"
+												strokeLinecap="round"
+												strokeLinejoin="round"
+											/>
 										</svg>
 									)}
 								</div>
@@ -1260,23 +1438,58 @@ export function MailList({
 								Zobrazení
 							</div>
 							<div style={{ display: "flex", gap: 4, padding: "2px 8px 4px" }}>
-								<span onClick={() => setDens("comfort")} data-statepill data-on={dens === "comfort" || undefined} style={densPill}>
+								<span
+									onClick={() => setDens("comfort")}
+									data-statepill
+									data-on={dens === "comfort" || undefined}
+									style={densPill}
+								>
 									Komfortní
 								</span>
-								<span onClick={() => setDens("compact")} data-statepill data-on={dens === "compact" || undefined} style={densPill}>
+								<span
+									onClick={() => setDens("compact")}
+									data-statepill
+									data-on={dens === "compact" || undefined}
+									style={densPill}
+								>
 									Kompaktní
 								</span>
 							</div>
-							<div style={{ display: "flex", gap: 4, padding: "2px 8px 5px", alignItems: "center" }}>
-								<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11, color: "var(--ink-3)", flex: 1 }}>Náhled</span>
-								<span onClick={() => setLines(1)} data-statepill data-on={lines === 1 || undefined} style={densPill}>
+							<div
+								style={{ display: "flex", gap: 4, padding: "2px 8px 5px", alignItems: "center" }}
+							>
+								<span
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 11,
+										color: "var(--ink-3)",
+										flex: 1,
+									}}
+								>
+									Náhled
+								</span>
+								<span
+									onClick={() => setLines(1)}
+									data-statepill
+									data-on={lines === 1 || undefined}
+									style={densPill}
+								>
 									1 řádek
 								</span>
-								<span onClick={() => setLines(2)} data-statepill data-on={lines === 2 || undefined} style={densPill}>
+								<span
+									onClick={() => setLines(2)}
+									data-statepill
+									data-on={lines === 2 || undefined}
+									style={densPill}
+								>
 									2 řádky
 								</span>
 							</div>
-							<div onClick={markAllRead} data-menuitem style={{ borderTop: "1px solid var(--line)", marginTop: 5 }}>
+							<div
+								onClick={markAllRead}
+								data-menuitem
+								style={{ borderTop: "1px solid var(--line)", marginTop: 5 }}
+							>
 								Označit vše jako přečtené
 							</div>
 						</div>
@@ -1316,7 +1529,12 @@ export function MailList({
 							onClick={() => {
 								for (const f of activeF) m.toggleFilter(f.k);
 							}}
-							style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)", cursor: "pointer" }}
+							style={{
+								fontFamily: "var(--w-font-mono)",
+								fontSize: 10,
+								color: "var(--ink-3)",
+								cursor: "pointer",
+							}}
 						>
 							zrušit vše
 						</span>
@@ -1324,7 +1542,15 @@ export function MailList({
 				)}
 
 				{isDorView && !isGk && (
-					<div style={{ display: "flex", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 10, padding: 3 }}>
+					<div
+						style={{
+							display: "flex",
+							background: "var(--panel-2)",
+							border: "1px solid var(--line)",
+							borderRadius: 10,
+							padding: 3,
+						}}
+					>
 						{(
 							[
 								["inbox", "Inbox", gN.inbox],
@@ -1353,14 +1579,24 @@ export function MailList({
 								}}
 							>
 								{label}
-								<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, opacity: 0.65 }}>{n}</span>
+								<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, opacity: 0.65 }}>
+									{n}
+								</span>
 							</span>
 						))}
 					</div>
 				)}
 
 				{dispOn && (
-					<div style={{ display: "flex", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: 10, padding: 3 }}>
+					<div
+						style={{
+							display: "flex",
+							background: "var(--panel-2)",
+							border: "1px solid var(--line)",
+							borderRadius: 10,
+							padding: 3,
+						}}
+					>
 						{(
 							[
 								["d_nepr", "Nepřiřazené", dC.n, true],
@@ -1423,7 +1659,15 @@ export function MailList({
 						flexWrap: "wrap",
 					}}
 				>
-					<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 11.5, color: "var(--brass-text)", flex: "none" }}>
+					<span
+						style={{
+							fontFamily: "var(--w-font-display)",
+							fontWeight: 700,
+							fontSize: 11.5,
+							color: "var(--brass-text)",
+							flex: "none",
+						}}
+					>
 						{selCount} vybráno
 					</span>
 					<span style={{ flex: 1 }} />
@@ -1440,8 +1684,20 @@ export function MailList({
 					>
 						→ úkoly
 					</span>
-					<span data-ghost onClick={() => m.bulkAct("done")} style={{ fontSize: 11, padding: "5px 10px" }}>Hotovo</span>
-					<span data-ghost onClick={() => m.bulkAct("unread")} style={{ fontSize: 11, padding: "5px 10px" }}>Přečtené</span>
+					<span
+						data-ghost
+						onClick={() => m.bulkAct("done")}
+						style={{ fontSize: 11, padding: "5px 10px" }}
+					>
+						Hotovo
+					</span>
+					<span
+						data-ghost
+						onClick={() => m.bulkAct("unread")}
+						style={{ fontSize: 11, padding: "5px 10px" }}
+					>
+						Přečtené
+					</span>
 					<span
 						data-ghost
 						onClick={() => {
@@ -1454,9 +1710,28 @@ export function MailList({
 					>
 						Odložit
 					</span>
-					<span data-ghost onClick={() => m.bulkAct("arch")} style={{ fontSize: 11, padding: "5px 10px" }}>Archiv</span>
-					<span data-ghost onClick={() => m.bulkAct("trash")} style={{ fontSize: 11, padding: "5px 10px", color: "var(--overdue)" }}>Koš</span>
-					<span data-rowbtn onClick={m.clearSel} title="Zrušit výběr (Esc)" style={{ border: "1px solid var(--line)", background: "var(--panel)" }}>×</span>
+					<span
+						data-ghost
+						onClick={() => m.bulkAct("arch")}
+						style={{ fontSize: 11, padding: "5px 10px" }}
+					>
+						Archiv
+					</span>
+					<span
+						data-ghost
+						onClick={() => m.bulkAct("trash")}
+						style={{ fontSize: 11, padding: "5px 10px", color: "var(--overdue)" }}
+					>
+						Koš
+					</span>
+					<span
+						data-rowbtn
+						onClick={m.clearSel}
+						title="Zrušit výběr (Esc)"
+						style={{ border: "1px solid var(--line)", background: "var(--panel)" }}
+					>
+						×
+					</span>
 				</div>
 			)}
 
@@ -1474,16 +1749,48 @@ export function MailList({
 							padding: "9px 12px",
 						}}
 					>
-						<svg width="13" height="13" viewBox="0 0 12 12" fill="none" style={{ color: "var(--mb-osobni)", flex: "none", marginTop: 1 }} aria-hidden>
-							<rect x="2.2" y="5" width="7.6" height="5.2" rx="1.2" stroke="currentColor" strokeWidth="1.3" />
+						<svg
+							width="13"
+							height="13"
+							viewBox="0 0 12 12"
+							fill="none"
+							style={{ color: "var(--mb-osobni)", flex: "none", marginTop: 1 }}
+							aria-hidden
+						>
+							<rect
+								x="2.2"
+								y="5"
+								width="7.6"
+								height="5.2"
+								rx="1.2"
+								stroke="currentColor"
+								strokeWidth="1.3"
+							/>
 							<path d="M4 5 V3.8 A2 2 0 0 1 8 3.8 V5" stroke="currentColor" strokeWidth="1.3" />
 						</svg>
 						<div style={{ flex: 1, minWidth: 0 }}>
-							<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 10.5, letterSpacing: ".05em", color: "var(--pers-ink)" }}>
+							<div
+								style={{
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 700,
+									fontSize: 10.5,
+									letterSpacing: ".05em",
+									color: "var(--pers-ink)",
+								}}
+							>
 								OSOBNÍ SCHRÁNKA — ŠIFROVÁNO
 							</div>
-							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.5, marginTop: 2 }}>
-								Uložené zprávy nikdo z provozu nečte. Bez AI, bez týmových funkcí, mimo dohled adminů.
+							<div
+								style={{
+									fontFamily: "var(--w-font-body)",
+									fontSize: 11.5,
+									color: "var(--ink-2)",
+									lineHeight: 1.5,
+									marginTop: 2,
+								}}
+							>
+								Uložené zprávy nikdo z provozu nečte. Bez AI, bez týmových funkcí, mimo dohled
+								adminů.
 							</div>
 						</div>
 					</div>
@@ -1509,11 +1816,29 @@ export function MailList({
 									background: "var(--panel-2)",
 								}}
 							>
-								<span data-health="warn" style={{ width: 7, height: 7, borderRadius: "50%", flex: "none" }} />
-								<span style={{ flex: 1, fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-2)" }}>
+								<span
+									data-health="warn"
+									style={{ width: 7, height: 7, borderRadius: "50%", flex: "none" }}
+								/>
+								<span
+									style={{
+										flex: 1,
+										fontFamily: "var(--w-font-body)",
+										fontSize: 11.5,
+										color: "var(--ink-2)",
+									}}
+								>
 									podcast@ se nedaří synchronizovat (token vyprší) — ostatní schránky jedou normálně
 								</span>
-								<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10.5, color: "var(--brass-text)", flex: "none" }}>
+								<span
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 600,
+										fontSize: 10.5,
+										color: "var(--brass-text)",
+										flex: "none",
+									}}
+								>
 									Obnovit →
 								</span>
 							</div>
@@ -1530,7 +1855,15 @@ export function MailList({
 									overflow: "hidden",
 								}}
 							>
-								<div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 12px", flexWrap: "wrap" }}>
+								<div
+									style={{
+										display: "flex",
+										alignItems: "center",
+										gap: 9,
+										padding: "8px 12px",
+										flexWrap: "wrap",
+									}}
+								>
 									<span
 										style={{
 											width: 16,
@@ -1549,17 +1882,35 @@ export function MailList({
 									>
 										W
 									</span>
-									<span style={{ flex: 1, minWidth: 120, fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-2)" }}>
-										<span style={{ fontWeight: 600, color: "var(--brass-text)" }}>{aiWait}</span> {aiPlural} na schválení
+									<span
+										style={{
+											flex: 1,
+											minWidth: 120,
+											fontFamily: "var(--w-font-body)",
+											fontSize: 12,
+											color: "var(--ink-2)",
+										}}
+									>
+										<span style={{ fontWeight: 600, color: "var(--brass-text)" }}>{aiWait}</span>{" "}
+										{aiPlural} na schválení
 									</span>
 									<span
 										onClick={() => setAiOpen(!aiOpen)}
 										data-ghost
-										style={{ fontSize: 10.5, padding: "4px 11px", background: "var(--panel)", flex: "none" }}
+										style={{
+											fontSize: 10.5,
+											padding: "4px 11px",
+											background: "var(--panel)",
+											flex: "none",
+										}}
 									>
 										{aiOpen ? "Skrýt" : "Projít"}
 									</span>
-									<span onClick={aiAll} data-primary style={{ fontSize: 10.5, padding: "4px 12px", flex: "none" }}>
+									<span
+										onClick={aiAll}
+										data-primary
+										style={{ fontSize: 10.5, padding: "4px 12px", flex: "none" }}
+									>
 										Schválit vše ({aiWait})
 									</span>
 								</div>
@@ -1580,11 +1931,24 @@ export function MailList({
 												<div style={{ flex: 1, minWidth: 0 }}>
 													<div
 														onClick={() => m.openThread(q.th)}
-														style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink)", cursor: "pointer" }}
+														style={{
+															fontFamily: "var(--w-font-body)",
+															fontSize: 12,
+															color: "var(--ink)",
+															cursor: "pointer",
+														}}
 													>
 														{q.txt}
 													</div>
-													<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", marginTop: 2, lineHeight: 1.45 }}>
+													<div
+														style={{
+															fontFamily: "var(--w-font-body)",
+															fontSize: 10.5,
+															color: "var(--ink-3)",
+															marginTop: 2,
+															lineHeight: 1.45,
+														}}
+													>
 														<span
 															style={{
 																fontFamily: "var(--w-font-mono)",
@@ -1617,7 +1981,12 @@ export function MailList({
 												<span
 													onClick={() => aiDecide(i, false)}
 													data-ghost
-													style={{ fontSize: 10, padding: "3px 10px", flex: "none", background: "var(--panel)" }}
+													style={{
+														fontSize: 10,
+														padding: "3px 10px",
+														flex: "none",
+														background: "var(--panel)",
+													}}
 												>
 													Zamítnout
 												</span>
@@ -1641,13 +2010,34 @@ export function MailList({
 								{!m.pinExp && pinMore > 0 && (
 									<div
 										onClick={() => m.setPinExp(true)}
-										style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", cursor: "pointer", borderBottom: "1px solid var(--line)" }}
+										style={{
+											display: "flex",
+											alignItems: "center",
+											gap: 8,
+											padding: "8px 14px",
+											cursor: "pointer",
+											borderBottom: "1px solid var(--line)",
+										}}
 									>
-										<svg width="11" height="11" viewBox="0 0 24 24" fill="var(--ink-3)" style={{ flex: "none" }} aria-hidden>
+										<svg
+											width="11"
+											height="11"
+											viewBox="0 0 24 24"
+											fill="var(--ink-3)"
+											style={{ flex: "none" }}
+											aria-hidden
+										>
 											<path d="M9 3.4 H15 L14.3 10 C16.2 10.9 17.2 12.3 17.4 14.2 H6.6 C6.8 12.3 7.8 10.9 9.7 10 Z" />
 											<rect x="11.2" y="14" width="1.6" height="6.2" rx="0.8" />
 										</svg>
-										<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11.5, color: "var(--brass-text)" }}>
+										<span
+											style={{
+												fontFamily: "var(--w-font-display)",
+												fontWeight: 600,
+												fontSize: 11.5,
+												color: "var(--brass-text)",
+											}}
+										>
 											Zobrazit dalších {pinMore} připnutých
 										</span>
 									</div>
@@ -1655,9 +2045,23 @@ export function MailList({
 								{m.pinExp && (
 									<div
 										onClick={() => m.setPinExp(false)}
-										style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", cursor: "pointer", borderBottom: "1px solid var(--line)" }}
+										style={{
+											display: "flex",
+											alignItems: "center",
+											gap: 8,
+											padding: "8px 14px",
+											cursor: "pointer",
+											borderBottom: "1px solid var(--line)",
+										}}
 									>
-										<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11.5, color: "var(--ink-3)" }}>
+										<span
+											style={{
+												fontFamily: "var(--w-font-display)",
+												fontWeight: 600,
+												fontSize: 11.5,
+												color: "var(--ink-3)",
+											}}
+										>
 											Sbalit připnuté na 3 nejnovější
 										</span>
 									</div>
@@ -1668,7 +2072,14 @@ export function MailList({
 
 						{m.grp === "ozn" && isDorView && (
 							<div style={{ margin: "0 14px 8px", display: "flex", alignItems: "center", gap: 8 }}>
-								<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)", flex: 1 }}>
+								<span
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 11.5,
+										color: "var(--ink-3)",
+										flex: 1,
+									}}
+								>
 									Automatické zprávy — faktury, potvrzení, výpisy.
 								</span>
 								{/* označit oznámení jako viděná (prototyp oznBar, ř. 546–551) */}
@@ -1688,39 +2099,92 @@ export function MailList({
 						)}
 
 						{rows.map((vm) => (
-							<MailRow
-								key={vm.t.id}
-								vm={vm}
-								onCtx={(id, x, y) => setCtx({ id, x, y })}
-							/>
+							<MailRow key={vm.t.id} vm={vm} onCtx={(id, x, y) => setCtx({ id, x, y })} />
 						))}
 
 						{rows.length === 0 && pinRows.length === 0 && (
 							<div style={{ textAlign: "center", padding: "44px 20px" }}>
-								<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 13.5, color: "var(--ink)", marginBottom: 4 }}>
+								<div
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 700,
+										fontSize: 13.5,
+										color: "var(--ink)",
+										marginBottom: 4,
+									}}
+								>
 									{emptyT}
 								</div>
-								<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink-3)" }}>
+								<div
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 12.5,
+										color: "var(--ink-3)",
+									}}
+								>
 									{emptyS}
 								</div>
 							</div>
 						)}
 
 						{isDorView && m.grp === "inbox" && rozRows.length > 0 && (
-							<div style={{ margin: "4px 0 16px", borderTop: "1px solid var(--line)", padding: "8px 14px 0" }}>
+							<div
+								style={{
+									margin: "4px 0 16px",
+									borderTop: "1px solid var(--line)",
+									padding: "8px 14px 0",
+								}}
+							>
 								<div
 									onClick={() => m.setRozOn(!m.rozOn)}
-									style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "3px 0" }}
+									style={{
+										display: "flex",
+										alignItems: "center",
+										gap: 8,
+										cursor: "pointer",
+										padding: "3px 0",
+									}}
 								>
 									<span
 										title="Přečtené a otevřené konverzace bez rozhodnutí — vypadnou, jakmile dostanou stav, vlajku nebo odpověď"
-										style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 9.5, letterSpacing: ".07em", textTransform: "uppercase", color: "var(--ink-3)" }}
+										style={{
+											fontFamily: "var(--w-font-display)",
+											fontWeight: 700,
+											fontSize: 9.5,
+											letterSpacing: ".07em",
+											textTransform: "uppercase",
+											color: "var(--ink-3)",
+										}}
 									>
 										Rozpracované
 									</span>
-									<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)" }}>{rozRows.length}</span>
-									<svg width="9" height="9" viewBox="0 0 9 9" style={{ color: "var(--ink-3)", transform: m.rozOn ? "rotate(180deg)" : undefined }} aria-hidden>
-										<path d="M2 3 L4.5 6 L7 3" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+									<span
+										style={{
+											fontFamily: "var(--w-font-mono)",
+											fontSize: 10,
+											color: "var(--ink-3)",
+										}}
+									>
+										{rozRows.length}
+									</span>
+									<svg
+										width="9"
+										height="9"
+										viewBox="0 0 9 9"
+										style={{
+											color: "var(--ink-3)",
+											transform: m.rozOn ? "rotate(180deg)" : undefined,
+										}}
+										aria-hidden
+									>
+										<path
+											d="M2 3 L4.5 6 L7 3"
+											stroke="currentColor"
+											strokeWidth="1.5"
+											fill="none"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
 									</svg>
 								</div>
 								{m.rozOn &&
@@ -1728,7 +2192,14 @@ export function MailList({
 										<div
 											key={vm.t.id}
 											onClick={() => m.openThread(vm.t.id)}
-											style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 0", borderBottom: "1px solid var(--line)", cursor: "pointer" }}
+											style={{
+												display: "flex",
+												alignItems: "center",
+												gap: 9,
+												padding: "9px 0",
+												borderBottom: "1px solid var(--line)",
+												cursor: "pointer",
+											}}
 										>
 											<span
 												data-av="ext"
@@ -1749,11 +2220,32 @@ export function MailList({
 											>
 												{vm.t.from.ini}
 											</span>
-											<span style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5, color: "var(--ink-2)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+											<span
+												style={{
+													fontFamily: "var(--w-font-body)",
+													fontSize: 12.5,
+													color: "var(--ink-2)",
+													flex: 1,
+													minWidth: 0,
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													whiteSpace: "nowrap",
+												}}
+											>
 												{vm.t.subj}
 											</span>
-											<span data-mbdot={vm.t.mb} style={{ width: 7, height: 7, borderRadius: "50%", flex: "none" }} />
-											<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)", flex: "none" }}>
+											<span
+												data-mbdot={vm.t.mb}
+												style={{ width: 7, height: 7, borderRadius: "50%", flex: "none" }}
+											/>
+											<span
+												style={{
+													fontFamily: "var(--w-font-mono)",
+													fontSize: 10,
+													color: "var(--ink-3)",
+													flex: "none",
+												}}
+											>
 												{vm.t.time}
 											</span>
 										</div>
@@ -1787,10 +2279,18 @@ function GkQueue() {
 	const m = useMail();
 	return (
 		<div style={{ padding: "0 14px 12px" }}>
-			<p style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-3)", lineHeight: 1.55, margin: "2px 0 12px" }}>
-				Čekající zprávy nemají SLA ani nepočítají do nepřečtených — pokud něco vypadá
-				urgentně, fronta zvedne upozornění. Noví odesílatelé zůstávají před branou,
-				dokud je nepustíš dál. Rozhodnutí platí i pro všechny jejich další zprávy.
+			<p
+				style={{
+					fontFamily: "var(--w-font-body)",
+					fontSize: 12,
+					color: "var(--ink-3)",
+					lineHeight: 1.55,
+					margin: "2px 0 12px",
+				}}
+			>
+				Čekající zprávy nemají SLA ani nepočítají do nepřečtených — pokud něco vypadá urgentně,
+				fronta zvedne upozornění. Noví odesílatelé zůstávají před branou, dokud je nepustíš dál.
+				Rozhodnutí platí i pro všechny jejich další zprávy.
 			</p>
 			{GK.map((g) => {
 				const d = m.gkDone[g.id];
@@ -1827,35 +2327,91 @@ function GkQueue() {
 								{g.ini}
 							</span>
 							<div style={{ flex: 1, minWidth: 0 }}>
-								<div style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 12.5, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+								<div
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 600,
+										fontSize: 12.5,
+										color: "var(--ink)",
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+										whiteSpace: "nowrap",
+									}}
+								>
 									{g.name}
 								</div>
-								<div style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+								<div
+									style={{
+										fontFamily: "var(--w-font-mono)",
+										fontSize: 10,
+										color: "var(--ink-3)",
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+										whiteSpace: "nowrap",
+									}}
+								>
 									{g.addr}
 								</div>
 							</div>
-							<span data-mbdot={g.mb} title={MB[g.mb]?.short} style={{ width: 8, height: 8, borderRadius: "50%", flex: "none" }} />
+							<span
+								data-mbdot={g.mb}
+								title={MB[g.mb]?.short}
+								style={{ width: 8, height: 8, borderRadius: "50%", flex: "none" }}
+							/>
 						</div>
-						<div style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink-2)", margin: "7px 0 0 37px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+						<div
+							style={{
+								fontFamily: "var(--w-font-body)",
+								fontSize: 12,
+								color: "var(--ink-2)",
+								margin: "7px 0 0 37px",
+								overflow: "hidden",
+								textOverflow: "ellipsis",
+								whiteSpace: "nowrap",
+							}}
+						>
 							{g.subj}
 						</div>
 						{!d ? (
 							<div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "10px 0 0 37px" }}>
-								<span data-primary onClick={() => m.gkDecide(g.id, "accept")} style={{ fontSize: 11, padding: "5px 11px" }}>
+								<span
+									data-primary
+									onClick={() => m.gkDecide(g.id, "accept")}
+									style={{ fontSize: 11, padding: "5px 11px" }}
+								>
 									Přijmout
 								</span>
-								<span data-ghost onClick={() => m.gkDecide(g.id, "acceptDone")} style={{ fontSize: 11, padding: "5px 11px" }}>
+								<span
+									data-ghost
+									onClick={() => m.gkDecide(g.id, "acceptDone")}
+									style={{ fontSize: 11, padding: "5px 11px" }}
+								>
 									Přijmout a Hotovo
 								</span>
-								<span data-ghost onClick={() => m.gkDecide(g.id, "block")} style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)" }}>
+								<span
+									data-ghost
+									onClick={() => m.gkDecide(g.id, "block")}
+									style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)" }}
+								>
 									Blokovat
 								</span>
-								<span data-ghost onClick={() => m.gkDecide(g.id, "blockDom")} style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)" }}>
+								<span
+									data-ghost
+									onClick={() => m.gkDecide(g.id, "blockDom")}
+									style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)" }}
+								>
 									Blokovat doménu
 								</span>
 							</div>
 						) : (
-							<div style={{ fontFamily: "var(--w-font-mono)", fontSize: 10.5, color: "var(--ink-3)", margin: "9px 0 0 37px" }}>
+							<div
+								style={{
+									fontFamily: "var(--w-font-mono)",
+									fontSize: 10.5,
+									color: "var(--ink-3)",
+									margin: "9px 0 0 37px",
+								}}
+							>
 								{GK_VERDICTS[d]}
 							</div>
 						)}

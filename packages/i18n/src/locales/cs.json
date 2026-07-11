@@ -836,7 +836,8 @@
 		"feedFlow": "Postup „{{flow}}“ je teď na: {{name}}"
 	},
 	"qsched": {
-		"nextWeekShort": "Př. týden"
+		"nextWeekShort": "Př. týden",
+		"recurringBlocked": "Opakovaný úkol — posunul by se celá řada. Uprav opakování v detailu."
 	},
 	"bulk": {
 		"selected": "{{count}} vybráno",
@@ -860,7 +861,14 @@
 		"movedToast": "Termín · {{day}} ({{count}})",
 		"projToast": "Projekt · {{name}} ({{count}})",
 		"priToast": "Priorita · P{{p}} ({{count}})",
-		"assignToast": "Přiřazeno · {{name}} ({{count}})"
+		"assignToast": "Přiřazeno · {{name}} ({{count}})",
+		"recurringSkipped_one": "1 opakovaný vynechán — uprav řadu v detailu",
+		"recurringSkipped_few": "{{count}} opakované vynechány — uprav řadu v detailu",
+		"recurringSkipped_other": "{{count}} opakovaných vynecháno — uprav řadu v detailu",
+		"assignSkippedShared_one": "1 úkol „každý zvlášť“ vynechán — hromadné přiřazení by smazalo účasti",
+		"assignSkippedShared_few": "{{count}} úkoly „každý zvlášť“ vynechány — hromadné přiřazení by smazalo účasti",
+		"assignSkippedShared_other": "{{count}} úkolů „každý zvlášť“ vynecháno — hromadné přiřazení by smazalo účasti",
+		"assignNone": "Vybrané úkoly nemají společného člena projektů"
 	},
 	"toolbar": {
 		"filter": "Filtr",
