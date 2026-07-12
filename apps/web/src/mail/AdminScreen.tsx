@@ -85,7 +85,7 @@ function CardHead({ title, sub }: { title: string; sub?: string }) {
 	);
 }
 
-export function AdminScreen() {
+export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 	const m = useMail();
 	const [adm, setAdmRaw] = useState<AdmLocal>(cache.adm);
 	const [tplDel, setTplDel] = useState<Record<string, true>>(cache.tplDel);
@@ -157,40 +157,48 @@ export function AdminScreen() {
 
 	return (
 		<div
-			data-screen-label="Administrace pošty"
-			style={{ flex: 1, overflow: "auto", background: "var(--panel-2)" }}
+			data-screen-label={embedded ? undefined : "Administrace pošty"}
+			style={embedded ? undefined : { flex: 1, overflow: "auto", background: "var(--panel-2)" }}
 		>
-			<div style={{ maxWidth: 960, margin: "0 auto", padding: "20px 26px 46px" }}>
-				<span
-					data-ghost
-					onClick={() => m.setScr("mail")}
-					style={{
-						display: "inline-flex",
-						alignItems: "center",
-						gap: 6,
-						fontSize: 12,
-						padding: "6px 12px",
-					}}
-				>
-					← Mail
-				</span>
-				<div
-					style={{
-						fontFamily: "var(--w-font-display)",
-						fontWeight: 800,
-						fontSize: 20,
-						color: "var(--ink)",
-						marginTop: 14,
-					}}
-				>
-					Administrace pošty
-				</div>
+			<div
+				style={
+					embedded ? undefined : { maxWidth: 960, margin: "0 auto", padding: "20px 26px 46px" }
+				}
+			>
+				{!embedded && (
+					<span
+						data-ghost
+						onClick={() => m.setScr("mail")}
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 6,
+							fontSize: 12,
+							padding: "6px 12px",
+						}}
+					>
+						← Mail
+					</span>
+				)}
+				{!embedded && (
+					<div
+						style={{
+							fontFamily: "var(--w-font-display)",
+							fontWeight: 800,
+							fontSize: 20,
+							color: "var(--ink)",
+							marginTop: 14,
+						}}
+					>
+						Administrace pošty
+					</div>
+				)}
 				<div
 					style={{
 						fontFamily: "var(--w-font-body)",
 						fontSize: 12.5,
 						color: "var(--ink-3)",
-						marginTop: 4,
+						marginTop: embedded ? 0 : 4,
 						maxWidth: "64ch",
 						lineHeight: 1.55,
 					}}

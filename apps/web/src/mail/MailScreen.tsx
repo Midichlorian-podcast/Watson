@@ -16,7 +16,6 @@ import {
 import { useTheme } from "../layout/useTheme";
 import "./mail.css";
 import { showToast } from "../lib/toast";
-import { AdminScreen } from "./AdminScreen";
 import { CheatSheet } from "./CheatSheet";
 import { DeniScreen } from "./DeniScreen";
 import { FloatComposer } from "./FloatComposer";
@@ -297,8 +296,6 @@ export function MailScreen() {
 					</>
 				) : m.scr === "deni" ? (
 					<DeniScreen />
-				) : m.scr === "admin" ? (
-					<AdminScreen />
 				) : m.scr === "prirucka" ? (
 					<PriruckaScreen />
 				) : (

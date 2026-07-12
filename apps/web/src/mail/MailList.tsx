@@ -17,12 +17,13 @@ import {
 	useState,
 	useEffect,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { showToast } from "../lib/toast";
 import { type SwipeSide, useSwipe } from "../lib/useSwipe";
 import { useWatson } from "../lib/watson";
 import { CtxMenu } from "./CtxMenu";
 import { AI_QUEUE_SEED, type AiQueueItem, GK, MB, P, SLA, STL, type MailThread } from "./data";
-import { chipStyle } from "../components/filterUi";
+import { chipStyle, FilterSectionLabel, pillStyle } from "../components/filterUi";
 import { NotifCenter } from "../components/NotifCenter";
 import { type ThreadEff, useMail } from "./state";
 
@@ -889,17 +890,6 @@ function MailRow({
 	);
 }
 
-/** Pilulky voleb Zobrazení ve vmenu (prototyp data-statepill, ř. 485–491). */
-const densPill: CSSProperties = {
-	fontFamily: "var(--w-font-display)",
-	fontWeight: 600,
-	fontSize: 10.5,
-	padding: "4px 10px",
-	borderRadius: 999,
-	whiteSpace: "nowrap",
-	cursor: "pointer",
-};
-
 const secHead: CSSProperties = {
 	padding: "2px 14px 4px",
 	fontFamily: "var(--w-font-display)",
@@ -949,6 +939,7 @@ export function MailList({
 	onCompose: () => void;
 }) {
 	const m = useMail();
+	const navigate = useNavigate();
 	const { isDorView, gN, pinRows, rozRows, rows, order } = useListRows();
 	const [vmenu, setVmenu] = useState(false);
 	// kontextové menu řádku (pravý klik); hledání a Napsat řídí MailScreen (⌘K/C)
@@ -1451,78 +1442,71 @@ export function MailList({
 								animation: "wPop .14s ease",
 							}}
 						>
-							<div
-								style={{
-									fontFamily: "var(--w-font-display)",
-									fontWeight: 700,
-									fontSize: 10,
-									letterSpacing: ".05em",
-									textTransform: "uppercase",
-									color: "var(--ink-3)",
-									padding: "4px 9px 5px",
-								}}
-							>
-								Filtry
-							</div>
-							{FROWS.map((f) => (
-								<div key={f.k} onClick={() => m.toggleFilter(f.k)} data-menuitem>
-									<span style={{ flex: 1 }}>{f.label}</span>
-									{m.filters[f.k] && (
-										<svg
-											width="12"
-											height="12"
-											viewBox="0 0 14 14"
-											fill="none"
-											style={{ color: "var(--brass-text)" }}
-											aria-hidden
+							{/* Filtry — sdílený vzhled s toolbarem úkolů (pilulky + „Vymazat filtry“). */}
+							<div style={{ padding: "4px 9px 2px" }}>
+								<FilterSectionLabel>Filtry</FilterSectionLabel>
+								<div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+									{FROWS.map((f) => (
+										<button
+											key={f.k}
+											type="button"
+											onClick={() => m.toggleFilter(f.k)}
+											style={pillStyle(m.filters[f.k], 11.5, "4px 10px")}
 										>
-											<path
-												d="M2.5 7.4 L5.5 10.4 L11.5 3.6"
-												stroke="currentColor"
-												strokeWidth="1.8"
-												strokeLinecap="round"
-												strokeLinejoin="round"
-											/>
-										</svg>
-									)}
+											{f.label}
+										</button>
+									))}
 								</div>
-							))}
+								{fCount > 0 && (
+									<button
+										type="button"
+										onClick={() => {
+											for (const f of activeF) m.toggleFilter(f.k);
+										}}
+										style={{
+											marginTop: 8,
+											fontFamily: "var(--w-font-display)",
+											fontWeight: 600,
+											fontSize: 11.5,
+											color: "var(--w-brass-text)",
+											background: "transparent",
+											border: "none",
+											cursor: "pointer",
+											padding: 0,
+										}}
+									>
+										Vymazat filtry
+									</button>
+								)}
+							</div>
 							{/* Zobrazení — hustota a náhled (prototyp ř. 483–492) */}
 							<div
 								style={{
-									fontFamily: "var(--w-font-display)",
-									fontWeight: 700,
-									fontSize: 10,
-									letterSpacing: ".05em",
-									textTransform: "uppercase",
-									color: "var(--ink-3)",
-									padding: "8px 9px 5px",
+									padding: "8px 9px 2px",
 									borderTop: "1px solid var(--line)",
-									marginTop: 5,
+									marginTop: 7,
 								}}
 							>
-								Zobrazení
-							</div>
-							<div style={{ display: "flex", gap: 4, padding: "2px 8px 4px" }}>
-								<span
-									onClick={() => setDens("comfort")}
-									data-statepill
-									data-on={dens === "comfort" || undefined}
-									style={densPill}
-								>
-									Komfortní
-								</span>
-								<span
-									onClick={() => setDens("compact")}
-									data-statepill
-									data-on={dens === "compact" || undefined}
-									style={densPill}
-								>
-									Kompaktní
-								</span>
+								<FilterSectionLabel>Zobrazení</FilterSectionLabel>
+								<div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+									<button
+										type="button"
+										onClick={() => setDens("comfort")}
+										style={pillStyle(dens === "comfort", 11.5, "4px 10px")}
+									>
+										Komfortní
+									</button>
+									<button
+										type="button"
+										onClick={() => setDens("compact")}
+										style={pillStyle(dens === "compact", 11.5, "4px 10px")}
+									>
+										Kompaktní
+									</button>
+								</div>
 							</div>
 							<div
-								style={{ display: "flex", gap: 4, padding: "2px 8px 5px", alignItems: "center" }}
+								style={{ display: "flex", gap: 5, padding: "6px 9px 2px", alignItems: "center" }}
 							>
 								<span
 									style={{
@@ -1534,27 +1518,25 @@ export function MailList({
 								>
 									Náhled
 								</span>
-								<span
+								<button
+									type="button"
 									onClick={() => setLines(1)}
-									data-statepill
-									data-on={lines === 1 || undefined}
-									style={densPill}
+									style={pillStyle(lines === 1, 11.5, "4px 10px")}
 								>
 									1 řádek
-								</span>
-								<span
+								</button>
+								<button
+									type="button"
 									onClick={() => setLines(2)}
-									data-statepill
-									data-on={lines === 2 || undefined}
-									style={densPill}
+									style={pillStyle(lines === 2, 11.5, "4px 10px")}
 								>
 									2 řádky
-								</span>
+								</button>
 							</div>
 							<div
 								onClick={markAllRead}
 								data-menuitem
-								style={{ borderTop: "1px solid var(--line)", marginTop: 5 }}
+								style={{ borderTop: "1px solid var(--line)", marginTop: 7 }}
 							>
 								Označit vše jako přečtené
 							</div>
@@ -1853,7 +1835,7 @@ export function MailList({
 						{/* syncWarn — podcast@ token (prototyp ř. 622–628) */}
 						{syncWarn && (
 							<div
-								onClick={() => m.setScr("admin")}
+								onClick={() => void navigate({ to: "/nastaveni", hash: "posta-admin" })}
 								style={{
 									margin: "0 14px 8px",
 									display: "flex",

@@ -1,11 +1,11 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "@watson/i18n";
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
-import { chipStyle } from "./filterUi";
+import { chipStyle, FilterSectionLabel, pillStyle } from "./filterUi";
 
 export type SortBy = "smart" | "due" | "priority" | "name" | "project" | "status";
 /** Normalizovaný klíč stavu (prototyp filterStatus: probiha/kontrola/''/hotovo). */
@@ -177,28 +177,9 @@ export function filterTasks<T extends TaskLike>(
 const toggleIn = <T,>(arr: T[], v: T) =>
 	arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
 
-// Chip filtru je teď sdílený primitiv (components/filterUi) — jeden vzhled i v mailu.
-
-const pillStyle = (on: boolean, fs = 12, pad = "4px 11px"): CSSProperties => ({
-	fontSize: fs,
-	padding: pad,
-	borderRadius: 999,
-	border: `1px solid ${on ? "var(--w-brass)" : "var(--w-line)"}`,
-	color: on ? "var(--w-brass-text)" : "var(--w-ink-2)",
-	background: on ? "var(--w-brass-soft)" : "transparent",
-	cursor: "pointer",
-});
-
-function SectionLabel({ children }: { children: ReactNode }) {
-	return (
-		<div
-			className="font-display font-bold text-ink-3 uppercase"
-			style={{ fontSize: 10, letterSpacing: ".06em", marginBottom: 6 }}
-		>
-			{children}
-		</div>
-	);
-}
+// Chip/pilulka/nadpis filtru jsou teď sdílené primitivy (components/filterUi) —
+// jeden vzhled i ovládání i v mailu (koherence 2026-07-12).
+const SectionLabel = FilterSectionLabel;
 
 const searchInputCls =
 	"w-full rounded-[7px] border border-line bg-panel-2 px-[9px] py-[5px] font-body text-ink outline-none";

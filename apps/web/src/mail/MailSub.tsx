@@ -518,10 +518,10 @@ export function MailSub({
 							<span
 								data-sublbl
 								data-health="warn"
-								title="Token vyprší za 12 dní — klikem otevřeš Administraci"
+								title="Token vyprší za 12 dní — klikem otevřeš Administraci pošty"
 								onClick={(e) => {
 									e.stopPropagation();
-									m.setScr("admin");
+									void navigate({ to: "/nastaveni", hash: "posta-admin" });
 								}}
 								style={{
 									cursor: "pointer",
@@ -601,9 +601,9 @@ export function MailSub({
 				{/* Správa — vnitřní obrazovky Administrace + Nastavení (prototyp ř. 431–440) */}
 				<Head>Správa</Head>
 				<SRow
-					active={m.scr === "admin"}
-					onClick={() => m.setScr("admin")}
-					title="Administrace pošty — schránky, přístupy, AI"
+					active={false}
+					onClick={() => void navigate({ to: "/nastaveni", hash: "posta-admin" })}
+					title="Administrace pošty — teď v jednom Nastavení (sekce Administrace pošty)"
 				>
 					<svg
 						width="15"

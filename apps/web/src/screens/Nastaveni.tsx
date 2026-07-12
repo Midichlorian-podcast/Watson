@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import i18n, { useTranslation } from "@watson/i18n";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
 import { signOut, useSession } from "../lib/auth-client";
 import { downloadBackup } from "../lib/backup";
+import { AdminScreen } from "../mail/AdminScreen";
 import { NastaveniScreen as MailSettings } from "../mail/NastaveniScreen";
 import { initials } from "../lib/format";
 import { disconnectPowerSync } from "../lib/powersync/db";
@@ -119,6 +120,8 @@ const AREA_CHIP: CSSProperties = {
 export function Nastaveni() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	// Hash z routeru — mailová „Administrace“ sem naviguje s #posta-admin a odroluje na sekci.
+	const hash = useRouterState({ select: (s) => s.location.hash });
 	const { theme, toggle } = useTheme();
 	const { data: session } = useSession();
 	const [openRoleId, setOpenRoleId] = useState<string | null>(null);
@@ -146,6 +149,25 @@ export function Nastaveni() {
 		const id = setTimeout(() => setToast(null), 2500);
 		return () => clearTimeout(id);
 	}, [toast]);
+	// Odroluj na sekci dle hashe (#posta-admin z mailu). Cílová sekce (Administrace
+	// pošty) se renderuje až po dojezdu async dotazů (teamWs), takže na jeden rAF
+	// ještě v DOM není — pollujeme po rámcích ~1,5 s, dokud se element neobjeví.
+	useEffect(() => {
+		const h = (hash ?? "").replace(/^#/, "");
+		if (!h) return;
+		let raf = 0;
+		let tries = 0;
+		const tick = () => {
+			const el = document.getElementById(h);
+			if (el) {
+				el.scrollIntoView({ behavior: "smooth", block: "start" });
+				return;
+			}
+			if (tries++ < 90) raf = requestAnimationFrame(tick);
+		};
+		raf = requestAnimationFrame(tick);
+		return () => cancelAnimationFrame(raf);
+	}, [hash]);
 	// Zavři menu role klikem mimo nebo Esc (jinak overlay zůstane viset přes obsah).
 	useEffect(() => {
 		if (!openRoleId) return;
@@ -489,13 +511,31 @@ export function Nastaveni() {
 			</div>
 
 			{/* POŠTA — mailová nastavení (podpisy, VIP, schránky…) na JEDNOM místě,
-			    ne schovaná uvnitř mailu. Embedded = bez vlastní hlavičky/motivu (ten je výš). */}
+			    ne schovaná uvnitř mailu. Embedded = bez vlastní hlavičky. Obal data-wm-theme
+			    dodá mailové tokeny (--panel/--ink/--line…), aby karty vypadaly 1:1 jako v mailu. */}
 			<div className="font-display" style={{ ...SECTION_LABEL, marginTop: 22 }}>
 				Pošta
 			</div>
-			<div style={{ ...CARD, overflow: "hidden", marginBottom: 10 }}>
+			<div data-wm-theme={theme === "dark" ? "dark" : "light"} style={{ marginBottom: 10 }}>
 				<MailSettings embedded />
 			</div>
+
+			{/* ADMINISTRACE POŠTY — jen správci týmu (schránky, přístupy, AI, pravidla, šablony).
+			    Dřív schovaná uvnitř mailu; teď je správa pošty tam, kde je i zbytek správy týmu. */}
+			{teamWs && canManage && (
+				<>
+					<div
+						id="posta-admin"
+						className="font-display"
+						style={{ ...SECTION_LABEL, marginTop: 22, scrollMarginTop: 16 }}
+					>
+						Administrace pošty
+					</div>
+					<div data-wm-theme={theme === "dark" ? "dark" : "light"} style={{ marginBottom: 10 }}>
+						<AdminScreen embedded />
+					</div>
+				</>
+			)}
 
 			{/* TÝM A ROLE */}
 			{teamWs && (
