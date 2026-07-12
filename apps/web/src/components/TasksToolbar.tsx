@@ -240,6 +240,19 @@ export function TasksToolbar({
 		document.addEventListener("mousedown", h);
 		return () => document.removeEventListener("mousedown", h);
 	}, []);
+	// Esc zavře otevřený popover (dřív propadl do globálních zkratek j/k/…);
+	// stopPropagation zamezí, aby Esc zároveň dělal něco ve vyšší vrstvě.
+	useEffect(() => {
+		if (!open) return;
+		const h = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.stopPropagation();
+				setOpen(null);
+			}
+		};
+		document.addEventListener("keydown", h, true);
+		return () => document.removeEventListener("keydown", h, true);
+	}, [open]);
 
 	const SORTS: [SortBy, string][] = [
 		["smart", t("toolbar.sortSmart")],
@@ -326,6 +339,7 @@ export function TasksToolbar({
 				</button>
 				{open === "filter" && (
 					<div
+						data-esc-layer
 						className="absolute left-0 z-[31] flex flex-col rounded-xl border border-line bg-card"
 						style={{
 							top: 38,
@@ -523,6 +537,7 @@ export function TasksToolbar({
 				</button>
 				{open === "sort" && (
 					<div
+						data-esc-layer
 						className="absolute left-0 z-[31] flex flex-col rounded-xl border border-line bg-card"
 						style={{
 							top: 38,

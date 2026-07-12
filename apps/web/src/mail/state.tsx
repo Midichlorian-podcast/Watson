@@ -26,6 +26,7 @@ import {
 	MB,
 	NAST_SEED,
 	P,
+	SIGS,
 	SLA,
 	STL,
 	TH,
@@ -690,6 +691,11 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const doSend = useCallback(
 		(t: MailThread, markDone: boolean) => {
 			const text = outgoingText(t);
+			// zvolený podpis (SigBlock) se připojí PŘI odeslání (audit MED
+			// MailThread:3652) — v editoru je jen náhled, do těla nepatří.
+			const mbKey = t.personal ? "osobni" : t.mb;
+			const sigId = sigChoice[mbKey] ?? (mbKey === "osobni" ? "kratky" : "plny");
+			const sig = SIGS.find((s) => s.id === sigId)?.body ?? [];
 			prevSend.current = {
 				id: t.id,
 				ov: ov[t.id] ? { ...ov[t.id] } : undefined,
@@ -702,7 +708,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 				by: "ad",
 				t: "teď",
 				to: t.from.n,
-				body: text.split("\n").filter(Boolean),
+				body: [...text.split("\n").filter(Boolean), ...(sig.length ? ["", ...sig] : [])],
 			};
 			setSentX((s) => ({ ...s, [t.id]: [...(s[t.id] ?? []), msg] }));
 			setOv(t.id, {
@@ -734,7 +740,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 				});
 			}, 1000);
 		},
-		[outgoingText, ov, attached, sentX, setOv, detach, drafts],
+		[outgoingText, ov, attached, sentX, setOv, detach, drafts, sigChoice],
 	);
 
 	/** Řetěz ochran před odesláním (prototyp checkSend, ř. 3406–3429).
