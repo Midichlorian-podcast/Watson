@@ -1,4 +1,5 @@
 import i18n from "@watson/i18n";
+import { logTaskActivity } from "./activity";
 import { advanceChainForTask } from "./chainAdvance";
 import { expandOccurrences, parseOccId, recurrenceKind } from "./occurrences";
 import type { TaskRow } from "./powersync/AppSchema";
@@ -182,7 +183,17 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 				undo: () => apply(prevAsg, prevTaskDone, prevStatus),
 				redo: () => apply(nextAsg, newTaskDone, nextStatus),
 			});
-			if (nowDone !== !!prevTaskDone) await advanceChainForTask(task.id, nowDone);
+			if (nowDone !== !!prevTaskDone) {
+				void logTaskActivity(
+					task.id,
+					task.project_id,
+					actorId,
+					"completed",
+					prevTaskDone ? "1" : null,
+					newTaskDone ? "1" : null,
+				);
+				await advanceChainForTask(task.id, nowDone);
+			}
 			return;
 		}
 		// >= 1: i jediný zbylý účastník (=já) musí projít odvozeným modelem R2, jinak by
@@ -214,7 +225,17 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 				redo: () => apply(myTs, newTaskDone, nextStatus),
 			});
 			// Postup posune jen při skutečné změně hotovosti úkolu jako celku.
-			if (allDone !== !!prevTaskDone) await advanceChainForTask(task.id, allDone);
+			if (allDone !== !!prevTaskDone) {
+				void logTaskActivity(
+					task.id,
+					task.project_id,
+					actorId,
+					"completed",
+					prevTaskDone ? "1" : null,
+					newTaskDone ? "1" : null,
+				);
+				await advanceChainForTask(task.id, allDone);
+			}
 			return;
 		}
 	}
@@ -235,6 +256,15 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 		]);
 	};
 	await writeDone(newDone, nextStatus);
+	// historie: dokončení/obnovení i mimo detail (checkbox v seznamu, kartě…)
+	void logTaskActivity(
+		task.id,
+		task.project_id,
+		actorId,
+		"completed",
+		prevDone ? "1" : null,
+		newDone ? "1" : null,
+	);
 	pushUndo({
 		undo: () => writeDone(prevDone, prevStatus),
 		redo: () => writeDone(newDone, nextStatus),

@@ -11,6 +11,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { logTaskActivity } from "../lib/activity";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
@@ -748,6 +749,8 @@ export function AddTaskModal({
 				new Date().toISOString(),
 			],
 		);
+		// historie: vytvoření úkolu (dřív se logoval jen edit v detailu, ne create)
+		void logTaskActivity(id, draft.project, session?.user?.id, "created", null, null);
 		for (const uid of draft.assignees) {
 			await powerSync.execute(
 				"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (?, ?, ?, ?, ?)",

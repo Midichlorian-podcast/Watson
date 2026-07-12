@@ -38,6 +38,7 @@ import {
 	toggleTask,
 } from "../lib/tasks";
 import { showToast } from "../lib/toast";
+import { logTaskActivity } from "../lib/activity";
 import { deleteTaskWithUndo } from "../lib/undo";
 import { useOpenMailThread } from "../mail/state";
 
@@ -406,10 +407,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const logActivity = async (field: string, oldVal: string | null, newVal: string | null) => {
 		const uid = session?.user?.id;
 		if (!task || !uid) return;
-		await powerSync.execute(
-			"INSERT INTO task_activity (id, task_id, project_id, user_id, field, old_value, new_value, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?)",
-			[realId, task.project_id, uid, field, oldVal, newVal, new Date().toISOString()],
-		);
+		// sdílený zapisovač (lib/activity) — stejná historie i pro create/bulk/toggle
+		await logTaskActivity(realId, task.project_id, uid, field, oldVal, newVal);
 		// task_activity se nesyncuje (insert-only) → po zápisu refetchni historii z API.
 		void qc.invalidateQueries({ queryKey: ["taskActivity", realId] });
 	};
