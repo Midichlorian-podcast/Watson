@@ -19,9 +19,7 @@ const KID = "watson-dev-1";
 const ALG = "RS256";
 const AUDIENCE = "powersync";
 const keyDir = fileURLToPath(new URL("../.keys", import.meta.url));
-const keyFile = fileURLToPath(
-	new URL("../.keys/powersync-key.json", import.meta.url),
-);
+const keyFile = fileURLToPath(new URL("../.keys/powersync-key.json", import.meta.url));
 
 let privateKey: CryptoKey;
 let publicJwk: JWK;
@@ -62,9 +60,7 @@ async function issueToken(userId: string) {
 export const powersyncRoutes = new Hono();
 
 /** JWKS — PowerSync service sem chodí pro veřejné klíče. */
-powersyncRoutes.get("/api/powersync/jwks", (c) =>
-	c.json({ keys: [publicJwk] }),
-);
+powersyncRoutes.get("/api/powersync/jwks", (c) => c.json({ keys: [publicJwk] }));
 
 /** Vydá PowerSync token přihlášenému uživateli + endpoint sync služby. */
 powersyncRoutes.get("/api/powersync/token", async (c) => {
@@ -102,10 +98,7 @@ interface TableDef {
 	/** PATCH/DELETE smí jen autor (creatorCol) nebo manager projektu (komentáře). */
 	authorEditOnly?: boolean;
 	/** Jak zjistit project_id pro membership kontrolu (R5). `self` = řádek JE projekt (id). */
-	projectVia?:
-		| { kind: "column"; col: string }
-		| { kind: "task"; col: string }
-		| { kind: "self" };
+	projectVia?: { kind: "column"; col: string } | { kind: "task"; col: string } | { kind: "self" };
 	/** Workspace-scoped tabulky (cíle): membership kontrola přes memberships.workspace_id. */
 	workspaceVia?: { kind: "column"; col: string };
 	/** FK sloupce na řádek (se sloupcem project_id), jehož projekt musí být útočníkův —
@@ -410,15 +403,11 @@ function isDeterministicDbError(err: unknown): boolean {
 function coerce(type: ColType, v: unknown): unknown {
 	if (v == null) return null;
 	if (type === "int") return typeof v === "number" ? v : Number(v);
-	if (type === "bool")
-		return v === true || v === 1 || v === "1" || v === "true";
+	if (type === "bool") return v === true || v === 1 || v === "1" || v === "true";
 	return String(v); // text + ts (ISO string → timestamptz cast Postgresem)
 }
 
-async function projectViaTask(
-	db: Db,
-	taskId: string | null,
-): Promise<string | null> {
+async function projectViaTask(db: Db, taskId: string | null): Promise<string | null> {
 	if (!taskId) return null;
 	const rows = (await db.execute(
 		sql`SELECT project_id AS pid FROM tasks WHERE id = ${taskId} LIMIT 1`,
@@ -463,22 +452,14 @@ async function projectFromDb(
 }
 
 /** Projekt řádku libovolné tabulky se sloupcem project_id (tasks/sections/statuses). */
-async function projectOfRow(
-	db: Db,
-	table: string,
-	id: string,
-): Promise<string | null> {
+async function projectOfRow(db: Db, table: string, id: string): Promise<string | null> {
 	const rows = (await db.execute(
 		sql`SELECT project_id AS pid FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
 	)) as Rows;
 	return (rows[0]?.pid as string) ?? null;
 }
 
-async function isProjectMember(
-	db: Db,
-	projectId: string,
-	userId: string,
-): Promise<boolean> {
+async function isProjectMember(db: Db, projectId: string, userId: string): Promise<boolean> {
 	const rows = (await db.execute(
 		sql`SELECT 1 AS ok FROM project_members WHERE project_id = ${projectId} AND user_id = ${userId} LIMIT 1`,
 	)) as Rows;
@@ -486,11 +467,7 @@ async function isProjectMember(
 }
 
 /** Projektová role uživatele (project_members) — null = není člen projektu. */
-async function projectRole(
-	db: Db,
-	projectId: string,
-	userId: string,
-): Promise<string | null> {
+async function projectRole(db: Db, projectId: string, userId: string): Promise<string | null> {
 	const rows = (await db.execute(
 		sql`SELECT role FROM project_members WHERE project_id = ${projectId} AND user_id = ${userId} LIMIT 1`,
 	)) as Rows;
@@ -511,11 +488,7 @@ async function creatorOfRow(
 }
 
 /** Role uživatele v prostoru (memberships) — null = není člen. */
-async function workspaceRole(
-	db: Db,
-	workspaceId: string,
-	userId: string,
-): Promise<string | null> {
+async function workspaceRole(db: Db, workspaceId: string, userId: string): Promise<string | null> {
 	const rows = (await db.execute(
 		sql`SELECT role FROM memberships WHERE workspace_id = ${workspaceId} AND user_id = ${userId} LIMIT 1`,
 	)) as Rows;
@@ -540,11 +513,7 @@ async function workspaceFromDb(
  * R-oprávnění (#14): „Host" (workspace_role = guest) je jen pro čtení. True, pokud je uživatel
  * v prostoru daného projektu členem s rolí guest → jakýkoli zápis se odmítne.
  */
-async function isWorkspaceGuest(
-	db: Db,
-	projectId: string,
-	userId: string,
-): Promise<boolean> {
+async function isWorkspaceGuest(db: Db, projectId: string, userId: string): Promise<boolean> {
 	const rows = (await db.execute(
 		sql`SELECT m.role AS role FROM projects p
         JOIN memberships m ON m.workspace_id = p.workspace_id AND m.user_id = ${userId}
@@ -571,15 +540,12 @@ async function applyWrite(
 	const set: { col: string; val: unknown }[] = Object.keys(def.columns)
 		.filter((c) => c in data)
 		.map((c) => ({ col: c, val: coerce(def.columns[c]!, data[c]) }));
-	if (op === "PUT" && def.creatorCol)
-		set.push({ col: def.creatorCol, val: userId });
+	if (op === "PUT" && def.creatorCol) set.push({ col: def.creatorCol, val: userId });
 
 	if (op === "PUT") {
 		const cols = ["id", ...set.map((s) => s.col)];
 		const vals = [sql`${id}`, ...set.map((s) => sql`${s.val}`)];
-		const updates = set.map(
-			(s) => sql`${sql.raw(s.col)} = EXCLUDED.${sql.raw(s.col)}`,
-		);
+		const updates = set.map((s) => sql`${sql.raw(s.col)} = EXCLUDED.${sql.raw(s.col)}`);
 		if (def.hasUpdatedAt) updates.push(sql`updated_at = now()`);
 		await db.execute(sql`
       INSERT INTO ${sql.raw(table)} (${sql.join(
@@ -602,6 +568,35 @@ async function applyWrite(
 }
 
 /**
+ * Generický audit log — KAŽDÁ úspěšná mutace přes write-path se zapíše do
+ * audit_events (dřív mrtvá tabulka). Základ pro „o nic nepřijít": neobejitelný
+ * server-side záznam s aktérem + diffem, oddělený od task_activity (jen úkoly,
+ * insert-only overlay). Best-effort — selhání auditu nesmí shodit vlastní zápis.
+ */
+async function auditLog(
+	db: Db,
+	table: string,
+	op: Op,
+	id: string,
+	data: Record<string, unknown>,
+	userId: string,
+): Promise<void> {
+	// task_activity JE už audit (per-úkol historie) — neaudituj audit, jen šum.
+	if (table === "task_activity") return;
+	try {
+		const action = op === "PUT" ? "put" : op === "PATCH" ? "patch" : "delete";
+		const ws = typeof data.workspace_id === "string" ? (data.workspace_id as string) : null;
+		const diff = op === "DELETE" ? null : sql`${JSON.stringify(data)}::jsonb`;
+		await db.execute(sql`
+      INSERT INTO audit_events (id, workspace_id, actor_type, actor_user_id, entity, entity_id, action, diff, created_at)
+      VALUES (${crypto.randomUUID()}, ${ws}, 'user', ${userId}, ${table}, ${id}, ${action}, ${diff}, now())
+    `);
+	} catch (err) {
+		console.warn("[watson-api] audit_events insert selhal:", err);
+	}
+}
+
+/**
  * Upload write z klienta. Tělo: { op: 'PUT'|'PATCH'|'DELETE', table, id, data }.
  * Row-level kontrola (R5): uživatel musí být členem projektu, kam řádek patří.
  */
@@ -618,20 +613,17 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 	};
 
 	const def = TABLES[body.table];
-	if (!def)
-		return c.json({ error: `tabulka '${body.table}' není zapisovatelná` }, 400);
+	if (!def) return c.json({ error: `tabulka '${body.table}' není zapisovatelná` }, 400);
 
 	const data = body.data ?? {};
 	const db = getDb();
 
 	// Append-only tabulky (audit log): měnit ani mazat nelze.
-	if (def.appendOnly && body.op !== "PUT")
-		return c.json({ error: "append-only" }, 403);
+	if (def.appendOnly && body.op !== "PUT") return c.json({ error: "append-only" }, 403);
 
 	// Vlastníkův sloupec (osobní připomínky/barvy/audit) — server VŽDY dosadí session userId.
 	// Klient nemůže padělat cizí identitu ani injektovat řádek do overlaye/pushe jiného uživatele.
-	if (def.ownerCol && (body.op === "PUT" || body.op === "PATCH"))
-		data[def.ownerCol] = userId;
+	if (def.ownerCol && (body.op === "PUT" || body.op === "PATCH")) data[def.ownerCol] = userId;
 
 	// Workspace-scoped tabulky (cíle): membership + role kontrola přes memberships.
 	if (def.workspaceVia) {
@@ -652,6 +644,7 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 		}
 		try {
 			await applyWrite(db, body.table, def, body.op, body.id, data, userId);
+			await auditLog(db, body.table, body.op, body.id, data, userId);
 		} catch (err) {
 			console.error("[watson-api] write selhal:", err);
 			return c.json({ error: String(err) }, isDeterministicDbError(err) ? 400 : 500);
@@ -692,31 +685,21 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 				const role = await projectRole(db, p, userId);
 				if (!role) return c.json({ error: "forbidden" }, 403);
 				// Host (workspace guest) = read-only → odmítni jakýkoli zápis.
-				if (await isWorkspaceGuest(db, p, userId))
-					return c.json({ error: "read-only-host" }, 403);
+				if (await isWorkspaceGuest(db, p, userId)) return c.json({ error: "read-only-host" }, 403);
 				// Projektová role musí stačit na daný typ zápisu (#1: commenter ≠ editor ≠ manager).
 				if ((PROJECT_ROLE_RANK[role] ?? 0) < minRank)
 					return c.json({ error: "insufficient-role" }, 403);
 				// Destruktivní operace na projektu (smazání, převod vlastnictví, viditelnost,
 				// archivace) smí jen manager — commenter/editor je nesmí (#1).
 				const touchesManagerCol =
-					body.op === "PATCH" &&
-					(def.managerCols ?? []).some((mc) => mc in data);
-				if (
-					(body.op === "DELETE" && def.projectVia?.kind === "self") ||
-					touchesManagerCol
-				) {
-					if (role !== "manager")
-						return c.json({ error: "manager-only" }, 403);
+					body.op === "PATCH" && (def.managerCols ?? []).some((mc) => mc in data);
+				if ((body.op === "DELETE" && def.projectVia?.kind === "self") || touchesManagerCol) {
+					if (role !== "manager") return c.json({ error: "manager-only" }, 403);
 				}
 			}
 		}
 		// PATCH/DELETE komentáře smí jen autor (nebo manager projektu) — #10.
-		if (
-			def.authorEditOnly &&
-			def.creatorCol &&
-			(body.op === "PATCH" || body.op === "DELETE")
-		) {
+		if (def.authorEditOnly && def.creatorCol && (body.op === "PATCH" || body.op === "DELETE")) {
 			const author = await creatorOfRow(db, body.table, def.creatorCol, body.id);
 			if (author && author !== userId) {
 				let ok = false;
@@ -738,6 +721,7 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 		}
 
 		await applyWrite(db, body.table, def, body.op, body.id, data, userId);
+		await auditLog(db, body.table, body.op, body.id, data, userId);
 	} catch (err) {
 		console.error("[watson-api] write selhal:", err);
 		return c.json({ error: String(err) }, isDeterministicDbError(err) ? 400 : 500);
