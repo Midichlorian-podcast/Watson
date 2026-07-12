@@ -19,6 +19,7 @@ import { auth } from "./auth";
 import { env, googleEnabled, pushEnabled } from "./env";
 import { meetingsRoutes } from "./meetings";
 import { powersyncRoutes } from "./powersync";
+import { watsonRoutes } from "./watson";
 import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
 
@@ -72,6 +73,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 /** PowerSync — JWKS, token, write upload. */
 app.route("/", powersyncRoutes);
 app.route("/", meetingsRoutes);
+app.route("/", watsonRoutes);
 
 /** Web Push — VAPID klíč, (od)hlášení odběru, test. */
 app.route("/", pushRoutes);
