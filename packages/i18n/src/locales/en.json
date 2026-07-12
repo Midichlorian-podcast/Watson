@@ -1007,5 +1007,8 @@
 	},
 	"deadline": {
 		"byPrefix": "by"
+	},
+	"ctx": {
+		"open": "Open"
 	}
 }

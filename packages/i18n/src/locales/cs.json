@@ -1031,5 +1031,8 @@
 	},
 	"deadline": {
 		"byPrefix": "do"
+	},
+	"ctx": {
+		"open": "Otevřít"
 	}
 }

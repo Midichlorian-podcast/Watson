@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { TaskCard } from "@watson/ui";
 import { type CSSProperties, useState } from "react";
+import { logTaskActivity } from "../lib/activity";
 import { useSession } from "../lib/auth-client";
 import { useBulkSelect } from "../lib/bulkSelect";
 import type { FlowStepInfo } from "../lib/flowSteps";
@@ -12,9 +13,10 @@ import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
 import { deadlineLabel, rowDue, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
-import { pushColumnUndo } from "../lib/undo";
+import { deleteTaskWithUndo, pushColumnUndo } from "../lib/undo";
 import { type SwipeMag, useSwipe } from "../lib/useSwipe";
 import { useWorkspaces } from "../lib/workspace";
+import { type CtxItem, useContextMenu } from "./ContextMenu";
 
 type Pri = 1 | 2 | 3 | 4;
 export type TaskProject = {
@@ -74,7 +76,13 @@ export function TaskItem({
 	// tento/další/celá řada. Testujeme recurrence_rule (engine), ne jen recurrence (lidský
 	// label může být prázdný) — jinak by guard u některých řad neplatil.
 	const isRecurring = Boolean(task.recurrence_rule || task.recurrence);
-	const reschedule = (key: "tomorrow" | "nextMonday") => {
+	const dayLabel = (key: RescheduleKey) =>
+		key === "today"
+			? t("bulk.today")
+			: key === "nextMonday"
+				? t("qsched.nextWeekShort")
+				: t("bulk.tomorrow");
+	const reschedule = (key: RescheduleKey) => {
 		if (isRecurring) {
 			showToast(t("qsched.recurringBlocked"));
 			return;
@@ -82,13 +90,66 @@ export function TaskItem({
 		const iso = rescheduleDate(key);
 		pushColumnUndo("tasks", task.id, "due_date", task.due_date, iso);
 		void powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [iso, task.id]);
-		showToast(
-			t("bulk.movedToast", {
-				count: 1,
-				day: key === "nextMonday" ? t("qsched.nextWeekShort") : t("bulk.tomorrow"),
-			}),
+		showToast(t("bulk.movedToast", { count: 1, day: dayLabel(key) }));
+	};
+	// změna priority (kontextové menu) — per-sloupcový zápis + undo + historie
+	const setPriority = (p: 1 | 2 | 3 | 4) => {
+		if ((task.priority ?? 4) === p) return;
+		pushColumnUndo("tasks", task.id, "priority", task.priority, p);
+		void powerSync.execute("UPDATE tasks SET priority = ? WHERE id = ?", [p, task.id]);
+		void logTaskActivity(
+			task.id,
+			task.project_id,
+			myId,
+			"priority",
+			String(task.priority ?? ""),
+			String(p),
 		);
 	};
+	// Kontextové menu (pravý klik / dvouprstý tap) — parita s mailem; u virtuálních
+	// výskytů řady (id@ISO) jen bezpečné akce (mutace cílí na base řadu jinak).
+	const cm = useContextMenu();
+	const ctxItems: CtxItem[] = selectable
+		? [
+				{ label: t("ctx.open"), onClick: () => open(task.id) },
+				{
+					label: doneTask ? t("swipe.revert") : t("bulk.done"),
+					onClick: () => void toggleTask(task, myId),
+				},
+				{ sep: true },
+				{
+					label: t("detail.due"),
+					disabled: isRecurring,
+					children: (["today", "tomorrow", "nextMonday"] as RescheduleKey[]).map((k) => ({
+						label: dayLabel(k),
+						onClick: () => reschedule(k),
+					})),
+				},
+				{
+					label: t("detail.priority"),
+					children: ([1, 2, 3, 4] as const).map((p) => ({
+						label: `P${p}`,
+						on: (task.priority ?? 4) === p,
+						onClick: () => setPriority(p),
+					})),
+				},
+				{ sep: true },
+				{
+					label: t("bulk.delete"),
+					danger: true,
+					onClick: () => {
+						void deleteTaskWithUndo(task.id);
+						showToast(t("bulk.deletedToast", { count: 1 }));
+					},
+				},
+			]
+		: [
+				{ label: t("ctx.open"), onClick: () => open(task.id) },
+				{
+					label: doneTask ? t("swipe.revert") : t("bulk.done"),
+					onClick: () => void toggleTask(task, myId),
+				},
+			];
 	/** Akce stran — tah je provede při puštění; reverzní stav mění popisek. */
 	const rightActs = [
 		{
@@ -134,6 +195,7 @@ export function TaskItem({
 	return (
 		<li
 			{...swipe.handlers}
+			onContextMenu={(e) => cm.open(e, ctxItems)}
 			style={{
 				position: "relative",
 				touchAction: "pan-y",
