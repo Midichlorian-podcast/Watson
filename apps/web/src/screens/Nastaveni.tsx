@@ -33,7 +33,18 @@ type Member = {
 	job: string | null;
 	role: string;
 	isOwner: boolean;
+	/** Oblasti odpovědnosti v prostoru (comma-separated) — pro AI směrování a přehled. */
+	areas: string | null;
+	/** Krátký popis role člověka v prostoru. */
+	bio: string | null;
 };
+
+/** Rozparsuje comma/newline-separated oblasti na čipy (bez prázdných). */
+const parseAreas = (s: string | null): string[] =>
+	(s ?? "")
+		.split(/[,\n]/)
+		.map((a) => a.trim())
+		.filter(Boolean);
 
 /** Mapuje DB roli + vlastnictví na CS popisek dle design taxonomie (Vlastník/Admin/Člen/Host). */
 function roleLabel(m: Member, t: (k: string) => string) {
@@ -61,6 +72,45 @@ const ROW: CSSProperties = {
 	alignItems: "center",
 	gap: 12,
 	padding: "14px 16px",
+};
+/** Malé vstupní pole (editor oblastí/popisu člena). */
+const INPUT_SM: CSSProperties = {
+	width: "100%",
+	fontSize: 12,
+	color: "var(--w-ink)",
+	background: "var(--w-panel-2)",
+	border: "1px solid var(--w-line)",
+	borderRadius: 8,
+	padding: "6px 9px",
+};
+const BTN_PRIMARY: CSSProperties = {
+	fontSize: 11.5,
+	fontWeight: 600,
+	color: "var(--w-brass-text)",
+	background: "var(--w-brass-soft)",
+	border: "1px solid var(--w-brass)",
+	borderRadius: 8,
+	padding: "5px 12px",
+	cursor: "pointer",
+};
+const BTN_GHOST: CSSProperties = {
+	fontSize: 11.5,
+	fontWeight: 600,
+	color: "var(--w-ink-3)",
+	background: "transparent",
+	border: "1px solid var(--w-line)",
+	borderRadius: 8,
+	padding: "5px 12px",
+	cursor: "pointer",
+};
+/** Čip oblasti odpovědnosti. */
+const AREA_CHIP: CSSProperties = {
+	fontSize: 11,
+	color: "var(--w-ink-2)",
+	border: "1px solid var(--w-line)",
+	borderRadius: 999,
+	padding: "2px 10px",
+	whiteSpace: "nowrap",
 };
 
 /** Nastavení — 1:1 dle design handoffu (sekce Vzhled / Účet / Tým a role / Oznámení). */
@@ -159,6 +209,38 @@ export function Nastaveni() {
 			void refetch();
 		} catch {
 			showToast(t("settings.roleChangeError"));
+		}
+	}
+
+	// Smí přihlášený uživatel spravovat lidi (role + oblasti)? admin/manager/vlastník.
+	const canManage =
+		!!teamWs && (teamWs.role === "admin" || teamWs.role === "manager");
+	// Rozepsaná editace oblastí/popisu jednoho člena (null = zavřeno).
+	const [profileEd, setProfileEd] = useState<{
+		id: string;
+		areas: string;
+		bio: string;
+	} | null>(null);
+
+	async function saveProfile() {
+		if (!profileEd) return;
+		const { id, areas, bio } = profileEd;
+		setProfileEd(null);
+		try {
+			const r = await fetch(
+				`${API_URL}/api/workspaces/${teamWs?.id}/members/${id}/profile`,
+				{
+					method: "PATCH",
+					credentials: "include",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ areas, bio }),
+				},
+			);
+			if (!r.ok) throw new Error("profile");
+			void refetch();
+			showToast("Oblasti uloženy");
+		} catch {
+			showToast("Uložení se nezdařilo");
 		}
 	}
 
@@ -352,17 +434,20 @@ export function Nastaveni() {
 						{(team ?? []).map((m) => {
 							const label = roleLabel(m, t);
 							const menuOpen = openRoleId === m.id;
+							const areaChips = parseAreas(m.areas);
+							const editing = profileEd?.id === m.id;
 							return (
 								<div
 									key={m.id}
 									style={{
 										display: "flex",
-										alignItems: "center",
-										gap: 12,
+										flexDirection: "column",
+										gap: 8,
 										padding: "12px 16px",
 										borderBottom: "1px solid var(--w-line)",
 									}}
 								>
+									<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
 									{/* klik na avatara/jméno → karta člena (Reporty/Lidé, prototyp ř. 920–923) */}
 									<button
 										type="button"
@@ -505,6 +590,66 @@ export function Nastaveni() {
 											</div>
 										)}
 									</div>
+									</div>
+									{/* Oblasti odpovědnosti + popis (per prostor) — čipy; editace pro admina/manažera.
+									    Podklad pro AI směrování „kdo co řeší" i lidský přehled. */}
+									{editing ? (
+										<div style={{ display: "flex", flexDirection: "column", gap: 7, paddingLeft: 48 }}>
+											<input
+												value={profileEd.areas}
+												onChange={(e) => setProfileEd({ ...profileEd, areas: e.target.value })}
+												placeholder="Oblasti — oddělené čárkou (např. granty, smlouvy, provoz)"
+												className="font-body"
+												style={INPUT_SM}
+											/>
+											<textarea
+												value={profileEd.bio}
+												onChange={(e) => setProfileEd({ ...profileEd, bio: e.target.value })}
+												placeholder="Krátký popis — co má na starosti (podklad pro AI směrování)"
+												rows={2}
+												className="font-body"
+												style={{ ...INPUT_SM, resize: "vertical" }}
+											/>
+											<div style={{ display: "flex", gap: 8 }}>
+												<button type="button" onClick={() => void saveProfile()} className="font-display" style={BTN_PRIMARY}>
+													Uložit
+												</button>
+												<button type="button" onClick={() => setProfileEd(null)} className="font-display" style={BTN_GHOST}>
+													Zrušit
+												</button>
+											</div>
+										</div>
+									) : (
+										(areaChips.length > 0 || m.bio || canManage) && (
+											<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, paddingLeft: 48 }}>
+												{areaChips.map((a) => (
+													<span key={a} className="font-body" style={AREA_CHIP}>
+														{a}
+													</span>
+												))}
+												{m.bio && (
+													<span className="font-body" style={{ fontSize: 11, color: "var(--w-ink-3)" }}>
+														{m.bio}
+													</span>
+												)}
+												{areaChips.length === 0 && !m.bio && canManage && (
+													<span className="font-body" style={{ fontSize: 11, color: "var(--w-ink-3)", fontStyle: "italic" }}>
+														Bez oblastí
+													</span>
+												)}
+												{canManage && (
+													<button
+														type="button"
+														onClick={() => setProfileEd({ id: m.id, areas: m.areas ?? "", bio: m.bio ?? "" })}
+														className="font-display hover:text-brass-text"
+														style={{ fontSize: 11, fontWeight: 600, color: "var(--w-ink-3)", background: "transparent", border: "none", cursor: "pointer", padding: "2px 4px" }}
+													>
+														{areaChips.length || m.bio ? "Upravit" : "+ Oblasti"}
+													</button>
+												)}
+											</div>
+										)
+									)}
 								</div>
 							);
 						})}

@@ -260,6 +260,9 @@ app.get("/api/workspaces/:id/members", async (c) => {
 			image: users.image,
 			job: users.jobTitle,
 			role: memberships.role,
+			// Oblasti + popis role v tomto prostoru (pro AI směrování a přehled admina).
+			areas: memberships.areas,
+			bio: memberships.bio,
 		})
 		.from(memberships)
 		.innerJoin(users, eq(memberships.userId, users.id))
@@ -269,6 +272,64 @@ app.get("/api/workspaces/:id/members", async (c) => {
 		workspace: ws ?? null,
 		members: rows.map((r) => ({ ...r, isOwner: ws?.ownerId === r.id })),
 	});
+});
+
+/**
+ * Úprava profilu člena v prostoru — oblasti odpovědnosti (`areas`) a popis (`bio`).
+ * Jen owner/admin/manager (stejný práh jako změna role). Slouží jako podklad pro
+ * AI směrování („kdo co řeší") i lidský přehled. Feedback 2026-07-12.
+ */
+app.patch("/api/workspaces/:id/members/:userId/profile", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const wsId = c.req.param("id");
+	const targetId = c.req.param("userId");
+	const body = (await c.req.json().catch(() => ({}))) as {
+		areas?: string | null;
+		bio?: string | null;
+	};
+
+	const db = getDb();
+	const ws = (
+		await db
+			.select({ ownerId: workspaces.ownerId })
+			.from(workspaces)
+			.where(eq(workspaces.id, wsId))
+	)[0];
+	const mine = (
+		await db
+			.select({ role: memberships.role })
+			.from(memberships)
+			.where(
+				and(
+					eq(memberships.workspaceId, wsId),
+					eq(memberships.userId, session.user.id),
+				),
+			)
+	)[0];
+	const callerRank = ws?.ownerId === session.user.id ? 99 : roleRank(mine?.role);
+	if (callerRank < roleRank("manager"))
+		return c.json({ error: "forbidden" }, 403);
+
+	// Jen dodané klíče (prázdný string → vymazat na null). Oříznuté délky pro rozumné limity.
+	const patch: { areas?: string | null; bio?: string | null } = {};
+	if ("areas" in body)
+		patch.areas = body.areas?.trim() ? body.areas.trim().slice(0, 500) : null;
+	if ("bio" in body)
+		patch.bio = body.bio?.trim() ? body.bio.trim().slice(0, 1000) : null;
+	if (Object.keys(patch).length === 0)
+		return c.json({ error: "nothing to update" }, 400);
+
+	const updated = await db
+		.update(memberships)
+		.set(patch)
+		.where(
+			and(eq(memberships.workspaceId, wsId), eq(memberships.userId, targetId)),
+		)
+		.returning({ id: memberships.id });
+	if (updated.length === 0)
+		return c.json({ error: "not a member" }, 404);
+	return c.json({ ok: true });
 });
 
 /** Změna role člena workspace (jen owner/admin; vlastníkův řádek nelze měnit). */

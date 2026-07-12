@@ -54,6 +54,11 @@ export const memberships = pgTable(
 			.references(() => workspaces.id, { onDelete: "cascade" }),
 		/** R5 — přednastavené role (BEZ plně vlastních rolí). */
 		role: workspaceRoleEnum("role").notNull().default("member"),
+		/** Oblasti odpovědnosti v TOMTO prostoru (comma-separated) — pro AI směrování
+		 *  a lidský přehled „kdo co řeší". Nastavuje admin/manager. */
+		areas: text("areas"),
+		/** Krátký popis role člověka v prostoru (co dělá) — doplněk k users.jobTitle. */
+		bio: text("bio"),
 		createdAt: createdAt(),
 	},
 	(t) => [
