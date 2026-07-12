@@ -7,7 +7,7 @@
  * Bez ANTHROPIC_API_KEY vrací 503 → klient spadne zpět na deterministický Radar.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { and, eq, getDb, memberships } from "@watson/db";
+import { and, eq, getDb, memberships, users } from "@watson/db";
 import { Hono } from "hono";
 import { auth } from "./auth";
 import { aiEnabled, env } from "./env";
@@ -235,6 +235,13 @@ watsonRoutes.post("/api/watson/command", async (c) => {
 	if (!mine) return c.json({ error: "forbidden" }, 403);
 
 	const ctx = body.context ?? {};
+	// Roster s oblastmi bereme AUTORITATIVNĚ ze serveru (ne od klienta) — základ pro
+	// směrování „komu to dát" i validaci řešitele.
+	ctx.members = await db
+		.select({ id: users.id, name: users.name, areas: memberships.areas })
+		.from(memberships)
+		.innerJoin(users, eq(memberships.userId, users.id))
+		.where(eq(memberships.workspaceId, workspaceId));
 	const todayISO = new Date().toISOString().slice(0, 10);
 	const ctxText = JSON.stringify({
 		projects: (ctx.projects ?? []).slice(0, 60),
