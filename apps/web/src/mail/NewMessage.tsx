@@ -5,7 +5,7 @@
  * (audit L-11); externí příjemce dostane marker (audit SEC-02); před odesláním
  * hlídám slíbenou přílohu (Modul 5); šablony TPL nikdy nepřepisují text (L-50).
  */
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { showToast } from "../lib/toast";
 import { MB, TPL } from "./data";
 import { RecipientField, SigBlock, sigIdOf, SigPicker } from "./SigPicker";
@@ -17,6 +17,19 @@ const ATT_RE = /příloh|příloz|přikládám|přiložen|attach/i;
 /** Pořadí identit v řádku Od (prototyp froms, ř. 4205–4208): 4 schránky + osobní. */
 const FROM_IDS = ["info", "granty", "podcast", "studio"] as const;
 const OSOBNI_ADDR = "kosir.adam@gmail.com";
+
+/** Popisek pole composeru (Od / Komu / Předmět) — výrazné verzálky, ať má hlavička strukturu. */
+const FIELD_LABEL: CSSProperties = {
+	fontFamily: "var(--w-font-mono)",
+	fontWeight: 600,
+	fontSize: 10,
+	letterSpacing: ".08em",
+	textTransform: "uppercase",
+	color: "var(--ink-2)",
+	width: 52,
+	flex: "none",
+	paddingTop: 2,
+};
 
 /** Adresa vybrané identity (osobní je mimo MB seed). */
 const addrOf = (from: string): string =>
@@ -282,18 +295,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 					paddingBottom: 9,
 				}}
 			>
-				<span
-					style={{
-						fontFamily: "var(--w-font-display)",
-						fontWeight: 600,
-						fontSize: 11,
-						color: "var(--ink-3)",
-						width: 52,
-						flex: "none",
-					}}
-				>
-					Od
-				</span>
+				<span style={FIELD_LABEL}>Od</span>
 				{FROM_IDS.map((id) => (
 					<span
 						key={id}
@@ -372,18 +374,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 					padding: "8px 0",
 				}}
 			>
-				<span
-					style={{
-						fontFamily: "var(--w-font-display)",
-						fontWeight: 600,
-						fontSize: 11,
-						color: "var(--ink-3)",
-						width: 52,
-						flex: "none",
-					}}
-				>
-					Komu
-				</span>
+				<span style={FIELD_LABEL}>Komu</span>
 				<RecipientField
 					value={to}
 					onChange={setTo}
@@ -490,18 +481,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 					padding: "8px 0",
 				}}
 			>
-				<span
-					style={{
-						fontFamily: "var(--w-font-display)",
-						fontWeight: 600,
-						fontSize: 11,
-						color: "var(--ink-3)",
-						width: 52,
-						flex: "none",
-					}}
-				>
-					Předmět
-				</span>
+				<span style={FIELD_LABEL}>Předmět</span>
 				<input
 					value={subj}
 					onChange={(e) => setSubj(e.target.value)}
