@@ -24,7 +24,7 @@ import { useFocusTrap } from "../lib/useFocusTrap";
 import { showToast } from "../lib/toast";
 import { useTheme } from "../layout/useTheme";
 import { MB, P, SLA, TH } from "../mail/data";
-import { SigBlock, SigPicker } from "../mail/SigPicker";
+import { SigBlock, sigIdOf, SigPicker } from "../mail/SigPicker";
 import { useMail } from "../mail/state";
 import { TaskModal } from "../mail/TaskModal";
 
@@ -431,6 +431,12 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 	const [taskOpen, setTaskOpen] = useState(false);
 	// interní diskuse — vstup (sdílený store m.chatX/sendChat jako vlákno)
 	const [chatText, setChatText] = useState("");
+	// Volba podpisu odpovědi PRO TENTO MAIL (per-mail override); null = výchozí dle schránky.
+	const [replySigOverride, setReplySigOverride] = useState<string | null>(null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset jen při změně vlákna
+	useEffect(() => {
+		setReplySigOverride(null);
+	}, [id]);
 	// počet odeslaných před pokusem — nárůst = doopravdy odesláno → zavřít
 	const sentBase = useRef<number | null>(null);
 	const setOv = m.setOv;
@@ -871,7 +877,12 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 				}}
 			/>
 			{/* zvolený podpis na konci mailu — stejný blok jako Nová zpráva/vlákno */}
-			<SigBlock mb={th.personal ? "osobni" : th.mb} />
+			<SigBlock
+				sigId={
+					replySigOverride ??
+					sigIdOf(m.sigChoice, th.personal ? "osobni" : th.mb)
+				}
+			/>
 			{attachedLabel && attachedLabel !== PEEK_ATT_MARK && (
 				<div
 					className="inline-flex items-center"
@@ -995,7 +1006,13 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 				>
 					<ClipSvg />
 				</button>
-				<SigPicker mb={th.personal ? "osobni" : th.mb} />
+				<SigPicker
+					value={
+						replySigOverride ??
+						sigIdOf(m.sigChoice, th.personal ? "osobni" : th.mb)
+					}
+					onChange={setReplySigOverride}
+				/>
 				<span
 					style={{
 						fontFamily: "var(--w-font-body)",

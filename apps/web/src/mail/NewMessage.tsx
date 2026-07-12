@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { showToast } from "../lib/toast";
 import { MB, TPL } from "./data";
-import { RecipientField, SigBlock, SigPicker } from "./SigPicker";
+import { RecipientField, SigBlock, sigIdOf, SigPicker } from "./SigPicker";
 import { useMail } from "./state";
 
 /** Regex „text slibuje přílohu" — shodný se state.checkSend (prototyp ř. 3417). */
@@ -75,6 +75,10 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	const [saved] = useState(loadNewDraft);
 	// výchozí identita info@ (prototyp state.newFrom: 'info', ř. 2284)
 	const [from, setFrom] = useState(saved?.from ?? "info");
+	// Volba podpisu PRO TENTO MAIL (per-mail override). null = řídit se výchozím
+	// podpisem schránky; výběr v composeru přepíše jen tuhle zprávu, ne nastavení.
+	// (efektivní `sigId` + reset se dopočítá pod `const m = useMail()`.)
+	const [sigOverride, setSigOverride] = useState<string | null>(null);
 	const [to, setTo] = useState(saved?.to ?? "");
 	const [cc, setCc] = useState(saved?.cc ?? "");
 	const [bcc, setBcc] = useState(saved?.bcc ?? "");
@@ -90,6 +94,14 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	const taRef = useRef<HTMLTextAreaElement>(null);
 	const tplRef = useRef<HTMLDivElement>(null);
 	const m = useMail();
+
+	// Efektivní podpis composeru: override (per-mail) nebo výchozí dle schránky.
+	const sigId = sigOverride ?? sigIdOf(m.sigChoice, from);
+	// Přepnutí schránky (From) → zpět na její výchozí podpis pro tento mail.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset jen při změně schránky
+	useEffect(() => {
+		setSigOverride(null);
+	}, [from]);
 
 	// Přeposlat z vlákna (m.newMsg.fwd) — předvyplní předmět a citaci; rozepsaný
 	// text se NIKDY nepřepisuje (L-50), proto jen do prázdných polí
@@ -549,7 +561,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 			/>
 
 			{/* blok zvoleného podpisu (vzor Spark) — readonly, při odeslání se přidá k tělu */}
-			<SigBlock mb={from} />
+			<SigBlock sigId={sigId} />
 
 			{/* přílohy — chipy (styl dle taskMV chipu, ř. 2028) */}
 			{atts.length > 0 && (
@@ -787,7 +799,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 						</div>
 					)}
 				</div>
-				<SigPicker mb={from} />
+				<SigPicker value={sigId} onChange={setSigOverride} />
 				<span
 					style={{
 						fontFamily: "var(--w-font-body)",

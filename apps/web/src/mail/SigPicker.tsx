@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useContacts } from "../lib/contacts";
-import { CONTACTS, type MailSig } from "./data";
+import { CONTACTS } from "./data";
 import { useMail } from "./state";
 
 /* ══════════════ Našeptávač příjemce ══════════════ */
@@ -266,13 +266,6 @@ export function RecipientField({
 export const sigIdOf = (sigChoice: Record<string, string>, mb: string): string =>
 	sigChoice[mb] ?? (mb === "osobni" ? "kratky" : "plny");
 
-/** Řádky zvoleného podpisu pro identitu (prázdné pole = bez podpisu). */
-export const sigBodyOf = (
-	sigs: MailSig[],
-	sigChoice: Record<string, string>,
-	mb: string,
-): string[] => sigs.find((s) => s.id === sigIdOf(sigChoice, mb))?.body ?? [];
-
 const CheckSvg = () => (
 	<svg
 		width="12"
@@ -292,10 +285,11 @@ const CheckSvg = () => (
 	</svg>
 );
 
-/** Blok zvoleného podpisu na konci mailu — kreslí ho composer pod editorem. */
-export function SigBlock({ mb }: { mb: string }) {
+/** Blok zvoleného podpisu na konci mailu — kreslí ho composer pod editorem.
+ *  `sigId` je AKTUÁLNÍ volba composeru (per-mail override, default dle schránky). */
+export function SigBlock({ sigId }: { sigId: string }) {
 	const m = useMail();
-	const body = sigBodyOf(m.sigs, m.sigChoice, mb);
+	const body = m.sigs.find((s) => s.id === sigId)?.body ?? [];
 	if (!body.length) return null;
 	return (
 		<div
@@ -318,12 +312,23 @@ export function SigBlock({ mb }: { mb: string }) {
 	);
 }
 
-/** Tlačítko „Podpis" s popoverem výběru (vzor popoveru Šablony v NewMessage). */
-export function SigPicker({ mb }: { mb: string }) {
+/**
+ * Tlačítko „Podpis" s popoverem výběru (vzor popoveru Šablony v NewMessage).
+ * ŘÍZENÉ: `value` = aktuální volba (per-mail), `onChange` ji mění JEN pro tento
+ * rozepsaný mail — výchozí per-schránka se spravuje v Nastavení, tady se
+ * nepřepisuje (uživatel: „volit v composeru, default navázán na schránku").
+ */
+export function SigPicker({
+	value,
+	onChange,
+}: {
+	value: string;
+	onChange: (id: string) => void;
+}) {
 	const m = useMail();
 	const [open, setOpen] = useState(false);
 	const ref = useRef<HTMLDivElement>(null);
-	const cur = sigIdOf(m.sigChoice, mb);
+	const cur = value;
 
 	// klik mimo popover ho zavře (vzor Šablony popover)
 	useEffect(() => {
@@ -392,7 +397,7 @@ export function SigPicker({ mb }: { mb: string }) {
 						<div
 							key={s.id}
 							onClick={() => {
-								m.setSigChoice(mb, s.id);
+								onChange(s.id);
 								setOpen(false);
 							}}
 							data-menuitem
@@ -411,7 +416,8 @@ export function SigPicker({ mb }: { mb: string }) {
 							marginTop: 4,
 						}}
 					>
-						Podpisy spravuješ v Nastavení → Podpisy. Volba se pamatuje per identita.
+						Podpisy spravuješ v Nastavení → Podpisy. Tady volíš jen pro tento mail
+						(výchozí se řídí schránkou).
 					</div>
 				</div>
 			)}

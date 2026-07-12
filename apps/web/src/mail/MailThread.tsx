@@ -12,7 +12,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
 import { showToast } from "../lib/toast";
 import { MB, P, SLA, STL, TPL } from "./data";
 import { HostPreview } from "./HostPreview";
-import { RecipientField, SigBlock, SigPicker } from "./SigPicker";
+import { RecipientField, SigBlock, sigIdOf, SigPicker } from "./SigPicker";
 import { useMail } from "./state";
 import { TaskModal } from "./TaskModal";
 
@@ -251,6 +251,8 @@ export function MailThread() {
 	const [taskM, setTaskM] = useState(false);
 	const [chatIn, setChatIn] = useState("");
 	const [pend, setPend] = useState<PendSend | null>(null);
+	// Volba podpisu odpovědi PRO TENTO MAIL (per-mail override); null = výchozí dle schránky.
+	const [replySigOverride, setReplySigOverride] = useState<string | null>(null);
 	const headRef = useRef<HTMLDivElement>(null);
 	const compRef = useRef<HTMLDivElement>(null);
 	const rteRef = useRef<HTMLDivElement>(null);
@@ -261,6 +263,12 @@ export function MailThread() {
 
 	const t = m.threads.find((x) => x.id === m.sel);
 	const tid = t?.id;
+
+	// Přepnutí vlákna → podpis odpovědi zpět na výchozí dle schránky.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset jen při změně vlákna
+	useEffect(() => {
+		setReplySigOverride(null);
+	}, [tid]);
 
 	// klik mimo hlavičku zavře popover (vzor MailList vmenu)
 	useEffect(() => {
@@ -3403,7 +3411,13 @@ export function MailThread() {
 								)}
 							</span>
 							{/* výběr podpisu (vzor Spark) — blok se kreslí pod editorem */}
-							<SigPicker mb={t.personal ? "osobni" : t.mb} />
+							<SigPicker
+								value={
+									replySigOverride ??
+									sigIdOf(m.sigChoice, t.personal ? "osobni" : t.mb)
+								}
+								onChange={setReplySigOverride}
+							/>
 							<span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} />
 							<span
 								onClick={() => {
@@ -3646,7 +3660,12 @@ export function MailThread() {
 						/>
 
 						{/* blok zvoleného podpisu (vzor Spark) — vybírá se tlačítkem Podpis v toolbaru */}
-						<SigBlock mb={t.personal ? "osobni" : t.mb} />
+						<SigBlock
+						sigId={
+							replySigOverride ??
+							sigIdOf(m.sigChoice, t.personal ? "osobni" : t.mb)
+						}
+					/>
 
 						{/* chip přílohy (prototyp comp.attached, ř. 1312–1320); marker „—" se nekreslí */}
 						{attLabel && attLabel !== ATT_MARK && (
