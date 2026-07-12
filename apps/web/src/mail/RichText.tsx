@@ -16,22 +16,14 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { TEXT_COLORS } from "./colors";
 
 export interface RichTextHandle {
 	insertText: (text: string) => void;
 	focus: () => void;
 }
 
-/** Paleta barev textu — pevná sada čitelná v light i dark (ne volný picker). */
-const COLORS = [
-	{ hex: "var(--w-ink)", css: "#2A2620", label: "Výchozí" },
-	{ hex: "#BE4A34", css: "#BE4A34", label: "Červená" },
-	{ hex: "#C4892A", css: "#C4892A", label: "Oranžová" },
-	{ hex: "#5E8C55", css: "#5E8C55", label: "Zelená" },
-	{ hex: "#3A6EA5", css: "#3A6EA5", label: "Modrá" },
-	{ hex: "#7A5AA6", css: "#7A5AA6", label: "Fialová" },
-	{ hex: "#8C8375", css: "#8C8375", label: "Šedá" },
-];
+const COLORS = TEXT_COLORS;
 
 const TBTN: CSSProperties = {
 	minWidth: 26,

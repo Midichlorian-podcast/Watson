@@ -24,6 +24,7 @@ import { useFocusTrap } from "../lib/useFocusTrap";
 import { showToast } from "../lib/toast";
 import { useTheme } from "../layout/useTheme";
 import { MB, P, SLA, TH } from "../mail/data";
+import { RichText } from "../mail/RichText";
 import { SigBlock, sigIdOf, SigPicker } from "../mail/SigPicker";
 import { useMail } from "../mail/state";
 import { TaskModal } from "../mail/TaskModal";
@@ -479,6 +480,25 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 	// vlastníka lze předat jen lidem s přístupem ke schránce (audit S2, jako vlákno)
 	const people = !th.personal && th.mb ? (MB[th.mb]?.people ?? []) : [];
 	const draftText = m.drafts[id]?.text ?? (th.draft ?? []).join("\n");
+	// Rich-text most: koncept vlákna je PROSTÝ TEXT (sdílený s MailThread), ale editor
+	// je společný RichText (HTML). Držíme lokální HTML, do konceptu ukládáme plain text.
+	const [replyHtml, setReplyHtml] = useState(() =>
+		draftText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>"),
+	);
+	// Přepnutí vlákna → přeseeduj editor z (nového) konceptu.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: seed jen při změně vlákna
+	useEffect(() => {
+		setReplyHtml(draftText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>"));
+	}, [id]);
+	const htmlToPlain = (html: string): string =>
+		html
+			.replace(/<br\s*\/?>/gi, "\n")
+			.replace(/<\/(p|div|li)>/gi, "\n")
+			.replace(/<[^>]*>/g, "")
+			.replace(/&nbsp;/g, " ")
+			.replace(/&lt;/g, "<")
+			.replace(/&amp;/g, "&")
+			.trim();
 	const attachedLabel = m.attached[id];
 	const warnHere = m.warn?.id === id ? m.warn : null;
 	const allMsgs = [...th.msgs, ...(m.sentX[id] ?? [])];
@@ -854,35 +874,20 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 				</div>
 			</div>
 
-			{/* odpověď — STEJNÝ draft store jako vlákno (real-time → Koncepty) */}
+			{/* odpověď — sdílený RichText (formátování + barvy jako Nová zpráva/vlákno);
+			    koncept zůstává prostý text (sdílený store), formát žije v editoru */}
 			<SectionLabel>{t("peek.reply")}</SectionLabel>
-			<textarea
-				value={draftText}
-				onChange={(e) => m.setDraft(id, e.target.value)}
-				rows={4}
-				placeholder={t("peek.replyPh")}
-				style={{
-					width: "100%",
-					boxSizing: "border-box",
-					border: "1px solid var(--line)",
-					background: "var(--panel-2)",
-					color: "var(--ink)",
-					fontFamily: "var(--w-font-body)",
-					borderRadius: 11,
-					padding: "10px 12px",
-					fontSize: 12.5,
-					lineHeight: 1.55,
-					outline: "none",
-					resize: "vertical",
+			<RichText
+				value={replyHtml}
+				onChange={(html) => {
+					setReplyHtml(html);
+					m.setDraft(id, htmlToPlain(html));
 				}}
+				placeholder={t("peek.replyPh")}
+				minHeight={96}
 			/>
 			{/* zvolený podpis na konci mailu — stejný blok jako Nová zpráva/vlákno */}
-			<SigBlock
-				sigId={
-					replySigOverride ??
-					sigIdOf(m.sigChoice, th.personal ? "osobni" : th.mb)
-				}
-			/>
+			<SigBlock sigId={replySigOverride ?? sigIdOf(m.sigChoice, th.personal ? "osobni" : th.mb)} />
 			{attachedLabel && attachedLabel !== PEEK_ATT_MARK && (
 				<div
 					className="inline-flex items-center"
@@ -1007,10 +1012,7 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 					<ClipSvg />
 				</button>
 				<SigPicker
-					value={
-						replySigOverride ??
-						sigIdOf(m.sigChoice, th.personal ? "osobni" : th.mb)
-					}
+					value={replySigOverride ?? sigIdOf(m.sigChoice, th.personal ? "osobni" : th.mb)}
 					onChange={setReplySigOverride}
 				/>
 				<span

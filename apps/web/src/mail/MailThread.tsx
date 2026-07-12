@@ -12,6 +12,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
 import { showToast } from "../lib/toast";
 import { MB, P, SLA, STL, TPL } from "./data";
 import { HostPreview } from "./HostPreview";
+import { TEXT_COLORS } from "./colors";
 import { RecipientField, SigBlock, sigIdOf, SigPicker } from "./SigPicker";
 import { useMail } from "./state";
 import { TaskModal } from "./TaskModal";
@@ -253,6 +254,7 @@ export function MailThread() {
 	const [pend, setPend] = useState<PendSend | null>(null);
 	// Volba podpisu odpovědi PRO TENTO MAIL (per-mail override); null = výchozí dle schránky.
 	const [replySigOverride, setReplySigOverride] = useState<string | null>(null);
+	const [colorPop, setColorPop] = useState(false);
 	const headRef = useRef<HTMLDivElement>(null);
 	const compRef = useRef<HTMLDivElement>(null);
 	const rteRef = useRef<HTMLDivElement>(null);
@@ -3299,6 +3301,63 @@ export function MailThread() {
 							>
 								Tx
 							</span>
+							{/* barva textu — sdílená paleta (parita s Novou zprávou) */}
+							<span style={{ position: "relative", display: "inline-flex" }}>
+								<span
+									onMouseDown={pd}
+									onClick={() => setColorPop((v) => !v)}
+									data-rowbtn
+									data-on={colorPop || undefined}
+									title="Barva textu"
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 800,
+										fontSize: 12,
+									}}
+								>
+									A▾
+								</span>
+								{colorPop && (
+									<div
+										onMouseDown={pd}
+										style={{
+											position: "absolute",
+											bottom: "calc(100% + 8px)",
+											left: 0,
+											zIndex: 52,
+											display: "flex",
+											gap: 5,
+											background: "var(--panel)",
+											border: "1px solid var(--line)",
+											borderRadius: 10,
+											boxShadow: "var(--shadow)",
+											padding: 7,
+											animation: "wPop .12s ease",
+										}}
+									>
+										{TEXT_COLORS.map((c) => (
+											<span
+												key={c.css}
+												title={c.label}
+												onClick={() => {
+													rteCmd("styleWithCSS", "true");
+													rteCmd("foreColor", c.css);
+													setColorPop(false);
+												}}
+												style={{
+													width: 18,
+													height: 18,
+													borderRadius: "50%",
+													border: "1px solid var(--line)",
+													background: c.css,
+													cursor: "pointer",
+													flex: "none",
+												}}
+											/>
+										))}
+									</div>
+								)}
+							</span>
 							<span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} />
 							<span style={{ position: "relative", display: "inline-flex" }}>
 								<span
@@ -3412,10 +3471,7 @@ export function MailThread() {
 							</span>
 							{/* výběr podpisu (vzor Spark) — blok se kreslí pod editorem */}
 							<SigPicker
-								value={
-									replySigOverride ??
-									sigIdOf(m.sigChoice, t.personal ? "osobni" : t.mb)
-								}
+								value={replySigOverride ?? sigIdOf(m.sigChoice, t.personal ? "osobni" : t.mb)}
 								onChange={setReplySigOverride}
 							/>
 							<span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} />
@@ -3661,11 +3717,8 @@ export function MailThread() {
 
 						{/* blok zvoleného podpisu (vzor Spark) — vybírá se tlačítkem Podpis v toolbaru */}
 						<SigBlock
-						sigId={
-							replySigOverride ??
-							sigIdOf(m.sigChoice, t.personal ? "osobni" : t.mb)
-						}
-					/>
+							sigId={replySigOverride ?? sigIdOf(m.sigChoice, t.personal ? "osobni" : t.mb)}
+						/>
 
 						{/* chip přílohy (prototyp comp.attached, ř. 1312–1320); marker „—" se nekreslí */}
 						{attLabel && attLabel !== ATT_MARK && (
