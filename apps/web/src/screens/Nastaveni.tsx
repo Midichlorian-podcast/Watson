@@ -5,6 +5,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
 import { signOut, useSession } from "../lib/auth-client";
+import { downloadBackup } from "../lib/backup";
 import { initials } from "../lib/format";
 import { disconnectPowerSync } from "../lib/powersync/db";
 import { showToast } from "../lib/toast";
@@ -222,6 +223,21 @@ export function Nastaveni() {
 		bio: string;
 	} | null>(null);
 
+	// Lokální záloha „o nic nepřijít" — stáhne všechna data do souboru (bez Googlu).
+	const [backingUp, setBackingUp] = useState(false);
+	async function runBackup() {
+		if (backingUp) return;
+		setBackingUp(true);
+		try {
+			const res = await downloadBackup(new Date().toISOString());
+			showToast(`Záloha stažena — ${res.rowCount} položek (${res.filename})`);
+		} catch {
+			showToast("Zálohu se nepodařilo vytvořit");
+		} finally {
+			setBackingUp(false);
+		}
+	}
+
 	async function saveProfile() {
 		if (!profileEd) return;
 		const { id, areas, bio } = profileEd;
@@ -394,6 +410,50 @@ export function Nastaveni() {
 				>
 					{t("common.signOut")}
 				</button>
+			</div>
+
+			{/* ZÁLOHY A PŘIPOJENÍ — lokální stažení funguje hned; Google je volitelná nadstavba */}
+			<div className="font-display" style={{ ...SECTION_LABEL, marginTop: 22 }}>
+				Zálohy a připojení
+			</div>
+			<div style={{ ...CARD, marginBottom: 10 }}>
+				{/* Stáhnout zálohu — reálné, offline, bez Googlu */}
+				<div style={{ ...ROW, justifyContent: "space-between", borderBottom: "1px solid var(--w-line)" }}>
+					<div style={{ minWidth: 0 }}>
+						<div className="font-display" style={{ fontWeight: 700, fontSize: 13.5, color: "var(--w-ink)" }}>
+							Stáhnout zálohu
+						</div>
+						<div className="font-body" style={{ fontSize: 11.5, color: "var(--w-ink-3)", marginTop: 2 }}>
+							Uloží všechna tvoje data (úkoly, projekty, seznamy, cíle, kontakty) do jednoho souboru. Ať o nic nepřijdeš.
+						</div>
+					</div>
+					<button
+						type="button"
+						onClick={() => void runBackup()}
+						disabled={backingUp}
+						className="font-display"
+						style={{ ...BTN_PRIMARY, flex: "none", fontSize: 12.5, padding: "7px 16px", opacity: backingUp ? 0.6 : 1, cursor: backingUp ? "default" : "pointer" }}
+					>
+						{backingUp ? "Zálohuji…" : "Stáhnout"}
+					</button>
+				</div>
+				{/* Google Disk — automatická záloha; upřímný stav (vyžaduje propojení s Googlem) */}
+				<div style={{ ...ROW, justifyContent: "space-between" }}>
+					<div style={{ minWidth: 0 }}>
+						<div className="font-display" style={{ fontWeight: 700, fontSize: 13.5, color: "var(--w-ink)" }}>
+							Automatická záloha na Google Disk
+						</div>
+						<div className="font-body" style={{ fontSize: 11.5, color: "var(--w-ink-3)", marginTop: 2 }}>
+							Pravidelné zálohy přímo na tvůj Google Disk. Vyžaduje jednorázové propojení s Googlem (přihlásíš se ve svém účtu) — připravujeme.
+						</div>
+					</div>
+					<span
+						className="font-display"
+						style={{ flex: "none", fontSize: 11, fontWeight: 600, color: "var(--w-ink-3)", border: "1px solid var(--w-line)", borderRadius: 999, padding: "4px 11px" }}
+					>
+						Brzy
+					</span>
+				</div>
 			</div>
 
 			{/* TÝM A ROLE */}
