@@ -64,6 +64,14 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 	const onMailRef = useRef(onMail);
 	onMailRef.current = onMail;
 
+	// Otevřít globální paletu programově (mailová lupa dispatchuje 'watson:open-palette')
+	// — jedno hledání pro navigaci i poštu, žádný samostatný mailový overlay.
+	useEffect(() => {
+		const h = () => setPaletteOpen(true);
+		window.addEventListener("watson:open-palette", h);
+		return () => window.removeEventListener("watson:open-palette", h);
+	}, []);
+
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
 			// Esc zavře tahák/paletu i na /mailu — jinak by je onMail early-return nechal
@@ -73,15 +81,15 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 				else if (paletteOpen) setPaletteOpen(false);
 				return;
 			}
-			if (onMailRef.current) return;
-			// ⌘K / Ctrl+K → command palette (před typing guardem, funguje i z inputu);
-			// zároveň zavře tahák, ať nejsou dvě vrstvy naskládané přes sebe.
+			// ⌘K / Ctrl+K → JEDNA globální paleta (i na /mailu — hledá navigaci i poštu;
+			// mailový search-overlay zrušen, koherence 2026-07-12). Před onMail guardem.
 			if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
 				e.preventDefault();
 				setCheatOpen(false);
 				setPaletteOpen((o) => !o);
 				return;
 			}
+			if (onMailRef.current) return;
 			// Otevřená vrstva (detail úkolu / tahák / ⌘K / modal) blokuje globální
 			// zkratky (q, /, ?, g-nav, ⌘Z), ať neprosáknou na obsah pod vrstvou —
 			// stejně jako kbNav/BulkBar. Esc a ⌘K výše fungují i nad vrstvami záměrně.

@@ -26,7 +26,8 @@ import { MailThread } from "./MailThread";
 import { NastaveniScreen } from "./NastaveniScreen";
 import { NewMessage } from "./NewMessage";
 import { PriruckaScreen } from "./PriruckaScreen";
-import { SearchOverlay } from "./SearchOverlay";
+/** Hledání = JEDNA globální paleta (⌘K). Mailová lupa/⌘F ji jen otevře. */
+const openSearch = () => window.dispatchEvent(new Event("watson:open-palette"));
 import { useMail } from "./state";
 
 const lsSet = (key: string, val: string) => {
@@ -42,7 +43,6 @@ export function MailScreen() {
 	const { theme } = useTheme();
 	const [drawer, setDrawer] = useState(false);
 	// overlaye: hledání (⌘K, /), Nová zpráva (C, Napsat), tahák zkratek (?)
-	const [searchOn, setSearchOn] = useState(false);
 	const [newOn, setNewOn] = useState(false);
 	const [cheatOn, setCheatOn] = useState(false);
 	// Full Screen čtení (lcol) + drag resize seznamu (prototyp rz, ř. 2624–2652)
@@ -105,9 +105,9 @@ export function MailScreen() {
 		showToast("Šířka seznamu vrácena na výchozí.");
 	}, []);
 
-	// ⌘F ve vlákně dispatchuje 'watson-mail:search' → otevři hledání
+	// ⌘F ve vlákně dispatchuje 'watson-mail:search' → otevři globální paletu
 	useEffect(() => {
-		const h = () => setSearchOn(true);
+		const h = () => openSearch();
 		window.addEventListener("watson-mail:search", h);
 		return () => window.removeEventListener("watson-mail:search", h);
 	}, []);
@@ -125,23 +125,7 @@ export function MailScreen() {
 			const typing =
 				!!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 			const mail = mRef.current;
-			// ⌘K → hledání (před typing guardem, funguje i z pole; prototyp ř. 2745)
-			if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
-				e.preventDefault();
-				setSearchOn((v) => {
-					if (v) {
-						// zavírám hledání ⌘K → stejný reset jako Esc/klik-mimo, jinak zůstane
-						// zúžení „ve vlákně" (soTh) i starý dotaz (audit MED MailScreen.tsx:129)
-						mRef.current.setSoTh(null);
-						return false;
-					}
-					// neotvírej hledání nad jiným esc-layerem (Nová zpráva, plovoucí composer),
-					// jinak by jedno Esc zavřelo obě vrstvy naráz (audit LOW MailScreen.tsx:129)
-					if (document.querySelector("[data-esc-layer]")) return false;
-					return true;
-				});
-				return;
-			}
+			// ⌘K řeší GLOBÁLNÍ paleta (koherence 2026-07-12) — mail už vlastní hledání nemá.
 			if (e.key === "Escape") {
 				// overlaye mají vlastní Esc (data-esc-layer) — tady jen nižší vrstvy
 				if (document.querySelector("[data-esc-layer]")) return;
@@ -213,7 +197,7 @@ export function MailScreen() {
 					break;
 				case "/":
 					e.preventDefault();
-					setSearchOn(true);
+					openSearch();
 					break;
 				case "?":
 					setCheatOn(true);
@@ -250,7 +234,7 @@ export function MailScreen() {
 					<>
 						<MailList
 							onOpenDrawer={() => setDrawer(true)}
-							onSearch={() => setSearchOn(true)}
+							onSearch={openSearch}
 							onCompose={() => setNewOn(true)}
 						/>
 						{/* táhlo šířky seznamu + Full Screen čtení (prototyp ř. 779–784) */}
@@ -326,10 +310,8 @@ export function MailScreen() {
 			    navigaci drží jediná aplikační lišta; Napsat + hamburger Schránek
 			    jsou v hlavičce seznamu (onCompose/onOpenDrawer). */}
 
-			{/* overlaye modulu: hledání ⌘K, Nová zpráva, tahák zkratek, plovoucí composer.
-			    SearchOverlay renderujeme podmíněně — zavření (i přes ⌘K) ho odmountuje,
-			    takže se lokální dotaz `q` vždy vyresetuje (audit MED MailScreen.tsx:129). */}
-			{searchOn && <SearchOverlay open onClose={() => setSearchOn(false)} />}
+			{/* overlaye modulu: Nová zpráva, tahák zkratek, plovoucí composer.
+			    Hledání = globální ⌘K paleta (koherence 2026-07-12), ne mailový overlay. */}
 			<NewMessage
 				open={newOn}
 				onClose={() => {

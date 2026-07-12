@@ -7,6 +7,8 @@ import { API_URL } from "../lib/api";
 import { useProjects } from "../lib/projects";
 import { useViewMode } from "../lib/viewMode";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
+import { searchMailThreads } from "../mail/search";
+import { useMail } from "../mail/state";
 
 type Route =
 	| "/"
@@ -49,6 +51,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 	const { activeWs } = useWorkspace();
 	const { data: workspaces } = useWorkspaces();
 	const { setView } = useViewMode();
+	const m = useMail();
 	const [q, setQ] = useState("");
 	const [idx, setIdx] = useState(0);
 
@@ -86,9 +89,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 				[t("nav.tasks"), "/ukoly"],
 				[t("nav.projects"), "/projekty"],
 				[t("nav.lists"), "/seznamy"],
-				...(isLeadership(workspaces)
-					? ([[t("nav.velin"), "/velin"]] as [string, Route][])
-					: []),
+				...(isLeadership(workspaces) ? ([[t("nav.velin"), "/velin"]] as [string, Route][]) : []),
 				[t("nav.goals"), "/cile"],
 				[t("nav.reports"), "/reporty"],
 				[t("nav.flows"), "/postupy"],
@@ -145,10 +146,22 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 			},
 		}));
 		const all = [...screens, ...projItems, ...peopleItems, ...flowItems];
-		return (
-			query ? all.filter((it) => it.label.toLowerCase().includes(query)) : all
-		).slice(0, 14);
-	}, [q, projects, activeWs, team, chains, t]);
+		const navMatches = query ? all.filter((it) => it.label.toLowerCase().includes(query)) : all;
+		// Pošta — STEJNÉ hledání jako dřívější mailový overlay (operátory from:/has:/…),
+		// teď v jedné globální paletě. Klik otevře vlákno v mailu.
+		const mailItems: PalItem[] = searchMailThreads(m, q).map((h) => ({
+			key: `mail:${h.id}`,
+			kind: t("nav.mail"),
+			label: h.subj,
+			initials: h.ini,
+			run: () => {
+				onClose();
+				m.openThread(h.id);
+				void navigate({ to: "/mail" });
+			},
+		}));
+		return [...navMatches.slice(0, 12), ...mailItems].slice(0, 18);
+	}, [q, projects, activeWs, team, chains, t, m, navigate, onClose]);
 
 	const activeIdx = Math.min(idx, Math.max(0, items.length - 1));
 
@@ -198,21 +211,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 							className="shrink-0 text-ink-3"
 							aria-hidden
 						>
-							<circle
-								cx="6.4"
-								cy="6.4"
-								r="4.4"
-								stroke="currentColor"
-								strokeWidth="1.4"
-							/>
-							<line
-								x1="9.6"
-								y1="9.6"
-								x2="13"
-								y2="13"
-								stroke="currentColor"
-								strokeWidth="1.4"
-							/>
+							<circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4" />
+							<line x1="9.6" y1="9.6" x2="13" y2="13" stroke="currentColor" strokeWidth="1.4" />
 						</svg>
 						{/* biome-ignore lint/a11y/noAutofocus: palette input se má fokusovat při otevření */}
 						<input
@@ -236,10 +236,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 					</div>
 					<div style={{ maxHeight: "50vh", overflow: "auto", padding: 6 }}>
 						{items.length === 0 ? (
-							<div
-								className="py-4 text-center font-body text-ink-3"
-								style={{ fontSize: 13 }}
-							>
+							<div className="py-4 text-center font-body text-ink-3" style={{ fontSize: 13 }}>
 								{t("palette.empty")}
 							</div>
 						) : (
@@ -252,8 +249,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 									className="flex w-full items-center gap-2.5 rounded-[9px] text-left"
 									style={{
 										padding: "9px 11px",
-										background:
-											i === activeIdx ? "var(--w-brass-soft)" : "transparent",
+										background: i === activeIdx ? "var(--w-brass-soft)" : "transparent",
 									}}
 								>
 									{it.color && (
