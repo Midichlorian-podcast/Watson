@@ -5,6 +5,7 @@ import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useStat
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
+import { chipStyle } from "./filterUi";
 
 export type SortBy = "smart" | "due" | "priority" | "name" | "project" | "status";
 /** Normalizovaný klíč stavu (prototyp filterStatus: probiha/kontrola/''/hotovo). */
@@ -176,19 +177,7 @@ export function filterTasks<T extends TaskLike>(
 const toggleIn = <T,>(arr: T[], v: T) =>
 	arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
 
-/** Chip vzhled prototypu (data-chip, CSS ř. 88–89): radius 8, on = brass-soft + brass okraj. */
-const chipStyle = (on: boolean, radius: string | number = 8): CSSProperties => ({
-	display: "flex",
-	alignItems: "center",
-	gap: 6,
-	fontSize: 12,
-	padding: "6px 11px",
-	borderRadius: radius,
-	border: `1px solid ${on ? "var(--w-brass)" : "var(--w-line)"}`,
-	color: on ? "var(--w-brass-text)" : "var(--w-ink-2)",
-	background: on ? "var(--w-brass-soft)" : "transparent",
-	cursor: "pointer",
-});
+// Chip filtru je teď sdílený primitiv (components/filterUi) — jeden vzhled i v mailu.
 
 const pillStyle = (on: boolean, fs = 12, pad = "4px 11px"): CSSProperties => ({
 	fontSize: fs,

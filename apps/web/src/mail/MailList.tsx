@@ -22,6 +22,7 @@ import { type SwipeSide, useSwipe } from "../lib/useSwipe";
 import { useWatson } from "../lib/watson";
 import { CtxMenu } from "./CtxMenu";
 import { AI_QUEUE_SEED, type AiQueueItem, GK, MB, P, SLA, STL, type MailThread } from "./data";
+import { chipStyle } from "../components/filterUi";
 import { NotifCenter } from "../components/NotifCenter";
 import { type ThreadEff, useMail } from "./state";
 
@@ -1567,27 +1568,11 @@ export function MailList({
 						{activeF.map((f) => (
 							<span
 								key={f.k}
-								data-chip
-								data-on="true"
-								style={{
-									display: "inline-flex",
-									alignItems: "center",
-									gap: 6,
-									fontFamily: "var(--w-font-display)",
-									fontWeight: 600,
-									fontSize: 11,
-									padding: "3px 6px 3px 10px",
-									borderRadius: 999,
-									border: "1px solid var(--line)",
-								}}
+								onClick={() => m.toggleFilter(f.k)}
+								style={{ ...chipStyle(true, 999), fontSize: 11, padding: "3px 6px 3px 11px" }}
 							>
 								{CHIP_LBL[f.k]}
-								<span
-									onClick={() => m.toggleFilter(f.k)}
-									style={{ cursor: "pointer", fontSize: 12, lineHeight: 1, opacity: 0.7 }}
-								>
-									×
-								</span>
+								<span style={{ fontSize: 12, lineHeight: 1, opacity: 0.7 }}>×</span>
 							</span>
 						))}
 						<span
@@ -1595,13 +1580,15 @@ export function MailList({
 								for (const f of activeF) m.toggleFilter(f.k);
 							}}
 							style={{
-								fontFamily: "var(--w-font-mono)",
-								fontSize: 10,
-								color: "var(--ink-3)",
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 600,
+								fontSize: 11,
+								color: "var(--w-brass-text)",
 								cursor: "pointer",
+								padding: "3px 4px",
 							}}
 						>
-							zrušit vše
+							Vymazat filtry
 						</span>
 					</div>
 				)}
