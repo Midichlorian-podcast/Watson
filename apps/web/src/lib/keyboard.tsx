@@ -29,7 +29,7 @@ const G_ROUTES: Record<
 	a: "/prehled",
 	d: "/",
 	u: "/ukoly",
-	k: "/ukoly", // kalendář = pohled Úkolů (view switcher v headeru)
+	k: "/nadchazejici", // kalendář = jediný celoapkový kalendář (Nadcházející); z Úkolů odebrán
 	n: "/nadchazejici",
 	p: "/projekty",
 	l: "/seznamy",
@@ -99,7 +99,7 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 			}
 			if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
 
-			// g + písmeno → navigace (okno 1200 ms); g+k = kalendářový pohled Úkolů
+			// g + písmeno → navigace (okno 1200 ms); g+k = kalendář Nadcházejících
 			if (gPending.current) {
 				gPending.current = false;
 				clearTimeout(gTimer.current);

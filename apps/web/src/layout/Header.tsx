@@ -1,5 +1,5 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useMemo, useState } from "react";
 import { NotifCenter, useNotifItems } from "../components/NotifCenter";
@@ -25,9 +25,7 @@ export function Header() {
 	const { openAdd } = useAddTask();
 	const { toggleWatson } = useWatson();
 	const path = useRouterState({ select: (s) => s.location.pathname });
-	const active = ALL_NAV.find((n) =>
-		n.to === "/" ? path === "/" : path.startsWith(n.to),
-	);
+	const active = ALL_NAV.find((n) => (n.to === "/" ? path === "/" : path.startsWith(n.to)));
 	const title = active ? t(active.labelKey) : t("app.name");
 	const { theme, toggle } = useTheme();
 	const isDark = theme === "dark";
@@ -54,32 +52,34 @@ export function Header() {
 	const { data: projRows } = usePsQuery<{ id: string; name: string | null }>(
 		"SELECT id, name FROM projects",
 	);
+	// Sloučený modul Úkoly (Dnes/Vše/Zásobník žijí pod „/" i „/ukoly") — záložka z URL.
+	const search = useSearch({ strict: false }) as { tab?: string; projekt?: string };
+	const inTaskModule = path === "/" || path.startsWith("/ukoly");
+	const activeTab = search.tab ?? (path === "/" ? "dnes" : "vse");
 	const isWorkspace =
-		path === "/" ||
-		path.startsWith("/ukoly") ||
-		path.startsWith("/nadchazejici") ||
-		path.startsWith("/oblibene");
+		inTaskModule || path.startsWith("/nadchazejici") || path.startsWith("/oblibene");
 	const subtitle = useMemo(() => {
 		if (!isWorkspace) return null;
 		const tdy = new Date();
 		const tdyISO = `${tdy.getFullYear()}-${String(tdy.getMonth() + 1).padStart(2, "0")}-${String(tdy.getDate()).padStart(2, "0")}`;
 		// Stejné pravidlo viditelnosti jako obrazovky (podúkoly + bez netriážované Schránky).
 		const inboxIds = new Set(
-			(projRows ?? [])
-				.filter((p) => INBOX_NAMES.has(p.name ?? ""))
-				.map((p) => p.id),
+			(projRows ?? []).filter((p) => INBOX_NAMES.has(p.name ?? "")).map((p) => p.id),
 		);
+		// Domovská „/" = záložka Dnes (dnešní + zpožděné, BEZ nedatovaných — ty jsou v Zásobníku).
+		const dnesView = path === "/" && activeTab === "dnes";
+		const backlogView = inTaskModule && activeTab === "zasobnik";
 		const src = (openRows ?? []).filter((r) => {
 			const d = r.due_date ? r.due_date.slice(0, 10) : null;
 			if (!d && r.project_id && inboxIds.has(r.project_id)) return false;
-			if (path === "/")
-				return (r.parent_id ? d !== null : true) && (d === null || d <= tdyISO);
+			if (dnesView)
+				// jen s termínem dnes/zpožděné (nedatované už nepatří do Dnes)
+				return (r.parent_id ? d !== null : true) && d !== null && d <= tdyISO;
+			if (backlogView) return !r.parent_id && d === null; // Zásobník = nedatované top-level
 			if (path.startsWith("/nadchazejici")) return d !== null && d >= tdyISO;
-			return !r.parent_id; // Úkoly: jen top-level
+			return !r.parent_id; // Vše / Oblíbené: jen top-level
 		});
-		const mins = src
-			.filter((r) => r.start_date)
-			.reduce((a, r) => a + (r.duration_min ?? 30), 0);
+		const mins = src.filter((r) => r.start_date).reduce((a, r) => a + (r.duration_min ?? 30), 0);
 		const h = Math.round((mins / 60) * 10) / 10;
 		return {
 			count: src.length,
@@ -91,10 +91,19 @@ export function Header() {
 
 	// Přepínač pohledů Seznam|Nástěnka|Kalendář v headeru (prototyp ř. 277–287; ne Dnes/Schránka).
 	const { view, setView, locked, toggleLock } = useViewMode();
+	// Přepínač pohledů dává smysl jen tam, kde víc pohledů existuje: záložka „Vše"
+	// sloučeného modulu (ne Dnes/Zásobník), Nadcházející a Oblíbené.
 	const showViewSwitcher =
-		path.startsWith("/ukoly") ||
+		(inTaskModule && activeTab === "vse") ||
 		path.startsWith("/nadchazejici") ||
 		path.startsWith("/oblibene");
+	// Kalendář je pohled jen pro Nadcházející/Oblíbené a pro projektový drill-down ve „Vše"
+	// (globální „Vše" ho nemá — duplicita s Nadcházejícími).
+	const allowCalendar =
+		path.startsWith("/nadchazejici") ||
+		path.startsWith("/oblibene") ||
+		(inTaskModule && !!search.projekt);
+	const viewOptions: ViewMode[] = allowCalendar ? ["list", "board", "calendar"] : ["list", "board"];
 	const viewLabels: Record<ViewMode, string> = {
 		list: t("calendar.viewList"),
 		board: t("toolbar.board"),
@@ -135,7 +144,7 @@ export function Header() {
 							padding: 3,
 						}}
 					>
-						{(["list", "board", "calendar"] as const).map((v) => (
+						{viewOptions.map((v) => (
 							<button
 								key={v}
 								type="button"
@@ -154,69 +163,57 @@ export function Header() {
 						))}
 					</div>
 					{!isMobile && (
-					<button
-						type="button"
-						onClick={toggleLock}
-						title={t("shell.lockView")}
-						className="flex shrink-0 cursor-pointer items-center justify-center hover:border-brass"
-						style={{
-							width: 32,
-							height: 32,
-							borderRadius: 9,
-							border: `1px solid ${locked ? "var(--w-brass)" : "var(--w-line)"}`,
-							background: locked ? "var(--w-brass-soft)" : "transparent",
-							color: locked ? "var(--w-brass-text)" : "var(--w-ink-2)",
-						}}
-					>
-						{locked ? (
-							<svg
-								width="14"
-								height="14"
-								viewBox="0 0 15 15"
-								fill="none"
-								aria-hidden
-							>
-								<rect
-									x="3"
-									y="7"
-									width="9"
-									height="6"
-									rx="1.5"
-									stroke="currentColor"
-									strokeWidth="1.3"
-								/>
-								<path
-									d="M5 7 V5 A2.5 2.5 0 0 1 10 5 V7"
-									stroke="currentColor"
-									strokeWidth="1.3"
-								/>
-							</svg>
-						) : (
-							<svg
-								width="14"
-								height="14"
-								viewBox="0 0 15 15"
-								fill="none"
-								aria-hidden
-							>
-								<rect
-									x="3"
-									y="7"
-									width="9"
-									height="6"
-									rx="1.5"
-									stroke="currentColor"
-									strokeWidth="1.3"
-								/>
-								<path
-									d="M5 7 V5 A2.5 2.5 0 0 1 9.7 4"
-									stroke="currentColor"
-									strokeWidth="1.3"
-									strokeLinecap="round"
-								/>
-							</svg>
-						)}
-					</button>
+						<button
+							type="button"
+							onClick={toggleLock}
+							title={t("shell.lockView")}
+							className="flex shrink-0 cursor-pointer items-center justify-center hover:border-brass"
+							style={{
+								width: 32,
+								height: 32,
+								borderRadius: 9,
+								border: `1px solid ${locked ? "var(--w-brass)" : "var(--w-line)"}`,
+								background: locked ? "var(--w-brass-soft)" : "transparent",
+								color: locked ? "var(--w-brass-text)" : "var(--w-ink-2)",
+							}}
+						>
+							{locked ? (
+								<svg width="14" height="14" viewBox="0 0 15 15" fill="none" aria-hidden>
+									<rect
+										x="3"
+										y="7"
+										width="9"
+										height="6"
+										rx="1.5"
+										stroke="currentColor"
+										strokeWidth="1.3"
+									/>
+									<path
+										d="M5 7 V5 A2.5 2.5 0 0 1 10 5 V7"
+										stroke="currentColor"
+										strokeWidth="1.3"
+									/>
+								</svg>
+							) : (
+								<svg width="14" height="14" viewBox="0 0 15 15" fill="none" aria-hidden>
+									<rect
+										x="3"
+										y="7"
+										width="9"
+										height="6"
+										rx="1.5"
+										stroke="currentColor"
+										strokeWidth="1.3"
+									/>
+									<path
+										d="M5 7 V5 A2.5 2.5 0 0 1 9.7 4"
+										stroke="currentColor"
+										strokeWidth="1.3"
+										strokeLinecap="round"
+									/>
+								</svg>
+							)}
+						</button>
 					)}
 					{!isMobile && locked && (
 						<span
@@ -259,13 +256,7 @@ export function Header() {
 							className="shrink-0 text-ink-3"
 							aria-hidden
 						>
-							<circle
-								cx="6.4"
-								cy="6.4"
-								r="4.4"
-								stroke="currentColor"
-								strokeWidth="1.4"
-							/>
+							<circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4" />
 							<line
 								x1="9.6"
 								y1="9.6"
@@ -308,11 +299,7 @@ export function Header() {
 				{!searchOpen && (
 					<button
 						type="button"
-						onClick={() =>
-							isWorkspace
-								? setSearchOpen(true)
-								: void navigate({ to: "/hledat" })
-						}
+						onClick={() => (isWorkspace ? setSearchOpen(true) : void navigate({ to: "/hledat" }))}
 						title={t("shell.search")}
 						aria-label={t("shell.search")}
 						className={ICON_BTN_BORDER}
@@ -382,79 +369,61 @@ export function Header() {
 				</div>
 
 				{!isMobile && (
-				<button
-					type="button"
-					onClick={toggle}
-					title={t("shell.theme")}
-					aria-label={t("shell.theme")}
-					className={ICON_BTN_TEXT}
-				>
-					{isDark ? (
-						<svg
-							width="15"
-							height="15"
-							viewBox="0 0 15 15"
-							fill="none"
-							aria-hidden
-						>
-							<circle
-								cx="7.5"
-								cy="7.5"
-								r="3"
-								stroke="currentColor"
-								strokeWidth="1.4"
-							/>
-							<g stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-								<line x1="7.5" y1="1.5" x2="7.5" y2="3" />
-								<line x1="7.5" y1="12" x2="7.5" y2="13.5" />
-								<line x1="1.5" y1="7.5" x2="3" y2="7.5" />
-								<line x1="12" y1="7.5" x2="13.5" y2="7.5" />
-							</g>
-						</svg>
-					) : (
-						<svg
-							width="15"
-							height="15"
-							viewBox="0 0 15 15"
-							fill="none"
-							aria-hidden
-						>
-							<path
-								d="M11.6 8.9 A4.7 4.7 0 1 1 6.1 3.4 A3.7 3.7 0 0 0 11.6 8.9 Z"
-								fill="currentColor"
-							/>
-						</svg>
-					)}
-				</button>
+					<button
+						type="button"
+						onClick={toggle}
+						title={t("shell.theme")}
+						aria-label={t("shell.theme")}
+						className={ICON_BTN_TEXT}
+					>
+						{isDark ? (
+							<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
+								<circle cx="7.5" cy="7.5" r="3" stroke="currentColor" strokeWidth="1.4" />
+								<g stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+									<line x1="7.5" y1="1.5" x2="7.5" y2="3" />
+									<line x1="7.5" y1="12" x2="7.5" y2="13.5" />
+									<line x1="1.5" y1="7.5" x2="3" y2="7.5" />
+									<line x1="12" y1="7.5" x2="13.5" y2="7.5" />
+								</g>
+							</svg>
+						) : (
+							<svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden>
+								<path
+									d="M11.6 8.9 A4.7 4.7 0 1 1 6.1 3.4 A3.7 3.7 0 0 0 11.6 8.9 Z"
+									fill="currentColor"
+								/>
+							</svg>
+						)}
+					</button>
 				)}
 
 				{!isMobile && (
-				<button
-					type="button"
-					onClick={toggleWatson}
-					title={t("shell.assistant")}
-					className="flex h-[34px] items-center rounded-[9px] border border-brass font-display font-bold text-brass-text hover:bg-brass hover:text-white"
-					style={{
-						gap: 7,
-						background: "var(--w-brass-soft)",
-						padding: "0 11px",
-						fontSize: 12.5,
-					}}
-				>
-					<span
-						className="flex items-center justify-center rounded-full"
+					<button
+						type="button"
+						onClick={toggleWatson}
+						title={t("shell.assistant")}
+						className="flex h-[34px] items-center rounded-[9px] border border-brass font-display font-bold text-brass-text hover:bg-brass hover:text-white"
 						style={{
-							width: 16,
-							height: 16,
-							border: "1.6px solid currentColor",
-							fontSize: 9,
-							fontWeight: 800,
+							gap: 7,
+							background: "var(--w-brass-soft)",
+							padding: "0 11px",
+							fontSize: 12.5,
 						}}
 					>
-						W
-					</span>
-					{t("shell.assistant")}
-				</button>
+						<span
+							className="flex items-center justify-center rounded-full"
+							style={{
+								width: 16,
+								height: 16,
+								border: "1.6px solid currentColor",
+								fontSize: 9,
+								fontWeight: 800,
+							}}
+						>
+							W
+						</span>
+						{t("shell.assistant")}
+					</button>
 				)}
 
 				<button

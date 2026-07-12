@@ -278,7 +278,8 @@
 		"daysCount_one": "{{count}} day",
 		"daysCount_other": "{{count}} days",
 		"rescheduledToast_one": "{{count}} overdue task rescheduled",
-		"rescheduledToast_other": "{{count}} overdue tasks rescheduled"
+		"rescheduledToast_other": "{{count}} overdue tasks rescheduled",
+		"backlogCta": "Review the backlog"
 	},
 	"settings": {
 		"appearance": "Appearance",
@@ -1014,5 +1015,16 @@
 	},
 	"ctx": {
 		"open": "Open"
+	},
+	"tasks": {
+		"tabToday": "Today",
+		"tabAll": "All",
+		"tabBacklog": "Backlog"
+	},
+	"zasobnik": {
+		"intro": "Tasks without a date. Give them a date, or leave them for later.",
+		"empty": "The backlog is empty — every task has a date.",
+		"schedule": "Schedule",
+		"scheduledToast": "Task scheduled"
 	}
 }

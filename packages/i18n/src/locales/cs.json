@@ -286,7 +286,8 @@
 		"daysCount_other": "{{count}} dní",
 		"rescheduledToast_one": "{{count}} zpožděný úkol přeplánován",
 		"rescheduledToast_few": "{{count}} zpožděné úkoly přeplánovány",
-		"rescheduledToast_other": "{{count}} zpožděných úkolů přeplánováno"
+		"rescheduledToast_other": "{{count}} zpožděných úkolů přeplánováno",
+		"backlogCta": "Projít zásobník"
 	},
 	"settings": {
 		"appearance": "Vzhled",
@@ -1038,5 +1039,16 @@
 	},
 	"ctx": {
 		"open": "Otevřít"
+	},
+	"tasks": {
+		"tabToday": "Dnes",
+		"tabAll": "Vše",
+		"tabBacklog": "Zásobník"
+	},
+	"zasobnik": {
+		"intro": "Úkoly bez termínu. Přiřaď jim termín, nebo je nech na později.",
+		"empty": "Zásobník je prázdný — všechny úkoly mají termín.",
+		"schedule": "Naplánovat",
+		"scheduledToast": "Úkol naplánován"
 	}
 }

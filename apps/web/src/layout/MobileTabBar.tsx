@@ -6,22 +6,25 @@ import { useWatson } from "../lib/watson";
 import { isLeadership, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
 
-/** Hlavní taby = nejdůležitější moduly Watsonu (feedback 2026-07-11, 2. kolo:
- * Nadcházející je zásadnější než Úkoly): Přehled, Dnes, Mail, Nadcházející. */
+/** Hlavní taby = nejdůležitější moduly Watsonu: Přehled, Úkoly (sloučený modul — otevře
+ * záložku Dnes, aktivní i pro /ukoly), Mail, Nadcházející. `activePrefix` = zvýraznit tab
+ * napříč celým modulem (Dnes/Vše/Zásobník žijí pod „/" i „/ukoly"). */
 const TABS: {
 	to: "/prehled" | "/" | "/mail" | "/nadchazejici";
 	icon: IconName;
 	labelKey: string;
+	/** Další prefix cesty, který má tab také zvýraznit (sloučený modul). */
+	activePrefix?: string;
 }[] = [
 	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
-	{ to: "/", icon: "dnes", labelKey: "nav.today" },
+	{ to: "/", icon: "ukoly", labelKey: "nav.tasks", activePrefix: "/ukoly" },
 	{ to: "/mail", icon: "mail", labelKey: "nav.mail" },
 	{ to: "/nadchazejici", icon: "nadchazejici", labelKey: "nav.upcoming" },
 ];
 
-/** Sekce dostupné přes „Více" (na mobilu není sidebar → jinak nedosažitelné). */
+/** Sekce dostupné přes „Více" (na mobilu není sidebar → jinak nedosažitelné). „Úkoly" už není
+ * zde — je hlavní tab; do modulu (Vše/Zásobník) se vstupuje záložkami uvnitř. */
 const MORE: { to: string; icon: IconName; labelKey: string }[] = [
-	{ to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks" },
 	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
@@ -94,17 +97,12 @@ export function MobileTabBar() {
 										style={{
 											gap: 12,
 											padding: "12px 14px",
-											color: active
-												? "var(--w-brass-text)"
-												: "var(--w-ink)",
+											color: active ? "var(--w-brass-text)" : "var(--w-ink)",
 											background: active ? "var(--w-panel-2)" : undefined,
 										}}
 									>
 										<Icon name={m.icon} size={20} />
-										<span
-											className="font-display font-semibold"
-											style={{ fontSize: 14 }}
-										>
+										<span className="font-display font-semibold" style={{ fontSize: 14 }}>
 											{t(m.labelKey)}
 										</span>
 									</Link>
@@ -119,7 +117,9 @@ export function MobileTabBar() {
 				style={{ zIndex: 41, paddingBottom: "env(safe-area-inset-bottom)" }}
 			>
 				{TABS.map((tab) => {
-					const active = tab.to === "/" ? path === "/" : path.startsWith(tab.to);
+					const active =
+						(tab.to === "/" ? path === "/" : path.startsWith(tab.to)) ||
+						(tab.activePrefix ? path.startsWith(tab.activePrefix) : false);
 					const badge = tab.to === "/mail" ? mailUnread : 0;
 					return (
 						<Link
@@ -157,10 +157,7 @@ export function MobileTabBar() {
 									</span>
 								)}
 							</span>
-							<span
-								className="font-display font-semibold"
-								style={{ fontSize: 10 }}
-							>
+							<span className="font-display font-semibold" style={{ fontSize: 10 }}>
 								{t(tab.labelKey)}
 							</span>
 						</Link>
@@ -173,10 +170,7 @@ export function MobileTabBar() {
 					style={{
 						gap: 3,
 						padding: "9px 0",
-						color:
-							moreOpen || moreActive
-								? "var(--w-brass-text)"
-								: "var(--w-ink-3)",
+						color: moreOpen || moreActive ? "var(--w-brass-text)" : "var(--w-ink-3)",
 					}}
 				>
 					<Icon name="vice" size={20} />

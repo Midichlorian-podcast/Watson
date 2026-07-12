@@ -4,6 +4,7 @@ import { useTranslation } from "@watson/i18n";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "../components/Board";
 import { Calendar } from "../components/CalendarLazy";
+import { RescheduleMenu } from "../components/RescheduleMenu";
 import { TaskItem } from "../components/TaskItem";
 import {
 	DEFAULT_TOOLBAR,
@@ -19,17 +20,25 @@ import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
 import type { TaskRow } from "../lib/powersync/AppSchema";
+import { powerSync } from "../lib/powersync/db";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
+import { showToast } from "../lib/toast";
+import { pushUndo } from "../lib/undo";
 import { useViewMode } from "../lib/viewMode";
 
 /**
- * Úkoly — view modes Seznam | Nástěnka | Kalendář (per-user výchozí v localStorage) +
- * toolbar (Filtr/Řazení/směr/Dokončené) + seznamová klávesová navigace (j/k/Enter/Space/1–4).
+ * Vše — záložka sloučeného modulu Úkoly: inventář top-level úkolů po projektech.
+ * Pohledy Seznam | Nástěnka (per-user výchozí v localStorage) + toolbar
+ * (Filtr/Řazení/směr/Dokončené) + seznamová klávesová navigace (j/k/Enter/Space/1–4).
  * Nástěnka = sloupce dle `statuses` (R9: drop do sloupce s is_done ⇄ completed_at).
+ *
+ * Kalendář z globálního „Vše" ODEBRÁN (duplicita s Nadcházejícími) — když je globální
+ * zámek pohledu = kalendář, spadne na Seznam. V projektovém drill-downu (?projekt=)
+ * kalendář ZŮSTÁVÁ (smysluplný projektový timeline).
  */
-export function Ukoly() {
+export function VseTab() {
 	const { t } = useTranslation();
 	const search = useSearch({ strict: false }) as {
 		projekt?: string;
@@ -40,7 +49,9 @@ export function Ukoly() {
 	const { open } = useTaskDetail();
 	const projDetail = useProjectDetail();
 	const { openAdd } = useAddTask();
-	const { view } = useViewMode();
+	const { view: rawView } = useViewMode();
+	// Globální „Vše": kalendář není pohled (fallback na seznam). Projekt: všechny 3 pohledy.
+	const view = projektId ? rawView : rawView === "calendar" ? "list" : rawView;
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
 	const flowSteps = useFlowSteps();
 
@@ -281,6 +292,126 @@ function KbRow({ selected, children }: { selected: boolean; children: ReactNode 
 			style={selected ? { outline: "2px solid var(--w-brass)", outlineOffset: -1 } : undefined}
 		>
 			{children}
+		</div>
+	);
+}
+
+/**
+ * Zásobník — záložka sloučeného modulu Úkoly: nedatované úkoly (bez termínu) s triage.
+ * Sem nově patří nedatované, které dřív padaly do Dnes. Netriážovaná Schránka (inbox bez
+ * termínu) sem NEpatří — ta se třídí v /schranka. Rychlé přiřazení termínu = RescheduleMenu
+ * na řádku (nedatované úkoly nemají řadu opakování, takže R4 kotva tu nehrozí).
+ */
+export function ZasobnikTab() {
+	const { t } = useTranslation();
+	const projects = useProjects();
+	const flowSteps = useFlowSteps();
+	const { setNavIds } = useTaskDetail();
+	const { q: searchQ } = useListSearch();
+
+	const { data: allTasks } = usePsQuery<TaskRow>(
+		"SELECT * FROM tasks WHERE due_date IS NULL AND completed_at IS NULL ORDER BY priority, created_at",
+	);
+
+	const shown = useMemo(() => {
+		const inboxIds = inboxProjectIds(projects);
+		// Bez termínu, non-inbox, jen top-level (podúkoly bez termínu reprezentuje rodič).
+		return filterByQuery(
+			(allTasks ?? []).filter((x) => !x.parent_id && !isInboxTask(x, inboxIds)),
+			searchQ,
+		);
+	}, [allTasks, projects, searchQ]);
+
+	const groups = useMemo(() => {
+		const m = new Map<string, TaskRow[]>();
+		for (const tk of shown) {
+			const k = tk.project_id ?? "—";
+			const arr = m.get(k);
+			if (arr) arr.push(tk);
+			else m.set(k, [tk]);
+		}
+		const order = new Map(projects.map((p, i) => [p.id, i] as const));
+		return [...m.entries()]
+			.sort(([a], [b]) => (order.get(a) ?? 999) - (order.get(b) ?? 999))
+			.map(([pid, list]) => ({ pid, list }));
+	}, [shown, projects]);
+
+	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+	const projName = (id: string) => projMap.get(id)?.name ?? "—";
+
+	const visualList = useMemo(() => groups.flatMap((g) => g.list), [groups]);
+	useEffect(() => {
+		setNavIds(visualList.map((tk) => tk.id));
+	}, [visualList, setNavIds]);
+	const kbSel = useKbNav(visualList, true);
+
+	// Rychlé přiřazení termínu (triage): zapiš due_date + undo (⌘Z). Nedatované nemají řadu.
+	async function schedule(tk: TaskRow, iso: string) {
+		const prev = tk.due_date;
+		const write = (d: string | null) => async () => {
+			await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [d, tk.id]);
+		};
+		await write(iso)();
+		pushUndo({ undo: write(prev), redo: write(iso) });
+		showToast(t("zasobnik.scheduledToast"));
+	}
+
+	return (
+		<div className="mx-auto max-w-[1080px]" style={{ padding: "10px 22px 90px" }}>
+			<p className="font-body text-ink-3" style={{ padding: "6px 4px 10px", fontSize: 12.5 }}>
+				{t("zasobnik.intro")}
+			</p>
+			{shown.length === 0 ? (
+				<p
+					className="text-center font-body text-ink-3"
+					style={{ padding: "80px 20px", fontSize: 13.5 }}
+				>
+					{t("zasobnik.empty")}
+				</p>
+			) : (
+				groups.map(({ pid, list }) => (
+					<section key={pid}>
+						<div
+							className="flex items-center gap-2.5"
+							style={{ margin: "18px 0 2px", padding: "0 4px" }}
+						>
+							<span className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
+								{projName(pid)}
+							</span>
+							<span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
+								{list.length}
+							</span>
+						</div>
+						<ul>
+							{list.map((tk) => (
+								<div key={tk.id} className="flex items-center" style={{ gap: 8 }}>
+									<div
+										data-kbsel={kbSel === tk.id || undefined}
+										className="min-w-0 flex-1 rounded-xl"
+										style={
+											kbSel === tk.id
+												? { outline: "2px solid var(--w-brass)", outlineOffset: -1 }
+												: undefined
+										}
+									>
+										<TaskItem
+											task={tk}
+											project={projMap.get(tk.project_id ?? "")}
+											flow={flowSteps.get(tk.id)}
+										/>
+									</div>
+									<div className="shrink-0" style={{ paddingRight: 4 }}>
+										<RescheduleMenu
+											anchor={t("zasobnik.schedule")}
+											onPick={(iso) => void schedule(tk, iso)}
+										/>
+									</div>
+								</div>
+							))}
+						</ul>
+					</section>
+				))
+			)}
 		</div>
 	);
 }

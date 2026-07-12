@@ -1,6 +1,6 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { QuickAdd } from "../components/QuickAdd";
@@ -51,8 +51,11 @@ const plusDays = (iso: string, n: number) => {
 /**
  * Dnes — 1:1 dle Cloud Design: Watson strip (brass-soft) + workspace kontext + skupiny
  * „Zpožděné" (s akcí Přeplánovat) a „{datum} · Dnes · {den}". Karty = sdílený TaskCard řádek.
+ *
+ * Záložka „Dnes" sloučeného modulu Úkoly (UkolyShell). Denní ZÁVAZEK = zpožděné + dnešní,
+ * BEZ nedatovaných (ty žijí v záložce Zásobník, ať Dnes nesoutěží se skladem úkolů).
  */
-export function Today() {
+export function DnesTab() {
 	const { t, i18n } = useTranslation();
 	const { data: session } = useSession();
 	const { toggleWatson } = useWatson();
@@ -154,9 +157,11 @@ export function Today() {
 				const d = dayOf(x);
 				return !x.completed_at && d !== null && d < tdy;
 			}),
+			// Nedatované (d === null) do Dnes NEpatří — přesunuly se do záložky Zásobník (triage).
+			// Dnes = jen skutečný dnešek + dnes dokončené zpožděné (ať sekce nezmizí hned po odškrtnutí).
 			today: opn.filter((x) => {
 				const d = dayOf(x);
-				return d === null || d === tdy || (!!x.completed_at && d < tdy);
+				return d === tdy || (!!x.completed_at && d !== null && d < tdy);
 			}),
 		};
 	}, [tasks, tb, tbCtx, flowSteps, wsFilter, projMap, projects, searchQ]);
@@ -425,12 +430,20 @@ export function Today() {
 				<section>
 					<SectionHead label={dateLabel} count={g.today.length} />
 					{g.today.length === 0 ? (
-						<p
-							className="text-center font-body text-ink-3"
-							style={{ padding: "80px 20px", fontSize: 13.5 }}
-						>
-							{t("today.emptyClean")}
-						</p>
+						<div className="text-center" style={{ padding: "80px 20px" }}>
+							<p className="font-body text-ink-3" style={{ fontSize: 13.5 }}>
+								{t("today.emptyClean")}
+							</p>
+							{/* Nedatované teď žijí v Zásobníku — nabídni cestu k triage. */}
+							<Link
+								to="/ukoly"
+								search={{ tab: "zasobnik" }}
+								className="mt-3 inline-block font-display font-semibold text-brass-text hover:underline"
+								style={{ fontSize: 12.5 }}
+							>
+								{t("today.backlogCta")}
+							</Link>
+						</div>
 					) : (
 						<ul>{g.today.map(card)}</ul>
 					)}

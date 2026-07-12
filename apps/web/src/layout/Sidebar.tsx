@@ -110,6 +110,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 	const activeProjekt = useRouterState({
 		select: (s) => (s.location.search as { projekt?: string }).projekt,
 	});
+	// Aktivní záložka sloučeného modulu Úkoly (?tab=) — zvýraznění zanořených řádků.
+	const searchTab = useRouterState({
+		select: (s) => (s.location.search as { tab?: string }).tab,
+	});
 	const projects = useProjects();
 	const userId = session?.user?.id;
 
@@ -163,9 +167,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 			"/schranka": tasks.filter(
 				(t) => t.project_id && inbox.has(t.project_id) && !t.due_date && !t.parent_id,
 			).length,
+			// Dnes = denní závazek: dnes + zpožděné, BEZ nedatovaných (ty jsou v Zásobníku).
 			"/": visible.filter((t) => {
 				const dd = day(t.due_date);
-				return !dd || dd <= today;
+				return dd != null && dd <= today;
 			}).length,
 			// D3 — kánon = filtr obrazovky Nadcházející (>= dnes, viz Nadchazejici.tsx
 			// a Header): dřívější `> dnes` dával jiné číslo než header a obsah.
@@ -173,8 +178,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 				const dd = day(t.due_date);
 				return dd != null && dd >= today;
 			}).length,
-			// Úkoly (seznam) skrývá podúkoly úplně — reprezentuje je ⚏ rodiče.
+			// Úkoly (Vše) skrývá podúkoly úplně — reprezentuje je ⚏ rodiče.
 			"/ukoly": tasks.filter((t) => !t.parent_id && !inboxTask(t)).length,
+			// Zásobník = nedatované (non-inbox, top-level) — akční „dluh triage".
+			zasobnik: visible.filter((t) => !t.due_date).length,
 			"/oblibene/p1": visible.filter((t) => t.priority === 1).length,
 			// Jen skutečně přiřazené (prototyp ř. 3150 — ne autor).
 			"/oblibene/me": visible.filter((t) => assigned.has(t.id)).length,
@@ -185,6 +192,25 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
 	const isActive = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
 	const userName = session?.user?.name ?? "";
+
+	// Sloučený modul Úkoly: „/" = Dnes, „/ukoly" = Vše (i drill-down projektu), „?tab=zasobnik" = Zásobník.
+	const effTab = path === "/" ? "dnes" : activeProjekt ? "vse" : (searchTab ?? "vse");
+	const dnesActive = path === "/";
+	const vseActive = path.startsWith("/ukoly") && effTab === "vse";
+	const zasobnikActive = path.startsWith("/ukoly") && effTab === "zasobnik";
+	// Styl zanořené záložky (Dnes/Zásobník) pod „Úkoly" — indent jako projekty.
+	const subRow = (active: boolean): CSSProperties => ({
+		display: "flex",
+		alignItems: "center",
+		gap: 11,
+		padding: "6px 10px 6px 27px",
+		borderRadius: 9,
+		borderLeft: "3px solid transparent",
+		borderLeftColor: active ? "var(--w-brass)" : "transparent",
+		background: active ? "rgba(255,255,255,.09)" : "transparent",
+		fontWeight: 600,
+		fontSize: 13,
+	});
 
 	return (
 		<aside
@@ -296,27 +322,86 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 					padding: "0 4px",
 				}}
 			>
-				{MAIN_NAV.map((item) => (
-					<Fragment key={item.to}>
-						<NavRow
-							item={item}
-							active={isActive(item.to)}
-							collapsed={collapsed}
-							count={item.count ? counts[item.to] : undefined}
-						/>
-						{/* Velín mezi Reporty a Postupy (prototyp ř. 251–257) — jen pro
-						    vedení (Vlastník/Admin), odznak VEDENÍ */}
-						{item.to === "/reporty" && isLeadership(workspaces) && (
+				{MAIN_NAV.map((item) => {
+					// Sloučený modul Úkoly = jedna položka „Úkoly" (→ Vše) se zanořenými
+					// záložkami Dnes/Zásobník (ne dvě samostatné ploché položky).
+					if (item.to === "/ukoly") {
+						return (
+							<Fragment key={item.to}>
+								<NavRow item={item} active={vseActive} collapsed={collapsed} />
+								{!collapsed && (
+									<>
+										<Link
+											to="/"
+											search={{}}
+											className={`font-display ${
+												dnesActive
+													? "text-[var(--w-sidebar-ink)]"
+													: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
+											}`}
+											style={subRow(dnesActive)}
+										>
+											<span
+												style={{
+													width: 8,
+													height: 8,
+													borderRadius: "50%",
+													flex: "none",
+													background: "var(--w-brass)",
+												}}
+											/>
+											<span style={{ flex: 1, minWidth: 0 }}>{t("nav.today")}</span>
+											{counts["/"] != null && <span style={BADGE}>{counts["/"]}</span>}
+										</Link>
+										<Link
+											to="/ukoly"
+											search={{ tab: "zasobnik" }}
+											className={`font-display ${
+												zasobnikActive
+													? "text-[var(--w-sidebar-ink)]"
+													: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
+											}`}
+											style={subRow(zasobnikActive)}
+										>
+											<span
+												style={{
+													width: 8,
+													height: 8,
+													borderRadius: 2,
+													flex: "none",
+													background: "var(--w-sidebar-ink-2)",
+												}}
+											/>
+											<span style={{ flex: 1, minWidth: 0 }}>{t("tasks.tabBacklog")}</span>
+											{counts.zasobnik != null && <span style={BADGE}>{counts.zasobnik}</span>}
+										</Link>
+									</>
+								)}
+							</Fragment>
+						);
+					}
+					return (
+						<Fragment key={item.to}>
 							<NavRow
-								item={VELIN_NAV}
-								active={isActive("/velin")}
+								item={item}
+								active={isActive(item.to)}
 								collapsed={collapsed}
-								badge={t("velin.badge")}
-								title={t("velin.navTitle")}
+								count={item.count ? counts[item.to] : undefined}
 							/>
-						)}
-					</Fragment>
-				))}
+							{/* Velín mezi Reporty a Postupy (prototyp ř. 251–257) — jen pro
+							    vedení (Vlastník/Admin), odznak VEDENÍ */}
+							{item.to === "/reporty" && isLeadership(workspaces) && (
+								<NavRow
+									item={VELIN_NAV}
+									active={isActive("/velin")}
+									collapsed={collapsed}
+									badge={t("velin.badge")}
+									title={t("velin.navTitle")}
+								/>
+							)}
+						</Fragment>
+					);
+				})}
 
 				{!collapsed && (
 					<>
