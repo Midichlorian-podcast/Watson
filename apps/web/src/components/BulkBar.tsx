@@ -11,6 +11,7 @@ import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { type RescheduleKey, rescheduleDate } from "../lib/reschedule";
 import { useTaskDetail } from "../lib/taskDetail";
+import { logTaskActivity } from "../lib/activity";
 import { toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { deleteTasksWithUndo, pushUndo } from "../lib/undo";
@@ -200,6 +201,16 @@ function Bar() {
 		};
 		const next = prev.map((p) => ({ id: p.id, val: value }));
 		await write(next);
+		// historie hromadné změny (dřív se logoval jen edit v detailu)
+		for (const tk of targets)
+			void logTaskActivity(
+				tk.id,
+				tk.project_id,
+				session?.user?.id,
+				col,
+				String((tk as unknown as Record<string, unknown>)[col] ?? ""),
+				String(value ?? ""),
+			);
 		// undo záznam až PO úspěšném zápisu — selhání nesmí nechat falešný krok v ⌘Z (D9)
 		pushUndo({ undo: () => write(prev), redo: () => write(next) });
 	};
