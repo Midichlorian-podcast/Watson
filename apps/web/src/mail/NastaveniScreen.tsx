@@ -134,7 +134,7 @@ function SigEditor({
 	);
 }
 
-export function NastaveniScreen() {
+export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {}) {
 	const m = useMail();
 	const { theme, toggle } = useTheme();
 	const [nast, setNastRaw] = useState<NastSeed>(cache.nast);
@@ -186,87 +186,97 @@ export function NastaveniScreen() {
 
 	return (
 		<div
-			data-screen-label="Nastavení — Mail"
-			style={{ flex: 1, overflow: "auto", background: "var(--panel-2)" }}
+			data-screen-label={embedded ? undefined : "Nastavení — Mail"}
+			style={embedded ? undefined : { flex: 1, overflow: "auto", background: "var(--panel-2)" }}
 		>
-			<div style={{ maxWidth: 760, margin: "0 auto", padding: "20px 26px 46px" }}>
-				<span
-					data-ghost
-					onClick={() => m.setScr("mail")}
-					style={{
-						display: "inline-flex",
-						alignItems: "center",
-						gap: 6,
-						fontSize: 12,
-						padding: "6px 12px",
-					}}
-				>
-					← Mail
-				</span>
-				<div
-					style={{
-						fontFamily: "var(--w-font-display)",
-						fontWeight: 800,
-						fontSize: 20,
-						color: "var(--ink)",
-						marginTop: 14,
-					}}
-				>
-					Nastavení — Mail
-				</div>
+			<div
+				style={
+					embedded ? undefined : { maxWidth: 760, margin: "0 auto", padding: "20px 26px 46px" }
+				}
+			>
+				{!embedded && (
+					<span
+						data-ghost
+						onClick={() => m.setScr("mail")}
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 6,
+							fontSize: 12,
+							padding: "6px 12px",
+						}}
+					>
+						← Mail
+					</span>
+				)}
+				{!embedded && (
+					<div
+						style={{
+							fontFamily: "var(--w-font-display)",
+							fontWeight: 800,
+							fontSize: 20,
+							color: "var(--ink)",
+							marginTop: 14,
+						}}
+					>
+						Nastavení — Mail
+					</div>
+				)}
 				<div
 					style={{
 						fontFamily: "var(--w-font-body)",
 						fontSize: 12.5,
 						color: "var(--ink-3)",
-						marginTop: 4,
+						marginTop: embedded ? 0 : 4,
 					}}
 				>
 					Osobní volby — platí jen pro tebe, na všech zařízeních.
 				</div>
 
-				{/* ── Vzhled (prototyp ř. 1617–1625) — sdílený motiv aplikace ── */}
-				<div style={{ ...cardStyle, marginTop: 18 }}>
-					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 18px" }}>
-						<span
-							style={{
-								flex: 1,
-								fontFamily: "var(--w-font-display)",
-								fontWeight: 700,
-								fontSize: 13,
-								color: "var(--ink)",
-							}}
-						>
-							Vzhled
-						</span>
-						<span
-							style={{
-								display: "inline-flex",
-								background: "var(--panel-2)",
-								border: "1px solid var(--line)",
-								borderRadius: 999,
-								padding: 2,
-							}}
-						>
+				{/* ── Vzhled — jen samostatně; v globálním Nastavení už motiv sekci má ── */}
+				{!embedded && (
+					<div style={{ ...cardStyle, marginTop: 18 }}>
+						<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 18px" }}>
 							<span
-								onClick={() => theme === "dark" && toggle()}
-								data-tab
-								data-active={theme === "light" || undefined}
-								style={{ ...segTab, fontSize: 11, padding: "4px 13px" }}
+								style={{
+									flex: 1,
+									fontFamily: "var(--w-font-display)",
+									fontWeight: 700,
+									fontSize: 13,
+									color: "var(--ink)",
+								}}
 							>
-								Světlý
+								Vzhled
 							</span>
 							<span
-								onClick={() => theme === "light" && toggle()}
-								data-tab
-								data-active={theme === "dark" || undefined}
-								style={{ ...segTab, fontSize: 11, padding: "4px 13px" }}
+								style={{
+									display: "inline-flex",
+									background: "var(--panel-2)",
+									border: "1px solid var(--line)",
+									borderRadius: 999,
+									padding: 2,
+								}}
 							>
-								Tmavý
+								<span
+									onClick={() => theme === "dark" && toggle()}
+									data-tab
+									data-active={theme === "light" || undefined}
+									style={{ ...segTab, fontSize: 11, padding: "4px 13px" }}
+								>
+									Světlý
+								</span>
+								<span
+									onClick={() => theme === "light" && toggle()}
+									data-tab
+									data-active={theme === "dark" || undefined}
+									style={{ ...segTab, fontSize: 11, padding: "4px 13px" }}
+								>
+									Tmavý
+								</span>
 							</span>
-						</span>
+						</div>
 					</div>
-				</div>
+				)}
 
 				{/* ── Notifikace (prototyp ř. 1627–1651) ── */}
 				<div style={cardStyle}>

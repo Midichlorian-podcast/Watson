@@ -6,6 +6,7 @@ import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
 import { signOut, useSession } from "../lib/auth-client";
 import { downloadBackup } from "../lib/backup";
+import { NastaveniScreen as MailSettings } from "../mail/NastaveniScreen";
 import { initials } from "../lib/format";
 import { disconnectPowerSync } from "../lib/powersync/db";
 import { showToast } from "../lib/toast";
@@ -214,8 +215,7 @@ export function Nastaveni() {
 	}
 
 	// Smí přihlášený uživatel spravovat lidi (role + oblasti)? admin/manager/vlastník.
-	const canManage =
-		!!teamWs && (teamWs.role === "admin" || teamWs.role === "manager");
+	const canManage = !!teamWs && (teamWs.role === "admin" || teamWs.role === "manager");
 	// Rozepsaná editace oblastí/popisu jednoho člena (null = zavřeno).
 	const [profileEd, setProfileEd] = useState<{
 		id: string;
@@ -243,15 +243,12 @@ export function Nastaveni() {
 		const { id, areas, bio } = profileEd;
 		setProfileEd(null);
 		try {
-			const r = await fetch(
-				`${API_URL}/api/workspaces/${teamWs?.id}/members/${id}/profile`,
-				{
-					method: "PATCH",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ areas, bio }),
-				},
-			);
+			const r = await fetch(`${API_URL}/api/workspaces/${teamWs?.id}/members/${id}/profile`, {
+				method: "PATCH",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ areas, bio }),
+			});
 			if (!r.ok) throw new Error("profile");
 			void refetch();
 			showToast("Oblasti uloženy");
@@ -418,13 +415,26 @@ export function Nastaveni() {
 			</div>
 			<div style={{ ...CARD, marginBottom: 10 }}>
 				{/* Stáhnout zálohu — reálné, offline, bez Googlu */}
-				<div style={{ ...ROW, justifyContent: "space-between", borderBottom: "1px solid var(--w-line)" }}>
+				<div
+					style={{
+						...ROW,
+						justifyContent: "space-between",
+						borderBottom: "1px solid var(--w-line)",
+					}}
+				>
 					<div style={{ minWidth: 0 }}>
-						<div className="font-display" style={{ fontWeight: 700, fontSize: 13.5, color: "var(--w-ink)" }}>
+						<div
+							className="font-display"
+							style={{ fontWeight: 700, fontSize: 13.5, color: "var(--w-ink)" }}
+						>
 							Stáhnout zálohu
 						</div>
-						<div className="font-body" style={{ fontSize: 11.5, color: "var(--w-ink-3)", marginTop: 2 }}>
-							Uloží všechna tvoje data (úkoly, projekty, seznamy, cíle, kontakty) do jednoho souboru. Ať o nic nepřijdeš.
+						<div
+							className="font-body"
+							style={{ fontSize: 11.5, color: "var(--w-ink-3)", marginTop: 2 }}
+						>
+							Uloží všechna tvoje data (úkoly, projekty, seznamy, cíle, kontakty) do jednoho
+							souboru. Ať o nic nepřijdeš.
 						</div>
 					</div>
 					<button
@@ -432,7 +442,14 @@ export function Nastaveni() {
 						onClick={() => void runBackup()}
 						disabled={backingUp}
 						className="font-display"
-						style={{ ...BTN_PRIMARY, flex: "none", fontSize: 12.5, padding: "7px 16px", opacity: backingUp ? 0.6 : 1, cursor: backingUp ? "default" : "pointer" }}
+						style={{
+							...BTN_PRIMARY,
+							flex: "none",
+							fontSize: 12.5,
+							padding: "7px 16px",
+							opacity: backingUp ? 0.6 : 1,
+							cursor: backingUp ? "default" : "pointer",
+						}}
 					>
 						{backingUp ? "Zálohuji…" : "Stáhnout"}
 					</button>
@@ -440,20 +457,44 @@ export function Nastaveni() {
 				{/* Google Disk — automatická záloha; upřímný stav (vyžaduje propojení s Googlem) */}
 				<div style={{ ...ROW, justifyContent: "space-between" }}>
 					<div style={{ minWidth: 0 }}>
-						<div className="font-display" style={{ fontWeight: 700, fontSize: 13.5, color: "var(--w-ink)" }}>
+						<div
+							className="font-display"
+							style={{ fontWeight: 700, fontSize: 13.5, color: "var(--w-ink)" }}
+						>
 							Automatická záloha na Google Disk
 						</div>
-						<div className="font-body" style={{ fontSize: 11.5, color: "var(--w-ink-3)", marginTop: 2 }}>
-							Pravidelné zálohy přímo na tvůj Google Disk. Vyžaduje jednorázové propojení s Googlem (přihlásíš se ve svém účtu) — připravujeme.
+						<div
+							className="font-body"
+							style={{ fontSize: 11.5, color: "var(--w-ink-3)", marginTop: 2 }}
+						>
+							Pravidelné zálohy přímo na tvůj Google Disk. Vyžaduje jednorázové propojení s Googlem
+							(přihlásíš se ve svém účtu) — připravujeme.
 						</div>
 					</div>
 					<span
 						className="font-display"
-						style={{ flex: "none", fontSize: 11, fontWeight: 600, color: "var(--w-ink-3)", border: "1px solid var(--w-line)", borderRadius: 999, padding: "4px 11px" }}
+						style={{
+							flex: "none",
+							fontSize: 11,
+							fontWeight: 600,
+							color: "var(--w-ink-3)",
+							border: "1px solid var(--w-line)",
+							borderRadius: 999,
+							padding: "4px 11px",
+						}}
 					>
 						Brzy
 					</span>
 				</div>
+			</div>
+
+			{/* POŠTA — mailová nastavení (podpisy, VIP, schránky…) na JEDNOM místě,
+			    ne schovaná uvnitř mailu. Embedded = bez vlastní hlavičky/motivu (ten je výš). */}
+			<div className="font-display" style={{ ...SECTION_LABEL, marginTop: 22 }}>
+				Pošta
+			</div>
+			<div style={{ ...CARD, overflow: "hidden", marginBottom: 10 }}>
+				<MailSettings embedded />
 			</div>
 
 			{/* TÝM A ROLE */}
@@ -508,20 +549,7 @@ export function Nastaveni() {
 									}}
 								>
 									<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-									{/* klik na avatara/jméno → karta člena (Reporty/Lidé, prototyp ř. 920–923) */}
-									<button
-										type="button"
-										onClick={() =>
-											void navigate({
-												to: "/reporty",
-												search: { tab: "lide", clen: m.id },
-											})
-										}
-										className="shrink-0 cursor-pointer"
-									>
-										<Avatar text={initials(m.name)} size={36} bg="var(--w-avatar)" />
-									</button>
-									<div style={{ minWidth: 0, flex: 1 }}>
+										{/* klik na avatara/jméno → karta člena (Reporty/Lidé, prototyp ř. 920–923) */}
 										<button
 											type="button"
 											onClick={() =>
@@ -530,131 +558,146 @@ export function Nastaveni() {
 													search: { tab: "lide", clen: m.id },
 												})
 											}
-											className="cursor-pointer font-display hover:text-brass-text"
-											style={{
-												fontWeight: 700,
-												fontSize: 13.5,
-												color: "var(--w-ink)",
-											}}
+											className="shrink-0 cursor-pointer"
 										>
-											{m.name}
+											<Avatar text={initials(m.name)} size={36} bg="var(--w-avatar)" />
 										</button>
-										<div
-											className="font-body"
-											style={{
-												fontSize: 11.5,
-												color: "var(--w-ink-3)",
-												overflow: "hidden",
-												textOverflow: "ellipsis",
-												whiteSpace: "nowrap",
-											}}
-										>
-											{m.job ? `${m.job} · ${m.email}` : m.email}
-										</div>
-									</div>
-									<div
-										ref={menuOpen ? roleMenuRef : undefined}
-										style={{ position: "relative", flex: "none" }}
-									>
-										<button
-											type="button"
-											onClick={() => !m.isOwner && setOpenRoleId(menuOpen ? null : m.id)}
-											className="font-display"
-											style={{
-												display: "inline-flex",
-												alignItems: "center",
-												gap: 5,
-												fontWeight: 600,
-												fontSize: 11.5,
-												borderRadius: 999,
-												padding: "4px 10px 4px 11px",
-												cursor: m.isOwner ? "default" : "pointer",
-												background: m.isOwner ? "var(--w-brass-soft)" : "var(--w-panel-2)",
-												border: `1px solid ${m.isOwner ? "var(--w-brass)" : "var(--w-line)"}`,
-												color: m.isOwner ? "var(--w-brass-text)" : "var(--w-ink-2)",
-											}}
-										>
-											{label}
-											<svg
-												width="9"
-												height="9"
-												viewBox="0 0 10 10"
-												style={{ opacity: 0.7 }}
-												aria-hidden
-											>
-												<path
-													d="M2 3.5 L5 6.5 L8 3.5"
-													stroke="currentColor"
-													strokeWidth="1.3"
-													fill="none"
-													strokeLinecap="round"
-													strokeLinejoin="round"
-												/>
-											</svg>
-										</button>
-										{menuOpen && (
-											<div
+										<div style={{ minWidth: 0, flex: 1 }}>
+											<button
+												type="button"
+												onClick={() =>
+													void navigate({
+														to: "/reporty",
+														search: { tab: "lide", clen: m.id },
+													})
+												}
+												className="cursor-pointer font-display hover:text-brass-text"
 												style={{
-													position: "absolute",
-													top: 30,
-													right: 0,
-													width: 148,
-													background: "var(--w-card)",
-													border: "1px solid var(--w-line)",
-													borderRadius: 11,
-													boxShadow: "var(--w-shadow)",
-													zIndex: 6,
-													padding: 5,
+													fontWeight: 700,
+													fontSize: 13.5,
+													color: "var(--w-ink)",
 												}}
 											>
-												{(
-													[
-														["admin", t("settings.roleAdmin")],
-														["member", t("settings.roleMember")],
-														["guest", t("settings.roleGuest")],
-													] as const
-												).map(([role, lbl]) => (
-													<button
-														key={role}
-														type="button"
-														onClick={() => void setRole(m.id, role)}
-														className="font-body hover:bg-panel-2"
-														style={{
-															display: "flex",
-															alignItems: "center",
-															gap: 7,
-															width: "100%",
-															padding: "7px 9px",
-															borderRadius: 8,
-															cursor: "pointer",
-															background: "transparent",
-															border: "none",
-															fontSize: 12.5,
-															color: "var(--w-ink)",
-															textAlign: "left",
-														}}
-													>
-														<span
+												{m.name}
+											</button>
+											<div
+												className="font-body"
+												style={{
+													fontSize: 11.5,
+													color: "var(--w-ink-3)",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													whiteSpace: "nowrap",
+												}}
+											>
+												{m.job ? `${m.job} · ${m.email}` : m.email}
+											</div>
+										</div>
+										<div
+											ref={menuOpen ? roleMenuRef : undefined}
+											style={{ position: "relative", flex: "none" }}
+										>
+											<button
+												type="button"
+												onClick={() => !m.isOwner && setOpenRoleId(menuOpen ? null : m.id)}
+												className="font-display"
+												style={{
+													display: "inline-flex",
+													alignItems: "center",
+													gap: 5,
+													fontWeight: 600,
+													fontSize: 11.5,
+													borderRadius: 999,
+													padding: "4px 10px 4px 11px",
+													cursor: m.isOwner ? "default" : "pointer",
+													background: m.isOwner ? "var(--w-brass-soft)" : "var(--w-panel-2)",
+													border: `1px solid ${m.isOwner ? "var(--w-brass)" : "var(--w-line)"}`,
+													color: m.isOwner ? "var(--w-brass-text)" : "var(--w-ink-2)",
+												}}
+											>
+												{label}
+												<svg
+													width="9"
+													height="9"
+													viewBox="0 0 10 10"
+													style={{ opacity: 0.7 }}
+													aria-hidden
+												>
+													<path
+														d="M2 3.5 L5 6.5 L8 3.5"
+														stroke="currentColor"
+														strokeWidth="1.3"
+														fill="none"
+														strokeLinecap="round"
+														strokeLinejoin="round"
+													/>
+												</svg>
+											</button>
+											{menuOpen && (
+												<div
+													style={{
+														position: "absolute",
+														top: 30,
+														right: 0,
+														width: 148,
+														background: "var(--w-card)",
+														border: "1px solid var(--w-line)",
+														borderRadius: 11,
+														boxShadow: "var(--w-shadow)",
+														zIndex: 6,
+														padding: 5,
+													}}
+												>
+													{(
+														[
+															["admin", t("settings.roleAdmin")],
+															["member", t("settings.roleMember")],
+															["guest", t("settings.roleGuest")],
+														] as const
+													).map(([role, lbl]) => (
+														<button
+															key={role}
+															type="button"
+															onClick={() => void setRole(m.id, role)}
+															className="font-body hover:bg-panel-2"
 															style={{
-																width: 12,
-																flex: "none",
-																color: "var(--w-brass-text)",
-																fontWeight: 700,
+																display: "flex",
+																alignItems: "center",
+																gap: 7,
+																width: "100%",
+																padding: "7px 9px",
+																borderRadius: 8,
+																cursor: "pointer",
+																background: "transparent",
+																border: "none",
+																fontSize: 12.5,
+																color: "var(--w-ink)",
+																textAlign: "left",
 															}}
 														>
-															{lbl === label ? "✓" : ""}
-														</span>
-														{lbl}
-													</button>
-												))}
-											</div>
-										)}
-									</div>
+															<span
+																style={{
+																	width: 12,
+																	flex: "none",
+																	color: "var(--w-brass-text)",
+																	fontWeight: 700,
+																}}
+															>
+																{lbl === label ? "✓" : ""}
+															</span>
+															{lbl}
+														</button>
+													))}
+												</div>
+											)}
+										</div>
 									</div>
 									{/* Oblasti odpovědnosti + popis (per prostor) — čipy; editace pro admina/manažera.
 									    Podklad pro AI směrování „kdo co řeší" i lidský přehled. */}
 									{editing ? (
-										<div style={{ display: "flex", flexDirection: "column", gap: 7, paddingLeft: 48 }}>
+										<div
+											style={{ display: "flex", flexDirection: "column", gap: 7, paddingLeft: 48 }}
+										>
 											<input
 												value={profileEd.areas}
 												onChange={(e) => setProfileEd({ ...profileEd, areas: e.target.value })}
@@ -671,38 +714,72 @@ export function Nastaveni() {
 												style={{ ...INPUT_SM, resize: "vertical" }}
 											/>
 											<div style={{ display: "flex", gap: 8 }}>
-												<button type="button" onClick={() => void saveProfile()} className="font-display" style={BTN_PRIMARY}>
+												<button
+													type="button"
+													onClick={() => void saveProfile()}
+													className="font-display"
+													style={BTN_PRIMARY}
+												>
 													Uložit
 												</button>
-												<button type="button" onClick={() => setProfileEd(null)} className="font-display" style={BTN_GHOST}>
+												<button
+													type="button"
+													onClick={() => setProfileEd(null)}
+													className="font-display"
+													style={BTN_GHOST}
+												>
 													Zrušit
 												</button>
 											</div>
 										</div>
 									) : (
 										(areaChips.length > 0 || m.bio || canManage) && (
-											<div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, paddingLeft: 48 }}>
+											<div
+												style={{
+													display: "flex",
+													flexWrap: "wrap",
+													alignItems: "center",
+													gap: 6,
+													paddingLeft: 48,
+												}}
+											>
 												{areaChips.map((a) => (
 													<span key={a} className="font-body" style={AREA_CHIP}>
 														{a}
 													</span>
 												))}
 												{m.bio && (
-													<span className="font-body" style={{ fontSize: 11, color: "var(--w-ink-3)" }}>
+													<span
+														className="font-body"
+														style={{ fontSize: 11, color: "var(--w-ink-3)" }}
+													>
 														{m.bio}
 													</span>
 												)}
 												{areaChips.length === 0 && !m.bio && canManage && (
-													<span className="font-body" style={{ fontSize: 11, color: "var(--w-ink-3)", fontStyle: "italic" }}>
+													<span
+														className="font-body"
+														style={{ fontSize: 11, color: "var(--w-ink-3)", fontStyle: "italic" }}
+													>
 														Bez oblastí
 													</span>
 												)}
 												{canManage && (
 													<button
 														type="button"
-														onClick={() => setProfileEd({ id: m.id, areas: m.areas ?? "", bio: m.bio ?? "" })}
+														onClick={() =>
+															setProfileEd({ id: m.id, areas: m.areas ?? "", bio: m.bio ?? "" })
+														}
 														className="font-display hover:text-brass-text"
-														style={{ fontSize: 11, fontWeight: 600, color: "var(--w-ink-3)", background: "transparent", border: "none", cursor: "pointer", padding: "2px 4px" }}
+														style={{
+															fontSize: 11,
+															fontWeight: 600,
+															color: "var(--w-ink-3)",
+															background: "transparent",
+															border: "none",
+															cursor: "pointer",
+															padding: "2px 4px",
+														}}
 													>
 														{areaChips.length || m.bio ? "Upravit" : "+ Oblasti"}
 													</button>
