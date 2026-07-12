@@ -58,7 +58,9 @@
 		"repMonthly": "monthly",
 		"repYearly": "yearly",
 		"deadlinePill": "by {{date}}",
-		"daysPill": "{{n}} days"
+		"daysPill": "{{n}} days",
+		"personUnknown": "@{{q}} · no match",
+		"personAmbiguous": "@{{q}} · multiple matches, pick one"
 	},
 	"sync": {
 		"writeRejected": "Change not saved — you didn't have permission. Reverted."
@@ -191,7 +193,17 @@
 		"nameLabel": "Name",
 		"newError": "Couldn't create the project. Try again.",
 		"newForbidden": "You don't have permission to create a project.",
-		"memberChangeError": "Couldn't save the member change."
+		"memberChangeError": "Couldn't save the member change.",
+		"dueOn": "by {{date}}",
+		"dueToday": "today",
+		"dueRemaining_one": "{{count}} day left",
+		"dueRemaining_other": "{{count}} days left",
+		"dueOverdue_one": "{{count}} day overdue",
+		"dueOverdue_other": "{{count}} days overdue",
+		"members_one": "{{count}} member",
+		"members_other": "{{count}} members",
+		"showActive": "← Active projects",
+		"archivedEmpty": "No archived projects."
 	},
 	"calendar": {
 		"prev": "Previous",
@@ -262,7 +274,9 @@
 		"emptyClean": "Nothing here — clean desk. 🙂",
 		"addTask": "Add task",
 		"daysCount_one": "{{count}} day",
-		"daysCount_other": "{{count}} days"
+		"daysCount_other": "{{count}} days",
+		"rescheduledToast_one": "{{count}} overdue task rescheduled",
+		"rescheduledToast_other": "{{count}} overdue tasks rescheduled"
 	},
 	"settings": {
 		"appearance": "Appearance",
@@ -388,7 +402,8 @@
 		"tomorrow": "Tomorrow",
 		"nextWeek": "Next week",
 		"undo": "Undo",
-		"scheduled": "Scheduled"
+		"scheduled": "Scheduled",
+		"reassigned": "Moved"
 	},
 	"search": {
 		"placeholder": "Search tasks, projects, people, flows, goals…",
@@ -511,7 +526,9 @@
 		"progLabelOntime": "{{real}}% on time",
 		"progSubOntime": "{{onT}} of {{done}} on time",
 		"progLabelCompletion": "{{done}} / {{total}} done",
-		"progSubCompletion": "{{real}}% complete"
+		"progSubCompletion": "{{real}}% complete",
+		"deleteConfirmQ": "Delete this goal?",
+		"deleteConfirm": "Delete"
 	},
 	"reports": {
 		"heading": "Reports",
@@ -554,7 +571,12 @@
 		"overdueChip_one": "{{count}} overdue",
 		"overdueChip_few": "{{count}} overdue",
 		"overdueChip_many": "{{count}} overdue",
-		"overdueChip_other": "{{count}} overdue"
+		"overdueChip_other": "{{count}} overdue",
+		"emptyProjects": "No completed tasks in projects yet",
+		"emptyGoals": "No goals yet",
+		"emptyPeople": "No members yet",
+		"moreTasks_one": "+{{count}} more",
+		"moreTasks_other": "+{{count}} more"
 	},
 	"flows": {
 		"heading": "Flows",
@@ -777,7 +799,8 @@
 		"assignTitle": "Assign item",
 		"assignNone": "Nobody",
 		"tplSuffix": "(template)",
-		"tplCustomDesc": "Custom template"
+		"tplCustomDesc": "Custom template",
+		"assignUnknown": "Assigned (member not in team)"
 	},
 	"prehled": {
 		"chipAll": "All",
@@ -952,7 +975,8 @@
 		"sugAssign": "assign ↵",
 		"sugProject": "project ↵",
 		"min": "min",
-		"durNone": "—"
+		"durNone": "—",
+		"attachDemo": "Attachments aren’t saved yet (demo)."
 	},
 	"auth": {
 		"genericError": "Sign-in failed. Check your details.",
@@ -977,5 +1001,11 @@
 		"nextMonth": "Start of next month",
 		"customDate": "Custom date",
 		"set": "Set"
+	},
+	"board": {
+		"dropForeignColumn": "This column isn't in the task's project."
+	},
+	"deadline": {
+		"byPrefix": "by"
 	}
 }

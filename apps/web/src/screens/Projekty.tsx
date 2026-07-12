@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
 import { initials } from "../lib/format";
+import { inboxProjectIds } from "../lib/inbox";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
@@ -30,17 +31,30 @@ export function Projekty() {
 	const { activeWs } = useWorkspace();
 	const activeWsRow = workspaces?.find((w) => w.id === activeWs);
 	const wsName = activeWsRow?.name ?? "";
-	const shown = useMemo(
+	const [showArchived, setShowArchived] = useState(false);
+	// Archivované projekty (useProjects je odfiltruje) — vlastní dotaz, ať se k nim
+	// dá vůbec dostat a odarchivovat je přes detail (jinak jsou jednosměrná past).
+	const { data: archivedRows } = usePsQuery<ProjectRow>(
+		"SELECT * FROM projects WHERE status = 'archive' ORDER BY name",
+	);
+	const activeShown = useMemo(
 		() => projects.filter((p) => !activeWs || p.workspace_id === activeWs),
 		[projects, activeWs],
 	);
+	const archivedShown = useMemo(
+		() => (archivedRows ?? []).filter((p) => !activeWs || p.workspace_id === activeWs),
+		[archivedRows, activeWs],
+	);
+	const shown = showArchived ? archivedShown : activeShown;
 
 	const { data: taskRows } = usePsQuery<{
 		project_id: string | null;
 		completed_at: string | null;
 		created_at: string | null;
 		due_date: string | null;
-	}>("SELECT project_id, completed_at, created_at, due_date FROM tasks");
+		parent_id: string | null;
+	}>("SELECT project_id, completed_at, created_at, due_date, parent_id FROM tasks");
+	const inboxIds = useMemo(() => inboxProjectIds(projects), [projects]);
 	const { data: memberRows } = usePsQuery<{
 		project_id: string | null;
 		user_id: string | null;
@@ -57,10 +71,7 @@ export function Projekty() {
 			return (await r.json()).members as Member[];
 		},
 	});
-	const nameById = useMemo(
-		() => new Map((team ?? []).map((m) => [m.id, m.name])),
-		[team],
-	);
+	const nameById = useMemo(() => new Map((team ?? []).map((m) => [m.id, m.name])), [team]);
 	const membersByProject = useMemo(() => {
 		const m = new Map<string, string[]>();
 		for (const r of memberRows ?? []) {
@@ -74,6 +85,11 @@ export function Projekty() {
 	const counts = useMemo(() => {
 		const m = new Map<string, Counts>();
 		for (const tk of taskRows ?? []) {
+			// Počty ať odpovídají seznamu úkolů projektu: bez podúkolů (R1 dědí project_id
+			// rodiče) a bez netriážovaných položek schránky (R8, do počtů nepatří).
+			if (tk.parent_id) continue;
+			if (!tk.due_date && !tk.completed_at && tk.project_id && inboxIds.has(tk.project_id))
+				continue;
 			const k = tk.project_id ?? "";
 			const c = m.get(k) ?? { open: 0, done: 0, total: 0 };
 			c.total++;
@@ -82,7 +98,7 @@ export function Projekty() {
 			m.set(k, c);
 		}
 		return m;
-	}, [taskRows]);
+	}, [taskRows, inboxIds]);
 
 	const memberCounts = useMemo(() => {
 		const m = new Map<string, number>();
@@ -111,19 +127,15 @@ export function Projekty() {
 				overdue: 0,
 				bars: Array(8).fill(0),
 			};
-			const doneT = tk.completed_at
-				? new Date(tk.completed_at).getTime()
-				: null;
+			const doneT = tk.completed_at ? new Date(tk.completed_at).getTime() : null;
 			const createdT = tk.created_at ? new Date(tk.created_at).getTime() : null;
 			if (doneT && now - doneT < 7 * DAY) s.weekDone++;
 			if (createdT && now - createdT < 7 * DAY) s.added++;
-			if (!tk.completed_at && tk.due_date && tk.due_date.slice(0, 10) < tdy)
-				s.overdue++;
+			if (!tk.completed_at && tk.due_date && tk.due_date.slice(0, 10) < tdy) s.overdue++;
 			for (const ts of [doneT, createdT]) {
 				if (ts == null) continue;
 				const idx = 7 - Math.floor((now - ts) / DAY);
-				if (idx >= 0 && idx <= 7)
-					s.bars[idx] = Math.min(10, (s.bars[idx] ?? 0) + 2);
+				if (idx >= 0 && idx <= 7) s.bars[idx] = Math.min(10, (s.bars[idx] ?? 0) + 2);
 			}
 			m.set(k, s);
 		}
@@ -133,10 +145,7 @@ export function Projekty() {
 	return (
 		<div className="mx-auto max-w-[1080px] px-[22px] pt-6 pb-24">
 			<header className="flex items-center gap-2.5">
-				<h1
-					className="font-display font-extrabold text-ink"
-					style={{ fontSize: 17 }}
-				>
+				<h1 className="font-display font-extrabold text-ink" style={{ fontSize: 17 }}>
 					{t("projects.heading")}
 				</h1>
 				{wsName && (
@@ -149,18 +158,27 @@ export function Projekty() {
 								background: activeWsRow?.color ?? "var(--w-brass)",
 							}}
 						/>
-						<span
-							className="font-display font-semibold text-ink-3"
-							style={{ fontSize: 13 }}
-						>
+						<span className="font-display font-semibold text-ink-3" style={{ fontSize: 13 }}>
 							{wsName}
 						</span>
 					</>
 				)}
+				{(archivedShown.length > 0 || showArchived) && (
+					<button
+						type="button"
+						onClick={() => setShowArchived((v) => !v)}
+						className="ml-auto rounded-[9px] border border-line font-display font-semibold text-ink-2 hover:border-brass hover:text-brass-text"
+						style={{ padding: "6px 12px", fontSize: 12.5 }}
+					>
+						{showArchived
+							? t("projects.showActive")
+							: `${t("projects.archived")} (${archivedShown.length})`}
+					</button>
+				)}
 				<button
 					type="button"
 					onClick={() => setModalOpen(true)}
-					className="ml-auto flex items-center gap-1.5 rounded-[9px] font-display font-bold text-white hover:brightness-105"
+					className={`flex items-center gap-1.5 rounded-[9px] font-display font-bold text-white hover:brightness-105 ${archivedShown.length > 0 || showArchived ? "" : "ml-auto"}`}
 					style={{
 						background: "var(--w-brass)",
 						padding: "7px 13px",
@@ -174,7 +192,7 @@ export function Projekty() {
 
 			{shown.length === 0 ? (
 				<p className="mt-6 rounded-xl border border-line border-dashed px-4 py-12 text-center text-ink-3 text-sm">
-					{t("projects.empty")}
+					{showArchived ? t("projects.archivedEmpty") : t("projects.empty")}
 				</p>
 			) : (
 				<div
@@ -201,23 +219,14 @@ export function Projekty() {
 			)}
 
 			{modalOpen && activeWs && (
-				<NewProjectModal
-					workspaceId={activeWs}
-					onClose={() => setModalOpen(false)}
-				/>
+				<NewProjectModal workspaceId={activeWs} onClose={() => setModalOpen(false)} />
 			)}
 		</div>
 	);
 }
 
 /** Modal „Nový projekt" — název + barva + typ → POST /api/projects (projekt se přisyncuje). */
-function NewProjectModal({
-	workspaceId,
-	onClose,
-}: {
-	workspaceId: string;
-	onClose: () => void;
-}) {
+function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
 	const { t } = useTranslation();
 	const [name, setName] = useState("");
 	const [color, setColor] = useState<string | null>(null);
@@ -248,9 +257,7 @@ function NewProjectModal({
 				return;
 			}
 			// HTTP chyba (403 host, 400, 500) — modal zůstane otevřený s hláškou.
-			setErr(
-				r.status === 403 ? t("projects.newForbidden") : t("projects.newError"),
-			);
+			setErr(r.status === 403 ? t("projects.newForbidden") : t("projects.newError"));
 		} catch {
 			// Síť/offline výjimka — nezaseknout busy, ukázat hlášku.
 			setErr(t("projects.newError"));
@@ -282,10 +289,7 @@ function NewProjectModal({
 					}}
 				>
 					<div className="mb-3 flex items-center gap-2.5">
-						<span
-							className="flex-1 font-display font-bold text-ink"
-							style={{ fontSize: 16 }}
-						>
+						<span className="flex-1 font-display font-bold text-ink" style={{ fontSize: 16 }}>
 							{t("projects.new")}
 						</span>
 						<button
@@ -430,9 +434,8 @@ function ProjectCard({
 	avatars: { name: string; isOwner: boolean }[];
 	onOpen: () => void;
 }) {
-	const { t } = useTranslation();
-	const pct =
-		counts.total > 0 ? Math.round((counts.done / counts.total) * 100) : 0;
+	const { t, i18n } = useTranslation();
+	const pct = counts.total > 0 ? Math.round((counts.done / counts.total) * 100) : 0;
 	const kind = project.kind ?? "flow";
 	const kindLabel = t(
 		`projects.kind${kind === "goal" ? "Goal" : kind === "cycle" ? "Cycle" : "Flow"}`,
@@ -440,12 +443,21 @@ function ProjectCard({
 	const status = project.status ?? "active";
 	const dd = project.delivery_date;
 	const dueDate =
-		(kind === "goal" || kind === "cycle") && dd
-			? new Date(`${dd.slice(0, 10)}T00:00:00`)
-			: null;
-	const dueDays = dueDate
-		? Math.round((dueDate.getTime() - Date.now()) / 86_400_000)
-		: 0;
+		(kind === "goal" || kind === "cycle") && dd ? new Date(`${dd.slice(0, 10)}T00:00:00`) : null;
+	// Rozdíl KALENDÁŘNÍCH dnů (obě strany na lokální půlnoc) — jinak by termín „dnes"
+	// odpoledne přeskočil na −1 („zbývá -1 dní") kvůli >12 h od půlnoci.
+	let dueDays = 0;
+	if (dueDate) {
+		const today0 = new Date();
+		today0.setHours(0, 0, 0, 0);
+		dueDays = Math.round((dueDate.getTime() - today0.getTime()) / 86_400_000);
+	}
+	const dueLabel =
+		dueDays < 0
+			? t("projects.dueOverdue", { count: -dueDays })
+			: dueDays === 0
+				? t("projects.dueToday")
+				: t("projects.dueRemaining", { count: dueDays });
 	return (
 		<button
 			type="button"
@@ -474,16 +486,19 @@ function ProjectCard({
 							color: dueDays < 0 ? "var(--w-overdue)" : "var(--w-ink-3)",
 						}}
 					>
-						do {dueDate.getDate()}. {dueDate.getMonth() + 1}. · zbývá {dueDays}{" "}
-						dní
+						{t("projects.dueOn", {
+							date: new Intl.DateTimeFormat(i18n.language, {
+								day: "numeric",
+								month: "numeric",
+							}).format(dueDate),
+						})}{" "}
+						· {dueLabel}
 					</span>
 				)}
 			</div>
 
 			<div className="mt-3 flex items-end gap-1.5">
-				<span className="font-mono text-2xl text-navy leading-none">
-					{counts.open}
-				</span>
+				<span className="font-mono text-2xl text-navy leading-none">{counts.open}</span>
 				<span className="mb-0.5 text-ink-3 text-xs">
 					{t("projects.openOfTotal", { total: counts.total })}
 				</span>
@@ -492,10 +507,7 @@ function ProjectCard({
 			{kind === "flow" && week ? (
 				<>
 					{/* aktivita-sparkline 8 dní (prototyp tepNode, ř. 3181) */}
-					<div
-						className="flex items-end"
-						style={{ gap: 3, height: 30, marginTop: 12 }}
-					>
+					<div className="flex items-end" style={{ gap: 3, height: 30, marginTop: 12 }}>
 						{week.bars.map((v, i) => (
 							<span
 								key={`b-${i}`}
@@ -525,9 +537,7 @@ function ProjectCard({
 							↑ {week.added} {t("projects.newUnit")}
 						</span>
 						{week.overdue > 0 && (
-							<span style={{ color: "var(--w-overdue)" }}>
-								⚠ {week.overdue}
-							</span>
+							<span style={{ color: "var(--w-overdue)" }}>⚠ {week.overdue}</span>
 						)}
 					</div>
 				</>
@@ -542,9 +552,7 @@ function ProjectCard({
 						</div>
 						<div className="mt-1 flex items-center justify-between text-[11px] text-ink-3">
 							<span>{t("projects.pctDone", { pct })}</span>
-							{members > 0 && (
-								<span>{t("projects.members", { count: members })}</span>
-							)}
+							{members > 0 && <span>{t("projects.members", { count: members })}</span>}
 						</div>
 					</div>
 				)
@@ -564,9 +572,7 @@ function ProjectCard({
 								background: "var(--w-avatar)",
 								fontSize: 10,
 								marginLeft: i > 0 ? -6 : 0,
-								boxShadow: a.isOwner
-									? "0 0 0 2px var(--w-brass)"
-									: "0 0 0 2px var(--w-card)",
+								boxShadow: a.isOwner ? "0 0 0 2px var(--w-brass)" : "0 0 0 2px var(--w-card)",
 								zIndex: a.isOwner ? 2 : 1,
 							}}
 						>
@@ -574,10 +580,7 @@ function ProjectCard({
 						</span>
 					))}
 					{avatars.length > 4 && (
-						<span
-							className="ml-1.5 font-mono text-ink-3"
-							style={{ fontSize: 10.5 }}
-						>
+						<span className="ml-1.5 font-mono text-ink-3" style={{ fontSize: 10.5 }}>
 							+{avatars.length - 4}
 						</span>
 					)}
@@ -587,25 +590,11 @@ function ProjectCard({
 	);
 }
 
-function StatusBadge({
-	status,
-	t,
-}: {
-	status: string;
-	t: (k: string) => string;
-}) {
+function StatusBadge({ status, t }: { status: string; t: (k: string) => string }) {
 	const map: Record<string, [string, string, string]> = {
 		paused: [t("projects.statusPaused"), "var(--w-panel-2)", "var(--w-ink-2)"],
-		archive: [
-			t("projects.statusArchived"),
-			"var(--w-panel-2)",
-			"var(--w-ink-3)",
-		],
-		done: [
-			t("projects.statusDone"),
-			"var(--w-success-soft)",
-			"var(--w-success-ink)",
-		],
+		archive: [t("projects.statusArchived"), "var(--w-panel-2)", "var(--w-ink-3)"],
+		done: [t("projects.statusDone"), "var(--w-success-soft)", "var(--w-success-ink)"],
 	};
 	const s = map[status];
 	if (!s) return null;

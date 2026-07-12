@@ -6,6 +6,7 @@ import { type CSSProperties, Fragment, useMemo } from "react";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
+import { inboxProjectIds } from "../lib/inbox";
 import { useProjects } from "../lib/projects";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
@@ -150,9 +151,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 		const tasks = openTasks ?? [];
 		const assigned = new Set((myAssignments ?? []).map((a) => a.task_id).filter(Boolean));
 		const today = todayIso();
-		const inbox = new Set(
-			projects.filter((p) => p.name === "Doručené" || p.name === "Inbox").map((p) => p.id),
-		);
+		// Sdílený zdroj názvů schránky (lib/inbox) — ať se počty nerozejdou s obrazovkami.
+		const inbox = inboxProjectIds(projects);
 		const day = (d: string | null) => d?.slice(0, 10) ?? null;
 		// Netriážovaná Schránka (inbox bez termínu) patří jen do počtu /schranka.
 		const inboxTask = (t: { project_id: string | null; due_date: string | null }) =>
@@ -390,8 +390,14 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 											type="button"
 											onClick={() => toggleCollapse(ws.id)}
 											aria-label={ws.name}
-											className="flex"
-											style={{ color: "var(--w-sidebar-ink-2)" }}
+											className="flex items-center"
+											// Klikací cíl ≥24px (SVG je jen 9px): padding zvětší plochu, stejně velký
+											// záporný margin ho vtáhne zpět → šipka i rozestupy řádku beze změny.
+											style={{
+												color: "var(--w-sidebar-ink-2)",
+												padding: 8,
+												margin: -8,
+											}}
 										>
 											<svg
 												width="9"

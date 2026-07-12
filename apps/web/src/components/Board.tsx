@@ -2,13 +2,14 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
 import { useMemo, useState } from "react";
 import { useAddTask } from "../lib/addTask";
-import { advanceChainForTask } from "../lib/chainAdvance";
+import { useSession } from "../lib/auth-client";
 import type { StatusRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
-import { deadlineLabel, rowDue } from "../lib/tasks";
+import { deadlineLabel, rowDue, toggleTask } from "../lib/tasks";
+import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
 
 /**
@@ -32,16 +33,22 @@ function GapLine() {
 /** Tint volitelné barvy úkolu (stejná konvence jako TaskCard/Calendar). */
 const tcTint = (hex: string) => `color-mix(in srgb, ${hex} 12%, var(--w-card))`;
 
-export function Board({ tasks }: { tasks: TaskRow[] }) {
+export function Board({
+	tasks,
+	projectId,
+}: {
+	tasks: TaskRow[];
+	/** Aktivní projekt (filtrovaná nástěnka) — „+ Přidat" pak zakládá do něj, ne do Schránky. */
+	projectId?: string;
+}) {
 	const { t } = useTranslation();
 	const { open } = useTaskDetail();
 	const { openAdd } = useAddTask();
 	const { metaOf } = useRowMeta();
+	const { data: session } = useSession();
+	const uid = session?.user?.id;
 	const projects = useProjects();
-	const projMap = useMemo(
-		() => new Map(projects.map((p) => [p.id, p])),
-		[projects],
-	);
+	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 	const [dragId, setDragId] = useState<string | null>(null);
 	const [overCol, setOverCol] = useState<string | null>(null);
 	// Pozice vkládání v rámci sloupce (prototyp boardOverCard, ř. 2566): id karty + before/after.
@@ -49,18 +56,14 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 		id: string;
 		pos: "b" | "a";
 	} | null>(null);
-	const { data: statuses } = usePsQuery<StatusRow>(
-		"SELECT * FROM statuses ORDER BY position",
-	);
+	const { data: statuses } = usePsQuery<StatusRow>("SELECT * FROM statuses ORDER BY position");
 
 	// Statusy jsou seedované PER PROJEKT (stejné názvy „K udělání/Probíhá/Hotovo"). Board ale může
 	// agregovat úkoly z více projektů → sloupce SLUČÍME podle názvu a drop namapujeme na status
 	// VLASTNÍHO projektu úkolu. Bez toho by Board ukázal N×3 sloupců a drop zapsal cizí status_id (S2).
 	const key = (name: string | null) => (name ?? "").trim().toLowerCase();
 	const { columns, resolveStatus } = useMemo(() => {
-		const projIds = new Set(
-			tasks.map((t) => t.project_id).filter(Boolean) as string[],
-		);
+		const projIds = new Set(tasks.map((t) => t.project_id).filter(Boolean) as string[]);
 		const scoped = (statuses ?? []).filter(
 			(s) => s.name && s.project_id && projIds.has(s.project_id),
 		);
@@ -93,8 +96,7 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 		const colKeyOf = (tk: TaskRow): string => {
 			const own = tk.status_id ? byId.get(tk.status_id) : undefined;
 			if (own) return key(own.name);
-			if (tk.completed_at)
-				return ordered.find((c) => c.is_done)?.key ?? firstCol?.key ?? "";
+			if (tk.completed_at) return ordered.find((c) => c.is_done)?.key ?? firstCol?.key ?? "";
 			return firstCol?.key ?? "";
 		};
 		return {
@@ -109,11 +111,7 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 		};
 	}, [statuses, tasks]);
 
-	const dropTo = async (
-		colKey: string,
-		isDone: boolean,
-		taskId: string | null,
-	) => {
+	const dropTo = async (colKey: string, isDone: boolean, taskId: string | null) => {
 		const id = taskId || dragId;
 		const target = overCard;
 		setDragId(null);
@@ -125,26 +123,25 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 		const wasDone = !!tk.completed_at;
 		// Status VLASTNÍHO projektu úkolu (ne cizí) — anti-korupce cross-project.
 		const statusId = resolveStatus(tk.project_id, colKey);
-		// R9: is_done sloupec ⇄ completed_at (provázané se zaškrtnutím)
-		const prevStatus = tk.status_id;
-		const prevDone = tk.completed_at;
-		const newDone = isDone
-			? (tk.completed_at ?? new Date().toISOString())
-			: null;
-		const writeStatus = async (st: string | null, done: string | null) => {
-			await powerSync.execute(
-				"UPDATE tasks SET status_id = ?, completed_at = ? WHERE id = ?",
-				[st, done, tk.id],
-			);
-		};
-		await writeStatus(statusId, newDone);
-		// ⌘Z vrátí přesun sloupce/stavu na nástěnce (prototyp verzuje každou změnu tasks).
-		pushUndo({
-			undo: () => writeStatus(prevStatus, prevDone),
-			redo: () => writeStatus(statusId, newDone),
-		});
-		// Reorder v rámci sloupce (prototyp boardOrder splice, ř. 2569–2573).
+		// Cizí sloupec (v projektu úkolu neexistuje) by přepsal status_id na null a přeskočil
+		// kartu do 1. sloupce — takový drop odmítni místo tiché ztráty stavu.
+		if (statusId === null && tk.status_id) {
+			showToast(t("board.dropForeignColumn"));
+			return;
+		}
+		const doneChanged = isDone !== wasDone;
+
+		// Reorder v rámci sloupce (prototyp boardOrder splice) — snapshot pořadí dotčených
+		// karet do ⌘Z, aby přeuspořádání šlo vrátit (dřív sort_order v undo chyběl).
 		const col = columns.find((c) => c.col.key === colKey);
+		const writeOrder = async (rows: { id: string; sort: number | null }[]) => {
+			await powerSync.writeTransaction(async (tx) => {
+				for (const r of rows)
+					await tx.execute("UPDATE tasks SET sort_order = ? WHERE id = ?", [r.sort, r.id]);
+			});
+		};
+		let applyOrder: (() => Promise<void>) | null = null;
+		let undoOrder: (() => Promise<void>) | null = null;
 		if (col) {
 			const ids = col.tasks.map((x) => x.id).filter((x) => x !== id);
 			let idx = ids.length;
@@ -153,17 +150,44 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 				if (ti >= 0) idx = target.pos === "b" ? ti : ti + 1;
 			}
 			ids.splice(idx, 0, id);
-			// Lokální atomicita: přepis sort_order všech karet ve sloupci v jedné transakci.
-			await powerSync.writeTransaction(async (tx) => {
-				for (let i = 0; i < ids.length; i++) {
-					await tx.execute("UPDATE tasks SET sort_order = ? WHERE id = ?", [
-						i * 10,
-						ids[i],
-					]);
-				}
-			});
+			const prevOrder = ids.map((cid) => ({
+				id: cid,
+				sort: (cid === id ? tk : col.tasks.find((x) => x.id === cid))?.sort_order ?? null,
+			}));
+			const nextOrder = ids.map((cid, i) => ({ id: cid, sort: i * 10 }));
+			applyOrder = () => writeOrder(nextOrder);
+			undoOrder = () => writeOrder(prevOrder);
 		}
-		if (isDone !== wasDone) await advanceChainForTask(tk.id, isDone);
+
+		if (doneChanged) {
+			// Dokončení řeš přes toggleTask: R2 shared_all (per-osoba účast + odvozené
+			// tasks.completed_at), R4 opakování a postup — vč. vlastního ⌘Z. Board dřív
+			// zapisoval completed_at napřímo a obcházel odvozené dokončení.
+			await toggleTask(tk, uid);
+			if (applyOrder && undoOrder) {
+				await applyOrder();
+				pushUndo({ undo: undoOrder, redo: applyOrder });
+			}
+			return;
+		}
+
+		// Beze změny dokončení = jen přesun sloupce / pořadí → jeden undo (status + sort_order).
+		const prevStatus = tk.status_id;
+		const setStatus = async (st: string | null) => {
+			await powerSync.execute("UPDATE tasks SET status_id = ? WHERE id = ?", [st, tk.id]);
+		};
+		await setStatus(statusId);
+		if (applyOrder) await applyOrder();
+		pushUndo({
+			undo: async () => {
+				await setStatus(prevStatus);
+				if (undoOrder) await undoOrder();
+			},
+			redo: async () => {
+				await setStatus(statusId);
+				if (applyOrder) await applyOrder();
+			},
+		});
 	};
 
 	if (columns.length === 0) {
@@ -175,10 +199,7 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 	}
 
 	return (
-		<div
-			className="flex items-start gap-3.5 overflow-x-auto"
-			style={{ paddingBottom: 90 }}
-		>
+		<div className="flex items-start gap-3.5 overflow-x-auto" style={{ paddingBottom: 90 }}>
 			{columns.map(({ col, tasks: colTasks }) => (
 				<div
 					key={col.key}
@@ -190,11 +211,7 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 					onDragLeave={() => setOverCol((c) => (c === col.key ? null : c))}
 					onDrop={(e) => {
 						e.preventDefault();
-						void dropTo(
-							col.key,
-							col.is_done,
-							e.dataTransfer.getData("text/plain") || null,
-						);
+						void dropTo(col.key, col.is_done, e.dataTransfer.getData("text/plain") || null);
 					}}
 					className="flex flex-col gap-2 rounded-[14px] border bg-panel-2"
 					style={{
@@ -204,14 +221,8 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 						borderColor: overCol === col.key ? "var(--w-brass)" : "var(--w-line)",
 					}}
 				>
-					<div
-						className="flex items-center gap-2"
-						style={{ padding: "2px 4px" }}
-					>
-						<span
-							className="font-display font-bold text-ink"
-							style={{ fontSize: 12.5 }}
-						>
+					<div className="flex items-center gap-2" style={{ padding: "2px 4px" }}>
+						<span className="font-display font-bold text-ink" style={{ fontSize: 12.5 }}>
 							{col.name}
 						</span>
 						<span className="font-mono text-ink-3" style={{ fontSize: 11 }}>
@@ -227,15 +238,9 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 						const dl = deadlineLabel(tk.deadline);
 						// Gap indikátory jen ve sloupci, nad kterým se táhne (prototyp showGap, ř. 3101).
 						const gapBefore =
-							dragId &&
-							overCol === col.key &&
-							overCard?.id === tk.id &&
-							overCard.pos === "b";
+							dragId && overCol === col.key && overCard?.id === tk.id && overCard.pos === "b";
 						const gapAfter =
-							dragId &&
-							overCol === col.key &&
-							overCard?.id === tk.id &&
-							overCard.pos === "a";
+							dragId && overCol === col.key && overCard?.id === tk.id && overCard.pos === "a";
 						return (
 							// biome-ignore lint/a11y/useKeyWithClickEvents: drag karta, klik = detail; klávesnice řeší list view
 							<div key={tk.id} data-gap-wrap style={{ display: "contents" }}>
@@ -257,9 +262,7 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 										setOverCol(col.key);
 										const r = e.currentTarget.getBoundingClientRect();
 										const pos = e.clientY - r.top < r.height / 2 ? "b" : "a";
-										setOverCard((c) =>
-											c?.id === tk.id && c.pos === pos ? c : { id: tk.id, pos },
-										);
+										setOverCard((c) => (c?.id === tk.id && c.pos === pos ? c : { id: tk.id, pos }));
 									}}
 									onClick={() => open(tk.id)}
 									className="cursor-grab rounded-[11px] border bg-card transition-shadow hover:shadow-md"
@@ -283,9 +286,7 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 												height: 8,
 												background: p?.color ?? "var(--w-line)",
 												// CSS ř. 118: tečka projektu na done kartě zešedne.
-												...(done
-													? { filter: "grayscale(1)", opacity: 0.4 }
-													: undefined),
+												...(done ? { filter: "grayscale(1)", opacity: 0.4 } : undefined),
 											}}
 										/>
 										<span
@@ -318,9 +319,7 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 												className="font-mono"
 												style={{
 													fontSize: 11,
-													color: due.overdue
-														? "var(--w-overdue)"
-														: "var(--w-ink-2)",
+													color: due.overdue ? "var(--w-overdue)" : "var(--w-ink-2)",
 												}}
 											>
 												{due.label}
@@ -358,9 +357,7 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 															height: 20,
 															color: "#fff",
 															fontSize: 9,
-															background: a.brass
-																? "var(--w-brass)"
-																: "var(--w-avatar)",
+															background: a.brass ? "var(--w-brass)" : "var(--w-avatar)",
 															boxShadow: "0 0 0 2px var(--w-card)",
 															marginLeft: i > 0 ? -6 : 0,
 														}}
@@ -379,13 +376,11 @@ export function Board({ tasks }: { tasks: TaskRow[] }) {
 					{/* Drop na konec sloupce — čárkovaný indikátor před patičkou (prototyp c.gapEnd, ř. 479). */}
 					{dragId &&
 						overCol === col.key &&
-						!(overCard && colTasks.some((x) => x.id === overCard.id)) && (
-							<GapLine />
-						)}
+						!(overCard && colTasks.some((x) => x.id === overCard.id)) && <GapLine />}
 					{/* „+ Přidat" patička sloupce (prototyp ř. 480–482). */}
 					<button
 						type="button"
-						onClick={() => openAdd()}
+						onClick={() => openAdd(projectId ? { projectId } : undefined)}
 						className="flex cursor-pointer items-center border-none bg-transparent font-display font-semibold text-ink-3 hover:bg-card hover:text-brass-text"
 						style={{
 							gap: 6,

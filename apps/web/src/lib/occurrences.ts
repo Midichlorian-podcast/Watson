@@ -14,8 +14,7 @@ import type { RecurrenceRule } from "./quickadd/types";
 const parseISO = (iso: string) => new Date(`${iso}T00:00:00Z`);
 const toISO = (d: Date) => d.toISOString().slice(0, 10);
 const utc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d));
-const daysInMonth = (y: number, m: number) =>
-	new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
 
 /** ISO číslo týdne (1–53, pondělí = začátek týdne). */
 function isoWeek(d: Date): number {
@@ -29,12 +28,7 @@ function isoWeek(d: Date): number {
 }
 
 /** n-tý `wd` (0=Ne…6=So) v měsíci; nth=-1 = poslední. null když neexistuje (např. 5. pondělí). */
-function nthWeekday(
-	y: number,
-	m: number,
-	nth: number,
-	wd: number,
-): Date | null {
+function nthWeekday(y: number, m: number, nth: number, wd: number): Date | null {
 	if (nth === -1) {
 		const last = daysInMonth(y, m);
 		const back = (utc(y, m, last).getUTCDay() - wd + 7) % 7;
@@ -58,13 +52,10 @@ function seriesAnchor(
 ): Date {
 	if ((kind === "weekly" || kind === "biweekly") && weekday != null) {
 		const fwd = (weekday - base.getUTCDay() + 7) % 7;
-		let a = fwd
-			? utc(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + fwd)
-			: base;
+		let a = fwd ? utc(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + fwd) : base;
 		if (kind === "biweekly" && parity) {
 			const want = parity === "even" ? 0 : 1;
-			if (isoWeek(a) % 2 !== want)
-				a = utc(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate() + 7);
+			if (isoWeek(a) % 2 !== want) a = utc(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate() + 7);
 		}
 		return a;
 	}
@@ -158,7 +149,29 @@ export function expandOccurrences({
 	const anchor = seriesAnchor(parseISO(baseISO), kind, weekday, parity);
 	const res: string[] = [];
 	let idx = doneCount;
-	for (let k = 0, guard = 0; guard < 800 && res.length < cap; k++, guard++) {
+	// Guard 800 je od kotvy — u vzdáleného okna (denně >~2,2 roku) by se vyčerpal dřív, než
+	// lineární krokování dojde k `fromISO`, a řada by zmizela. U uniformních druhů (každý krok
+	// = právě jeden platný výskyt) předpočítáme počáteční `k` skokem k oknu a posuneme `idx`.
+	let k0 = 0;
+	const diff = A.getTime() - anchor.getTime();
+	if (diff > 0) {
+		const dayMs = 86400000;
+		if (kind === "daily") k0 = Math.floor(diff / dayMs);
+		else if (kind === "weekly") k0 = Math.floor(diff / (7 * dayMs));
+		else if (kind === "biweekly") k0 = Math.floor(diff / (14 * dayMs));
+		else if (kind === "monthly")
+			k0 = Math.max(
+				0,
+				(A.getUTCFullYear() - anchor.getUTCFullYear()) * 12 +
+					(A.getUTCMonth() - anchor.getUTCMonth()) -
+					1,
+			);
+		else if (kind === "yearly") k0 = Math.max(0, A.getUTCFullYear() - anchor.getUTCFullYear() - 1);
+		// monthly-day/monthly-nth mají kalendářní díry (null výskyty) → necháme lineárně (800
+		// měsíčních kroků pokryje 66 let, guard je tam nedosažitelný).
+		idx += k0;
+	}
+	for (let k = k0, guard = 0; guard < 800 && res.length < cap; k++, guard++) {
 		const cur = occurrenceAt(anchor, kind, k, { weekday, nth, day });
 		if (!cur) continue; // interval bez platného data (31. v únoru, chybějící 5. výskyt)
 		if (cur.getTime() > B.getTime()) break;
@@ -179,9 +192,7 @@ export function parseOccId(id: string): { taskId: string; iso: string } | null {
 }
 
 /** Vytáhne `kind` opakování z uloženého `recurrence_rule` (JSON). null = neopakuje se. */
-export function recurrenceKind(
-	rule: string | null | undefined,
-): RecurrenceRule["kind"] | null {
+export function recurrenceKind(rule: string | null | undefined): RecurrenceRule["kind"] | null {
 	if (!rule) return null;
 	try {
 		const parsed = JSON.parse(rule) as Partial<RecurrenceRule>;
@@ -208,9 +219,7 @@ export interface ParsedRecurrence {
 }
 
 /** Celé pravidlo opakování vč. strukturovaných polí, konce (endKind/until/count) a showAll. */
-export function parseRecurrenceRule(
-	rule: string | null | undefined,
-): ParsedRecurrence | null {
+export function parseRecurrenceRule(rule: string | null | undefined): ParsedRecurrence | null {
 	if (!rule) return null;
 	try {
 		const p = JSON.parse(rule) as Record<string, unknown>;
@@ -222,10 +231,8 @@ export function parseRecurrenceRule(
 			nth: typeof p.nth === "number" ? p.nth : undefined,
 			day: typeof p.day === "number" ? p.day : undefined,
 			parity: p.parity === "even" || p.parity === "odd" ? p.parity : undefined,
-			until:
-				endKind === "until" && typeof p.until === "string" ? p.until : null,
-			count:
-				endKind === "count" && typeof p.count === "number" ? p.count : null,
+			until: endKind === "until" && typeof p.until === "string" ? p.until : null,
+			count: endKind === "count" && typeof p.count === "number" ? p.count : null,
 			doneCount: typeof p.doneCount === "number" ? p.doneCount : 0,
 			showAll: p.showAll !== false,
 		};

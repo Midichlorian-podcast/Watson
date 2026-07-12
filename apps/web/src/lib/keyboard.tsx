@@ -4,6 +4,7 @@ import { Cheatsheet } from "../components/Cheatsheet";
 import { CommandPalette } from "../components/CommandPalette";
 import { useAddTask } from "./addTask";
 import { useListSearch } from "./listSearch";
+import { useTaskDetail } from "./taskDetail";
 import { redo, undo } from "./undo";
 import { useViewMode } from "./viewMode";
 
@@ -51,6 +52,7 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 	const { openAdd } = useAddTask();
 	const { setView, locked } = useViewMode();
 	const { setOpen: setSearchOpen } = useListSearch();
+	const { openId } = useTaskDetail();
 	const [cheatOpen, setCheatOpen] = useState(false);
 	const [paletteOpen, setPaletteOpen] = useState(false);
 	const gPending = useRef(false);
@@ -64,25 +66,29 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
-			if (onMailRef.current) return;
-			// Esc zavře tahák / paletu (ostatní vrstvy mají vlastní Esc handlery)
+			// Esc zavře tahák/paletu i na /mailu — jinak by je onMail early-return nechal
+			// viset bez možnosti zavření klávesou (ostatní vrstvy nesou vlastní Esc handler).
 			if (e.key === "Escape") {
 				if (cheatOpen) setCheatOpen(false);
 				else if (paletteOpen) setPaletteOpen(false);
 				return;
 			}
-			// ⌘K / Ctrl+K → command palette (před typing guardem, funguje i z inputu)
+			if (onMailRef.current) return;
+			// ⌘K / Ctrl+K → command palette (před typing guardem, funguje i z inputu);
+			// zároveň zavře tahák, ať nejsou dvě vrstvy naskládané přes sebe.
 			if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
 				e.preventDefault();
+				setCheatOpen(false);
 				setPaletteOpen((o) => !o);
 				return;
 			}
+			// Otevřená vrstva (detail úkolu / tahák / ⌘K / modal) blokuje globální
+			// zkratky (q, /, ?, g-nav, ⌘Z), ať neprosáknou na obsah pod vrstvou —
+			// stejně jako kbNav/BulkBar. Esc a ⌘K výše fungují i nad vrstvami záměrně.
+			if (openId || document.querySelector("[data-esc-layer]")) return;
 			const el = document.activeElement as HTMLElement | null;
 			const typing =
-				!!el &&
-				(el.tagName === "INPUT" ||
-					el.tagName === "TEXTAREA" ||
-					el.isContentEditable);
+				!!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 			// ⌘Z / ⌘⇧Z → zpět/vpřed (prototyp ř. 2206; s typing guardem)
 			if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) {
 				if (typing) return;
@@ -105,8 +111,10 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 					if (key === "k" && !locked) setView("calendar");
 					else if (key === "u" && !locked) setView("list");
 					void navigate({ to: dest });
+					return;
 				}
-				return;
+				// Neznámý cíl po `g` klávesu nespolkne — propadne do běžných zkratek
+				// níže (např. `g` pak `q` založí úkol, `g` pak `?` otevře tahák).
 			}
 			if (e.key === "g" || e.key === "G") {
 				e.preventDefault();
@@ -136,15 +144,7 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-	}, [
-		cheatOpen,
-		paletteOpen,
-		navigate,
-		openAdd,
-		setView,
-		locked,
-		setSearchOpen,
-	]);
+	}, [cheatOpen, paletteOpen, navigate, openAdd, setView, locked, setSearchOpen, openId]);
 
 	return (
 		<>

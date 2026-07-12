@@ -6,18 +6,14 @@ import { Icon } from "@watson/ui";
 import { useEffect, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
-import {
-	advanceChainForTask,
-	type ChainStepLite,
-	repairChain,
-	rewindToStep,
-} from "../lib/chainAdvance";
+import { type ChainStepLite, repairChain, rewindToStep } from "../lib/chainAdvance";
 import { shiftChain, toggleChainWeekend } from "../lib/chainReflow";
 import { initials } from "../lib/format";
 import type { ChainRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
+import { toggleTask } from "../lib/tasks";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
@@ -37,6 +33,9 @@ const fmtDay = (iso: string | null) => {
 	const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
 	return `${d.getDate()}. ${d.getMonth() + 1}.`;
 };
+/** Platné datum kotvy — prázdný/rozbitý input jinak vyrobí „NaN-NaN-NaN" termíny všech kroků. */
+const isValidISO = (s: string) =>
+	/^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(new Date(`${s}T00:00:00`).getTime());
 
 /** Šablony postupů (VERBATIM FLOW_TEMPLATES z prototypu ř. 2509–2529, bez mock osob; mode = režim R2). */
 const TEMPLATES: {
@@ -225,9 +224,7 @@ const TEMPLATES: {
 /** Šablony uložené z běžících postupů (localStorage, prototyp saveFlowAsTemplate). */
 function savedTemplates(): typeof TEMPLATES {
 	try {
-		return JSON.parse(
-			localStorage.getItem("watson.flowTemplates") ?? "[]",
-		) as typeof TEMPLATES;
+		return JSON.parse(localStorage.getItem("watson.flowTemplates") ?? "[]") as typeof TEMPLATES;
 	} catch {
 		return [];
 	}
@@ -256,14 +253,9 @@ export function Postupy() {
 		() => projects.filter((p) => p.workspace_id === activeWs),
 		[projects, activeWs],
 	);
-	const wsProjectIds = useMemo(
-		() => new Set(wsProjects.map((p) => p.id)),
-		[wsProjects],
-	);
+	const wsProjectIds = useMemo(() => new Set(wsProjects.map((p) => p.id)), [wsProjects]);
 
-	const { data: chains } = usePsQuery<ChainRow>(
-		"SELECT * FROM chains ORDER BY created_at DESC",
-	);
+	const { data: chains } = usePsQuery<ChainRow>("SELECT * FROM chains ORDER BY created_at DESC");
 	const { data: steps } = usePsQuery<StepFull>(
 		"SELECT id, chain_id, task_id, project_id, position, gate, step_state, activated_at FROM chain_steps ORDER BY position",
 	);
@@ -275,10 +267,7 @@ export function Postupy() {
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
 
-	const taskById = useMemo(
-		() => new Map((tasks ?? []).map((tk) => [tk.id, tk] as const)),
-		[tasks],
-	);
+	const taskById = useMemo(() => new Map((tasks ?? []).map((tk) => [tk.id, tk] as const)), [tasks]);
 	const assigneesByTask = useMemo(() => {
 		const m = new Map<string, string[]>();
 		for (const a of assignments ?? []) {
@@ -335,14 +324,9 @@ export function Postupy() {
 					const done = chSteps.filter((s) => s.step_state === "done").length;
 					const now = chSteps.find((s) => s.step_state === "active") ?? null;
 					const nowTask = now?.task_id ? taskById.get(now.task_id) : undefined;
-					const stuck =
-						!!nowTask?.due_date && nowTask.due_date.slice(0, 10) < tdy;
+					const stuck = !!nowTask?.due_date && nowTask.due_date.slice(0, 10) < tdy;
 					const proj = wsProjects.find((p) => p.id === ch.project_id);
-					const mine = !!(
-						now?.task_id &&
-						meId &&
-						assigneesByTask.get(now.task_id)?.includes(meId)
-					);
+					const mine = !!(now?.task_id && meId && assigneesByTask.get(now.task_id)?.includes(meId));
 					// „Teď: … · X, Y" — všechna jména čárkou (prototyp ř. 3154).
 					const nowWho = now?.task_id
 						? (assigneesByTask.get(now.task_id) ?? [])
@@ -370,34 +354,16 @@ export function Postupy() {
 						(b.total ? b.done / b.total : 0) - (a.total ? a.done / a.total : 0),
 				)
 		);
-	}, [
-		chains,
-		steps,
-		taskById,
-		wsProjectIds,
-		wsProjects,
-		assigneesByTask,
-		meId,
-		memberName,
-		t,
-	]);
+	}, [chains, steps, taskById, wsProjectIds, wsProjects, assigneesByTask, meId, memberName, t]);
 
 	const shown = mineOnly ? view.filter((v) => v.mine) : view;
-	const selected = search.postup
-		? (view.find((v) => v.ch.id === search.postup) ?? null)
-		: null;
+	const selected = search.postup ? (view.find((v) => v.ch.id === search.postup) ?? null) : null;
 
 	return (
-		<div
-			className="mx-auto max-w-[920px]"
-			style={{ padding: "20px 22px 90px" }}
-		>
+		<div className="mx-auto max-w-[920px]" style={{ padding: "20px 22px 90px" }}>
 			{/* header */}
 			<div className="mb-0.5 flex items-center gap-2">
-				<h1
-					className="font-display font-extrabold text-ink"
-					style={{ fontSize: 17 }}
-				>
+				<h1 className="font-display font-extrabold text-ink" style={{ fontSize: 17 }}>
 					{t("flows.heading")}
 				</h1>
 				{/* aktivní prostor (prototyp ř. 775–777) */}
@@ -411,10 +377,7 @@ export function Postupy() {
 						background: activeWsInfo?.color ?? "var(--w-ink-3)",
 					}}
 				/>
-				<span
-					className="font-display font-semibold text-ink-3"
-					style={{ fontSize: 13 }}
-				>
+				<span className="font-display font-semibold text-ink-3" style={{ fontSize: 13 }}>
 					{activeWsInfo?.name ?? ""}
 				</span>
 				<button
@@ -448,10 +411,7 @@ export function Postupy() {
 					+ {t("flows.newFlow")}
 				</button>
 			</div>
-			<p
-				className="mb-4 max-w-[60ch] font-body text-ink-3"
-				style={{ fontSize: 13 }}
-			>
+			<p className="mb-4 max-w-[60ch] font-body text-ink-3" style={{ fontSize: 13 }}>
 				{t("flows.subtitle")}
 			</p>
 
@@ -480,88 +440,81 @@ export function Postupy() {
 						gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))",
 					}}
 				>
-					{shown.map(
-						({ ch, total, done, now, nowTask, nowWho, stuck, proj }) => (
-							<button
-								key={ch.id}
-								type="button"
-								onClick={() =>
-									void navigate({ to: "/postupy", search: { postup: ch.id } })
-								}
-								className="hover:-translate-y-0.5 rounded-[14px] border border-line bg-card text-left transition-all hover:shadow-md"
-								style={{
-									padding: "15px 16px",
-									boxShadow: "var(--w-shadow-sm)",
-								}}
+					{shown.map(({ ch, total, done, now, nowTask, nowWho, stuck, proj }) => (
+						<button
+							key={ch.id}
+							type="button"
+							onClick={() => void navigate({ to: "/postupy", search: { postup: ch.id } })}
+							className="hover:-translate-y-0.5 rounded-[14px] border border-line bg-card text-left transition-all hover:shadow-md"
+							style={{
+								padding: "15px 16px",
+								boxShadow: "var(--w-shadow-sm)",
+							}}
+						>
+							<div className="flex items-center gap-2">
+								<span
+									className="shrink-0 rounded-full"
+									style={{
+										width: 9,
+										height: 9,
+										background: proj?.color ?? "var(--w-line)",
+									}}
+								/>
+								<span
+									className="min-w-0 flex-1 truncate font-display font-bold text-ink"
+									style={{ fontSize: 14.5 }}
+								>
+									{ch.name}
+								</span>
+								<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 12 }}>
+									{done}/{total}
+								</span>
+							</div>
+							<div
+								className="overflow-hidden rounded-[3px] bg-panel-2"
+								style={{ height: 6, margin: "12px 0 10px" }}
 							>
-								<div className="flex items-center gap-2">
+								<div
+									style={{
+										height: "100%",
+										width: `${total ? Math.round((done / total) * 100) : 0}%`,
+										background: stuck ? "var(--w-overdue)" : "var(--w-brass)",
+									}}
+								/>
+							</div>
+							{now && (
+								<div className="flex items-center gap-1.5">
 									<span
 										className="shrink-0 rounded-full"
 										style={{
-											width: 9,
-											height: 9,
-											background: proj?.color ?? "var(--w-line)",
+											width: 7,
+											height: 7,
+											background: "var(--w-brass)",
 										}}
 									/>
 									<span
-										className="min-w-0 flex-1 truncate font-display font-bold text-ink"
-										style={{ fontSize: 14.5 }}
+										className="min-w-0 truncate font-body text-ink-2"
+										style={{ fontSize: 12.5 }}
 									>
-										{ch.name}
-									</span>
-									<span
-										className="shrink-0 font-mono text-ink-3"
-										style={{ fontSize: 12 }}
-									>
-										{done}/{total}
+										{t("flows.now")} {nowTask?.name ?? ""} · {nowWho}
 									</span>
 								</div>
+							)}
+							{stuck && (
 								<div
-									className="overflow-hidden rounded-[3px] bg-panel-2"
-									style={{ height: 6, margin: "12px 0 10px" }}
+									className="mt-2 inline-flex items-center gap-1.5 rounded-full font-display font-semibold"
+									style={{
+										fontSize: 11,
+										padding: "3px 9px",
+										background: "rgba(194,71,60,.13)",
+										color: "var(--w-overdue)",
+									}}
 								>
-									<div
-										style={{
-											height: "100%",
-											width: `${total ? Math.round((done / total) * 100) : 0}%`,
-											background: stuck ? "var(--w-overdue)" : "var(--w-brass)",
-										}}
-									/>
+									⚠ {t("flows.stuck")}
 								</div>
-								{now && (
-									<div className="flex items-center gap-1.5">
-										<span
-											className="shrink-0 rounded-full"
-											style={{
-												width: 7,
-												height: 7,
-												background: "var(--w-brass)",
-											}}
-										/>
-										<span
-											className="min-w-0 truncate font-body text-ink-2"
-											style={{ fontSize: 12.5 }}
-										>
-											{t("flows.now")} {nowTask?.name ?? ""} · {nowWho}
-										</span>
-									</div>
-								)}
-								{stuck && (
-									<div
-										className="mt-2 inline-flex items-center gap-1.5 rounded-full font-display font-semibold"
-										style={{
-											fontSize: 11,
-											padding: "3px 9px",
-											background: "rgba(194,71,60,.13)",
-											color: "var(--w-overdue)",
-										}}
-									>
-										⚠ {t("flows.stuck")}
-									</div>
-								)}
-							</button>
-						),
-					)}
+							)}
+						</button>
+					))}
 				</div>
 			)}
 
@@ -569,9 +522,7 @@ export function Postupy() {
 				<FlowModal
 					projects={wsProjects}
 					onClose={() => setModalOpen(false)}
-					onCreated={(chainId) =>
-						void navigate({ to: "/postupy", search: { postup: chainId } })
-					}
+					onCreated={(chainId) => void navigate({ to: "/postupy", search: { postup: chainId } })}
 				/>
 			)}
 
@@ -581,13 +532,7 @@ export function Postupy() {
 					taskById={taskById}
 					stepWho={stepWho}
 					stepAvatar={stepAvatar}
-					isMine={(st) =>
-						!!(
-							st.task_id &&
-							meId &&
-							assigneesByTask.get(st.task_id)?.includes(meId)
-						)
-					}
+					isMine={(st) => !!(st.task_id && meId && assigneesByTask.get(st.task_id)?.includes(meId))}
 					meId={meId}
 					onClose={() => void navigate({ to: "/postupy", search: {} })}
 				/>
@@ -624,10 +569,14 @@ function FlowDetail({
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
-	const { open: openTask } = useTaskDetail();
+	const { open: openTask, openId } = useTaskDetail();
 	const { ch, chSteps, total, done, now } = data;
 	const [pendingRewind, setPendingRewind] = useState<string | null>(null);
 	const skipWk = !!ch.skip_weekend;
+	// data-esc-layer signalizuje otevřenou vrstvu (kbNav/BulkBar), ale JEN dokud nad ní
+	// nestojí detail úkolu (openId) — jinak by blunt Esc-guard detailu (querySelector) našel
+	// naši vrstvu a zablokoval si vlastní zavření. Vzor NotifCenter.
+	const escLayer = openId ? undefined : "";
 
 	// Otevření detailu = idempotentní oprava stavu kroků z tasks.completed_at (napraví drift ze
 	// souběžných offline změn; zapisuje jen když se stav liší → obvykle no-op).
@@ -637,6 +586,10 @@ function FlowDetail({
 
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
+			// Nad detailem stojí vyšší vrstva (detail úkolu = openId, ⌘K/modal = data-esc-layer):
+			// Esc ani Enter nesmí propadnout sem, jinak Enter dokončí krok / Esc zavře postup
+			// pod otevřeným detailem úkolu (vzor sourozeneckých overlayů).
+			if (openId || document.querySelector("[data-esc-layer]:not([data-flow-layer])")) return;
 			if (e.key === "Escape") {
 				onClose();
 				return;
@@ -644,10 +597,7 @@ function FlowDetail({
 			// Enter dokončí aktivní krok (prototyp ř. 2227).
 			const el = document.activeElement as HTMLElement | null;
 			const typing =
-				!!el &&
-				(el.tagName === "INPUT" ||
-					el.tagName === "TEXTAREA" ||
-					el.isContentEditable);
+				!!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 			if (e.key === "Enter" && !typing && now?.task_id) {
 				e.preventDefault();
 				void completeStep(now);
@@ -655,7 +605,7 @@ function FlowDetail({
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-	}, [onClose, now]);
+	}, [onClose, now, openId]);
 
 	/** Uložit jako šablonu (prototyp saveFlowAsTemplate, ř. 2495) — per-user do localStorage. */
 	const STATE_LABEL: Record<string, string> = {
@@ -672,12 +622,11 @@ function FlowDetail({
 		: "";
 
 	const completeStep = async (st: StepFull) => {
-		if (!st.task_id) return;
-		await powerSync.execute("UPDATE tasks SET completed_at = ? WHERE id = ?", [
-			new Date().toISOString(),
-			st.task_id,
-		]);
-		await advanceChainForTask(st.task_id, true);
+		const tk = st.task_id ? taskById.get(st.task_id) : undefined;
+		if (!tk) return;
+		// Přes toggleTask (ne přímý UPDATE): dopočítá R9 status_id, u shared_all srovná
+		// per-osoba assignments (R2), zapíše undo a sám posune postup (advanceChainForTask).
+		await toggleTask(tk, meId);
 	};
 
 	return (
@@ -690,6 +639,8 @@ function FlowDetail({
 				style={{ background: "rgba(10,14,20,.34)", zIndex: 42 }}
 			/>
 			<div
+				data-esc-layer={escLayer}
+				data-flow-layer={escLayer}
 				className="fixed top-0 right-0 bottom-0 flex flex-col border-line border-l bg-card"
 				style={{
 					width: 470,
@@ -699,10 +650,7 @@ function FlowDetail({
 				}}
 			>
 				{/* hlavička */}
-				<div
-					className="shrink-0 border-line border-b"
-					style={{ padding: "18px 20px 16px" }}
-				>
+				<div className="shrink-0 border-line border-b" style={{ padding: "18px 20px 16px" }}>
 					<div className="flex items-center gap-2.5">
 						<span
 							className="flex shrink-0 items-center justify-center rounded-lg"
@@ -729,10 +677,7 @@ function FlowDetail({
 								{ch.name}
 							</div>
 						</div>
-						<span
-							className="shrink-0 font-mono text-ink"
-							style={{ fontSize: 15 }}
-						>
+						<span className="shrink-0 font-mono text-ink" style={{ fontSize: 15 }}>
 							{done}/{total}
 						</span>
 						<button
@@ -757,20 +702,13 @@ function FlowDetail({
 						/>
 					</div>
 					{now && (
-						<div
-							className="font-body text-brass-text"
-							style={{ fontSize: 12.5, marginTop: 9 }}
-						>
+						<div className="font-body text-brass-text" style={{ fontSize: 12.5, marginTop: 9 }}>
 							{t("flows.nowTurn")} <strong>{stepWho(now)}</strong>
 						</div>
 					)}
 					{eta && (
-						<div
-							className="font-body text-ink-3"
-							style={{ fontSize: 12, marginTop: 4 }}
-						>
-							{t("flows.eta")}{" "}
-							<strong style={{ color: "var(--w-ink-2)" }}>{eta}</strong>
+						<div className="font-body text-ink-3" style={{ fontSize: 12, marginTop: 4 }}>
+							{t("flows.eta")} <strong style={{ color: "var(--w-ink-2)" }}>{eta}</strong>
 						</div>
 					)}
 
@@ -825,10 +763,7 @@ function FlowDetail({
 				</div>
 
 				{/* osa kroků */}
-				<div
-					className="flex-1 overflow-auto"
-					style={{ padding: "16px 20px 30px" }}
-				>
+				<div className="flex-1 overflow-auto" style={{ padding: "16px 20px 30px" }}>
 					{chSteps.map((st, i) => {
 						const tk = st.task_id ? taskById.get(st.task_id) : undefined;
 						const sk = st.step_state ?? "dormant";
@@ -838,16 +773,12 @@ function FlowDetail({
 								: sk === "active"
 									? "var(--w-brass)"
 									: "var(--w-panel-2)";
-						const dotFg =
-							sk === "dormant" || sk === "skipped" ? "var(--w-ink-3)" : "#fff";
+						const dotFg = sk === "dormant" || sk === "skipped" ? "var(--w-ink-3)" : "#fff";
 						const next = chSteps[i + 1];
 						return (
 							<div key={st.id} className="flex" style={{ gap: 13 }}>
 								{/* osa */}
-								<div
-									className="flex shrink-0 flex-col items-center"
-									style={{ width: 26 }}
-								>
+								<div className="flex shrink-0 flex-col items-center" style={{ width: 26 }}>
 									<span
 										className="flex shrink-0 items-center justify-center rounded-full font-bold font-mono"
 										style={{
@@ -857,10 +788,7 @@ function FlowDetail({
 											background: dotBg,
 											color: dotFg,
 											// waiting tečka s rámečkem (prototyp CSS ř. 126) — skipped bez něj
-											border:
-												sk === "dormant"
-													? "1px solid var(--w-line)"
-													: undefined,
+											border: sk === "dormant" ? "1px solid var(--w-line)" : undefined,
 										}}
 									>
 										{(st.position ?? i) + 1}
@@ -897,10 +825,8 @@ function FlowDetail({
 									style={{
 										padding: "12px 13px",
 										marginBottom: 12,
-										borderColor:
-											sk === "active" ? "var(--w-brass)" : "var(--w-line)",
-										background:
-											sk === "active" ? "var(--w-brass-soft)" : undefined,
+										borderColor: sk === "active" ? "var(--w-brass)" : "var(--w-line)",
+										background: sk === "active" ? "var(--w-brass-soft)" : undefined,
 										opacity: sk === "dormant" ? 0.66 : 1,
 									}}
 								>
@@ -942,10 +868,7 @@ function FlowDetail({
 													P{tk?.priority ?? 4}
 												</span>
 												{tk?.due_date && (
-													<span
-														className="font-mono text-ink-3"
-														style={{ fontSize: 11 }}
-													>
+													<span className="font-mono text-ink-3" style={{ fontSize: 11 }}>
 														{fmtDay(tk.due_date)}
 													</span>
 												)}
@@ -1077,6 +1000,14 @@ function FlowModal({
 		return () => window.removeEventListener("keydown", h);
 	}, [onClose]);
 
+	// R5 — po změně projektu vyčistit přiřazení kroků: staré who[] míří na členy předchozího
+	// projektu, kteří v novém nejsou (a v UI zmizí, takže je nelze odškrtnout) → insert by
+	// jinak založil assignments pro ne-členy cílového projektu.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset jen na změnu projektu
+	useEffect(() => {
+		setRows((rs) => rs.map((r) => (r.who.length ? { ...r, who: [] } : r)));
+	}, [projectId]);
+
 	// Členové zvoleného projektu (přiřazení kroků).
 	useEffect(() => {
 		if (!projectId) return;
@@ -1114,7 +1045,7 @@ function FlowModal({
 
 	const create = async () => {
 		const nm = name.trim();
-		if (!nm || rows.length === 0 || !projectId) return;
+		if (!nm || rows.length === 0 || !projectId || !isValidISO(anchor)) return;
 		const proj = projects.find((p) => p.id === projectId);
 		const chainId = crypto.randomUUID();
 		// Lokální atomicita: chain + úkoly kroků + chain_steps + přiřazení v JEDNÉ transakci.
@@ -1123,14 +1054,7 @@ function FlowModal({
 			await tx.execute(
 				`INSERT INTO chains (id, project_id, workspace_id, name, anchor_date, state, sched_mode, skip_weekend, created_at)
        VALUES (?, ?, ?, ?, ?, 'active', 'chain', 0, ?)`,
-				[
-					chainId,
-					projectId,
-					proj?.workspace_id ?? null,
-					nm,
-					effAnchor,
-					new Date().toISOString(),
-				],
+				[chainId, projectId, proj?.workspace_id ?? null, nm, effAnchor, new Date().toISOString()],
 			);
 			for (let i = 0; i < rows.length; i++) {
 				const r = rows[i];
@@ -1142,19 +1066,11 @@ function FlowModal({
 				// první krok active; souvislé with_previous za ním taky
 				let state = "dormant";
 				if (i === 0) state = "active";
-				else if (
-					rows
-						.slice(1, i + 1)
-						.every((x, j) => j + 1 <= i && x.gate === "with_previous")
-				)
+				else if (rows.slice(1, i + 1).every((x, j) => j + 1 <= i && x.gate === "with_previous"))
 					state = "active";
 				// 1 osoba = single; víc osob = Kdokoli (shared_any) / Všichni (shared_all)
 				const assignMode =
-					r.who.length <= 1
-						? "single"
-						: r.mode === "all"
-							? "shared_all"
-							: "shared_any";
+					r.who.length <= 1 ? "single" : r.mode === "all" ? "shared_all" : "shared_any";
 				await tx.execute(
 					`INSERT INTO tasks (id, project_id, name, description, priority, due_date, assignment_mode, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1234,10 +1150,7 @@ function FlowModal({
 						>
 							<Icon name="postup" size={15} />
 						</span>
-						<span
-							className="font-display font-extrabold text-ink"
-							style={{ fontSize: 16 }}
-						>
+						<span className="font-display font-extrabold text-ink" style={{ fontSize: 16 }}>
 							{t("flows.modalTitle")}
 						</span>
 						<button
@@ -1283,16 +1196,18 @@ function FlowModal({
 									type="date"
 									value={anchor}
 									onChange={(e) => setAnchor(e.target.value)}
-									className="w-full rounded-[9px] border border-line bg-panel-2 font-mono text-ink outline-none"
-									style={{ padding: "9px 11px", fontSize: 13 }}
+									className="w-full rounded-[9px] border bg-panel-2 font-mono text-ink outline-none"
+									style={{
+										padding: "9px 11px",
+										fontSize: 13,
+										borderColor: isValidISO(anchor) ? "var(--w-line)" : "var(--w-overdue)",
+									}}
 								/>
 							</div>
 						</div>
 
 						{/* šablony */}
-						<ModalLabel style={{ margin: "18px 0 8px" }}>
-							{t("flows.templates")}
-						</ModalLabel>
+						<ModalLabel style={{ margin: "18px 0 8px" }}>{t("flows.templates")}</ModalLabel>
 						<div className="grid grid-cols-2 gap-2">
 							{allTemplates.map((tp) => (
 								<button
@@ -1302,24 +1217,14 @@ function FlowModal({
 									className="rounded-[11px] border text-left hover:border-brass"
 									style={{
 										padding: "11px 13px",
-										borderColor:
-											tpl === tp.id ? "var(--w-brass)" : "var(--w-line)",
-										background:
-											tpl === tp.id
-												? "var(--w-brass-soft)"
-												: "var(--w-panel-2)",
+										borderColor: tpl === tp.id ? "var(--w-brass)" : "var(--w-line)",
+										background: tpl === tp.id ? "var(--w-brass-soft)" : "var(--w-panel-2)",
 									}}
 								>
-									<div
-										className="font-display font-bold text-ink"
-										style={{ fontSize: 13 }}
-									>
+									<div className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
 										{tp.label}
 									</div>
-									<div
-										className="font-body text-ink-3"
-										style={{ fontSize: 11.5, marginTop: 2 }}
-									>
+									<div className="font-body text-ink-3" style={{ fontSize: 11.5, marginTop: 2 }}>
 										{tp.desc} · {tp.steps.length} {t("flows.steps")}
 									</div>
 								</button>
@@ -1351,20 +1256,14 @@ function FlowModal({
 						{/* kroky */}
 						{rows.length > 0 && (
 							<>
-								<div
-									className="flex items-center"
-									style={{ margin: "20px 0 8px" }}
-								>
+								<div className="flex items-center" style={{ margin: "20px 0 8px" }}>
 									<span
 										className="font-display font-bold text-ink-3 uppercase"
 										style={{ fontSize: 10.5, letterSpacing: ".05em" }}
 									>
 										{t("flows.stepsLabel")}
 									</span>
-									<span
-										className="ml-2 font-mono text-ink-3"
-										style={{ fontSize: 11 }}
-									>
+									<span className="ml-2 font-mono text-ink-3" style={{ fontSize: 11 }}>
 										{rows.length}
 									</span>
 								</div>
@@ -1432,17 +1331,14 @@ function FlowModal({
 												className="px-1 text-ink-3 hover:text-ink"
 												style={{
 													opacity: i >= rows.length - 1 ? 0.4 : 1,
-													pointerEvents:
-														i >= rows.length - 1 ? "none" : undefined,
+													pointerEvents: i >= rows.length - 1 ? "none" : undefined,
 												}}
 											>
 												↓
 											</button>
 											<button
 												type="button"
-												onClick={() =>
-													setRows((rs) => rs.filter((_, j) => j !== i))
-												}
+												onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
 												aria-label={t("common.cancel")}
 												className="px-1 text-ink-3 hover:text-overdue"
 											>
@@ -1451,10 +1347,7 @@ function FlowModal({
 										</div>
 										<div className="mt-2.5 flex flex-wrap items-center gap-2">
 											{/* avatarová řada členů (prototyp ř. 1573) */}
-											<span
-												className="inline-flex items-center"
-												style={{ gap: 5 }}
-											>
+											<span className="inline-flex items-center" style={{ gap: 5 }}>
 												{members.map((m) => {
 													const on = r.who.includes(m.id);
 													return (
@@ -1464,9 +1357,7 @@ function FlowModal({
 															title={m.name}
 															onClick={() =>
 																setRow(i, {
-																	who: on
-																		? r.who.filter((x) => x !== m.id)
-																		: [...r.who, m.id],
+																	who: on ? r.who.filter((x) => x !== m.id) : [...r.who, m.id],
 																})
 															}
 															className="flex items-center justify-center rounded-full font-display font-semibold"
@@ -1501,16 +1392,11 @@ function FlowModal({
 													className="rounded-full border border-line font-display font-semibold text-ink-2 hover:border-brass"
 													style={{ padding: "5px 10px", fontSize: 11 }}
 												>
-													{r.mode === "all"
-														? t("addmodal.modeAll")
-														: t("addmodal.modeAny")}
+													{r.mode === "all" ? t("addmodal.modeAll") : t("addmodal.modeAny")}
 												</button>
 											)}
 											<span className="ml-auto inline-flex items-center gap-1.5">
-												<span
-													className="font-body text-ink-3"
-													style={{ fontSize: 11 }}
-												>
+												<span className="font-body text-ink-3" style={{ fontSize: 11 }}>
 													{t("flows.anchorPlus")}
 												</span>
 												<input
@@ -1600,7 +1486,7 @@ function FlowModal({
 						<button
 							type="button"
 							onClick={() => void create()}
-							disabled={!name.trim() || rows.length === 0}
+							disabled={!name.trim() || rows.length === 0 || !isValidISO(anchor)}
 							className="rounded-[10px] font-display font-bold text-white hover:brightness-105 disabled:opacity-50"
 							style={{
 								background: "var(--w-brass)",
@@ -1617,13 +1503,7 @@ function FlowModal({
 	);
 }
 
-function ModalLabel({
-	children,
-	style,
-}: {
-	children: string;
-	style?: React.CSSProperties;
-}) {
+function ModalLabel({ children, style }: { children: string; style?: React.CSSProperties }) {
 	return (
 		<div
 			className="mb-1.5 font-display font-bold text-ink-3 uppercase"

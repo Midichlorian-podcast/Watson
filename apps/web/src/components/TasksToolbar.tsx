@@ -1,25 +1,12 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "@watson/i18n";
-import {
-	type CSSProperties,
-	type ReactNode,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
-export type SortBy =
-	| "smart"
-	| "due"
-	| "priority"
-	| "name"
-	| "project"
-	| "status";
+export type SortBy = "smart" | "due" | "priority" | "name" | "project" | "status";
 /** Normalizovaný klíč stavu (prototyp filterStatus: probiha/kontrola/''/hotovo). */
 export type StatusKey = "probiha" | "kontrola" | "" | "hotovo";
 
@@ -115,17 +102,14 @@ export function useToolbarCtx(): ToolbarCtx {
 				if (n.includes("hotovo")) return "hotovo";
 				return "";
 			},
-			projectNameOf: (t) =>
-				t.project_id ? (pMap.get(t.project_id)?.name ?? "") : "",
+			projectNameOf: (t) => (t.project_id ? (pMap.get(t.project_id)?.name ?? "") : ""),
 			assigneesOf: (t) => asgMap.get(t.id) ?? [],
 			myId: session?.user?.id,
 			projects: (prj ?? [])
 				.filter((p) => !activeWs || p.workspace_id === activeWs)
 				.map((p) => ({ id: p.id, name: p.name ?? "", color: p.color })),
 			members: team ?? [],
-			showPersonFilter: !(
-				workspaces?.find((w) => w.id === activeWs)?.isPersonal ?? false
-			),
+			showPersonFilter: !(workspaces?.find((w) => w.id === activeWs)?.isPersonal ?? false),
 		};
 	}, [sts, prj, asg, team, session, activeWs, workspaces]);
 }
@@ -138,11 +122,7 @@ const STATUS_RANK: Record<StatusKey, number> = {
 };
 
 /** Řadicí komparátor dle toolbaru (prototyp sortFns, ř. 3015). */
-export function sortTasks<T extends TaskLike>(
-	list: T[],
-	st: ToolbarState,
-	ctx?: ToolbarCtx,
-): T[] {
+export function sortTasks<T extends TaskLike>(list: T[], st: ToolbarState, ctx?: ToolbarCtx): T[] {
 	const dir = st.asc ? 1 : -1;
 	const byDue = (a: T, b: T) => {
 		if (!a.due_date && !b.due_date) return 0;
@@ -156,13 +136,9 @@ export function sortTasks<T extends TaskLike>(
 		priority: (a, b) => (a.priority ?? 4) - (b.priority ?? 4),
 		name: (a, b) => (a.name ?? "").localeCompare(b.name ?? "", "cs"),
 		project: (a, b) =>
-			(ctx?.projectNameOf(a) ?? "").localeCompare(
-				ctx?.projectNameOf(b) ?? "",
-				"cs",
-			),
+			(ctx?.projectNameOf(a) ?? "").localeCompare(ctx?.projectNameOf(b) ?? "", "cs"),
 		status: (a, b) =>
-			STATUS_RANK[ctx?.statusKeyOf(a) ?? ""] -
-			STATUS_RANK[ctx?.statusKeyOf(b) ?? ""],
+			STATUS_RANK[ctx?.statusKeyOf(a) ?? ""] - STATUS_RANK[ctx?.statusKeyOf(b) ?? ""],
 	};
 	return [...list].sort((a, b) => dir * cmp[st.sortBy](a, b));
 }
@@ -175,16 +151,12 @@ export function filterTasks<T extends TaskLike>(
 ): T[] {
 	return list.filter((tk) => {
 		if (!st.showDone && tk.completed_at) return false;
-		if (st.priorities.length > 0 && !st.priorities.includes(tk.priority ?? 4))
-			return false;
-		if (
-			st.statuses.length > 0 &&
-			!st.statuses.includes(ctx?.statusKeyOf(tk) ?? "")
-		)
-			return false;
-		if (st.projects.length > 0 && !st.projects.includes(tk.project_id ?? ""))
-			return false;
-		if (st.people.length > 0) {
+		if (st.priorities.length > 0 && !st.priorities.includes(tk.priority ?? 4)) return false;
+		if (st.statuses.length > 0 && !st.statuses.includes(ctx?.statusKeyOf(tk) ?? "")) return false;
+		if (st.projects.length > 0 && !st.projects.includes(tk.project_id ?? "")) return false;
+		// Osobní (soukromý) workspace nemá sekci Osoba (showPersonFilter=false) — přetrvalý filtr
+		// z týmového ws pak ignoruj, jinak by tiše vyprázdnil osobní úkoly bez viditelného ovládání.
+		if (st.people.length > 0 && ctx?.showPersonFilter !== false) {
 			const a = ctx?.assigneesOf(tk) ?? [];
 			const hit = st.people.some((p) =>
 				p === "me"
@@ -205,10 +177,7 @@ const toggleIn = <T,>(arr: T[], v: T) =>
 	arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
 
 /** Chip vzhled prototypu (data-chip, CSS ř. 88–89): radius 8, on = brass-soft + brass okraj. */
-const chipStyle = (
-	on: boolean,
-	radius: string | number = 8,
-): CSSProperties => ({
+const chipStyle = (on: boolean, radius: string | number = 8): CSSProperties => ({
 	display: "flex",
 	alignItems: "center",
 	gap: 6,
@@ -290,18 +259,12 @@ export function TasksToolbar({
 		{ id: "me", label: t("toolbar.personMe") },
 		{ id: "__none__", label: t("toolbar.personNone") },
 		{ id: "__multi__", label: t("toolbar.personMulti") },
-		...ctx.members
-			.filter((m) => m.id !== ctx.myId)
-			.map((m) => ({ id: m.id, label: m.name })),
+		...ctx.members.filter((m) => m.id !== ctx.myId).map((m) => ({ id: m.id, label: m.name })),
 	];
-	const personLabel = (id: string) =>
-		personOpts.find((o) => o.id === id)?.label ?? id;
+	const personLabel = (id: string) => personOpts.find((o) => o.id === id)?.label ?? id;
 
 	const hasFilters =
-		state.priorities.length +
-			state.statuses.length +
-			state.projects.length +
-			state.people.length >
+		state.priorities.length + state.statuses.length + state.projects.length + state.people.length >
 		0;
 	const clearFilters = () =>
 		onChange({
@@ -317,20 +280,17 @@ export function TasksToolbar({
 		...state.priorities.map((p) => ({
 			key: `p${p}`,
 			label: `P${p}`,
-			onClear: () =>
-				onChange({ ...state, priorities: toggleIn(state.priorities, p) }),
+			onClear: () => onChange({ ...state, priorities: toggleIn(state.priorities, p) }),
 		})),
 		...state.statuses.map((s) => ({
 			key: `s${s}`,
 			label: STATUSES.find(([k]) => k === s)?.[1] ?? s,
-			onClear: () =>
-				onChange({ ...state, statuses: toggleIn(state.statuses, s) }),
+			onClear: () => onChange({ ...state, statuses: toggleIn(state.statuses, s) }),
 		})),
 		...state.projects.map((id) => ({
 			key: `j${id}`,
 			label: ctx.projects.find((p) => p.id === id)?.name ?? id,
-			onClear: () =>
-				onChange({ ...state, projects: toggleIn(state.projects, id) }),
+			onClear: () => onChange({ ...state, projects: toggleIn(state.projects, id) }),
 		})),
 		...state.people.map((id) => ({
 			key: `o${id}`,
@@ -353,13 +313,7 @@ export function TasksToolbar({
 					className="font-display font-semibold hover:border-brass"
 					style={chipStyle(hasFilters)}
 				>
-					<svg
-						width="13"
-						height="13"
-						viewBox="0 0 14 14"
-						fill="none"
-						aria-hidden
-					>
+					<svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden>
 						<path
 							d="M2 3 H12 L8 8 V12 L6 11 V8 Z"
 							stroke="currentColor"
@@ -416,11 +370,7 @@ export function TasksToolbar({
 											})
 										}
 										className="font-display font-semibold"
-										style={pillStyle(
-											state.statuses.includes(k),
-											11.5,
-											"4px 10px",
-										)}
+										style={pillStyle(state.statuses.includes(k), 11.5, "4px 10px")}
 									>
 										{l}
 									</button>
@@ -436,16 +386,9 @@ export function TasksToolbar({
 								className={searchInputCls}
 								style={{ fontSize: 12, marginBottom: 6 }}
 							/>
-							<div
-								className="flex flex-wrap overflow-auto"
-								style={{ gap: 5, maxHeight: 96 }}
-							>
+							<div className="flex flex-wrap overflow-auto" style={{ gap: 5, maxHeight: 96 }}>
 								{ctx.projects
-									.filter(
-										(p) =>
-											!projQ ||
-											p.name.toLowerCase().includes(projQ.toLowerCase()),
-									)
+									.filter((p) => !projQ || p.name.toLowerCase().includes(projQ.toLowerCase()))
 									.map((p) => (
 										<button
 											key={p.id}
@@ -458,11 +401,7 @@ export function TasksToolbar({
 											}
 											className="inline-flex items-center font-display font-semibold"
 											style={{
-												...pillStyle(
-													state.projects.includes(p.id),
-													11.5,
-													"4px 10px",
-												),
+												...pillStyle(state.projects.includes(p.id), 11.5, "4px 10px"),
 												gap: 5,
 											}}
 										>
@@ -489,15 +428,10 @@ export function TasksToolbar({
 									className={searchInputCls}
 									style={{ fontSize: 12, marginBottom: 6 }}
 								/>
-								<div
-									className="flex flex-wrap overflow-auto"
-									style={{ gap: 5, maxHeight: 96 }}
-								>
+								<div className="flex flex-wrap overflow-auto" style={{ gap: 5, maxHeight: 96 }}>
 									{personOpts
 										.filter(
-											(o) =>
-												!personQ ||
-												o.label.toLowerCase().includes(personQ.toLowerCase()),
+											(o) => !personQ || o.label.toLowerCase().includes(personQ.toLowerCase()),
 										)
 										.map((o) => (
 											<button
@@ -510,11 +444,7 @@ export function TasksToolbar({
 													})
 												}
 												className="font-display font-semibold"
-												style={pillStyle(
-													state.people.includes(o.id),
-													11.5,
-													"4px 10px",
-												)}
+												style={pillStyle(state.people.includes(o.id), 11.5, "4px 10px")}
 											>
 												{o.label}
 											</button>
@@ -544,13 +474,7 @@ export function TasksToolbar({
 					className="font-display font-semibold hover:border-brass"
 					style={chipStyle(false, "8px 0 0 8px")}
 				>
-					<svg
-						width="13"
-						height="13"
-						viewBox="0 0 14 14"
-						fill="none"
-						aria-hidden
-					>
+					<svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden>
 						<path
 							d="M4 3 V11 M9 3 V11"
 							stroke="currentColor"
@@ -575,13 +499,7 @@ export function TasksToolbar({
 					}}
 				>
 					{state.asc ? (
-						<svg
-							width="12"
-							height="12"
-							viewBox="0 0 14 14"
-							fill="none"
-							aria-hidden
-						>
+						<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
 							<path
 								d="M7 11.5 V2.5 M7 2.5 L3.8 5.7 M7 2.5 L10.2 5.7"
 								stroke="currentColor"
@@ -591,13 +509,7 @@ export function TasksToolbar({
 							/>
 						</svg>
 					) : (
-						<svg
-							width="12"
-							height="12"
-							viewBox="0 0 14 14"
-							fill="none"
-							aria-hidden
-						>
+						<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
 							<path
 								d="M7 2.5 V11.5 M7 11.5 L3.8 8.3 M7 11.5 L10.2 8.3"
 								stroke="currentColor"
@@ -631,8 +543,7 @@ export function TasksToolbar({
 								style={{
 									padding: "7px 10px",
 									fontSize: 13,
-									background:
-										state.sortBy === k ? "var(--w-brass-soft)" : undefined,
+									background: state.sortBy === k ? "var(--w-brass-soft)" : undefined,
 								}}
 							>
 								{l}

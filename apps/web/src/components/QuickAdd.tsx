@@ -1,12 +1,6 @@
 import { useTranslation } from "@watson/i18n";
 import { Button, Chip, Icon, type IconName } from "@watson/ui";
-import {
-	type KeyboardEvent,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "../lib/auth-client";
 import { powerSync } from "../lib/powersync/db";
 import type { Highlight, RecurrenceRule } from "../lib/quickadd";
@@ -24,8 +18,7 @@ function segments(raw: string, hl: Highlight[]) {
 	const segs: { text: string; mark: boolean }[] = [];
 	let pos = 0;
 	for (const h of hl) {
-		if (h.start > pos)
-			segs.push({ text: raw.slice(pos, h.start), mark: false });
+		if (h.start > pos) segs.push({ text: raw.slice(pos, h.start), mark: false });
 		segs.push({ text: raw.slice(h.start, h.end), mark: true });
 		pos = h.end;
 	}
@@ -60,14 +53,14 @@ export function QuickAdd({
 	const [pickedPeople, setPickedPeople] = useState<Person[]>([]);
 	const [sugDismissed, setSugDismissed] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
+	// In-flight guard: bez něj rychlé 2× Enter (async okno před vyčištěním inputu) vloží úkol dvakrát.
+	const submittingRef = useRef(false);
+	const [submitting, setSubmitting] = useState(false);
 	useEffect(() => {
 		if (autoFocus) inputRef.current?.focus();
 	}, [autoFocus]);
 
-	const ctx = useMemo(
-		() => ({ today: todayISO(), projects, people }),
-		[projects, people],
-	);
+	const ctx = useMemo(() => ({ today: todayISO(), projects, people }), [projects, people]);
 	const parsed = useMemo(() => parseQuick(raw, ctx), [raw, ctx]);
 
 	// Našeptávač: token na konci vstupu
@@ -90,11 +83,7 @@ export function QuickAdd({
 		if (mPer) {
 			const q = mPer[1]!.toLowerCase();
 			const list = people
-				.filter(
-					(p) =>
-						p.name.toLowerCase().includes(q) ||
-						p.initials.toLowerCase().startsWith(q),
-				)
+				.filter((p) => p.name.toLowerCase().includes(q) || p.initials.toLowerCase().startsWith(q))
 				.slice(0, 5)
 				.map((p) => ({
 					kind: "person" as const,
@@ -108,12 +97,7 @@ export function QuickAdd({
 	}, [raw, projects, people]);
 	const sug = sugDismissed ? null : sugRaw;
 
-	function applySug(item: {
-		id: string;
-		label: string;
-		token: string;
-		kind: "proj" | "person";
-	}) {
+	function applySug(item: { id: string; label: string; token: string; kind: "proj" | "person" }) {
 		// Odstranit token ze vstupu a atribut si zapamatovat (prototyp: výběr aplikuje entitu).
 		setRaw(raw.slice(0, raw.length - item.token.length));
 		if (item.kind === "proj") {
@@ -121,81 +105,105 @@ export function QuickAdd({
 			if (pr) setPickedProj(pr);
 		} else {
 			const pe = people.find((x) => x.id === item.id);
-			if (pe)
-				setPickedPeople((arr) =>
-					arr.some((x) => x.id === pe.id) ? arr : [...arr, pe],
-				);
+			if (pe) setPickedPeople((arr) => (arr.some((x) => x.id === pe.id) ? arr : [...arr, pe]));
 		}
 		setSugIdx(0);
 		inputRef.current?.focus();
+	}
+
+	/**
+	 * Volný @token → osoba. Přiřazujeme jen při JEDNOZNAČNÉ shodě: 0 shod = nerozpoznáno,
+	 * >1 = nejednoznačné (jinak by substring/iniciály tiše přiřadily libovolného „Jana").
+	 * Ambiguitu ať uživatel rozřeší výběrem z našeptávače.
+	 */
+	function resolvePerson(q: string): {
+		status: "ok" | "none" | "ambiguous";
+		person?: Person;
+	} {
+		const ql = q.toLowerCase();
+		if (!ql) return { status: "none" };
+		const matches = people.filter(
+			(p) => p.name.toLowerCase().includes(ql) || p.initials.toLowerCase().startsWith(ql),
+		);
+		if (matches.length === 0) return { status: "none" };
+		if (matches.length === 1) return { status: "ok", person: matches[0] };
+		// Víc kandidátů: přijmi jen přesnou shodu celého jména / iniciál, jinak nech na uživateli.
+		const exact = matches.filter(
+			(p) => p.name.toLowerCase() === ql || p.initials.toLowerCase() === ql,
+		);
+		return exact.length === 1 ? { status: "ok", person: exact[0] } : { status: "ambiguous" };
 	}
 
 	async function submit() {
 		// Bez fallbacku na raw: po vytažení formulí musí zbýt reálný název (README ř. 48).
 		const name = parsed.name.trim();
 		if (!name || !inboxId) return;
-		// start_date = termín (nebo dnes) + čas dne, pokud parser rozpoznal čas.
-		let startDate: string | null = null;
-		if (parsed.startMin != null) {
-			const base = parsed.due ?? todayISO();
-			const hh = String(Math.floor(parsed.startMin / 60)).padStart(2, "0");
-			const mm = String(parsed.startMin % 60).padStart(2, "0");
-			startDate = `${base}T${hh}:${mm}:00`;
-		}
-		const taskId = crypto.randomUUID();
-		const now = new Date().toISOString();
-		const projId = pickedProj?.id ?? parsed.projectId ?? inboxId;
-		// @osoby: vybrané z našeptávače + rozpoznané parserem → reálná přiřazení.
-		const assigned = new Set<string>();
-		const resolved: Person[] = [...pickedPeople];
-		for (const q of parsed.personQueries ?? []) {
-			const ql = q.toLowerCase();
-			const person = people.find(
-				(p) =>
-					p.name.toLowerCase().includes(ql) ||
-					p.initials.toLowerCase().startsWith(ql),
-			);
-			if (person) resolved.push(person);
-		}
-		// R2 — u ≥2 přiřazených neinteraktivně `shared_all` (default), jinak `single`.
-		const uniqueAssignees = resolved.filter((p) => {
-			if (assigned.has(p.id)) return false;
-			assigned.add(p.id);
-			return true;
-		});
-		const assignmentMode = uniqueAssignees.length >= 2 ? "shared_all" : "single";
-		await powerSync.execute(
-			"INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, deadline, duration_min, recurrence, recurrence_rule, recurrence_basis, assignment_mode, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			[
-				taskId,
-				projId,
-				name,
-				parsed.priority ?? 2,
-				parsed.due ?? null,
-				startDate,
-				parsed.deadline ?? null,
-				parsed.durationMin ?? null,
-				parsed.recurrence?.label ?? null,
-				parsed.recurrence ? JSON.stringify(parsed.recurrence) : null,
-				parsed.recurrence ? "due_date" : null,
-				assignmentMode,
-				session?.user?.id ?? null,
-				now,
-			],
-		);
-		for (const person of uniqueAssignees) {
-			// project_id je NUTNÝ — sync bucket assignments je per projekt; bez něj se řádek nikdy
-			// nesyncne (kolegům se přiřazení nezobrazí, po resyncu zmizí i autorovi).
+		if (submittingRef.current) return;
+		submittingRef.current = true;
+		setSubmitting(true);
+		try {
+			// start_date = termín (nebo dnes) + čas dne, pokud parser rozpoznal čas.
+			let startDate: string | null = null;
+			if (parsed.startMin != null) {
+				const base = parsed.due ?? todayISO();
+				const hh = String(Math.floor(parsed.startMin / 60)).padStart(2, "0");
+				const mm = String(parsed.startMin % 60).padStart(2, "0");
+				startDate = `${base}T${hh}:${mm}:00`;
+			}
+			const taskId = crypto.randomUUID();
+			const now = new Date().toISOString();
+			const projId = pickedProj?.id ?? parsed.projectId ?? inboxId;
+			// @osoby: vybrané z našeptávače + rozpoznané parserem → reálná přiřazení.
+			const assigned = new Set<string>();
+			const resolved: Person[] = [...pickedPeople];
+			for (const q of parsed.personQueries ?? []) {
+				// Jen jednoznačná shoda → přiřazení; nerozpoznané/nejednoznačné se NEpřiřadí (viz pilulka varování).
+				const r = resolvePerson(q);
+				if (r.status === "ok" && r.person) resolved.push(r.person);
+			}
+			// R2 — u ≥2 přiřazených neinteraktivně `shared_all` (default), jinak `single`.
+			const uniqueAssignees = resolved.filter((p) => {
+				if (assigned.has(p.id)) return false;
+				assigned.add(p.id);
+				return true;
+			});
+			const assignmentMode = uniqueAssignees.length >= 2 ? "shared_all" : "single";
 			await powerSync.execute(
-				"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
-				[taskId, projId, person.id, now],
+				"INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, deadline, duration_min, recurrence, recurrence_rule, recurrence_basis, assignment_mode, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				[
+					taskId,
+					projId,
+					name,
+					parsed.priority ?? 2,
+					parsed.due ?? null,
+					startDate,
+					parsed.deadline ?? null,
+					parsed.durationMin ?? null,
+					parsed.recurrence?.label ?? null,
+					parsed.recurrence ? JSON.stringify(parsed.recurrence) : null,
+					parsed.recurrence ? "due_date" : null,
+					assignmentMode,
+					session?.user?.id ?? null,
+					now,
+				],
 			);
+			for (const person of uniqueAssignees) {
+				// project_id je NUTNÝ — sync bucket assignments je per projekt; bez něj se řádek nikdy
+				// nesyncne (kolegům se přiřazení nezobrazí, po resyncu zmizí i autorovi).
+				await powerSync.execute(
+					"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
+					[taskId, projId, person.id, now],
+				);
+			}
+			setRaw("");
+			setSugIdx(0);
+			setPickedProj(null);
+			setPickedPeople([]);
+			onDone?.();
+		} finally {
+			submittingRef.current = false;
+			setSubmitting(false);
 		}
-		setRaw("");
-		setSugIdx(0);
-		setPickedProj(null);
-		setPickedPeople([]);
-		onDone?.();
 	}
 
 	function onKey(e: KeyboardEvent<HTMLInputElement>) {
@@ -231,9 +239,7 @@ export function QuickAdd({
 
 	// Trvání pilulky: základní jednotky z i18n (min/h).
 	const durLabel = (min: number) =>
-		min < 60
-			? `${min} ${t("quickadd.unitMin")}`
-			: `${min / 60} ${t("quickadd.unitHour")}`;
+		min < 60 ? `${min} ${t("quickadd.unitMin")}` : `${min / 60} ${t("quickadd.unitHour")}`;
 	// Opakování: základní druhy → i18n; bohatší pravidla (nth/day/parity) nechají
 	// lidský label parseru, aby se neztratila konkrétnost (např. „Každou středu").
 	const recLabel = (r: RecurrenceRule) => {
@@ -255,16 +261,13 @@ export function QuickAdd({
 	};
 
 	// Pilulky rozpoznaných atributů
-	const pills: { icon: IconName; label: string }[] = [];
-	if (parsed.priority)
-		pills.push({ icon: "priorita", label: `P${parsed.priority}` });
+	const pills: { icon: IconName; label: string; tone?: "brass" | "overdue" }[] = [];
+	if (parsed.priority) pills.push({ icon: "priorita", label: `P${parsed.priority}` });
 	if (parsed.due) pills.push({ icon: "termin", label: parsed.due });
-	if (parsed.startMin != null)
-		pills.push({ icon: "termin", label: hhmm(parsed.startMin) });
+	if (parsed.startMin != null) pills.push({ icon: "termin", label: hhmm(parsed.startMin) });
 	if (parsed.durationMin != null)
 		pills.push({ icon: "trvani", label: durLabel(parsed.durationMin) });
-	if (parsed.recurrence)
-		pills.push({ icon: "opakovani", label: recLabel(parsed.recurrence) });
+	if (parsed.recurrence) pills.push({ icon: "opakovani", label: recLabel(parsed.recurrence) });
 	if (parsed.deadline)
 		pills.push({
 			icon: "deadline",
@@ -275,13 +278,24 @@ export function QuickAdd({
 			icon: "termin",
 			label: t("quickadd.daysPill", { n: parsed.days }),
 		});
-	const pillProj =
-		pickedProj ?? projects.find((x) => x.id === parsed.projectId);
+	const pillProj = pickedProj ?? projects.find((x) => x.id === parsed.projectId);
 	if (pillProj) pills.push({ icon: "projekt", label: pillProj.name });
-	for (const pe of pickedPeople)
-		pills.push({ icon: "prirazeni", label: `@${pe.name}` });
-	for (const q of parsed.personQueries ?? [])
-		pills.push({ icon: "prirazeni", label: `@${q}` });
+	for (const pe of pickedPeople) pills.push({ icon: "prirazeni", label: `@${pe.name}` });
+	for (const q of parsed.personQueries ?? []) {
+		const r = resolvePerson(q);
+		if (r.status === "ok" && r.person)
+			pills.push({ icon: "prirazeni", label: `@${r.person.name}` });
+		// Nerozpoznaný/nejednoznačný @token odliš (overdue tón), ať uživatel nemyslí, že přiřazení proběhlo.
+		else
+			pills.push({
+				icon: "prirazeni",
+				label:
+					r.status === "ambiguous"
+						? t("quickadd.personAmbiguous", { q })
+						: t("quickadd.personUnknown", { q }),
+				tone: "overdue",
+			});
+	}
 
 	return (
 		<div className="relative">
@@ -325,7 +339,7 @@ export function QuickAdd({
 				</div>
 				<Button
 					onClick={() => void submit()}
-					disabled={!inboxId || !parsed.name.trim()}
+					disabled={!inboxId || !parsed.name.trim() || submitting}
 				>
 					<Icon name="pridat" size={16} />
 					{t("today.add")}
@@ -345,10 +359,7 @@ export function QuickAdd({
 								}}
 								className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${i === sugIdx ? "bg-panel-2" : ""}`}
 							>
-								<Icon
-									name={it.kind === "proj" ? "projekt" : "prirazeni"}
-									size={16}
-								/>
+								<Icon name={it.kind === "proj" ? "projekt" : "prirazeni"} size={16} />
 								<span className="truncate">{it.label}</span>
 							</button>
 						</li>
@@ -360,7 +371,7 @@ export function QuickAdd({
 			{pills.length > 0 && (
 				<div className="mt-2 flex flex-wrap gap-1.5">
 					{pills.map((p, i) => (
-						<Chip key={i} tone="brass">
+						<Chip key={i} tone={p.tone ?? "brass"}>
 							<Icon name={p.icon} size={13} />
 							{p.label}
 						</Chip>

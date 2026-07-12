@@ -70,9 +70,12 @@ export function TaskItem({
 		dx: 0,
 		mag: "none",
 	});
+	// R4: přímý posun due_date u opakovaného úkolu by přepsal kotvu CELÉ řady bez dotazu
+	// tento/další/celá řada. Testujeme recurrence_rule (engine), ne jen recurrence (lidský
+	// label může být prázdný) — jinak by guard u některých řad neplatil.
+	const isRecurring = Boolean(task.recurrence_rule || task.recurrence);
 	const reschedule = (key: "tomorrow" | "nextMonday") => {
-		// R4: posun by přepsal kotvu celé opakovací řady — řadu uprav v detailu
-		if (task.recurrence) {
+		if (isRecurring) {
 			showToast(t("qsched.recurringBlocked"));
 			return;
 		}
@@ -138,8 +141,10 @@ export function TaskItem({
 			}}
 		>
 			{/* podklad swipe (TaskCard má marginBottom 5): rostoucí barevná
-			    pilulka od kraje (jako mail) — akce se provede puštěním */}
-			{sw.dx !== 0 && (
+			    pilulka od kraje (jako mail) — akce se provede puštěním.
+			    Bez akce (hotový úkol tažený doleva) podklad nekreslíme — jinak by
+			    naskočila prázdná šedá pilulka, která nic nedělá. */}
+			{sw.dx !== 0 && dragAct && (
 				<div
 					aria-hidden
 					className="font-display"
@@ -247,6 +252,11 @@ export function TaskItem({
 										{ key: "nextMonday", label: t("qsched.nextWeekShort") },
 									],
 									onShift: (key) => {
+										// R4 — stejná pojistka jako swipe/BulkBar: neposouvat kotvu opakované řady
+										if (isRecurring) {
+											showToast(t("qsched.recurringBlocked"));
+											return;
+										}
 										const iso = rescheduleDate(key as RescheduleKey);
 										pushColumnUndo("tasks", task.id, "due_date", task.due_date, iso);
 										void powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [

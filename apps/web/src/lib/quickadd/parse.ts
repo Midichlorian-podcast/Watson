@@ -74,9 +74,7 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 			tM = 0;
 			cut(m, "time");
 		}
-	} else if (
-		(m = work.match(/\b(?:v|ve|od)\s+(\p{L}+(?:\s+\p{L}+)?)\s+hodin\p{L}*/iu))
-	) {
+	} else if ((m = work.match(/\b(?:v|ve|od)\s+(\p{L}+(?:\s+\p{L}+)?)\s+hodin\p{L}*/iu))) {
 		const v = czNum(m[1]!);
 		if (v != null && v <= 23) {
 			tH = v;
@@ -88,20 +86,16 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 
 	// 4) Trvání (6 variant, else-if řetěz)
 	let dur: number | null = null;
-	if ((m = work.match(/(?:po dobu\s+)?(\d+)\s*min\p{L}*/iu))) {
+	if ((m = work.match(/(?:po dobu\s+)?(\d+)\s*min(?:ut\p{L}*)?(?![\p{L}])/iu))) {
 		dur = +m[1]!;
 		cut(m, "duration");
-	} else if (
-		(m = work.match(/po dobu\s+(\p{L}+(?:\s+\p{L}+)?)\s*minut\p{L}*/iu))
-	) {
+	} else if ((m = work.match(/po dobu\s+(\p{L}+(?:\s+\p{L}+)?)\s*minut\p{L}*/iu))) {
 		const v = czNum(m[1]!);
 		if (v != null) {
 			dur = v;
 			cut(m, "duration");
 		}
-	} else if (
-		(m = work.match(/(?<![\p{L}])(\p{L}+(?:\s+\p{L}+)?)\s+minut\p{L}*/iu))
-	) {
+	} else if ((m = work.match(/(?<![\p{L}])(\p{L}+(?:\s+\p{L}+)?)\s+minut\p{L}*/iu))) {
 		const v = czNum(m[1]!);
 		if (v != null) {
 			dur = v;
@@ -111,9 +105,7 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 		dur = 30;
 		cut(m, "duration");
 	} else if (
-		(m = work.match(
-			/(?:po dobu\s+)?(\d+(?:[.,]\d+)?)\s*(?:hodin\p{L}*|hod\p{L}*|h)(?![\p{L}])/iu,
-		))
+		(m = work.match(/(?:po dobu\s+)?(\d+(?:[.,]\d+)?)\s*(?:hodin\p{L}*|hod\p{L}*|h)(?![\p{L}])/iu))
 	) {
 		dur = Math.round(Number.parseFloat(m[1]!.replace(",", ".")) * 60);
 		cut(m, "duration");
@@ -126,6 +118,15 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	}
 	if (dur != null) draft.durationMin = dur;
 
+	// 4b) Relativní datum „za N dní/dny" — MUSÍ běžet PŘED vícedenním pravidlem (5),
+	// jinak „3 dny" spolkne pravidlo 5, předložka „za" zůstane v názvu a úkol je bez termínu.
+	let relDays: number | null = null;
+	const rel = work.match(/\bza\s+(\d+)\s*dn[íiy](?![\p{L}])/iu);
+	if (rel) {
+		relDays = Number.parseInt(rel[1]!, 10);
+		cut(rel, "date");
+	}
+
 	// 5) Vícedenní N dn[íiy]
 	const dd = work.match(/(\d+)\s*dn[íiy](?![\p{L}])/iu);
 	if (dd) {
@@ -136,7 +137,10 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	// 6) Datum (explicit → pozítří → zítra → dnes)
 	let dateKind: "custom" | "zitra" | "dnes" | undefined;
 	let customDate: string | undefined;
-	if ((m = work.match(/\b(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})?/))) {
+	if (relDays != null) {
+		dateKind = "custom";
+		customDate = addDays(today, relDays);
+	} else if ((m = work.match(/\b(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})?/))) {
 		const da = +m[1]!;
 		const mo = +m[2]!;
 		const y = m[3] ? +m[3] : year;
@@ -167,17 +171,13 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 			dateKind = "custom";
 			customDate = rec.startISO;
 		}
-		if (rec.timeMin != null && draft.startMin == null)
-			draft.startMin = rec.timeMin;
+		if (rec.timeMin != null && draft.startMin == null) draft.startMin = rec.timeMin;
 	}
 
 	// 8) Holý den v týdnu (jen když nebylo opakování ani datum)
 	if (!rec && dateKind === undefined) {
 		for (const w of WD_BARE) {
-			const bm = new RegExp(
-				`(?:^|\\s)((?:${w.st})[\\p{L}]*)(?=\\s|$)`,
-				"iu",
-			).exec(work);
+			const bm = new RegExp(`(?:^|\\s)((?:${w.st})[\\p{L}]*)(?=\\s|$)`, "iu").exec(work);
 			if (bm) {
 				const aheadM = /(?<![\p{L}])p[řr][íi]št\p{L}*/iu.exec(work);
 				dateKind = "custom";
@@ -185,8 +185,7 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 				// Vyřízni jen den (a případné „příští") — index-based, ne globální RECVOCAB.
 				const tokStart = bm.index + bm[0].indexOf(bm[1]!);
 				blank(tokStart, tokStart + bm[1]!.length, "repeat");
-				if (aheadM)
-					blank(aheadM.index, aheadM.index + aheadM[0].length, "repeat");
+				if (aheadM) blank(aheadM.index, aheadM.index + aheadM[0].length, "repeat");
 				break;
 			}
 		}
@@ -196,9 +195,7 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	const hash = work.match(/#(\p{L}+)/u);
 	if (hash) {
 		const q = hash[1]!;
-		const exact = ctx.projects.find(
-			(p) => p.name.toLowerCase() === q.toLowerCase(),
-		);
+		const exact = ctx.projects.find((p) => p.name.toLowerCase() === q.toLowerCase());
 		if (exact) draft.projectId = exact.id;
 		cut(hash, "proj");
 	}

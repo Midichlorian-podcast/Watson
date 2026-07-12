@@ -19,7 +19,8 @@ import type { ListItemRow, ListRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
-import { toggleTask } from "../lib/tasks";
+import { toggleTask, todayISO } from "../lib/tasks";
+import { useFocusTrap } from "../lib/useFocusTrap";
 import { showToast } from "../lib/toast";
 import { useTheme } from "../layout/useTheme";
 import { MB, P, SLA, TH } from "../mail/data";
@@ -33,7 +34,14 @@ export type PeekTarget =
 	| { kind: "mail"; id: string; openFull: () => void }
 	| { kind: "list"; id: string; name: string; openFull: () => void }
 	| { kind: "member"; id: string; name: string; openFull: () => void }
-	| { kind: "day"; dateISO: string; name: string; openFull: () => void };
+	| {
+			kind: "day";
+			dateISO: string;
+			name: string;
+			/** aktivní filtr firmy z Přehledu (workspace_id) — zúží agendu dne na firmu */
+			firm?: string | null;
+			openFull: () => void;
+	  };
 
 const KIND_LABEL: Record<PeekTarget["kind"], string> = {
 	goal: "peek.goal",
@@ -59,11 +67,16 @@ export function PeekPanel({
 	const { openId } = useTaskDetail();
 	// detail úkolu leží NAD peekem (z-70) — Esc nejdřív zavírá jeho
 	const detailOpen = !!openId;
+	// a11y: fokus se po otevření přesune do dialogu a zůstane uvězněný uvnitř
+	// (Tab necyklí po skryté stránce pod scrimem); po zavření se vrátí zpět.
+	const trapRef = useFocusTrap<HTMLElement>(!!target && !detailOpen);
 
 	useEffect(() => {
 		if (!target || detailOpen) return;
 		const h = (e: globalThis.KeyboardEvent) => {
-			if (e.key === "Escape" && !document.querySelector("[data-esc-layer]"))
+			// Peek sám nese data-esc-layer — vyloučíme se z dotazu, jinak by se
+			// nikdy nezavřel; vyšší vrstvy (modal/⌘K/tahák) mají přednost.
+			if (e.key === "Escape" && !document.querySelector("[data-esc-layer]:not([data-peek-layer])"))
 				onClose();
 		};
 		document.addEventListener("keydown", h);
@@ -71,6 +84,10 @@ export function PeekPanel({
 	}, [target, detailOpen, onClose]);
 
 	if (!target) return null;
+
+	// Peek se hlásí jako aktivní esc-vrstva (kbNav/BulkBar/keyboard nechají seznam
+	// pod ním být) jen když je navrchu — pod detailem úkolu (z-70) vrstvu drží on.
+	const escLayer = detailOpen ? undefined : "";
 
 	const title =
 		target.kind === "goal"
@@ -85,6 +102,8 @@ export function PeekPanel({
 		// ztmavený scrim jako u detailu úkolu — klik mimo zavírá
 		<div
 			onClick={onClose}
+			data-esc-layer={escLayer}
+			data-peek-layer={escLayer}
 			style={{
 				position: "fixed",
 				inset: 0,
@@ -97,8 +116,10 @@ export function PeekPanel({
 			}}
 		>
 			<section
+				ref={trapRef}
 				onClick={(e) => e.stopPropagation()}
 				role="dialog"
+				aria-modal="true"
 				aria-label={title}
 				className="border border-line bg-card"
 				style={{
@@ -113,10 +134,7 @@ export function PeekPanel({
 				}}
 			>
 				{/* hlavička: druh + titulek + Otevřít naplno + × */}
-				<div
-					className="border-line border-b"
-					style={{ padding: "14px 18px 12px", flex: "none" }}
-				>
+				<div className="border-line border-b" style={{ padding: "14px 18px 12px", flex: "none" }}>
 					<div className="flex items-center" style={{ gap: 8 }}>
 						<span
 							className="shrink-0 rounded-md font-display font-bold text-ink-3 uppercase"
@@ -170,14 +188,10 @@ export function PeekPanel({
 				<div className="min-h-0 flex-1 overflow-y-auto" style={{ padding: 18 }}>
 					{target.kind === "goal" && <GoalPeek goal={target.goal} />}
 					{target.kind === "flow" && <FlowPeek flow={target.flow} />}
-					{target.kind === "mail" && (
-						<MailPeek id={target.id} onClose={onClose} />
-					)}
+					{target.kind === "mail" && <MailPeek id={target.id} onClose={onClose} />}
 					{target.kind === "list" && <ListPeek id={target.id} />}
-					{target.kind === "member" && (
-						<MemberPeek id={target.id} name={target.name} />
-					)}
-					{target.kind === "day" && <DayPeek dateISO={target.dateISO} />}
+					{target.kind === "member" && <MemberPeek id={target.id} name={target.name} />}
+					{target.kind === "day" && <DayPeek dateISO={target.dateISO} firm={target.firm ?? null} />}
 				</div>
 			</section>
 			<style>{`@keyframes wPeekPop{from{transform:translateY(8px) scale(.985);opacity:0}to{transform:none;opacity:1}}`}</style>
@@ -242,16 +256,11 @@ function PeekCheck({
 function GoalPeek({ goal }: { goal: GoalOverviewRow & { firm?: string } }) {
 	const { t } = useTranslation();
 	const riskColor =
-		goal.status === "risk" || goal.status === "over"
-			? "var(--w-overdue)"
-			: "var(--w-brass)";
+		goal.status === "risk" || goal.status === "over" ? "var(--w-overdue)" : "var(--w-brass)";
 	return (
 		<div>
 			<div className="flex items-baseline" style={{ gap: 8 }}>
-				<span
-					className="font-display font-bold text-ink"
-					style={{ fontSize: 26 }}
-				>
+				<span className="font-display font-bold text-ink" style={{ fontSize: 26 }}>
 					{goal.pct} %
 				</span>
 				{goal.firm && (
@@ -276,10 +285,7 @@ function GoalPeek({ goal }: { goal: GoalOverviewRow & { firm?: string } }) {
 			<div className="font-body text-ink-2" style={{ fontSize: 12.5 }}>
 				{goal.label}
 			</div>
-			<div
-				className="font-body text-ink-3"
-				style={{ fontSize: 12, marginTop: 4 }}
-			>
+			<div className="font-body text-ink-3" style={{ fontSize: 12, marginTop: 4 }}>
 				{t("prehled.elapsed", { elapsed: goal.elapsed })}
 			</div>
 			{(goal.status === "risk" || goal.status === "over") && (
@@ -321,10 +327,7 @@ function FlowPeek({ flow }: { flow: FlowOverviewRow }) {
 	);
 	// dokončení kroku = dokončení jeho úkolu (posun štafety řídí server)
 	const completeStep = async (taskId: string) => {
-		const rows = await powerSync.getAll<TaskRow>(
-			"SELECT * FROM tasks WHERE id = ?",
-			[taskId],
-		);
+		const rows = await powerSync.getAll<TaskRow>("SELECT * FROM tasks WHERE id = ?", [taskId]);
 		if (rows[0]) await toggleTask(rows[0], myId);
 	};
 	return (
@@ -373,9 +376,7 @@ function FlowPeek({ flow }: { flow: FlowOverviewRow }) {
 									width: 17,
 									height: 17,
 									fontSize: 9,
-									background: done
-										? "var(--w-success-soft)"
-										: "var(--w-panel-2)",
+									background: done ? "var(--w-success-soft)" : "var(--w-panel-2)",
 									color: done ? "var(--w-success-ink)" : "var(--w-ink-3)",
 								}}
 							>
@@ -451,7 +452,8 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 	useEffect(() => {
 		if (sentBase.current !== null && sentCount > sentBase.current) {
 			sentBase.current = null;
-			// stejné undo okno jako vlákno (10 s) — akce Zpět na toastu
+			// undoBack funguje 10 s (m.undo), ale tlačítko „Zpět" žije jen po dobu
+			// action toastu (5 s, lib/toast). Sjednocení delší doby patří do toast.tsx.
 			showToast(t("peek.sentToast"), {
 				label: t("detail.undo"),
 				onClick: () => undoBack(),
@@ -559,14 +561,15 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 					>
 						{t("peek.owner")}:
 					</span>
-					<span
+					<button
+						type="button"
 						data-chip
 						data-on={ownerKey ? undefined : "true"}
 						onClick={() => m.setOwner(id, null)}
 						style={{
 							fontFamily: "var(--w-font-mono)",
 							fontSize: 10.5,
-							padding: "3px 10px",
+							padding: "5px 10px",
 							borderRadius: 999,
 							border: "1px solid var(--line)",
 							cursor: "pointer",
@@ -574,12 +577,13 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 						}}
 					>
 						{t("peek.ownerNone")}
-					</span>
+					</button>
 					{people.map((key) => {
 						const p = P[key];
 						if (!p) return null;
 						return (
-							<span
+							<button
+								type="button"
 								key={key}
 								data-chip
 								data-on={ownerKey === key ? "true" : undefined}
@@ -591,7 +595,7 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 									gap: 6,
 									fontFamily: "var(--w-font-mono)",
 									fontSize: 10.5,
-									padding: "3px 10px",
+									padding: "5px 10px",
 									borderRadius: 999,
 									border: "1px solid var(--line)",
 									cursor: "pointer",
@@ -614,7 +618,7 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 									{p.ini}
 								</span>
 								{p.n.split(" ")[0]}
-							</span>
+							</button>
 						);
 					})}
 				</div>
@@ -623,7 +627,8 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 			{/* rychlé odbavení — mail ghost tlačítka; po akci zpátky na Přehled/Velín */}
 			<div className="flex flex-wrap" style={{ gap: 7, marginTop: 12 }}>
 				{!th.personal && (
-					<span
+					<button
+						type="button"
 						data-ghost
 						onClick={() => {
 							m.rowAct(id, "done");
@@ -632,9 +637,10 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 						style={{ fontSize: 11.5, padding: "6px 12px" }}
 					>
 						✓ {t("bulk.done")}
-					</span>
+					</button>
 				)}
-				<span
+				<button
+					type="button"
 					data-ghost
 					onClick={() => {
 						m.rowAct(id, "snooze");
@@ -643,15 +649,16 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 					style={{ fontSize: 11.5, padding: "6px 12px" }}
 				>
 					{t("peek.mailSnooze")}
-				</span>
+				</button>
 				{!hasTask && (
-					<span
+					<button
+						type="button"
 						data-ghost
 						onClick={() => setTaskOpen(true)}
 						style={{ fontSize: 11.5, padding: "6px 12px" }}
 					>
 						{t("peek.mailTask")}
-					</span>
+					</button>
 				)}
 			</div>
 
@@ -748,10 +755,7 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 					</div>
 				)}
 				{[...th.chat, ...(m.chatX[id] ?? [])].map((c, i) => (
-					<div
-						key={`${c.who}-${c.t}-${i}`}
-						style={{ display: "flex", gap: 8, padding: "3px 0" }}
-					>
+					<div key={`${c.who}-${c.t}-${i}`} style={{ display: "flex", gap: 8, padding: "3px 0" }}>
 						<span
 							data-av={P[c.who]?.av ?? ""}
 							style={{
@@ -791,9 +795,7 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 								{P[c.who]?.n.split(" ")[0] ?? c.who}
 							</span>{" "}
 							{"pre" in c && c.pre ? c.pre : ""}
-							{"m" in c && c.m ? (
-								<b style={{ color: "var(--brass-text)" }}> {c.m}</b>
-							) : null}
+							{"m" in c && c.m ? <b style={{ color: "var(--brass-text)" }}> {c.m}</b> : null}
 							{"post" in c && c.post ? c.post : ""}{" "}
 							<span
 								style={{
@@ -831,7 +833,8 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 							outline: "none",
 						}}
 					/>
-					<span
+					<button
+						type="button"
 						data-ghost
 						onClick={() => {
 							if (!chatText.trim()) return;
@@ -841,7 +844,7 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 						style={{ fontSize: 11, padding: "6px 11px" }}
 					>
 						{t("peek.chatSend")}
-					</span>
+					</button>
 				</div>
 			</div>
 
@@ -921,14 +924,16 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 						{t("peek.warnTitle")}
 					</div>
 					<div className="flex flex-wrap" style={{ gap: 7, marginTop: 8 }}>
-						<span
+						<button
+							type="button"
 							data-ghost
 							onClick={() => m.setWarn(null)}
 							style={{ fontSize: 11, padding: "5px 11px" }}
 						>
 							{t("peek.warnCancel")}
-						</span>
-						<span
+						</button>
+						<button
+							type="button"
 							data-ghost
 							onClick={() => {
 								m.attach(id, PEEK_ATT_MARK);
@@ -938,8 +943,9 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 							style={{ fontSize: 11, padding: "5px 11px" }}
 						>
 							{t("peek.warnAnyway")}
-						</span>
-						<span
+						</button>
+						<button
+							type="button"
 							data-primary
 							onClick={() => {
 								m.attach(id, PEEK_ATT_NAME);
@@ -949,31 +955,35 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 							style={{ fontSize: 11, padding: "5px 12px" }}
 						>
 							{t("peek.warnAttach")}
-						</span>
+						</button>
 					</div>
 				</div>
 			)}
 
 			{/* akční řádek jako Nová zpráva: Odeslat · Odeslat a označit Hotovo · sponka */}
 			<div className="flex flex-wrap items-center" style={{ gap: 7, marginTop: 10 }}>
-				<span
+				<button
+					type="button"
 					data-primary
 					onClick={() => trySend(false)}
 					style={{ fontSize: 12, padding: "8px 16px" }}
 				>
 					{t("peek.send")}
-				</span>
-				<span
+				</button>
+				<button
+					type="button"
 					data-ghost
 					onClick={() => trySend(true)}
 					style={{ fontSize: 11.5, padding: "7px 13px" }}
 				>
 					{t("peek.sendDone")}
-				</span>
-				<span
+				</button>
+				<button
+					type="button"
 					data-ghost
 					onClick={() => m.attach(id, PEEK_ATT_NAME)}
 					title={t("peek.attach")}
+					aria-label={t("peek.attach")}
 					style={{
 						display: "inline-flex",
 						alignItems: "center",
@@ -984,7 +994,7 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 					}}
 				>
 					<ClipSvg />
-				</span>
+				</button>
 				<SigPicker mb={th.personal ? "osobni" : th.mb} />
 				<span
 					style={{
@@ -1021,10 +1031,7 @@ function ClipSvg() {
 /** Seznam (checklist) — položky jdou odškrtávat rovnou v peeku. */
 function ListPeek({ id }: { id: string }) {
 	const { t } = useTranslation();
-	const { data: lists } = usePsQuery<ListRow>(
-		"SELECT * FROM lists WHERE id = ?",
-		[id],
-	);
+	const { data: lists } = usePsQuery<ListRow>("SELECT * FROM lists WHERE id = ?", [id]);
 	const { data: items } = usePsQuery<ListItemRow>(
 		"SELECT * FROM list_items WHERE list_id = ? ORDER BY position",
 		[id],
@@ -1034,10 +1041,7 @@ function ListPeek({ id }: { id: string }) {
 	const done = (items ?? []).filter((x) => x.done).length;
 	// stejný zápis jako Seznamy.tsx toggleItem
 	const toggleItem = (it: ListItemRow) =>
-		void powerSync.execute("UPDATE list_items SET done = ? WHERE id = ?", [
-			it.done ? 0 : 1,
-			it.id,
-		]);
+		void powerSync.execute("UPDATE list_items SET done = ? WHERE id = ?", [it.done ? 0 : 1, it.id]);
 	return (
 		<div>
 			<div className="flex items-center" style={{ gap: 9 }}>
@@ -1102,7 +1106,7 @@ function ListPeek({ id }: { id: string }) {
 }
 
 /** Denní agenda (kalendářový widget) — úkoly dne s odbavením + deadliny + přidání. */
-function DayPeek({ dateISO }: { dateISO: string }) {
+function DayPeek({ dateISO, firm }: { dateISO: string; firm: string | null }) {
 	const { t } = useTranslation();
 	const { open } = useTaskDetail();
 	const { openAdd } = useAddTask();
@@ -1114,20 +1118,30 @@ function DayPeek({ dateISO }: { dateISO: string }) {
 		 ORDER BY completed_at IS NOT NULL, priority, start_date`,
 		[dateISO],
 	);
-	const { data: deadlines } = usePsQuery<{ id: string; name: string | null }>(
-		`SELECT id, name FROM tasks
+	const { data: deadlines } = usePsQuery<{
+		id: string;
+		name: string | null;
+		project_id: string | null;
+	}>(
+		`SELECT id, name, project_id FROM tasks
 		 WHERE substr(deadline, 1, 10) = ? AND completed_at IS NULL`,
 		[dateISO],
 	);
 	const projById = new Map(projects.map((p) => [p.id, p]));
-	const openRows = (rows ?? []).filter((r) => !r.completed_at);
-	const doneRows = (rows ?? []).filter((r) => r.completed_at);
+	// Respektuj filtr firmy z Přehledu — bez něj denní agenda ukáže úkoly všech
+	// firem (i osobní schránku), tj. širší množinu než zúžený zbytek obrazovky.
+	const inFirm = (projectId: string | null) =>
+		!firm || (projectId ? projById.get(projectId)?.workspace_id === firm : false);
+	const dayRows = (rows ?? []).filter((r) => inFirm(r.project_id));
+	const dayDeadlines = (deadlines ?? []).filter((d) => inFirm(d.project_id));
+	const openRows = dayRows.filter((r) => !r.completed_at);
+	const doneRows = dayRows.filter((r) => r.completed_at);
 	return (
 		<div>
-			{(deadlines ?? []).length > 0 && (
+			{dayDeadlines.length > 0 && (
 				<>
 					<SectionLabel>{t("peek.dayDeadlines")}</SectionLabel>
-					{(deadlines ?? []).map((d) => (
+					{dayDeadlines.map((d) => (
 						<div
 							key={d.id}
 							onClick={() => open(d.id)}
@@ -1184,17 +1198,11 @@ function DayPeek({ dateISO }: { dateISO: string }) {
 								background: p?.color ?? "var(--w-ink-3)",
 							}}
 						/>
-						<span
-							className="min-w-0 flex-1 truncate font-body text-ink"
-							style={{ fontSize: 12.5 }}
-						>
+						<span className="min-w-0 flex-1 truncate font-body text-ink" style={{ fontSize: 12.5 }}>
 							{tk.name}
 						</span>
 						{tk.start_date && tk.start_date.length >= 16 && (
-							<span
-								className="shrink-0 font-mono text-ink-3"
-								style={{ fontSize: 10.5 }}
-							>
+							<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 10.5 }}>
 								{tk.start_date.slice(11, 16)}
 							</span>
 						)}
@@ -1262,7 +1270,9 @@ function MemberPeek({ id, name }: { id: string; name: string }) {
 		[id],
 	);
 	const projById = new Map(projects.map((p) => [p.id, p]));
-	const tdy = new Date().toISOString().slice(0, 10);
+	// lokální „dnešek" (todayISO) — due_date je naivně lokální, UTC slice by kolem
+	// půlnoci hodnotil termíny o den vedle (audit off-by-one)
+	const tdy = todayISO();
 	return (
 		<div>
 			<div className="flex items-center" style={{ gap: 9, marginBottom: 4 }}>
@@ -1310,10 +1320,7 @@ function MemberPeek({ id, name }: { id: string; name: string }) {
 								background: p?.color ?? "var(--w-ink-3)",
 							}}
 						/>
-						<span
-							className="min-w-0 flex-1 truncate font-body text-ink"
-							style={{ fontSize: 12.5 }}
-						>
+						<span className="min-w-0 flex-1 truncate font-body text-ink" style={{ fontSize: 12.5 }}>
 							{tk.name}
 						</span>
 						{tk.due_date && (

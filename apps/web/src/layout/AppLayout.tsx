@@ -25,9 +25,7 @@ import { Sidebar } from "./Sidebar";
 
 export function AppLayout() {
 	// Sbalení sidebaru se persistuje (prototyp toggleRail + persist, ř. 2580).
-	const [collapsed, setCollapsed] = useState(
-		() => localStorage.getItem("watson.rail") === "1",
-	);
+	const [collapsed, setCollapsed] = useState(() => localStorage.getItem("watson.rail") === "1");
 	const isMobile = useIsMobile();
 	// Mail zabírá celou plochu MAIN místo topbaru (prototyp screenNotMail, ř. 357).
 	const path = useRouterState({ select: (s) => s.location.pathname });
@@ -39,10 +37,7 @@ export function AppLayout() {
 	useEffect(() => {
 		if (landed.current) return;
 		landed.current = true;
-		if (
-			window.location.pathname === "/" &&
-			localStorage.getItem("watson.landing") === "prehled"
-		) {
+		if (window.location.pathname === "/" && localStorage.getItem("watson.landing") === "prehled") {
 			void navigate({ to: "/prehled", replace: true });
 		}
 	}, [navigate]);
@@ -61,42 +56,50 @@ export function AppLayout() {
 									<ProjectDetailProvider>
 										<BulkSelectProvider>
 											<MailBridgeProvider>
-											<KeyboardProvider>
-											<div
-												className="flex h-full min-h-full"
-												style={{ background: "var(--w-paper)" }}
-											>
-												{!isMobile && (
-													<Sidebar
-														collapsed={collapsed}
-														onToggle={() => setCollapsed((c) => !c)}
-													/>
-												)}
-												<div className="flex min-w-0 flex-1 flex-col">
-													{!onMail && <Header />}
-													<main
-														className={
-															onMail
-																? "flex flex-1 flex-col overflow-hidden"
-																: "flex-1 overflow-auto"
-														}
-														style={isMobile ? { paddingBottom: 58 } : undefined}
+												<KeyboardProvider>
+													<div
+														className="flex h-full min-h-full"
+														style={{ background: "var(--w-paper)" }}
 													>
-														<SyncGate>
-															<Suspense fallback={null}>
-																<Outlet />
-															</Suspense>
-														</SyncGate>
-													</main>
-												</div>
-												{isMobile && <MobileTabBar />}
-												<WriteRejectedToast />
-												<ActionToast />
-												<TaskDetailPanel />
-												<ProjectDetailPanel />
-												<BulkBar />
-											</div>
-											</KeyboardProvider>
+														{!isMobile && (
+															<Sidebar
+																collapsed={collapsed}
+																onToggle={() => setCollapsed((c) => !c)}
+															/>
+														)}
+														<div className="flex min-w-0 flex-1 flex-col">
+															{!onMail && <Header />}
+															<main
+																className={
+																	onMail
+																		? "flex flex-1 flex-col overflow-hidden"
+																		: "flex-1 overflow-auto"
+																}
+																// MobileTabBar roste o safe-area (home indikátor) — main musí rezervovat
+																// stejnou výšku, jinak zůstane spodní obsah schovaný za lištou.
+																style={
+																	isMobile
+																		? {
+																				paddingBottom: "calc(58px + env(safe-area-inset-bottom))",
+																			}
+																		: undefined
+																}
+															>
+																<SyncGate>
+																	<Suspense fallback={null}>
+																		<Outlet />
+																	</Suspense>
+																</SyncGate>
+															</main>
+														</div>
+														{isMobile && <MobileTabBar />}
+														<WriteRejectedToast />
+														<ActionToast />
+														<TaskDetailPanel />
+														<ProjectDetailPanel />
+														<BulkBar />
+													</div>
+												</KeyboardProvider>
 											</MailBridgeProvider>
 										</BulkSelectProvider>
 									</ProjectDetailProvider>

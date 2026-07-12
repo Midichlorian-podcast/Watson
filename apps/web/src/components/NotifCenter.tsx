@@ -37,8 +37,25 @@ const subscribeSeen = (fn: () => void) => {
 	return () => seenSubs.delete(fn);
 };
 function writeSeen(next: Record<string, number>) {
+	// Prořez: mapa „viděno" jinak roste monotónně (klíče dokončených úkolů se
+	// nikdy nemažou). Nad stropem podržíme jen nejnovější podle timestampu.
+	const keys = Object.keys(next);
+	if (keys.length > 400) {
+		next = Object.fromEntries(
+			keys
+				.sort((a, b) => (next[b] ?? 0) - (next[a] ?? 0))
+				.slice(0, 300)
+				.map((k) => [k, next[k] as number]),
+		);
+	}
 	seenCache = next;
-	localStorage.setItem(SEEN_KEY, JSON.stringify(next));
+	// Quota/soukromý režim (QuotaExceeded/SecurityError) nesmí shodit onClick
+	// handler notifikace — držíme aspoň in-memory stav a UI běží dál.
+	try {
+		localStorage.setItem(SEEN_KEY, JSON.stringify(next));
+	} catch {
+		/* localStorage nedostupný — pokračujeme jen s in-memory cache */
+	}
 	for (const fn of seenSubs) fn();
 }
 export function markSeen(keys: string[]) {
@@ -176,13 +193,7 @@ const DOT: Record<NotifItem["kind"], string> = {
 	mail: "var(--w-avatar)",
 };
 
-export function NotifCenter({
-	open,
-	onClose,
-}: {
-	open: boolean;
-	onClose: () => void;
-}) {
+export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => void }) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const { open: openTask, openId } = useTaskDetail();
@@ -194,7 +205,11 @@ export function NotifCenter({
 	useEffect(() => {
 		if (!open || peek || openId) return;
 		const h = (e: globalThis.KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
+			if (e.key !== "Escape") return;
+			// Vyšší vrstva (⌘K paleta / tahák) má vlastní data-esc-layer a musí se
+			// zavřít dřív — jinak by jeden Esc sundal i notifikace pod ní.
+			if (document.querySelector("[data-esc-layer]:not([data-notif-layer])")) return;
+			onClose();
 		};
 		document.addEventListener("keydown", h);
 		return () => document.removeEventListener("keydown", h);
@@ -271,16 +286,25 @@ export function NotifCenter({
 
 	if (!open) return null;
 
+	// Panel se hlásí jako aktivní esc-vrstva (kbNav/BulkBar/keyboard pak seznam
+	// pod ním nechají být) JEN když je opravdu navrchu — když je nad ním mail
+	// peek nebo detail úkolu (z-70), vrstvu drží ony, ne panel.
+	const escLayer = !peek && !openId ? "" : undefined;
+
 	return createPortal(
 		<>
 			{/* průhledný scrim — klik mimo zavírá; panel je ucelená karta pod zvonkem */}
 			<div
 				onClick={onClose}
+				data-esc-layer={escLayer}
+				data-notif-layer={escLayer}
 				style={{ position: "fixed", inset: 0, zIndex: 64 }}
 			/>
 			<div
 				role="dialog"
 				aria-label={t("shell.notifTitle")}
+				data-esc-layer={escLayer}
+				data-notif-layer={escLayer}
 				className="border border-line bg-card"
 				style={{
 					position: "fixed",
@@ -301,10 +325,7 @@ export function NotifCenter({
 					className="flex items-center border-line border-b"
 					style={{ gap: 8, padding: "12px 15px 10px", flex: "none" }}
 				>
-					<span
-						className="flex-1 font-display font-bold text-ink"
-						style={{ fontSize: 13 }}
-					>
+					<span className="flex-1 font-display font-bold text-ink" style={{ fontSize: 13 }}>
 						{t("shell.notifTitle")}
 					</span>
 					{unseen > 0 && (

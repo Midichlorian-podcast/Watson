@@ -26,6 +26,7 @@ import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
+import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useWatson } from "../lib/watson";
@@ -58,10 +59,7 @@ export function Today() {
 	const isMobile = useIsMobile();
 
 	const projects = useProjects();
-	const projMap = useMemo(
-		() => new Map(projects.map((p) => [p.id, p] as const)),
-		[projects],
-	);
+	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
 
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
 	// Výkon: v běžném případě (bez „Dokončené") filtruj hotové rovnou v SQL — méně řádků materializuje
@@ -110,8 +108,7 @@ export function Today() {
 			if (isInboxTask(x, inboxIds)) return false;
 			if (x.parent_id && !x.due_date) return false;
 			const fs = flowSteps.get(x.id);
-			if (fs && (fs.state === "dormant" || fs.state === "waiting"))
-				return false;
+			if (fs && (fs.state === "dormant" || fs.state === "waiting")) return false;
 			if (wsFilter) {
 				const p = x.project_id ? projMap.get(x.project_id) : undefined;
 				if (p?.workspace_id !== wsFilter) return false;
@@ -142,10 +139,7 @@ export function Today() {
 				if (next === tdy) {
 					projected.push({
 						...x,
-						due_date:
-							x.due_date && x.due_date.length > 10
-								? tdy + x.due_date.slice(10)
-								: tdy,
+						due_date: x.due_date && x.due_date.length > 10 ? tdy + x.due_date.slice(10) : tdy,
 					});
 				} else if (!next) {
 					projected.push(x);
@@ -154,10 +148,7 @@ export function Today() {
 			}
 			projected.push(x);
 		}
-		const opn = filterByQuery(
-			sortTasks(filterTasks(projected, tb, tbCtx), tb, tbCtx),
-			searchQ,
-		);
+		const opn = filterByQuery(sortTasks(filterTasks(projected, tb, tbCtx), tb, tbCtx), searchQ);
 		return {
 			overdue: opn.filter((x) => {
 				const d = dayOf(x);
@@ -171,10 +162,7 @@ export function Today() {
 	}, [tasks, tb, tbCtx, flowSteps, wsFilter, projMap, projects, searchQ]);
 
 	// Pořadí pro ↑/↓ v detailu (prototyp _navIds) + kbsel navigace.
-	const flatList = useMemo(
-		() => [...g.overdue, ...g.today],
-		[g.overdue, g.today],
-	);
+	const flatList = useMemo(() => [...g.overdue, ...g.today], [g.overdue, g.today]);
 	const { setNavIds } = useTaskDetail();
 	useEffect(() => {
 		setNavIds(flatList.map((x) => x.id));
@@ -183,19 +171,13 @@ export function Today() {
 
 	/** „Tvůj další krok v postupech" — VŠECHNY aktivní kroky přiřazené mně (prototyp myFlowSteps, ř. 396–406). */
 	const myFlowSteps = useMemo(() => {
-		const mine = new Set(
-			(allAsg ?? []).filter((a) => a.user_id === userId).map((a) => a.task_id),
-		);
+		const mine = new Set((allAsg ?? []).filter((a) => a.user_id === userId).map((a) => a.task_id));
 		const asgFirst = new Map<string, string>();
 		for (const a of allAsg ?? []) {
-			if (a.task_id && a.user_id && !asgFirst.has(a.task_id))
-				asgFirst.set(a.task_id, a.user_id);
+			if (a.task_id && a.user_id && !asgFirst.has(a.task_id)) asgFirst.set(a.task_id, a.user_id);
 		}
 		const nameOf = new Map((team ?? []).map((m) => [m.id, m.name] as const));
-		const byChain = new Map<
-			string,
-			{ task_id: string | null; position: number | null }[]
-		>();
+		const byChain = new Map<string, { task_id: string | null; position: number | null }[]>();
 		for (const s of allSteps ?? []) {
 			if (!s.chain_id) continue;
 			const arr = byChain.get(s.chain_id) ?? [];
@@ -227,38 +209,38 @@ export function Today() {
 
 	// Přeplánování zpožděných na zvolený den (menu: zítra/víkend/příští pondělí/za týden/…).
 	async function rescheduleOverdue(targetIso: string) {
-		const target = `${targetIso}T09:00:00`;
-		const moved = g.overdue.map((tk) => ({ id: tk.id, prev: tk.due_date }));
-		const apply =
-			(to: (m: { id: string; prev: string | null }) => string | null) =>
-			() =>
-				// Lokální atomicita: hromadné přeplánování zpožděných v jedné transakci.
-				powerSync.writeTransaction(async (tx) => {
-					for (const m of moved) {
-						await tx.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [
-							to(m),
-							m.id,
-						]);
-					}
-				});
-		await apply(() => target)();
-		pushUndo({ undo: apply((m) => m.prev), redo: apply(() => target) });
+		// R4: opakované úkoly hromadně NEpřeplánovávat — přepsalo by kotvu CELÉ řady bez dotazu
+		// „tento / tento a další / celá řada" (stejně jako BulkBar/TaskItem). Řadu uživatel upraví v detailu.
+		const movable = g.overdue.filter((tk) => !tk.recurrence_rule);
+		const skipped = g.overdue.length - movable.length;
+		// Datum-only (bez natvrdo 09:00), konzistentní se zbytkem appky (siblings přes rescheduleDate).
+		const moved = movable.map((tk) => ({ id: tk.id, prev: tk.due_date }));
+		const apply = (to: (m: { id: string; prev: string | null }) => string | null) => () =>
+			// Lokální atomicita: hromadné přeplánování zpožděných v jedné transakci.
+			powerSync.writeTransaction(async (tx) => {
+				for (const m of moved) {
+					await tx.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [to(m), m.id]);
+				}
+			});
+		if (moved.length) {
+			await apply(() => targetIso)();
+			pushUndo({ undo: apply((m) => m.prev), redo: apply(() => targetIso) });
+		}
+		showToast(
+			[
+				...(moved.length ? [t("today.rescheduledToast", { count: moved.length })] : []),
+				...(skipped ? [t("bulk.recurringSkipped", { count: skipped })] : []),
+			].join(" · "),
+		);
 	}
 
 	const hour = new Date().getHours();
 	const greeting =
-		hour < 11
-			? t("today.morning")
-			: hour < 18
-				? t("today.afternoon")
-				: t("today.evening");
+		hour < 11 ? t("today.morning") : hour < 18 ? t("today.afternoon") : t("today.evening");
 	const firstName = session?.user?.name?.split(" ")[0] ?? "";
-	const greet = `${greeting}${firstName ? `, ${firstName}` : ""}. ${t(
-		"today.summaryToday",
-		{
-			count: g.today.length,
-		},
-	)}${g.overdue.length > 0 ? ` · ${t("today.summaryOverdue", { count: g.overdue.length })}` : ""}`;
+	const greet = `${greeting}${firstName ? `, ${firstName}` : ""}. ${t("today.summaryToday", {
+		count: g.today.length,
+	})}${g.overdue.length > 0 ? ` · ${t("today.summaryOverdue", { count: g.overdue.length })}` : ""}`;
 
 	const dateLabel = `${new Intl.DateTimeFormat(i18n.language, {
 		day: "numeric",
@@ -275,18 +257,12 @@ export function Today() {
 				data-kbsel={kbSel === task.id || undefined}
 				className="rounded-xl"
 				style={
-					kbSel === task.id
-						? { outline: "2px solid var(--w-brass)", outlineOffset: -1 }
-						: undefined
+					kbSel === task.id ? { outline: "2px solid var(--w-brass)", outlineOffset: -1 } : undefined
 				}
 			>
 				<TaskItem
 					task={task}
-					project={
-						p
-							? { name: p.name, color: p.color, workspace_id: p.workspace_id }
-							: undefined
-					}
+					project={p ? { name: p.name, color: p.color, workspace_id: p.workspace_id } : undefined}
 					flow={flowSteps.get(task.id)}
 				/>
 			</div>
@@ -311,10 +287,7 @@ export function Today() {
 					>
 						WATSON
 					</span>
-					<span
-						className="min-w-0 flex-1 truncate font-body text-ink-2"
-						style={{ fontSize: 13 }}
-					>
+					<span className="min-w-0 flex-1 truncate font-body text-ink-2" style={{ fontSize: 13 }}>
 						{greet}
 					</span>
 					{g.overdue.length > 0 && (
@@ -336,10 +309,7 @@ export function Today() {
 				</div>
 			)}
 
-			<div
-				className="mx-auto max-w-[1080px]"
-				style={{ padding: "12px 22px 90px" }}
-			>
+			<div className="mx-auto max-w-[1080px]" style={{ padding: "12px 22px 90px" }}>
 				{/* Workspace chipy Vše/Moje/… (prototyp ř. 342–346) */}
 				<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
 
@@ -421,20 +391,12 @@ export function Today() {
 									>
 										{f.task.name}
 									</div>
-									<div
-										className="truncate font-body text-ink-3"
-										style={{ fontSize: 11.5 }}
-									>
+									<div className="truncate font-body text-ink-3" style={{ fontSize: 11.5 }}>
 										{f.fs.name}
-										{f.blocking
-											? ` · ${t("today.thenHandOff")} → ${f.blocking}`
-											: ""}
+										{f.blocking ? ` · ${t("today.thenHandOff")} → ${f.blocking}` : ""}
 									</div>
 								</div>
-								<span
-									className="shrink-0 font-mono text-brass-text"
-									style={{ fontSize: 11.5 }}
-								>
+								<span className="shrink-0 font-mono text-brass-text" style={{ fontSize: 11.5 }}>
 									{f.fs.pos}/{f.fs.total}
 								</span>
 							</button>
@@ -489,14 +451,8 @@ function SectionHead({
 	actionNode?: React.ReactNode;
 }) {
 	return (
-		<div
-			className="flex items-center gap-2.5"
-			style={{ margin: "18px 0 2px", padding: "0 4px" }}
-		>
-			<span
-				className="font-display font-bold text-ink"
-				style={{ fontSize: 13 }}
-			>
+		<div className="flex items-center gap-2.5" style={{ margin: "18px 0 2px", padding: "0 4px" }}>
+			<span className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
 				{label}
 			</span>
 			<span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>

@@ -1,7 +1,7 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
 import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
@@ -37,10 +37,7 @@ function CardHead({
 }) {
 	return (
 		<div className="flex items-center" style={{ gap: 8, padding: "13px 16px 9px" }}>
-			<span
-				className="flex-1 font-display font-bold text-ink"
-				style={{ fontSize: 13.5 }}
-			>
+			<span className="flex-1 font-display font-bold text-ink" style={{ fontSize: 13.5 }}>
 				{title}
 			</span>
 			{foot &&
@@ -96,12 +93,28 @@ export function Velin() {
 	// Pošta z mail modulu (bez filtru firmy — seed světy se liší, viz state.tsx).
 	const digest = useMailDigest();
 	const openMailThread = useOpenMailThread();
-	const urgMails = (digest?.items ?? []).filter(
-		(x) => x.flag === "p1" || x.flag === "p2",
-	);
+	const urgMails = (digest?.items ?? []).filter((x) => x.flag === "p1" || x.flag === "p2");
 	const [firm, setFirm] = useState<string | null>(null); // velFirm
 	// peek — náhled položky na místě (feedback: neodvádět z Velína pryč)
 	const [peek, setPeek] = useState<PeekTarget | null>(null);
+	// „dnešek" z tikajícího zdroje — jinak u dlouho otevřené karty (přes půlnoc)
+	// zamrzne datum i hranice „po termínu" na včerejšku, dokud nepřijde jiná změna.
+	const [dayKey, setDayKey] = useState(todayISO);
+	useEffect(() => {
+		const check = () =>
+			setDayKey((prev) => {
+				const now = todayISO();
+				return now !== prev ? now : prev;
+			});
+		const id = setInterval(check, 60_000);
+		window.addEventListener("focus", check);
+		document.addEventListener("visibilitychange", check);
+		return () => {
+			clearInterval(id);
+			window.removeEventListener("focus", check);
+			document.removeEventListener("visibilitychange", check);
+		};
+	}, []);
 
 	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks");
 	const { data: assignments } = usePsQuery<{
@@ -112,10 +125,7 @@ export function Velin() {
 	const leadership = isLeadership(workspaces);
 	// memoizace — firmsWs je dependency těžkého view memo níž; nová identita
 	// každý render by memo zrušila (celý výpočet by běžel při každém renderu)
-	const firmsWs = useMemo(
-		() => (workspaces ?? []).filter((w) => !w.isPersonal),
-		[workspaces],
-	);
+	const firmsWs = useMemo(() => (workspaces ?? []).filter((w) => !w.isPersonal), [workspaces]);
 
 	const view = useMemo(() => {
 		const tdy = todayISO();
@@ -134,8 +144,7 @@ export function Velin() {
 			!tk.completed_at && !!tk.due_date && tk.due_date.slice(0, 10) < tdy;
 		const inF = (tk: TaskRow) => !firm || wsOfT(tk) === firm;
 
-		const goalRisk = (g: { status: string }) =>
-			g.status === "risk" || g.status === "over";
+		const goalRisk = (g: { status: string }) => g.status === "risk" || g.status === "over";
 
 		const firms = firmsWs.map((w) => {
 			const pts = allT.filter((tk) => wsOfT(tk) === w.id);
@@ -151,6 +160,10 @@ export function Velin() {
 			if (!a.task_id || !a.user_id) continue;
 			asgByTask.set(a.task_id, [...(asgByTask.get(a.task_id) ?? []), a.user_id]);
 		}
+		// U sdílených úkolů (R2, více přiřazených) bereme dole jen prvního; bez
+		// deterministického řazení by „odpovědný" skákal dle pořadí řádků SQL.
+		for (const uids of asgByTask.values())
+			uids.sort((a, b) => (members.get(a) ?? a).localeCompare(members.get(b) ?? b));
 		// zátěž lidí — otevřené/po termínu per člověk (prototyp load, bar min(100, open*12)%)
 		const perPerson = new Map<string, { open: number; ov: number }>();
 		for (const tk of allT) {
@@ -225,10 +238,7 @@ export function Velin() {
 					}).format(new Date(iso))
 				: "";
 		allT
-			.filter(
-				(tk) =>
-					inF(tk) && tk.completed_at && tk.completed_at.slice(0, 10) === tdy,
-			)
+			.filter((tk) => inF(tk) && tk.completed_at && tk.completed_at.slice(0, 10) === tdy)
 			.sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))
 			.slice(0, 4)
 			.forEach((tk) => {
@@ -269,6 +279,7 @@ export function Velin() {
 		firm,
 		t,
 		i18n.language,
+		dayKey,
 	]);
 
 	const todayLabel = useMemo(() => {
@@ -277,7 +288,13 @@ export function Velin() {
 			weekday: "short",
 		}).format(d);
 		return `${wd} ${d.getDate()}. ${d.getMonth() + 1}.`;
-	}, [i18n.language]);
+	}, [i18n.language, dayKey]);
+
+	// Dokud workspaces nedorazí (studený start přímo na /velin), NEjde o odepření,
+	// jen o načítání — locked screen by oprávněnému vedení jinak na okamžik problikl.
+	if (workspaces === undefined) {
+		return <div className="mx-auto" style={{ maxWidth: 1120, padding: "18px 22px 90px" }} />;
+	}
 
 	// zamčená obrazovka pro ne-vedení (prototyp locked, ř. 949–955)
 	if (!leadership) {
@@ -307,10 +324,7 @@ export function Velin() {
 					>
 						{t("velin.lockedTitle")}
 					</div>
-					<div
-						className="mx-auto font-body text-ink-3"
-						style={{ fontSize: 13, maxWidth: "44ch" }}
-					>
+					<div className="mx-auto font-body text-ink-3" style={{ fontSize: 13, maxWidth: "44ch" }}>
 						{t("velin.lockedBody", { name: session?.user?.name ?? "" })}
 					</div>
 				</div>
@@ -321,10 +335,7 @@ export function Velin() {
 	return (
 		<div className="mx-auto" style={{ maxWidth: 1120, padding: "18px 22px 90px" }}>
 			{/* chipy firem + datum */}
-			<div
-				className="flex flex-wrap items-center"
-				style={{ gap: 8, marginBottom: 14 }}
-			>
+			<div className="flex flex-wrap items-center" style={{ gap: 8, marginBottom: 14 }}>
 				<Chip label={t("velin.chipAll")} on={!firm} onClick={() => setFirm(null)} />
 				{firmsWs.map((w) => (
 					<Chip
@@ -355,7 +366,16 @@ export function Velin() {
 					return (
 						<div
 							key={f.id}
+							role="button"
+							tabIndex={0}
+							aria-pressed={on}
 							onClick={() => setFirm(on ? null : f.id)}
+							onKeyDown={(e) => {
+								if (e.key === "Enter" || e.key === " ") {
+									e.preventDefault();
+									setFirm(on ? null : f.id);
+								}
+							}}
 							className="cursor-pointer rounded-[14px]"
 							style={{
 								padding: "13px 15px",
@@ -374,17 +394,11 @@ export function Velin() {
 										background: f.color ?? "var(--w-ink-3)",
 									}}
 								/>
-								<span
-									className="flex-1 truncate font-display font-bold"
-									style={{ fontSize: 13.5 }}
-								>
+								<span className="flex-1 truncate font-display font-bold" style={{ fontSize: 13.5 }}>
 									{f.name}
 								</span>
 								{f.ov > 0 && (
-									<span
-										className="font-mono"
-										style={{ fontSize: 10.5, color: "var(--w-overdue)" }}
-									>
+									<span className="font-mono" style={{ fontSize: 10.5, color: "var(--w-overdue)" }}>
 										⚠ {f.ov}
 									</span>
 								)}
@@ -395,9 +409,7 @@ export function Velin() {
 							>
 								<span>{t("velin.openCount", { count: f.open })}</span>
 								<span>✓ {f.doneN}</span>
-								{f.risk > 0 && (
-									<span>◎ {t("velin.riskCount", { count: f.risk })}</span>
-								)}
+								{f.risk > 0 && <span>◎ {t("velin.riskCount", { count: f.risk })}</span>}
 							</div>
 						</div>
 					);
@@ -416,12 +428,10 @@ export function Velin() {
 					{t("velin.kpiOverdue")}: <b className="font-display">{view.kOv}</b>
 				</span>
 				<span>
-					{t("velin.kpiUnread")}:{" "}
-					<b className="font-display">{digest ? digest.unread : "–"}</b>
+					{t("velin.kpiUnread")}: <b className="font-display">{digest ? digest.unread : "–"}</b>
 				</span>
 				<span>
-					{t("velin.kpiUrgent")}:{" "}
-					<b className="font-display">{digest ? urgMails.length : "–"}</b>
+					{t("velin.kpiUrgent")}: <b className="font-display">{digest ? urgMails.length : "–"}</b>
 				</span>
 				<span>
 					{t("velin.kpiRisk")}: <b className="font-display">{view.kRisk}</b>
@@ -449,24 +459,15 @@ export function Velin() {
 							<Row key={r.id} onClick={() => open(r.id)}>
 								<NavyAvatar text={r.ini} />
 								<div className="min-w-0 flex-1">
-									<div
-										className="truncate font-body text-ink"
-										style={{ fontSize: 12.5 }}
-									>
+									<div className="truncate font-body text-ink" style={{ fontSize: 12.5 }}>
 										{r.name}
 									</div>
-									<div
-										className="flex items-center"
-										style={{ gap: 6, marginTop: 1 }}
-									>
+									<div className="flex items-center" style={{ gap: 6, marginTop: 1 }}>
 										<span
 											className="shrink-0 rounded-full"
 											style={{ width: 6, height: 6, background: r.projColor }}
 										/>
-										<span
-											className="font-body text-ink-3"
-											style={{ fontSize: 10.5 }}
-										>
+										<span className="font-body text-ink-3" style={{ fontSize: 10.5 }}>
 											{r.projName}
 										</span>
 									</div>
@@ -487,9 +488,7 @@ export function Velin() {
 					<CardHead
 						title={t("velin.cardLoad")}
 						foot={t("velin.openReports")}
-						onFoot={() =>
-							void navigate({ to: "/reporty", search: { tab: "lide" } })
-						}
+						onFoot={() => void navigate({ to: "/reporty", search: { tab: "lide" } })}
 					/>
 					{view.load.length === 0 && (
 						<div
@@ -523,10 +522,7 @@ export function Velin() {
 							>
 								{p.name}
 							</span>
-							<div
-								className="flex-1 overflow-hidden rounded-full bg-panel-2"
-								style={{ height: 6 }}
-							>
+							<div className="flex-1 overflow-hidden rounded-full bg-panel-2" style={{ height: 6 }}>
 								<div
 									style={{
 										height: "100%",
@@ -589,16 +585,10 @@ export function Velin() {
 									{mm.flag.toUpperCase()}
 								</span>
 								<div className="min-w-0 flex-1">
-									<div
-										className="truncate font-body text-ink"
-										style={{ fontSize: 12.5 }}
-									>
+									<div className="truncate font-body text-ink" style={{ fontSize: 12.5 }}>
 										{mm.subj}
 									</div>
-									<div
-										className="font-body text-ink-3"
-										style={{ fontSize: 10.5, marginTop: 1 }}
-									>
+									<div className="font-body text-ink-3" style={{ fontSize: 10.5, marginTop: 1 }}>
 										{mm.from} · {mm.mbShort}
 									</div>
 								</div>
@@ -637,10 +627,7 @@ export function Velin() {
 									>
 										{g.name}
 									</span>
-									<span
-										className="shrink-0 font-mono text-ink-3"
-										style={{ fontSize: 10 }}
-									>
+									<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 10 }}>
 										{g.firm}
 									</span>
 									<span
@@ -707,10 +694,7 @@ export function Velin() {
 										{f.done}/{f.total}
 									</span>
 								</div>
-								<div
-									className="font-body text-ink-3"
-									style={{ fontSize: 11, marginTop: 4 }}
-								>
+								<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 4 }}>
 									{t("velin.stuckNow", {
 										name: f.nowName,
 										who: f.nowWho || t("flows.anyoneTeam"),
@@ -743,10 +727,7 @@ export function Velin() {
 								>
 									{f.txt}
 								</span>
-								<span
-									className="shrink-0 font-mono text-ink-3"
-									style={{ fontSize: 10 }}
-								>
+								<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 10 }}>
 									{f.t}
 								</span>
 							</div>
@@ -787,10 +768,7 @@ function Chip({
 			}}
 		>
 			{dot && (
-				<span
-					className="shrink-0 rounded-full"
-					style={{ width: 7, height: 7, background: dot }}
-				/>
+				<span className="shrink-0 rounded-full" style={{ width: 7, height: 7, background: dot }} />
 			)}
 			{label}
 		</button>
@@ -811,6 +789,18 @@ function Row({
 	return (
 		<div
 			onClick={onClick}
+			role={onClick ? "button" : undefined}
+			tabIndex={onClick ? 0 : undefined}
+			onKeyDown={
+				onClick
+					? (e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								onClick();
+							}
+						}
+					: undefined
+			}
 			className="cursor-pointer border-line border-t hover:bg-panel-2"
 			style={
 				column

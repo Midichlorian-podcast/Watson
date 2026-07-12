@@ -163,14 +163,10 @@ export function Cile() {
 		},
 	});
 	const members = team ?? [];
-	const memberName = (id: string | null) =>
-		members.find((m) => m.id === id)?.name ?? "";
+	const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "";
 
 	const wsProjectIds = useMemo(
-		() =>
-			new Set(
-				projects.filter((p) => p.workspace_id === activeWs).map((p) => p.id),
-			),
+		() => new Set(projects.filter((p) => p.workspace_id === activeWs).map((p) => p.id)),
 		[projects, activeWs],
 	);
 	const linksByGoal = useMemo(() => {
@@ -200,8 +196,7 @@ export function Cile() {
 			const links = linksByGoal.get(g.id) ?? [];
 			const linkSet = new Set(links);
 			// fPerson — explicitní filtr; u scope=person fallback na vlastníka (prototyp createGoal ř. 2345 dosazuje fPerson=owner).
-			const person =
-				g.filter_person_id || (g.scope === "person" ? g.owner_id : null);
+			const person = g.filter_person_id || (g.scope === "person" ? g.owner_id : null);
 			const kw = (g.filter_keyword ?? "").trim().toLowerCase();
 			// Periodická obnova: úkoly dokončené před začátkem běžícího období se nepočítají (resetGoalPeriod, ř. 2346).
 			const ps = g.period_start ? g.period_start.slice(0, 10) : null;
@@ -210,8 +205,7 @@ export function Cile() {
 				if (links.length > 0 && !linkSet.has(tk.project_id)) return false;
 				if (person && !assigneesByTask.get(tk.id)?.has(person)) return false;
 				if (kw && !(tk.name ?? "").toLowerCase().includes(kw)) return false;
-				if (ps && tk.completed_at && tk.completed_at.slice(0, 10) < ps)
-					return false;
+				if (ps && tk.completed_at && tk.completed_at.slice(0, 10) < ps) return false;
 				return true;
 			});
 		};
@@ -236,13 +230,7 @@ export function Cile() {
 				}
 				projectPct = { pct: w ? Math.round(p / w) : 0, count: ids.length };
 			}
-			const pr = goalProgress(
-				g.metric ?? "completion",
-				ts,
-				g.target ?? 0,
-				projectPct,
-				t,
-			);
+			const pr = goalProgress(g.metric ?? "completion", ts, g.target ?? 0, projectPct, t);
 			const overdue = !!g.due_date && g.due_date.slice(0, 10) < tdy;
 			const elapsed = goalElapsed(g.created_at, g.due_date, tdy);
 			const st = goalStatus(pr.pct, elapsed, overdue, false);
@@ -263,7 +251,8 @@ export function Cile() {
 				.filter(Boolean);
 			return { g, pr, st, elapsed, overdue, links };
 		});
-	}, [goals, goalTasks, linksByGoal, tasks, projects]);
+		// t v deps → progress labely se přeloží hned po přepnutí jazyka, ne až při jiné změně.
+	}, [goals, goalTasks, linksByGoal, tasks, projects, t]);
 
 	const tabs: [string, string][] = wsP
 		? [["personal", t("goals.tabPersonal")]]
@@ -272,21 +261,15 @@ export function Cile() {
 				["project", t("goals.tabProject")],
 				["person", t("goals.tabPerson")],
 			];
-	const activeTab =
-		tab && tabs.some(([k]) => k === tab) ? tab : (tabs[0]?.[0] ?? "team");
-	const shown = wsP
-		? view
-		: view.filter((v) => (v.g.scope ?? "team") === activeTab);
+	const activeTab = tab && tabs.some(([k]) => k === tab) ? tab : (tabs[0]?.[0] ?? "team");
+	const shown = wsP ? view : view.filter((v) => (v.g.scope ?? "team") === activeTab);
 	const tabCount = (k: string) =>
 		wsP ? view.length : view.filter((v) => (v.g.scope ?? "team") === k).length;
 
 	const selected = view.find((v) => v.g.id === selectedId) ?? null;
 
 	return (
-		<div
-			className="mx-auto max-w-[1080px]"
-			style={{ padding: "20px 22px 90px" }}
-		>
+		<div className="mx-auto max-w-[1080px]" style={{ padding: "20px 22px 90px" }}>
 			{/* taby + Nový cíl */}
 			<div className="mb-4 flex flex-wrap items-center" style={{ gap: 14 }}>
 				<div
@@ -310,10 +293,7 @@ export function Cile() {
 							}}
 						>
 							{l}
-							<span
-								className="font-mono"
-								style={{ fontSize: 11, opacity: 0.7 }}
-							>
+							<span className="font-mono" style={{ fontSize: 11, opacity: 0.7 }}>
 								{tabCount(k)}
 							</span>
 						</button>
@@ -329,8 +309,7 @@ export function Cile() {
 						fontSize: 13,
 					}}
 				>
-					<span style={{ fontSize: 16, lineHeight: 1 }}>+</span>{" "}
-					{t("goals.newGoal")}
+					<span style={{ fontSize: 16, lineHeight: 1 }}>+</span> {t("goals.newGoal")}
 				</button>
 			</div>
 
@@ -356,8 +335,7 @@ export function Cile() {
 				<div
 					className="grid gap-3.5"
 					style={{
-						gridTemplateColumns:
-							"repeat(auto-fill, minmax(min(330px,100%), 1fr))",
+						gridTemplateColumns: "repeat(auto-fill, minmax(min(330px,100%), 1fr))",
 					}}
 				>
 					{shown.map(({ g, pr, st, links }) => (
@@ -388,10 +366,7 @@ export function Cile() {
 									{pr.pct}&nbsp;%
 								</span>
 							</div>
-							<div
-								className="mt-2 overflow-hidden rounded-full bg-panel-2"
-								style={{ height: 8 }}
-							>
+							<div className="mt-2 overflow-hidden rounded-full bg-panel-2" style={{ height: 8 }}>
 								<div
 									style={{
 										height: "100%",
@@ -443,10 +418,7 @@ export function Cile() {
 										</span>
 									)}
 									{/* Období vpravo dole — mono 11px (prototyp ř. 763) */}
-									<span
-										className="font-mono text-ink-3"
-										style={{ fontSize: 11 }}
-									>
+									<span className="font-mono text-ink-3" style={{ fontSize: 11 }}>
 										{g.period ?? ""}
 									</span>
 								</span>
@@ -471,9 +443,7 @@ export function Cile() {
 				<GoalDetail
 					key={selected.g.id}
 					data={selected}
-					milestones={(milestones ?? []).filter(
-						(m) => m.goal_id === selected.g.id,
-					)}
+					milestones={(milestones ?? []).filter((m) => m.goal_id === selected.g.id)}
 					ownerName={memberName(selected.g.owner_id)}
 					filterPersonName={memberName(selected.g.filter_person_id)}
 					sampleTasks={goalTasks(selected.g)}
@@ -492,10 +462,7 @@ function StatusBadge({ st }: { st: GoalStatusKind }) {
 			className="inline-flex items-center gap-1.5 rounded-full font-display font-semibold"
 			style={{ fontSize: 11, padding: "3px 10px", background: bg, color }}
 		>
-			<span
-				className="rounded-full"
-				style={{ width: 6, height: 6, background: dot }}
-			/>
+			<span className="rounded-full" style={{ width: 6, height: 6, background: dot }} />
 			{t(`goals.gstat${st[0]?.toUpperCase()}${st.slice(1)}`)}
 		</span>
 	);
@@ -568,13 +535,18 @@ function GoalModal({
 		const nm = name.trim();
 		if (!nm) return onClose();
 		const gid = crypto.randomUUID();
-		const tgt =
-			Number.parseInt(target, 10) ||
-			(metric === "count" ? 10 : metric === "project" ? 100 : 90);
+		// Záporný/nulový target by dělil progres na záporná % → drž na min. 1 (shodně s adjTarget).
+		const tgt = Math.max(
+			1,
+			Number.parseInt(target, 10) || (metric === "count" ? 10 : metric === "project" ? 100 : 90),
+		);
 		// scope=person bez vybraného člověka → měří se vlastník (prototyp createGoal, ř. 2345)
 		const fPerson = personId || (scope === "person" ? ownerId : "");
+		const nowIso = new Date().toISOString();
+		// Periodický cíl ohranič už při vzniku, jinak by první období počítalo i historicky hotové úkoly.
+		const periodStart = periodic !== "none" ? nowIso : null;
 		await powerSync.execute(
-			"INSERT INTO goals (id, workspace_id, name, scope, metric, target, due_date, period, periodic, filter_person_id, filter_keyword, owner_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"INSERT INTO goals (id, workspace_id, name, scope, metric, target, due_date, period, periodic, period_start, filter_person_id, filter_keyword, owner_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			[
 				gid,
 				workspaceId,
@@ -585,10 +557,11 @@ function GoalModal({
 				due || null,
 				period.trim() || null,
 				periodic,
+				periodStart,
 				fPerson || null,
 				keyword.trim() || null,
 				ownerId || null,
-				new Date().toISOString(),
+				nowIso,
 			],
 		);
 		if (projectId) {
@@ -631,10 +604,7 @@ function GoalModal({
 					}}
 				>
 					<div className="mb-3 flex items-center gap-2.5">
-						<span
-							className="flex-1 font-display font-bold text-ink"
-							style={{ fontSize: 16 }}
-						>
+						<span className="flex-1 font-display font-bold text-ink" style={{ fontSize: 16 }}>
 							{t("goals.newGoal")}
 						</span>
 						<button
@@ -659,10 +629,7 @@ function GoalModal({
 
 					{/* Začít ze šablony — 6 karet 2×3 (prototyp ř. 1423–1432 + GOAL_TEMPLATES ř. 2324–2330) */}
 					<FieldLabel>{t("goals.startFromTemplate")}</FieldLabel>
-					<div
-						className="grid"
-						style={{ gridTemplateColumns: "1fr 1fr", gap: 8 }}
-					>
+					<div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 8 }}>
 						{GOAL_TEMPLATES.map((tp) => {
 							const on = tpl === tp.id;
 							return (
@@ -671,22 +638,14 @@ function GoalModal({
 									type="button"
 									onClick={() => pickTemplate(tp)}
 									className={`rounded-[11px] border text-left ${
-										on
-											? "border-brass bg-brass-soft"
-											: "border-line bg-panel-2 hover:border-brass"
+										on ? "border-brass bg-brass-soft" : "border-line bg-panel-2 hover:border-brass"
 									}`}
 									style={{ padding: "10px 12px" }}
 								>
-									<div
-										className="font-display font-bold text-ink"
-										style={{ fontSize: 12.5 }}
-									>
+									<div className="font-display font-bold text-ink" style={{ fontSize: 12.5 }}>
 										{t(tp.nameKey)}
 									</div>
-									<div
-										className="font-body text-ink-3"
-										style={{ fontSize: 11, marginTop: 2 }}
-									>
+									<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 2 }}>
 										{t(tp.subKey)}
 									</div>
 								</button>
@@ -746,20 +705,14 @@ function GoalModal({
 							</button>
 						))}
 					</div>
-					<p
-						className="mt-2 font-body text-ink-3"
-						style={{ fontSize: 12, lineHeight: 1.45 }}
-					>
+					<p className="mt-2 font-body text-ink-3" style={{ fontSize: 12, lineHeight: 1.45 }}>
 						{HELP[metric]}
 					</p>
 
 					{/* Co se počítá — které úkoly cíl měří (prototyp ř. 1441–1453) */}
 					<FieldLabel>
 						{t("goals.whatCounts")}{" "}
-						<span
-							className="font-semibold normal-case"
-							style={{ letterSpacing: 0 }}
-						>
+						<span className="font-semibold normal-case" style={{ letterSpacing: 0 }}>
 							{t("goals.whatCountsHint")}
 						</span>
 					</FieldLabel>
@@ -784,9 +737,7 @@ function GoalModal({
 							<div style={{ flex: 1, minWidth: 150 }}>
 								{/* Měřený člen (scope=person) / Člověk volitelně (prototyp ř. 1446) */}
 								<SubLabel>
-									{scope === "person"
-										? t("goals.personMeasured")
-										: t("goals.personOptional")}
+									{scope === "person" ? t("goals.personMeasured") : t("goals.personOptional")}
 								</SubLabel>
 								<select
 									value={personId}
@@ -805,10 +756,7 @@ function GoalModal({
 						)}
 					</div>
 					{metric !== "project" && (
-						<div
-							className="flex flex-wrap items-end"
-							style={{ gap: 10, marginTop: 10 }}
-						>
+						<div className="flex flex-wrap items-end" style={{ gap: 10, marginTop: 10 }}>
 							<div style={{ flex: 1, minWidth: 150 }}>
 								{/* Klíčové slovo v názvu (prototyp ř. 1450) */}
 								<SubLabel>{t("goals.keyword")}</SubLabel>
@@ -833,10 +781,7 @@ function GoalModal({
 										className="w-full border-none bg-transparent font-mono text-ink outline-none"
 										style={{ fontSize: 14 }}
 									/>
-									<span
-										className="shrink-0 font-mono text-ink-3"
-										style={{ fontSize: 12 }}
-									>
+									<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 12 }}>
 										{metric === "count" ? t("goals.targetUnitTasks") : "%"}
 									</span>
 								</div>
@@ -885,10 +830,7 @@ function GoalModal({
 
 					<FieldLabel>
 						{t("goals.periodic")}{" "}
-						<span
-							className="font-semibold normal-case"
-							style={{ letterSpacing: 0 }}
-						>
+						<span className="font-semibold normal-case" style={{ letterSpacing: 0 }}>
 							{t("goals.periodicHint")}
 						</span>
 					</FieldLabel>
@@ -987,10 +929,7 @@ function GoalDetail({
 		pr: ReturnType<typeof goalProgress>;
 		st: GoalStatusKind;
 		elapsed: number;
-		links: (
-			| { id: string; name: string | null; color: string | null; pct: number }
-			| undefined
-		)[];
+		links: ({ id: string; name: string | null; color: string | null; pct: number } | undefined)[];
 	};
 	milestones: MilestoneRow[];
 	ownerName: string;
@@ -1004,36 +943,31 @@ function GoalDetail({
 	const taskDetail = useTaskDetail();
 	const { g, pr, st, elapsed, links } = data;
 	const [msText, setMsText] = useState("");
+	// Dvoukrokové potvrzení mazání (shodně s FlowDetail) — smazání cíle je nevratné (goal + milníky + vazby).
+	const [confirmDelete, setConfirmDelete] = useState(false);
 	// Editovatelný název (prototyp onGoalName, ř. 2354) — remount přes key={g.id} v rodiči.
 	const [nameDraft, setNameDraft] = useState(g.name ?? "");
-	const metric = (g.metric ?? "completion") as
-		| "completion"
-		| "ontime"
-		| "count"
-		| "project";
-	const metricLabel = t(
-		`goals.metric${metric[0]?.toUpperCase()}${metric.slice(1)}`,
-	);
-	const metricHelp = t(
-		`goals.help${metric[0]?.toUpperCase()}${metric.slice(1)}`,
-	);
+	const metric = (g.metric ?? "completion") as "completion" | "ontime" | "count" | "project";
+	const metricLabel = t(`goals.metric${metric[0]?.toUpperCase()}${metric.slice(1)}`);
+	const metricHelp = t(`goals.help${metric[0]?.toUpperCase()}${metric.slice(1)}`);
 	// Popisek hledáčku: projekty · člověk · „klíčové slovo" (prototyp goalFilterLabel, ř. 2361)
 	const filterParts: string[] = [];
-	if (links.length > 0)
-		filterParts.push(links.map((p) => p?.name ?? "").join(" · "));
+	if (links.length > 0) filterParts.push(links.map((p) => p?.name ?? "").join(" · "));
 	if (filterPersonName) filterParts.push(filterPersonName);
 	if (g.filter_keyword) filterParts.push(`„${g.filter_keyword}“`);
-	const filterLabel =
-		filterParts.length > 0 ? filterParts.join(" · ") : t("goals.filterWhole");
+	const filterLabel = filterParts.length > 0 ? filterParts.join(" · ") : t("goals.filterWhole");
 	const canTarget = metric !== "project";
 
-	const onName = (v: string) => {
-		setNameDraft(v);
-		if (v.trim())
-			void powerSync.execute("UPDATE goals SET name = ? WHERE id = ?", [
-				v.trim(),
-				g.id,
-			]);
+	// Zápis až na blur (ne per-znak): míň sync-ops a užší okno pro přepsání souběžné editace.
+	const commitName = () => {
+		const v = nameDraft.trim();
+		if (!v) {
+			// Prázdný/mezerový název je neplatný → vrať draft na uloženou hodnotu (žádné tiché rozejití UI a DB).
+			setNameDraft(g.name ?? "");
+			return;
+		}
+		if (v !== (g.name ?? ""))
+			void powerSync.execute("UPDATE goals SET name = ? WHERE id = ?", [v, g.id]);
 	};
 	/** Obnova období: posun period_start na dnešek → hotové úkoly před ním se přestanou počítat (prototyp resetGoalPeriod, ř. 2346). */
 	const resetPeriod = () => {
@@ -1047,10 +981,11 @@ function GoalDetail({
 	const adjTarget = (dir: number) => {
 		const step = metric === "count" ? 5 : 1;
 		const max = metric === "count" ? 100000 : 100;
-		void powerSync.execute("UPDATE goals SET target = ? WHERE id = ?", [
-			Math.max(1, Math.min(max, (g.target ?? 0) + dir * step)),
-			g.id,
-		]);
+		// Počítej z aktuální DB hodnoty v SQL, ne z props (jinak rychlé kliky před re-renderem ztrácejí kroky).
+		void powerSync.execute(
+			"UPDATE goals SET target = max(1, min(?, coalesce(target, 0) + ?)) WHERE id = ?",
+			[max, dir * step, g.id],
+		);
 	};
 
 	const pace =
@@ -1066,13 +1001,7 @@ function GoalDetail({
 		if (!msText.trim() || !g.workspace_id) return;
 		await powerSync.execute(
 			"INSERT INTO goal_milestones (id, goal_id, workspace_id, label, done, position, created_at) VALUES (uuid(), ?, ?, ?, 0, ?, ?)",
-			[
-				g.id,
-				g.workspace_id,
-				msText.trim(),
-				milestones.length,
-				new Date().toISOString(),
-			],
+			[g.id, g.workspace_id, msText.trim(), milestones.length, new Date().toISOString()],
 		);
 		setMsText("");
 	};
@@ -1082,12 +1011,8 @@ function GoalDetail({
 			m.id,
 		]);
 	const remove = async () => {
-		await powerSync.execute("DELETE FROM goal_milestones WHERE goal_id = ?", [
-			g.id,
-		]);
-		await powerSync.execute("DELETE FROM goal_projects WHERE goal_id = ?", [
-			g.id,
-		]);
+		await powerSync.execute("DELETE FROM goal_milestones WHERE goal_id = ?", [g.id]);
+		await powerSync.execute("DELETE FROM goal_projects WHERE goal_id = ?", [g.id]);
 		await powerSync.execute("DELETE FROM goals WHERE id = ?", [g.id]);
 		onClose();
 	};
@@ -1129,7 +1054,11 @@ function GoalDetail({
 					{/* Editovatelný název bez rámečku (prototyp ř. 1299 + onGoalName ř. 2354) */}
 					<input
 						value={nameDraft}
-						onChange={(e) => onName(e.target.value)}
+						onChange={(e) => setNameDraft(e.target.value)}
+						onBlur={commitName}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") e.currentTarget.blur();
+						}}
 						aria-label={t("goals.namePlaceholder")}
 						className="w-full border-none bg-transparent font-display text-ink outline-none"
 						style={{
@@ -1153,10 +1082,7 @@ function GoalDetail({
 						</span>
 						<div className="min-w-0 flex-1">
 							<StatusBadge st={st} />
-							<div
-								className="font-mono text-ink-2"
-								style={{ fontSize: 14, marginTop: 9 }}
-							>
+							<div className="font-mono text-ink-2" style={{ fontSize: 14, marginTop: 9 }}>
 								{pr.label}
 							</div>
 						</div>
@@ -1177,10 +1103,7 @@ function GoalDetail({
 								marginTop: 6,
 							}}
 						/>
-						<div
-							className="font-body text-ink-2"
-							style={{ fontSize: 13, lineHeight: 1.45 }}
-						>
+						<div className="font-body text-ink-2" style={{ fontSize: 13, lineHeight: 1.45 }}>
 							{pace}
 						</div>
 					</div>
@@ -1215,10 +1138,7 @@ function GoalDetail({
 									>
 										−
 									</button>
-									<span
-										className="font-mono text-ink"
-										style={{ fontSize: 12.5 }}
-									>
+									<span className="font-mono text-ink" style={{ fontSize: 12.5 }}>
 										{g.target ?? 0}
 										{metric === "count" ? "" : " %"}
 									</span>
@@ -1233,10 +1153,7 @@ function GoalDetail({
 								</span>
 							)}
 						</div>
-						<p
-							className="mt-1.5 font-body text-ink-3"
-							style={{ fontSize: 12.5, lineHeight: 1.5 }}
-						>
+						<p className="mt-1.5 font-body text-ink-3" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
 							{metricHelp}
 						</p>
 						<div
@@ -1250,10 +1167,7 @@ function GoalDetail({
 								{pr.sub}
 							</span>
 						</div>
-						<p
-							className="mt-1.5 font-body text-ink-3"
-							style={{ fontSize: 11.5 }}
-						>
+						<p className="mt-1.5 font-body text-ink-3" style={{ fontSize: 11.5 }}>
 							{t("goals.countedFrom", { n: pr.matchCount })} · {filterLabel}
 						</p>
 					</div>
@@ -1273,11 +1187,7 @@ function GoalDetail({
 							</div>
 							{sampleTasks.slice(0, 6).map((tk) => {
 								const isDone = !!tk.completed_at;
-								const state = isDone
-									? taskOnTime(tk)
-										? "ontime"
-										: "late"
-									: "open";
+								const state = isDone ? (taskOnTime(tk) ? "ontime" : "late") : "open";
 								return (
 									<button
 										key={tk.id}
@@ -1309,22 +1219,14 @@ function GoalDetail({
 										>
 											{tk.name}
 										</span>
-										<span
-											className="shrink-0 font-body text-ink-3"
-											style={{ fontSize: 10.5 }}
-										>
-											{t(
-												`goals.state${state[0]?.toUpperCase()}${state.slice(1)}`,
-											)}
+										<span className="shrink-0 font-body text-ink-3" style={{ fontSize: 10.5 }}>
+											{t(`goals.state${state[0]?.toUpperCase()}${state.slice(1)}`)}
 										</span>
 									</button>
 								);
 							})}
 							{sampleTasks.length > 6 && (
-								<p
-									className="mt-1.5 font-body text-ink-3"
-									style={{ fontSize: 11.5 }}
-								>
+								<p className="mt-1.5 font-body text-ink-3" style={{ fontSize: 11.5 }}>
 									{t("goals.andMore", { n: sampleTasks.length - 6 })}
 								</p>
 							)}
@@ -1347,11 +1249,7 @@ function GoalDetail({
 								[`${elapsed} %`, t("goals.elapsedShort")],
 							] as const
 						).map(([v, l]) => (
-							<div
-								key={l}
-								className="rounded-[10px] bg-panel-2"
-								style={{ padding: "11px 4px" }}
-							>
+							<div key={l} className="rounded-[10px] bg-panel-2" style={{ padding: "11px 4px" }}>
 								<div className="font-mono text-ink" style={{ fontSize: 14 }}>
 									{v}
 								</div>
@@ -1400,20 +1298,12 @@ function GoalDetail({
 								/>
 							</svg>
 							<div className="min-w-0 flex-1">
-								<div
-									className="font-display font-bold text-ink"
-									style={{ fontSize: 12.5 }}
-								>
+								<div className="font-display font-bold text-ink" style={{ fontSize: 12.5 }}>
 									{t("goals.renews", {
-										label: t(
-											PERIODIC_KEY[g.periodic] ?? "goals.perNone",
-										).toLowerCase(),
+										label: t(PERIODIC_KEY[g.periodic] ?? "goals.perNone").toLowerCase(),
 									})}
 								</div>
-								<div
-									className="font-body text-ink-3"
-									style={{ fontSize: 11.5 }}
-								>
+								<div className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
 									{t("goals.renewsSub")}
 								</div>
 							</div>
@@ -1482,16 +1372,10 @@ function GoalDetail({
 														background: lk.color ?? "var(--w-line)",
 													}}
 												/>
-												<span
-													className="flex-1 font-body text-ink"
-													style={{ fontSize: 13 }}
-												>
+												<span className="flex-1 font-body text-ink" style={{ fontSize: 13 }}>
 													{lk.name}
 												</span>
-												<span
-													className="font-mono text-ink-3"
-													style={{ fontSize: 12 }}
-												>
+												<span className="font-mono text-ink-3" style={{ fontSize: 12 }}>
 													{lk.pct}%
 												</span>
 											</div>
@@ -1529,17 +1413,13 @@ function GoalDetail({
 										onClick={() => toggleMs(m)}
 										className="grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border text-[9px] text-white"
 										style={{
-											borderColor: m.done
-												? "var(--w-success)"
-												: "var(--w-line)",
+											borderColor: m.done ? "var(--w-success)" : "var(--w-line)",
 											background: m.done ? "var(--w-success)" : "transparent",
 										}}
 									>
 										{m.done ? "✓" : ""}
 									</button>
-									<span
-										className={`text-sm ${m.done ? "text-ink-3 line-through" : "text-ink"}`}
-									>
+									<span className={`text-sm ${m.done ? "text-ink-3 line-through" : "text-ink"}`}>
 										{m.label}
 									</span>
 								</li>
@@ -1556,14 +1436,42 @@ function GoalDetail({
 				</div>
 
 				<div className="border-line border-t px-4 py-3">
-					<button
-						type="button"
-						onClick={() => void remove()}
-						className="w-full rounded-[10px] border border-line font-display font-semibold text-overdue hover:bg-overdue-soft"
-						style={{ padding: "9px 0", fontSize: 13 }}
-					>
-						{t("goals.delete")}
-					</button>
+					{confirmDelete ? (
+						<div className="flex items-center" style={{ gap: 8 }}>
+							<span className="flex-1 font-body text-ink-2" style={{ fontSize: 12.5 }}>
+								{t("goals.deleteConfirmQ")}
+							</span>
+							<button
+								type="button"
+								onClick={() => setConfirmDelete(false)}
+								className="rounded-[9px] border border-line font-display font-semibold text-ink-2 hover:border-ink-3"
+								style={{ padding: "7px 12px", fontSize: 12.5 }}
+							>
+								{t("goals.cancel")}
+							</button>
+							<button
+								type="button"
+								onClick={() => void remove()}
+								className="rounded-[9px] font-display font-bold text-white hover:brightness-105"
+								style={{
+									background: "var(--w-overdue)",
+									padding: "7px 13px",
+									fontSize: 12.5,
+								}}
+							>
+								{t("goals.deleteConfirm")}
+							</button>
+						</div>
+					) : (
+						<button
+							type="button"
+							onClick={() => setConfirmDelete(true)}
+							className="w-full rounded-[10px] border border-line font-display font-semibold text-overdue hover:bg-overdue-soft"
+							style={{ padding: "9px 0", fontSize: 13 }}
+						>
+							{t("goals.delete")}
+						</button>
+					)}
 				</div>
 			</aside>
 		</>
@@ -1576,14 +1484,7 @@ function ProgressRing({ pct, color }: { pct: number; color: string }) {
 	const C = 2 * Math.PI * R;
 	return (
 		<svg width="76" height="76" viewBox="0 0 76 76" aria-hidden>
-			<circle
-				cx="38"
-				cy="38"
-				r={R}
-				fill="none"
-				stroke="var(--w-panel-2)"
-				strokeWidth="7"
-			/>
+			<circle cx="38" cy="38" r={R} fill="none" stroke="var(--w-panel-2)" strokeWidth="7" />
 			<circle
 				cx="38"
 				cy="38"

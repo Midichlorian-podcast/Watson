@@ -6,6 +6,7 @@ import { Calendar } from "../components/CalendarLazy";
 import { TaskItem } from "../components/TaskItem";
 import { useSession } from "../lib/auth-client";
 import { useFlowSteps } from "../lib/flowSteps";
+import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
 import { useViewMode } from "../lib/viewMode";
@@ -19,10 +20,8 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 	const { data: session } = useSession();
 	const meId = session?.user?.id;
 	const projects = useProjects();
-	const projMap = useMemo(
-		() => new Map(projects.map((p) => [p.id, p])),
-		[projects],
-	);
+	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+	const inboxIds = useMemo(() => inboxProjectIds(projects), [projects]);
 	const flowSteps = useFlowSteps();
 	const { view } = useViewMode();
 
@@ -35,8 +34,7 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 	}>("SELECT task_id, user_id FROM assignments");
 	const mineSet = useMemo(() => {
 		const s = new Set<string>();
-		for (const a of assignments ?? [])
-			if (a.user_id === meId && a.task_id) s.add(a.task_id);
+		for (const a of assignments ?? []) if (a.user_id === meId && a.task_id) s.add(a.task_id);
 		return s;
 	}, [assignments, meId]);
 
@@ -45,21 +43,15 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 			(tasks ?? [])
 				// Pravidlo viditelnosti podúkolů: bez termínu žijí jen v detailu rodiče.
 				.filter((tk) => !tk.parent_id || tk.due_date)
-				.filter((tk) =>
-					mode === "p1" ? tk.priority === 1 : mineSet.has(tk.id),
-				),
-		[tasks, mode, mineSet],
+				// Netriážované úkoly Schránky do Oblíbených/počtů nepatří (R8, jako Dnes/Úkoly).
+				.filter((tk) => !isInboxTask(tk, inboxIds))
+				.filter((tk) => (mode === "p1" ? tk.priority === 1 : mineSet.has(tk.id))),
+		[tasks, mode, mineSet, inboxIds],
 	);
 
 	return (
-		<div
-			className="mx-auto max-w-[1080px]"
-			style={{ padding: "10px 22px 90px" }}
-		>
-			<div
-				className="mb-4 flex items-center gap-2.5"
-				style={{ paddingTop: 10 }}
-			>
+		<div className="mx-auto max-w-[1080px]" style={{ padding: "10px 22px 90px" }}>
+			<div className="mb-4 flex items-center gap-2.5" style={{ paddingTop: 10 }}>
 				<span
 					className="shrink-0"
 					style={{
@@ -69,10 +61,7 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 						background: mode === "p1" ? "var(--w-brass)" : "#2a6fdb",
 					}}
 				/>
-				<h1
-					className="font-display font-extrabold text-ink"
-					style={{ fontSize: 17 }}
-				>
+				<h1 className="font-display font-extrabold text-ink" style={{ fontSize: 17 }}>
 					{mode === "p1" ? t("nav.priority1") : t("nav.assignedToMe")}
 				</h1>
 				<span className="font-mono text-ink-3" style={{ fontSize: 12 }}>

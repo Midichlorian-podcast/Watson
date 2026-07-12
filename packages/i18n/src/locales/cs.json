@@ -60,7 +60,9 @@
 		"repMonthly": "měsíčně",
 		"repYearly": "ročně",
 		"deadlinePill": "do {{date}}",
-		"daysPill": "{{n}} dní"
+		"daysPill": "{{n}} dní",
+		"personUnknown": "@{{q}} · nikdo takový",
+		"personAmbiguous": "@{{q}} · více osob, vyber z nabídky"
 	},
 	"sync": {
 		"writeRejected": "Změna se neuložila — neměl(a) jsi oprávnění. Vrácena zpět."
@@ -193,7 +195,20 @@
 		"nameLabel": "Název",
 		"newError": "Projekt se nepodařilo vytvořit. Zkus to znovu.",
 		"newForbidden": "Na vytvoření projektu nemáš oprávnění.",
-		"memberChangeError": "Změnu členů se nepodařilo uložit."
+		"memberChangeError": "Změnu členů se nepodařilo uložit.",
+		"dueOn": "do {{date}}",
+		"dueToday": "dnes",
+		"dueRemaining_one": "zbývá {{count}} den",
+		"dueRemaining_few": "zbývají {{count}} dny",
+		"dueRemaining_other": "zbývá {{count}} dní",
+		"dueOverdue_one": "{{count}} den po termínu",
+		"dueOverdue_few": "{{count}} dny po termínu",
+		"dueOverdue_other": "{{count}} dní po termínu",
+		"members_one": "{{count}} člen",
+		"members_few": "{{count}} členové",
+		"members_other": "{{count}} členů",
+		"showActive": "← Aktivní projekty",
+		"archivedEmpty": "Žádné archivované projekty."
 	},
 	"calendar": {
 		"prev": "Předchozí",
@@ -266,7 +281,10 @@
 		"daysCount_one": "{{count}} den",
 		"daysCount_few": "{{count}} dny",
 		"daysCount_many": "{{count}} dne",
-		"daysCount_other": "{{count}} dní"
+		"daysCount_other": "{{count}} dní",
+		"rescheduledToast_one": "{{count}} zpožděný úkol přeplánován",
+		"rescheduledToast_few": "{{count}} zpožděné úkoly přeplánovány",
+		"rescheduledToast_other": "{{count}} zpožděných úkolů přeplánováno"
 	},
 	"settings": {
 		"appearance": "Vzhled",
@@ -392,7 +410,8 @@
 		"tomorrow": "Zítra",
 		"nextWeek": "Příští týden",
 		"undo": "Zpět",
-		"scheduled": "Naplánováno"
+		"scheduled": "Naplánováno",
+		"reassigned": "Přeřazeno"
 	},
 	"search": {
 		"placeholder": "Hledat úkoly, projekty, lidi, postupy, cíle…",
@@ -517,7 +536,9 @@
 		"progLabelOntime": "{{real}} % včas",
 		"progSubOntime": "{{onT}} z {{done}} úkolů včas",
 		"progLabelCompletion": "{{done}} / {{total}} hotovo",
-		"progSubCompletion": "{{real}} % dokončeno"
+		"progSubCompletion": "{{real}} % dokončeno",
+		"deleteConfirmQ": "Opravdu smazat tento cíl?",
+		"deleteConfirm": "Smazat"
 	},
 	"reports": {
 		"heading": "Reporty",
@@ -560,7 +581,13 @@
 		"overdueChip_one": "{{count}} po termínu",
 		"overdueChip_few": "{{count}} po termínu",
 		"overdueChip_many": "{{count}} po termínu",
-		"overdueChip_other": "{{count}} po termínu"
+		"overdueChip_other": "{{count}} po termínu",
+		"emptyProjects": "Zatím žádné dokončené úkoly v projektech",
+		"emptyGoals": "Zatím žádné cíle",
+		"emptyPeople": "Zatím žádní členové",
+		"moreTasks_one": "+{{count}} další",
+		"moreTasks_few": "+{{count}} další",
+		"moreTasks_other": "+{{count}} dalších"
 	},
 	"flows": {
 		"heading": "Postupy",
@@ -789,7 +816,8 @@
 		"assignTitle": "Přiřadit položku",
 		"assignNone": "Nikdo",
 		"tplSuffix": "(šablona)",
-		"tplCustomDesc": "Vlastní šablona"
+		"tplCustomDesc": "Vlastní šablona",
+		"assignUnknown": "Přiřazeno (člen mimo tým)"
 	},
 	"prehled": {
 		"chipAll": "Vše",
@@ -971,7 +999,8 @@
 		"sugAssign": "přiřadit ↵",
 		"sugProject": "projekt ↵",
 		"min": "min",
-		"durNone": "—"
+		"durNone": "—",
+		"attachDemo": "Přílohy se zatím neukládají (demo)."
 	},
 	"auth": {
 		"genericError": "Přihlášení se nezdařilo. Zkontroluj údaje.",
@@ -996,5 +1025,11 @@
 		"nextMonth": "Začátek příštího měsíce",
 		"customDate": "Vlastní datum",
 		"set": "Nastavit"
+	},
+	"board": {
+		"dropForeignColumn": "Sem úkol nepatří — tento sloupec v jeho projektu není."
+	},
+	"deadline": {
+		"byPrefix": "do"
 	}
 }

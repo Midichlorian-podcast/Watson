@@ -1,6 +1,7 @@
 import { useTranslation } from "@watson/i18n";
 import { useMemo, useState } from "react";
 import { useAddTask } from "../lib/addTask";
+import { useSession } from "../lib/auth-client";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
@@ -11,8 +12,7 @@ import { toggleTask } from "../lib/tasks";
 import { addDaysISO, tIso, tIsoEnd } from "./Calendar";
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const isoOf = (d: Date) =>
-	`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const startMin = (t: TaskRow): number | null => {
 	const s = t.start_date;
 	if (!s || s.length < 16) return null;
@@ -48,6 +48,8 @@ export function CalendarMonth({
 	const { open } = useTaskDetail();
 	const { openAdd } = useAddTask();
 	const { metaOf } = useRowMeta();
+	const { data: session } = useSession();
+	const uid = session?.user?.id;
 	const projects = useProjects();
 	const projColor = (id: string | null) =>
 		(id ? projects.find((p) => p.id === id)?.color : null) ?? "var(--w-ink-3)";
@@ -55,9 +57,7 @@ export function CalendarMonth({
 
 	const today = new Date();
 	const todayIso = isoOf(today);
-	const base =
-		controlledBase ??
-		new Date(today.getFullYear(), today.getMonth() + offset, 1);
+	const base = controlledBase ?? new Date(today.getFullYear(), today.getMonth() + offset, 1);
 	const year = base.getFullYear();
 	const month = base.getMonth();
 
@@ -71,11 +71,7 @@ export function CalendarMonth({
 		const weeks = Math.ceil((firstDow + dim) / 7);
 		const start = new Date(year, month, 1 - firstDow); // pondělí prvního týdne
 		return Array.from({ length: weeks * 7 }, (_, i) => {
-			const dt = new Date(
-				start.getFullYear(),
-				start.getMonth(),
-				start.getDate() + i,
-			);
+			const dt = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
 			return { date: dt, iso: isoOf(dt), inMonth: dt.getMonth() === month };
 		});
 	}, [year, month]);
@@ -98,29 +94,22 @@ export function CalendarMonth({
 
 	const weekdayLabels = useMemo(() => {
 		const fmt = new Intl.DateTimeFormat(i18n.language, { weekday: "short" });
-		return Array.from({ length: 7 }, (_, i) =>
-			fmt.format(new Date(2024, 0, 1 + i)),
-		);
+		return Array.from({ length: 7 }, (_, i) => fmt.format(new Date(2024, 0, 1 + i)));
 	}, [i18n.language]);
 
 	const title = new Intl.DateTimeFormat(i18n.language, {
 		month: "long",
 		year: "numeric",
 	}).format(base);
-	const border =
-		borderColorOf ?? ((tk: TaskRow) => `var(--w-p${tk.priority ?? 4})`);
+	const border = borderColorOf ?? ((tk: TaskRow) => `var(--w-p${tk.priority ?? 4})`);
 
 	return (
 		// v řízeném režimu z Calendar scrolluje měsíc uvnitř full-bleed sloupce (prototyp ř. 2891)
-		<div
-			className={controlledBase ? "min-h-0 flex-1 overflow-y-auto" : undefined}
-		>
+		<div className={controlledBase ? "min-h-0 flex-1 overflow-y-auto" : undefined}>
 			{/* hlavička (skrytá při řízeném režimu z Calendar) */}
 			{!controlledBase && (
 				<div className="mb-3 flex items-center gap-2">
-					<h2 className="font-display font-extrabold text-lg text-navy capitalize">
-						{title}
-					</h2>
+					<h2 className="font-display font-extrabold text-lg text-navy capitalize">{title}</h2>
 					<div className="ml-auto flex items-center gap-1">
 						<button
 							type="button"
@@ -185,11 +174,7 @@ export function CalendarMonth({
 							}}
 							className="flex cursor-pointer flex-col gap-[3px] overflow-hidden rounded-[10px] border p-1.5"
 							style={{
-								borderColor: isToday
-									? "var(--w-brass)"
-									: inMonth
-										? "var(--w-line)"
-										: "transparent",
+								borderColor: isToday ? "var(--w-brass)" : inMonth ? "var(--w-line)" : "transparent",
 								// přesahové dny (jiný měsíc) ztlumené — patrné, ale nesplývají s aktuálním
 								background: isToday
 									? "var(--w-brass-soft)"
@@ -223,9 +208,7 @@ export function CalendarMonth({
 										key={tk.id}
 										data-mchip
 										draggable={!tk.id.includes("@")}
-										onDragStart={(e) =>
-											e.dataTransfer.setData("text/plain", tk.id)
-										}
+										onDragStart={(e) => e.dataTransfer.setData("text/plain", tk.id)}
 										onClick={(e) => {
 											e.stopPropagation();
 											open(tk.id);
@@ -243,7 +226,8 @@ export function CalendarMonth({
 											type="button"
 											onClick={(e) => {
 												e.stopPropagation();
-												if (!tk.id.includes("@")) void toggleTask(tk);
+												// actorId (R2): u shared_all přepni jen účast aktéra, ne dokončení všem.
+												if (!tk.id.includes("@")) void toggleTask(tk, uid);
 											}}
 											aria-label={t(done ? "detail.ariaMarkUndone" : "detail.ariaComplete")}
 											className="grid shrink-0 place-items-center rounded-full"
@@ -251,18 +235,10 @@ export function CalendarMonth({
 												width: 11,
 												height: 11,
 												border: `1.6px solid ${done ? "var(--w-success-ink)" : "var(--w-ink-3)"}`,
-												background: done
-													? "var(--w-success-ink)"
-													: "transparent",
+												background: done ? "var(--w-success-ink)" : "transparent",
 											}}
 										>
-											{done && (
-												<span
-													style={{ color: "#fff", fontSize: 7, lineHeight: 1 }}
-												>
-													✓
-												</span>
-											)}
+											{done && <span style={{ color: "#fff", fontSize: 7, lineHeight: 1 }}>✓</span>}
 										</button>
 										<span
 											className="shrink-0 rounded-full"
@@ -286,8 +262,7 @@ export function CalendarMonth({
 											className="shrink-0 font-mono"
 											style={{
 												fontSize: 8,
-												color:
-													sm != null ? "var(--w-ink-3)" : "var(--w-brass-text)",
+												color: sm != null ? "var(--w-ink-3)" : "var(--w-brass-text)",
 											}}
 										>
 											{sm != null

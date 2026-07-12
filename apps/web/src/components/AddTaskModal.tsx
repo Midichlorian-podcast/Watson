@@ -31,13 +31,7 @@ import { useWorkspace } from "../lib/workspace";
  */
 
 type DateKind = "dnes" | "zitra" | "pristi" | "pmonth" | "none" | "custom";
-type RepeatKind =
-	| "none"
-	| "daily"
-	| "weekly"
-	| "biweekly"
-	| "monthly"
-	| "yearly";
+type RepeatKind = "none" | "daily" | "weekly" | "biweekly" | "monthly" | "yearly";
 type PopKey =
 	| ""
 	| "projekt"
@@ -173,8 +167,7 @@ function segments(raw: string, hl: Highlight[]) {
 	const segs: { text: string; mark: boolean }[] = [];
 	let pos = 0;
 	for (const h of [...hl].sort((a, b) => a.start - b.start)) {
-		if (h.start > pos)
-			segs.push({ text: raw.slice(pos, h.start), mark: false });
+		if (h.start > pos) segs.push({ text: raw.slice(pos, h.start), mark: false });
 		segs.push({ text: raw.slice(h.start, h.end), mark: true });
 		pos = h.end;
 	}
@@ -252,10 +245,7 @@ function FieldPill({
 			}}
 		>
 			{dot ? (
-				<span
-					className="shrink-0 rounded-full"
-					style={{ width: 8, height: 8, background: dot }}
-				/>
+				<span className="shrink-0 rounded-full" style={{ width: 8, height: 8, background: dot }} />
 			) : sw ? (
 				<span
 					className="shrink-0"
@@ -295,15 +285,11 @@ export function AddTaskModal({
 
 	// Projekty aktivního prostoru (prototyp: inWS filtr); fallback všechny.
 	const projects = useMemo(() => {
-		const ws = allProjects.filter(
-			(p) => !activeWs || p.workspace_id === activeWs,
-		);
+		const ws = allProjects.filter((p) => !activeWs || p.workspace_id === activeWs);
 		return ws.length ? ws : allProjects;
 	}, [allProjects, activeWs]);
 	const inbox = useMemo(
-		() =>
-			projects.find((p) => p.name === "Doručené" || p.name === "Inbox") ??
-			projects[0],
+		() => projects.find((p) => p.name === "Doručené" || p.name === "Inbox") ?? projects[0],
 		[projects],
 	);
 
@@ -351,14 +337,15 @@ export function AddTaskModal({
 	});
 	// Výchozí projekt = inbox (R8), jakmile jsou projekty načtené.
 	useEffect(() => {
-		if (!draft.project && inbox)
-			setDraft((d) => ({ ...d, project: d.project ?? inbox.id }));
+		if (!draft.project && inbox) setDraft((d) => ({ ...d, project: d.project ?? inbox.id }));
 	}, [inbox, draft.project]);
 
 	const patch = (obj: Partial<Draft>) => setDraft((d) => ({ ...d, ...obj }));
 
 	const taRef = useRef<HTMLTextAreaElement>(null);
 	const trapRef = useFocusTrap<HTMLDivElement>(true);
+	// In-flight zámek — dvojklik/dvojí Enter jinak projde guardem a vytvoří dva úkoly.
+	const submitting = useRef(false);
 	useEffect(() => {
 		taRef.current?.focus();
 	}, []);
@@ -367,13 +354,18 @@ export function AddTaskModal({
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
 			if (e.key !== "Escape") return;
-			if (document.querySelector("[data-esc-layer]:not([data-add-layer])"))
+			if (document.querySelector("[data-esc-layer]:not([data-add-layer])")) return;
+			// Esc kaskáda: nejdřív zavři otevřený field popover, teprve pak celý modal —
+			// jinak by první Esc s otevřeným popoverem zahodil celý rozepsaný draft.
+			if (draft.pop !== "") {
+				setDraft((d) => ({ ...d, pop: "" }));
 				return;
+			}
 			onClose();
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
+	}, [onClose, draft.pop]);
 
 	const parseCtx = useMemo(
 		() => ({
@@ -412,9 +404,7 @@ export function AddTaskModal({
 			p.repeatRule = r;
 			p.repeatLabel = r.label;
 			p.repeat =
-				r.kind === "monthly-nth" || r.kind === "monthly-day"
-					? "monthly"
-					: (r.kind as RepeatKind);
+				r.kind === "monthly-nth" || r.kind === "monthly-day" ? "monthly" : (r.kind as RepeatKind);
 		}
 		patch({ ...p, suggestIdx: 0 });
 	}
@@ -426,11 +416,7 @@ export function AddTaskModal({
 		if (mPer) {
 			const q = mPer[1]!.toLowerCase();
 			const list = people
-				.filter(
-					(p) =>
-						p.name.toLowerCase().includes(q) ||
-						p.initials.toLowerCase().startsWith(q),
-				)
+				.filter((p) => p.name.toLowerCase().includes(q) || p.initials.toLowerCase().startsWith(q))
 				.slice(0, 5)
 				.map((p) => ({
 					id: p.id,
@@ -569,12 +555,10 @@ export function AddTaskModal({
 		nAssign === 0
 			? null
 			: nAssign === 1
-				? (people.find((p) => p.id === draft.assignees[0])?.name ??
-					t("addmodal.onePerson"))
+				? (people.find((p) => p.id === draft.assignees[0])?.name ?? t("addmodal.onePerson"))
 				: t("addmodal.people", { n: nAssign });
 
-	const togglePop = (key: PopKey) => () =>
-		patch({ pop: draft.pop === key ? "" : key });
+	const togglePop = (key: PopKey) => () => patch({ pop: draft.pop === key ? "" : key });
 
 	type Field = {
 		key: PopKey;
@@ -610,9 +594,7 @@ export function AddTaskModal({
 		{
 			key: "trvani",
 			icon: "trvani",
-			disp: draft.duration
-				? durFmt(draft.duration)
-				: t("addmodal.fieldDuration"),
+			disp: draft.duration ? durFmt(draft.duration) : t("addmodal.fieldDuration"),
 			on: draft.duration > 0,
 		},
 		{
@@ -628,27 +610,20 @@ export function AddTaskModal({
 			icon: "opakovani",
 			disp:
 				draft.repeatLabel ||
-				(draft.repeat !== "none"
-					? repLbl[draft.repeat]
-					: t("addmodal.fieldRepeat")),
+				(draft.repeat !== "none" ? repLbl[draft.repeat] : t("addmodal.fieldRepeat")),
 			on: draft.repeat !== "none",
 		},
 		{
 			key: "barva",
 			icon: "barva",
-			disp:
-				draft.color !== "none"
-					? t("addmodal.myColor")
-					: t("addmodal.fieldColor"),
+			disp: draft.color !== "none" ? t("addmodal.myColor") : t("addmodal.fieldColor"),
 			on: draft.color !== "none",
 			sw: draft.color !== "none" ? draft.color : null,
 		},
 		{
 			key: "priloha",
 			icon: "priloha",
-			disp: draft.attached.length
-				? `${draft.attached.length}×`
-				: t("addmodal.fieldAttach"),
+			disp: draft.attached.length ? `${draft.attached.length}×` : t("addmodal.fieldAttach"),
 			on: draft.attached.length > 0,
 		},
 		...(flowOptions.length
@@ -656,9 +631,7 @@ export function AddTaskModal({
 					{
 						key: "postup" as PopKey,
 						icon: "postup" as IconName,
-						disp: draft.flowAttach
-							? t("addmodal.flowAdded")
-							: t("addmodal.fieldFlow"),
+						disp: draft.flowAttach ? t("addmodal.flowAdded") : t("addmodal.fieldFlow"),
 						on: !!draft.flowAttach,
 					},
 				]
@@ -691,13 +664,7 @@ export function AddTaskModal({
 		{ m: 60, l: "1 h" },
 		{ m: 120, l: "2 h" },
 	];
-	const repChips: RepeatKind[] = [
-		"none",
-		"daily",
-		"weekly",
-		"biweekly",
-		"monthly",
-	];
+	const repChips: RepeatKind[] = ["none", "daily", "weekly", "biweekly", "monthly"];
 
 	const needsName =
 		draft.name.trim().length === 0 &&
@@ -722,11 +689,20 @@ export function AddTaskModal({
 	/* ── submit (submitTask prototypu → PowerSync insert) ── */
 	async function submit() {
 		const name = draft.name.trim();
-		if (!name || !draft.project || disabled) return;
+		if (!name || !draft.project || disabled || submitting.current) return;
+		submitting.current = true;
+		try {
+			await doSubmit(name);
+		} finally {
+			submitting.current = false;
+		}
+	}
+
+	async function doSubmit(name: string) {
+		if (!draft.project) return;
 		const id = crypto.randomUUID();
 		const dueISO = tISO;
-		const startDate =
-			draft.time && dueISO ? `${dueISO}T${draft.time}:00` : null;
+		const startDate = draft.time && dueISO ? `${dueISO}T${draft.time}:00` : null;
 		const mode =
 			draft.assignees.length >= 2
 				? draft.assignMode === "all"
@@ -740,8 +716,7 @@ export function AddTaskModal({
 				? { ...draft.repeatRule }
 				: { kind: draft.repeat, label: repLbl[draft.repeat] };
 			base.endKind = draft.repeatEndKind;
-			if (draft.repeatEndKind === "until" && draft.repeatUntil)
-				base.until = draft.repeatUntil;
+			if (draft.repeatEndKind === "until" && draft.repeatUntil) base.until = draft.repeatUntil;
 			if (draft.repeatEndKind === "count") base.count = draft.repeatCount;
 			base.showAll = draft.repeatShowAll;
 			recurrenceRule = JSON.stringify(base);
@@ -758,7 +733,8 @@ export function AddTaskModal({
 				name,
 				draft.desc || null,
 				draft.priority,
-				draft.color !== "none" ? draft.color : null,
+				// R6 — barva z pickeru je PER-USER (task_user_colors níže), ne sdílený tasks.color.
+				null,
 				dueISO,
 				startDate,
 				draft.deadline || null,
@@ -778,19 +754,31 @@ export function AddTaskModal({
 				[crypto.randomUUID(), id, draft.project, uid, new Date().toISOString()],
 			);
 		}
+		// R6 — zvolená barva jako per-user overlay (konzistentně s detailem přes task_user_colors),
+		// aby týž úkol mohl každý vidět v jiné barvě a nešířila se sdíleně celému týmu.
+		if (draft.color !== "none" && session?.user?.id) {
+			await powerSync.execute(
+				"INSERT INTO task_user_colors (id, task_id, project_id, user_id, color, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+				[
+					crypto.randomUUID(),
+					id,
+					draft.project,
+					session.user.id,
+					draft.color,
+					new Date().toISOString(),
+				],
+			);
+		}
 		// Připojení jako další krok postupu (prototyp: flowAttach → append step).
 		if (draft.flowAttach) {
 			const steps = await powerSync.getAll<{
 				position: number;
 				step_state: string | null;
-			}>(
-				"SELECT position, step_state FROM chain_steps WHERE chain_id = ? ORDER BY position",
-				[draft.flowAttach],
-			);
+			}>("SELECT position, step_state FROM chain_steps WHERE chain_id = ? ORDER BY position", [
+				draft.flowAttach,
+			]);
 			const maxPos = steps.reduce((m, s) => Math.max(m, s.position ?? 0), 0);
-			const allDone = steps.every(
-				(s) => s.step_state === "done" || s.step_state === "skipped",
-			);
+			const allDone = steps.every((s) => s.step_state === "done" || s.step_state === "skipped");
 			await powerSync.execute(
 				`INSERT INTO chain_steps (id, chain_id, task_id, project_id, position, gate, step_state, created_at)
          VALUES (?, ?, ?, ?, ?, 'after_previous', ?, ?)`,
@@ -953,9 +941,7 @@ export function AddTaskModal({
 											width: 18,
 											height: 18,
 											margin: 3,
-											background:
-												projects.find((x) => x.id === p.id)?.color ??
-												"var(--w-ink-3)",
+											background: projects.find((x) => x.id === p.id)?.color ?? "var(--w-ink-3)",
 										}}
 									/>
 								) : (
@@ -978,10 +964,7 @@ export function AddTaskModal({
 								>
 									{p.name}
 								</span>
-								<span
-									className="font-body"
-									style={{ fontSize: 11, color: "var(--w-brass-text)" }}
-								>
+								<span className="font-body" style={{ fontSize: 11, color: "var(--w-brass-text)" }}>
 									{p.action}
 								</span>
 							</button>
@@ -1062,11 +1045,7 @@ export function AddTaskModal({
 									className="flex items-center border-line border-b"
 									style={{ gap: 7, paddingBottom: 9, marginBottom: 5 }}
 								>
-									<Icon
-										name="hledat"
-										size={13}
-										className="shrink-0 text-ink-3"
-									/>
+									<Icon name="hledat" size={13} className="shrink-0 text-ink-3" />
 									<input
 										value={draft.projQuery}
 										onChange={(e) => patch({ projQuery: e.target.value })}
@@ -1111,13 +1090,7 @@ export function AddTaskModal({
 														{p.name}
 													</span>
 													{on && (
-														<svg
-															width="13"
-															height="13"
-															viewBox="0 0 14 14"
-															fill="none"
-															aria-hidden
-														>
+														<svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden>
 															<path
 																d="M3 7.4 L6 10 L11 4"
 																stroke="var(--w-brass-text)"
@@ -1158,10 +1131,7 @@ export function AddTaskModal({
 											}}
 										>
 											{d.l}
-											<span
-												className="font-mono"
-												style={{ fontSize: 9.5, opacity: 0.7 }}
-											>
+											<span className="font-mono" style={{ fontSize: 9.5, opacity: 0.7 }}>
 												{d.sub}
 											</span>
 										</ChipBtn>
@@ -1173,19 +1143,12 @@ export function AddTaskModal({
 										style={{
 											gap: 7,
 											border: `1px solid ${draft.dateKind === "custom" ? "var(--w-brass)" : "var(--w-line)"}`,
-											background:
-												draft.dateKind === "custom"
-													? "var(--w-brass-soft)"
-													: undefined,
+											background: draft.dateKind === "custom" ? "var(--w-brass-soft)" : undefined,
 											borderRadius: 9,
 											padding: "7px 11px",
 										}}
 									>
-										<Icon
-											name="termin"
-											size={14}
-											className="shrink-0 text-ink-3"
-										/>
+										<Icon name="termin" size={14} className="shrink-0 text-ink-3" />
 										<input
 											type="date"
 											value={draft.customDate}
@@ -1209,11 +1172,7 @@ export function AddTaskModal({
 											padding: "7px 11px",
 										}}
 									>
-										<Icon
-											name="deadline"
-											size={14}
-											className="shrink-0 text-ink-3"
-										/>
+										<Icon name="deadline" size={14} className="shrink-0 text-ink-3" />
 										<input
 											type="time"
 											value={draft.time}
@@ -1223,14 +1182,8 @@ export function AddTaskModal({
 										/>
 									</label>
 								</div>
-								<div
-									className="flex flex-wrap items-center"
-									style={{ gap: 9, marginTop: 9 }}
-								>
-									<span
-										className="font-display font-semibold text-ink-3"
-										style={{ fontSize: 11 }}
-									>
+								<div className="flex flex-wrap items-center" style={{ gap: 9, marginTop: 9 }}>
+									<span className="font-display font-semibold text-ink-3" style={{ fontSize: 11 }}>
 										{t("addmodal.multiDays")}
 									</span>
 									<div
@@ -1244,9 +1197,7 @@ export function AddTaskModal({
 									>
 										<button
 											type="button"
-											onClick={() =>
-												patch({ days: Math.max(1, draft.days - 1) })
-											}
+											onClick={() => patch({ days: Math.max(1, draft.days - 1) })}
 											className="flex cursor-pointer items-center justify-center font-display font-bold text-ink-2 hover:bg-card"
 											style={{
 												width: 24,
@@ -1265,9 +1216,7 @@ export function AddTaskModal({
 											onChange={(e) => {
 												const n = Number.parseInt(e.target.value, 10);
 												patch({
-													days: Number.isNaN(n)
-														? 1
-														: Math.max(1, Math.min(60, n)),
+													days: Number.isNaN(n) ? 1 : Math.max(1, Math.min(60, n)),
 												});
 											}}
 											className="border-none bg-transparent text-center font-mono text-ink outline-none"
@@ -1275,9 +1224,7 @@ export function AddTaskModal({
 										/>
 										<button
 											type="button"
-											onClick={() =>
-												patch({ days: Math.min(60, draft.days + 1) })
-											}
+											onClick={() => patch({ days: Math.min(60, draft.days + 1) })}
 											className="flex cursor-pointer items-center justify-center font-display font-bold text-ink-2 hover:bg-card"
 											style={{
 												width: 24,
@@ -1369,10 +1316,7 @@ export function AddTaskModal({
 										</ChipBtn>
 									</div>
 								)}
-								<div
-									className="font-body text-ink-3"
-									style={{ fontSize: 11.5, marginTop: 7 }}
-								>
+								<div className="font-body text-ink-3" style={{ fontSize: 11.5, marginTop: 7 }}>
 									{assignHint}
 								</div>
 							</>
@@ -1408,18 +1352,13 @@ export function AddTaskModal({
 										onChange={(e) => {
 											const n = Number.parseInt(e.target.value, 10);
 											patch({
-												duration: Number.isNaN(n)
-													? 0
-													: Math.max(0, Math.min(10080, n)),
+												duration: Number.isNaN(n) ? 0 : Math.max(0, Math.min(10080, n)),
 											});
 										}}
 										className="border-none bg-transparent text-right font-mono text-ink outline-none"
 										style={{ width: 52, fontSize: 12 }}
 									/>
-									<span
-										className="font-body text-ink-3"
-										style={{ fontSize: 11.5 }}
-									>
+									<span className="font-body text-ink-3" style={{ fontSize: 11.5 }}>
 										{t("addmodal.min")}
 									</span>
 								</label>
@@ -1433,9 +1372,7 @@ export function AddTaskModal({
 									style={{
 										gap: 7,
 										border: `1px solid ${draft.deadline ? "var(--w-brass)" : "var(--w-line)"}`,
-										background: draft.deadline
-											? "var(--w-brass-soft)"
-											: undefined,
+										background: draft.deadline ? "var(--w-brass-soft)" : undefined,
 										borderRadius: 9,
 										padding: "7px 11px",
 									}}
@@ -1514,10 +1451,7 @@ export function AddTaskModal({
 										>
 											{t("addmodal.fromText")}
 										</span>
-										<span
-											className="flex-1 font-body text-ink"
-											style={{ fontSize: 13 }}
-										>
+										<span className="flex-1 font-body text-ink" style={{ fontSize: 13 }}>
 											{draft.repeatLabel}
 										</span>
 										<button
@@ -1542,9 +1476,7 @@ export function AddTaskModal({
 										<ChipBtn
 											key={r}
 											on={draft.repeat === r && !richActive}
-											onClick={() =>
-												patch({ repeat: r, repeatRule: null, repeatLabel: "" })
-											}
+											onClick={() => patch({ repeat: r, repeatRule: null, repeatLabel: "" })}
 										>
 											{repLbl[r]}
 										</ChipBtn>
@@ -1566,10 +1498,7 @@ export function AddTaskModal({
 											>
 												{t("addmodal.repeatEnd")}
 											</div>
-											<div
-												className="flex flex-wrap items-center"
-												style={{ gap: 6 }}
-											>
+											<div className="flex flex-wrap items-center" style={{ gap: 6 }}>
 												<ChipBtn
 													on={draft.repeatEndKind === "never"}
 													onClick={() => patch({ repeatEndKind: "never" })}
@@ -1592,9 +1521,7 @@ export function AddTaskModal({
 													<input
 														type="date"
 														value={draft.repeatUntil}
-														onChange={(e) =>
-															patch({ repeatUntil: e.target.value })
-														}
+														onChange={(e) => patch({ repeatUntil: e.target.value })}
 														className="border border-line bg-card font-body text-ink outline-none"
 														style={{
 															borderRadius: 8,
@@ -1604,10 +1531,7 @@ export function AddTaskModal({
 													/>
 												)}
 												{draft.repeatEndKind === "count" && (
-													<span
-														className="inline-flex items-center"
-														style={{ gap: 6 }}
-													>
+													<span className="inline-flex items-center" style={{ gap: 6 }}>
 														<input
 															type="number"
 															min={1}
@@ -1616,9 +1540,7 @@ export function AddTaskModal({
 															onChange={(e) => {
 																const n = Number.parseInt(e.target.value, 10);
 																patch({
-																	repeatCount: Number.isNaN(n)
-																		? 1
-																		: Math.max(1, Math.min(999, n)),
+																	repeatCount: Number.isNaN(n) ? 1 : Math.max(1, Math.min(999, n)),
 																});
 															}}
 															className="box-border border border-line bg-card font-body text-ink outline-none"
@@ -1629,10 +1551,7 @@ export function AddTaskModal({
 																fontSize: 12.5,
 															}}
 														/>
-														<span
-															className="font-body text-ink-3"
-															style={{ fontSize: 12 }}
-														>
+														<span className="font-body text-ink-3" style={{ fontSize: 12 }}>
 															{t("addmodal.occurrences")}
 														</span>
 													</span>
@@ -1665,10 +1584,7 @@ export function AddTaskModal({
 												</ChipBtn>
 											</div>
 										</div>
-										<div
-											className="font-body text-ink-3"
-											style={{ fontSize: 11, lineHeight: 1.5 }}
-										>
+										<div className="font-body text-ink-3" style={{ fontSize: 11, lineHeight: 1.5 }}>
 											{t("addmodal.repeatHint")}
 										</div>
 									</div>
@@ -1678,15 +1594,9 @@ export function AddTaskModal({
 
 						{draft.pop === "barva" && (
 							<>
-								<div
-									className="font-body text-ink-3"
-									style={{ fontSize: 11.5, marginBottom: 8 }}
-								>
+								<div className="font-body text-ink-3" style={{ fontSize: 11.5, marginBottom: 8 }}>
 									{t("addmodal.colorHint")}
-									<b style={{ color: "var(--w-ink-2)" }}>
-										{t("addmodal.colorHintB")}
-									</b>
-									.
+									<b style={{ color: "var(--w-ink-2)" }}>{t("addmodal.colorHintB")}</b>.
 								</div>
 								<div className="flex flex-wrap items-center" style={{ gap: 7 }}>
 									<button
@@ -1738,59 +1648,63 @@ export function AddTaskModal({
 						)}
 
 						{draft.pop === "priloha" && (
-							<div className="flex flex-wrap items-center" style={{ gap: 7 }}>
-								{draft.attached.map((name, i) => (
-									<span
-										key={`${name}-${i}`}
-										className="flex items-center border border-line bg-card font-body"
+							<>
+								<div className="flex flex-wrap items-center" style={{ gap: 7 }}>
+									{draft.attached.map((name, i) => (
+										<span
+											key={`${name}-${i}`}
+											className="flex items-center border border-line bg-card font-body"
+											style={{
+												gap: 6,
+												fontSize: 12,
+												padding: "5px 9px",
+												borderRadius: 8,
+												color: "var(--w-ink-2)",
+											}}
+										>
+											{name}
+											<button
+												type="button"
+												onClick={() =>
+													patch({
+														attached: draft.attached.filter((_, j) => j !== i),
+													})
+												}
+												className="cursor-pointer text-ink-3"
+											>
+												✕
+											</button>
+										</span>
+									))}
+									<label
+										className="flex cursor-pointer items-center font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
 										style={{
 											gap: 6,
 											fontSize: 12,
-											padding: "5px 9px",
-											borderRadius: 8,
-											color: "var(--w-ink-2)",
+											padding: "6px 11px",
+											borderRadius: 9,
+											border: "1px dashed var(--w-line)",
 										}}
 									>
-										{name}
-										<button
-											type="button"
-											onClick={() =>
-												patch({
-													attached: draft.attached.filter((_, j) => j !== i),
-												})
-											}
-											className="cursor-pointer text-ink-3"
-										>
-											✕
-										</button>
-									</span>
-								))}
-								<label
-									className="flex cursor-pointer items-center font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
-									style={{
-										gap: 6,
-										fontSize: 12,
-										padding: "6px 11px",
-										borderRadius: 9,
-										border: "1px dashed var(--w-line)",
-									}}
-								>
-									<input
-										type="file"
-										multiple
-										className="hidden"
-										onChange={(e) => {
-											const names = Array.from(e.target.files ?? []).map(
-												(f) => f.name,
-											);
-											if (names.length)
-												patch({ attached: [...draft.attached, ...names] });
-											e.target.value = "";
-										}}
-									/>
-									{t("addmodal.addAttachment")}
-								</label>
-							</div>
+										<input
+											type="file"
+											multiple
+											className="hidden"
+											onChange={(e) => {
+												const names = Array.from(e.target.files ?? []).map((f) => f.name);
+												if (names.length) patch({ attached: [...draft.attached, ...names] });
+												e.target.value = "";
+											}}
+										/>
+										{t("addmodal.addAttachment")}
+									</label>
+								</div>
+								{/* Upload/persist příloh zatím není implementován → jasně označit,
+							    ať uživatel nečeká uložení (dřív se tiše zahodily). */}
+								<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 8 }}>
+									{t("addmodal.attachDemo")}
+								</div>
+							</>
 						)}
 
 						{draft.pop === "postup" && (
@@ -1808,10 +1722,7 @@ export function AddTaskModal({
 										</option>
 									))}
 								</select>
-								<div
-									className="font-body text-ink-3"
-									style={{ fontSize: 11, marginTop: 6 }}
-								>
+								<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 6 }}>
 									{t("addmodal.flowHint")}
 								</div>
 							</>

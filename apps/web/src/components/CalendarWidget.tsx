@@ -20,7 +20,7 @@ interface DayInfo {
 }
 
 export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) {
-	const { i18n } = useTranslation();
+	const { t, i18n } = useTranslation();
 	const tdy = todayISO();
 	const [ym, setYm] = useState<{ y: number; m: number }>(() => {
 		const d = new Date();
@@ -30,9 +30,7 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 	const { data: rows } = usePsQuery<{
 		d: string | null;
 		completed_at: string | null;
-	}>(
-		"SELECT substr(due_date, 1, 10) AS d, completed_at FROM tasks WHERE due_date IS NOT NULL",
-	);
+	}>("SELECT substr(due_date, 1, 10) AS d, completed_at FROM tasks WHERE due_date IS NOT NULL");
 
 	// agregace per den (jen zobrazený měsíc — mapa je malá)
 	const byDay = useMemo(() => {
@@ -77,17 +75,14 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 	}).format(first);
 	// iniciály dnů od pondělí (Intl narrow; 2026-06-01 = pondělí)
 	const weekdays = Array.from({ length: 7 }, (_, i) =>
-		new Intl.DateTimeFormat(i18n.language, { weekday: "narrow" }).format(
-			new Date(2026, 5, 1 + i),
-		),
+		new Intl.DateTimeFormat(i18n.language, { weekday: "narrow" }).format(new Date(2026, 5, 1 + i)),
 	);
 	const shift = (dir: -1 | 1) =>
 		setYm(({ y, m }) => {
 			const nm = m + dir;
 			return nm < 0 ? { y: y - 1, m: 11 } : nm > 11 ? { y: y + 1, m: 0 } : { y, m: nm };
 		});
-	const isCurrentMonth =
-		ym.y === new Date().getFullYear() && ym.m === new Date().getMonth();
+	const isCurrentMonth = ym.y === new Date().getFullYear() && ym.m === new Date().getMonth();
 
 	return (
 		<div style={{ padding: "4px 12px 12px" }}>
@@ -106,19 +101,17 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 							const d = new Date();
 							setYm({ y: d.getFullYear(), m: d.getMonth() });
 						}}
+						aria-label={t("calendar.today")}
 						className="rounded-md border border-line font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
 						style={{ fontSize: 10, padding: "2px 8px" }}
 					>
-						{new Intl.DateTimeFormat(i18n.language, { day: "numeric" }).format(
-							new Date(),
-						)}
-						.
+						{new Intl.DateTimeFormat(i18n.language, { day: "numeric" }).format(new Date())}.
 					</button>
 				)}
 				<button
 					type="button"
 					onClick={() => shift(-1)}
-					aria-label="‹"
+					aria-label={t("calendar.prev")}
 					className="grid place-items-center rounded-md border border-line text-ink-2 hover:border-brass"
 					style={{ width: 22, height: 22, fontSize: 12 }}
 				>
@@ -127,7 +120,7 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 				<button
 					type="button"
 					onClick={() => shift(1)}
-					aria-label="›"
+					aria-label={t("calendar.next")}
 					className="grid place-items-center rounded-md border border-line text-ink-2 hover:border-brass"
 					style={{ width: 22, height: 22, fontSize: 12 }}
 				>

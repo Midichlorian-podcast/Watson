@@ -8,8 +8,7 @@
 import { powerSync } from "./powersync/db";
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const isoOf = (d: Date) =>
-	`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const fromISO = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`);
 export const isoPlusDays = (iso: string, n: number) => {
 	const d = fromISO(iso);
@@ -45,10 +44,7 @@ async function loadChain(chainId: string) {
 		sched_mode: string | null;
 		skip_weekend: number | null;
 		anchor_date: string | null;
-	}>(
-		"SELECT sched_mode, skip_weekend, anchor_date FROM chains WHERE id = ? LIMIT 1",
-		[chainId],
-	);
+	}>("SELECT sched_mode, skip_weekend, anchor_date FROM chains WHERE id = ? LIMIT 1", [chainId]);
 	return rows[0];
 }
 
@@ -68,11 +64,7 @@ export async function reflowChain(chainId: string, fromPos = 0): Promise<void> {
 	if (!chain) return;
 	const steps = await loadSteps(chainId);
 	if (!steps.length) return;
-	const anchor = (
-		chain.anchor_date ??
-		steps[0]?.due ??
-		isoOf(new Date())
-	).slice(0, 10);
+	const anchor = (chain.anchor_date ?? steps[0]?.due ?? isoOf(new Date())).slice(0, 10);
 	// Zjednodušeno (varianta B): jediný model = Řetězec (kaskáda). Anchor mode zrušen.
 	const skip = !!chain.skip_weekend;
 	const dayDiff = (a: string, b: string) =>
@@ -82,8 +74,7 @@ export async function reflowChain(chainId: string, fromPos = 0): Promise<void> {
 	const norm = steps.map((st) => {
 		const due = st.due?.slice(0, 10) ?? null;
 		const anchorOffset = st.anchor_offset ?? (due ? dayDiff(due, anchor) : 0);
-		const gapDays =
-			st.gap_days ?? (due && prevDue ? Math.max(0, dayDiff(due, prevDue)) : 1);
+		const gapDays = st.gap_days ?? (due && prevDue ? Math.max(0, dayDiff(due, prevDue)) : 1);
 		if (due) prevDue = due;
 		return { ...st, anchorOffset, gapDays };
 	});
@@ -99,25 +90,23 @@ export async function reflowChain(chainId: string, fromPos = 0): Promise<void> {
 		if (skip && pos > fromPos) d = nextWork(d);
 		prev = d;
 		if (st.task_id && d !== (st.due ?? "").slice(0, 10)) {
-			await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [
-				d,
-				st.task_id,
-			]);
+			await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [d, st.task_id]);
 		}
 	}
 }
 
 /** Posun celého řetězce o ±N dní (prototyp shiftFlow) — termíny všech kroků + kotva. */
-export async function shiftChain(
-	chainId: string,
-	delta: number,
-): Promise<void> {
+export async function shiftChain(chainId: string, delta: number): Promise<void> {
 	const chain = await loadChain(chainId);
+	const skip = !!chain?.skip_weekend;
 	const steps = await loadSteps(chainId);
 	for (const st of steps) {
 		if (st.task_id && st.due) {
+			// „Bez víkendů": po posunu srovnat na nejbližší pracovní den, jinak by ±1 d
+			// zaparkovalo krok na víkend navzdory zapnutému přeskakování.
+			const shifted = isoPlusDays(st.due.slice(0, 10), delta);
 			await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [
-				isoPlusDays(st.due.slice(0, 10), delta),
+				skip ? nextWork(shifted) : shifted,
 				st.task_id,
 			]);
 		}
@@ -131,14 +120,8 @@ export async function shiftChain(
 }
 
 /** Přepnutí režimu plánování Řetězec/Kotva (prototyp setFlowSched) + přepočet. */
-export async function setChainSchedMode(
-	chainId: string,
-	mode: "chain" | "anchor",
-): Promise<void> {
-	await powerSync.execute("UPDATE chains SET sched_mode = ? WHERE id = ?", [
-		mode,
-		chainId,
-	]);
+export async function setChainSchedMode(chainId: string, mode: "chain" | "anchor"): Promise<void> {
+	await powerSync.execute("UPDATE chains SET sched_mode = ? WHERE id = ?", [mode, chainId]);
 	await reflowChain(chainId, 0);
 }
 

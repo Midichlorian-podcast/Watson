@@ -45,18 +45,20 @@ export function ProjectDetailPanel() {
 function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
-	// Esc zavře panel (prototyp: Esc zavírá selectedProject)
+	// Esc zavře panel (prototyp: Esc zavírá selectedProject) — ale ne když je nad
+	// panelem otevřená vyšší vrstva (modal/paleta/tahák s data-esc-layer).
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
+			if (e.key !== "Escape") return;
+			if (document.querySelector("[data-esc-layer]")) return;
+			onClose();
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
 	}, [onClose]);
-	const { data: rows } = usePsQuery<ProjectRow>(
-		"SELECT * FROM projects WHERE id = ? LIMIT 1",
-		[id],
-	);
+	const { data: rows } = usePsQuery<ProjectRow>("SELECT * FROM projects WHERE id = ? LIMIT 1", [
+		id,
+	]);
 	const project = rows?.[0];
 	const { data: stats } = usePsQuery<{ total: number; done: number }>(
 		"SELECT count(*) AS total, count(completed_at) AS done FROM tasks WHERE project_id = ?",
@@ -88,13 +90,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const qc = useQueryClient();
 	// toggle člena projektu (prototyp toggleProjMember, ř. 2380) — POST/DELETE na server
 	const memberMut = useMutation({
-		mutationFn: async ({
-			userId,
-			isMember,
-		}: {
-			userId: string;
-			isMember: boolean;
-		}) => {
+		mutationFn: async ({ userId, isMember }: { userId: string; isMember: boolean }) => {
 			const r = await fetch(
 				isMember
 					? `${API_URL}/api/projects/${id}/members/${userId}`
@@ -110,8 +106,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			);
 			if (!r.ok) throw new Error("member");
 		},
-		onSuccess: () =>
-			void qc.invalidateQueries({ queryKey: ["projMembers", id] }),
+		onSuccess: () => void qc.invalidateQueries({ queryKey: ["projMembers", id] }),
 		onError: () => showToast(t("projects.memberChangeError")),
 	});
 
@@ -151,10 +146,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 				style={{ width: 420, maxWidth: "94vw", boxShadow: "var(--w-shadow)" }}
 			>
 				<div className="flex items-center gap-2 border-line border-b px-4 py-3">
-					<span
-						className="h-2.5 w-2.5 rounded-full"
-						style={{ background: dot }}
-					/>
+					<span className="h-2.5 w-2.5 rounded-full" style={{ background: dot }} />
 					<span className="font-display font-semibold text-ink-3 text-sm">
 						{t("projects.detailTitle")}
 					</span>
@@ -179,11 +171,15 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					<input
 						value={name}
 						onChange={(e) => setName(e.target.value)}
-						onBlur={() =>
-							name.trim() &&
-							name !== project.name &&
-							void patchProject(id, { name: name.trim() })
-						}
+						onBlur={() => {
+							// Prázdný název je zakázán — vrať input na uloženou hodnotu,
+							// ať nezůstane vizuálně prázdný proti DB.
+							if (!name.trim()) {
+								setName(project.name ?? "");
+								return;
+							}
+							if (name !== project.name) void patchProject(id, { name: name.trim() });
+						}}
 						className="w-full rounded-[9px] border border-line bg-panel-2 font-display font-bold text-ink outline-none focus:border-brass"
 						style={{ padding: "9px 11px", fontSize: 16 }}
 					/>
@@ -208,10 +204,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									className="h-6 w-6 rounded-md"
 									style={{
 										background: c,
-										outline:
-											project.color === c
-												? "2px solid var(--w-avatar)"
-												: "none",
+										outline: project.color === c ? "2px solid var(--w-avatar)" : "none",
 										outlineOffset: "1px",
 									}}
 									aria-label={c}
@@ -224,11 +217,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					<Section label={t("projects.type")}>
 						<div className="inline-flex flex-wrap gap-1 rounded-lg border border-line bg-panel-2 p-[3px]">
 							{KINDS.map(([k, lbl]) => (
-								<Seg
-									key={k}
-									active={kind === k}
-									onClick={() => void patchProject(id, { kind: k })}
-								>
+								<Seg key={k} active={kind === k} onClick={() => void patchProject(id, { kind: k })}>
 									{t(`projects.${lbl}`)}
 								</Seg>
 							))}
@@ -259,8 +248,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									onClick={() =>
 										void patchProject(id, {
 											status: s,
-											archived_at:
-												s === "archive" ? new Date().toISOString() : null,
+											archived_at: s === "archive" ? new Date().toISOString() : null,
 										})
 									}
 								>
@@ -276,11 +264,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							<Section label={t("projects.delivery")}>
 								<input
 									type="date"
-									value={
-										project.delivery_date
-											? project.delivery_date.slice(0, 10)
-											: ""
-									}
+									value={project.delivery_date ? project.delivery_date.slice(0, 10) : ""}
 									onChange={(e) =>
 										void patchProject(id, {
 											delivery_date: e.target.value || null,
@@ -326,21 +310,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						className="flex border-line border-t"
 						style={{ gap: 22, marginTop: 22, paddingTop: 16 }}
 					>
-						<Stat
-							value={openCount}
-							label={t("projects.statOpen")}
-							color="var(--w-ink)"
-						/>
-						<Stat
-							value={done}
-							label={t("projects.statDone")}
-							color="var(--w-success-ink)"
-						/>
-						<Stat
-							value={total}
-							label={t("projects.statTotal")}
-							color="var(--w-ink-2)"
-						/>
+						<Stat value={openCount} label={t("projects.statOpen")} color="var(--w-ink)" />
+						<Stat value={done} label={t("projects.statDone")} color="var(--w-success-ink)" />
+						<Stat value={total} label={t("projects.statTotal")} color="var(--w-ink-2)" />
 					</div>
 				</div>
 
@@ -407,15 +379,7 @@ function Seg({
 }
 
 /** Klikací avatar osoby — data-person vzor prototypu (CSS ř. 97–98: off opacity .5, on brass ring). */
-function PersonAvatar({
-	name,
-	on,
-	onClick,
-}: {
-	name: string;
-	on: boolean;
-	onClick: () => void;
-}) {
+function PersonAvatar({ name, on, onClick }: { name: string; on: boolean; onClick: () => void }) {
 	return (
 		<button
 			type="button"
@@ -425,9 +389,7 @@ function PersonAvatar({
 			style={{
 				background: "var(--w-avatar)",
 				opacity: on ? 1 : 0.5,
-				boxShadow: on
-					? "0 0 0 2px var(--w-card), 0 0 0 4px var(--w-brass)"
-					: "none",
+				boxShadow: on ? "0 0 0 2px var(--w-card), 0 0 0 4px var(--w-brass)" : "none",
 				transition: "opacity .12s, box-shadow .12s",
 			}}
 		>
@@ -437,15 +399,7 @@ function PersonAvatar({
 }
 
 /** Stat detailu projektu — holé číslo (mono 22px) nad popiskem (prototyp ř. 1260–1262). */
-function Stat({
-	value,
-	label,
-	color,
-}: {
-	value: number;
-	label: string;
-	color: string;
-}) {
+function Stat({ value, label, color }: { value: number; label: string; color: string }) {
 	return (
 		<div>
 			<div className="font-mono" style={{ fontSize: 22, color }}>

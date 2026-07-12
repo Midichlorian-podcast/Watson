@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import i18n, { useTranslation } from "@watson/i18n";
-import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
 import { signOut, useSession } from "../lib/auth-client";
@@ -38,8 +38,7 @@ type Member = {
 /** Mapuje DB roli + vlastnictví na CS popisek dle design taxonomie (Vlastník/Admin/Člen/Host). */
 function roleLabel(m: Member, t: (k: string) => string) {
 	if (m.isOwner) return t("settings.roleOwner");
-	if (m.role === "admin" || m.role === "manager")
-		return t("settings.roleAdmin");
+	if (m.role === "admin" || m.role === "manager") return t("settings.roleAdmin");
 	if (m.role === "guest") return t("settings.roleGuest");
 	return t("settings.roleMember");
 }
@@ -71,6 +70,8 @@ export function Nastaveni() {
 	const { theme, toggle } = useTheme();
 	const { data: session } = useSession();
 	const [openRoleId, setOpenRoleId] = useState<string | null>(null);
+	// obal otevřeného menu role — pro zavření klikem mimo (stejně jako Invite modal má Esc)
+	const roleMenuRef = useRef<HTMLDivElement>(null);
 	const [density, setDensityState] = useState<Density>(getDensity);
 	// výchozí obrazovka po startu (watson.landing; čte AppLayout při prvním načtení)
 	const [landing, setLandingState] = useState<"dnes" | "prehled">(() =>
@@ -93,6 +94,22 @@ export function Nastaveni() {
 		const id = setTimeout(() => setToast(null), 2500);
 		return () => clearTimeout(id);
 	}, [toast]);
+	// Zavři menu role klikem mimo nebo Esc (jinak overlay zůstane viset přes obsah).
+	useEffect(() => {
+		if (!openRoleId) return;
+		const onDown = (e: MouseEvent) => {
+			if (!roleMenuRef.current?.contains(e.target as Node)) setOpenRoleId(null);
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setOpenRoleId(null);
+		};
+		document.addEventListener("mousedown", onDown);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDown);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [openRoleId]);
 
 	const { data: workspaces } = useQuery({
 		queryKey: ["workspaces"],
@@ -107,10 +124,7 @@ export function Nastaveni() {
 	// Tým a role = AKTIVNÍ prostor (prototyp ř. 3182); v osobním prostoru se sekce skryje.
 	const { activeWs } = useWorkspace();
 	const activeWorkspace = workspaces?.find((w) => w.id === activeWs);
-	const teamWs =
-		activeWorkspace && !activeWorkspace.isPersonal
-			? activeWorkspace
-			: undefined;
+	const teamWs = activeWorkspace && !activeWorkspace.isPersonal ? activeWorkspace : undefined;
 	const accountWsName = activeWorkspace?.name ?? workspaces?.[0]?.name ?? "";
 
 	// POZOR: klíč ["wsMembersFull", id] sdílí BulkBar/overview/Seznamy/paleta a
@@ -135,15 +149,12 @@ export function Nastaveni() {
 	async function setRole(userId: string, role: "admin" | "member" | "guest") {
 		setOpenRoleId(null);
 		try {
-			const r = await fetch(
-				`${API_URL}/api/workspaces/${teamWs?.id}/members/${userId}/role`,
-				{
-					method: "PATCH",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ role }),
-				},
-			);
+			const r = await fetch(`${API_URL}/api/workspaces/${teamWs?.id}/members/${userId}/role`, {
+				method: "PATCH",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ role }),
+			});
 			if (!r.ok) throw new Error("role");
 			void refetch();
 		} catch {
@@ -314,10 +325,7 @@ export function Nastaveni() {
 							margin: "0 0 8px",
 						}}
 					>
-						<span
-							className="font-display"
-							style={{ ...SECTION_LABEL, margin: 0 }}
-						>
+						<span className="font-display" style={{ ...SECTION_LABEL, margin: 0 }}>
 							{t("settings.team")}
 						</span>
 						<span
@@ -366,11 +374,7 @@ export function Nastaveni() {
 										}
 										className="shrink-0 cursor-pointer"
 									>
-										<Avatar
-											text={initials(m.name)}
-											size={36}
-											bg="var(--w-avatar)"
-										/>
+										<Avatar text={initials(m.name)} size={36} bg="var(--w-avatar)" />
 									</button>
 									<div style={{ minWidth: 0, flex: 1 }}>
 										<button
@@ -403,12 +407,13 @@ export function Nastaveni() {
 											{m.job ? `${m.job} · ${m.email}` : m.email}
 										</div>
 									</div>
-									<div style={{ position: "relative", flex: "none" }}>
+									<div
+										ref={menuOpen ? roleMenuRef : undefined}
+										style={{ position: "relative", flex: "none" }}
+									>
 										<button
 											type="button"
-											onClick={() =>
-												!m.isOwner && setOpenRoleId(menuOpen ? null : m.id)
-											}
+											onClick={() => !m.isOwner && setOpenRoleId(menuOpen ? null : m.id)}
 											className="font-display"
 											style={{
 												display: "inline-flex",
@@ -419,13 +424,9 @@ export function Nastaveni() {
 												borderRadius: 999,
 												padding: "4px 10px 4px 11px",
 												cursor: m.isOwner ? "default" : "pointer",
-												background: m.isOwner
-													? "var(--w-brass-soft)"
-													: "var(--w-panel-2)",
+												background: m.isOwner ? "var(--w-brass-soft)" : "var(--w-panel-2)",
 												border: `1px solid ${m.isOwner ? "var(--w-brass)" : "var(--w-line)"}`,
-												color: m.isOwner
-													? "var(--w-brass-text)"
-													: "var(--w-ink-2)",
+												color: m.isOwner ? "var(--w-brass-text)" : "var(--w-ink-2)",
 											}}
 										>
 											{label}
@@ -519,11 +520,7 @@ export function Nastaveni() {
 									borderBottom: "1px solid var(--w-line)",
 								}}
 							>
-								<Avatar
-									text={initials(iv.name || iv.email)}
-									size={36}
-									bg="var(--w-ink-3)"
-								/>
+								<Avatar text={initials(iv.name || iv.email)} size={36} bg="var(--w-ink-3)" />
 								<div style={{ minWidth: 0, flex: 1 }}>
 									<div
 										className="font-display"
@@ -535,10 +532,7 @@ export function Nastaveni() {
 									>
 										{iv.name || iv.email}
 									</div>
-									<div
-										className="font-mono"
-										style={{ fontSize: 11.5, color: "var(--w-ink-3)" }}
-									>
+									<div className="font-mono" style={{ fontSize: 11.5, color: "var(--w-ink-3)" }}>
 										{iv.email}
 									</div>
 								</div>
@@ -657,9 +651,7 @@ export function Nastaveni() {
 						} else {
 							// uživatel zatím neexistuje — pending (e-mailová pozvánka = mail infra #8)
 							setInvited((arr) =>
-								arr.some((x) => x.email === email)
-									? arr
-									: [...arr, { name, email }],
+								arr.some((x) => x.email === email) ? arr : [...arr, { name, email }],
 							);
 							setToast(t("settings.inviteNoUser"));
 						}
@@ -698,10 +690,7 @@ function Segments({
 	options: [string, string][];
 }) {
 	return (
-		<div
-			className="inline-flex rounded-[9px] border border-line bg-panel-2"
-			style={{ padding: 3 }}
-		>
+		<div className="inline-flex rounded-[9px] border border-line bg-panel-2" style={{ padding: 3 }}>
 			{options.map(([k, l]) => (
 				<button
 					key={k}
@@ -733,12 +722,7 @@ function InviteModal({
 }: {
 	wsId: string;
 	onClose: () => void;
-	onDone: (r: {
-		added: boolean;
-		reason?: string;
-		name: string;
-		email: string;
-	}) => void;
+	onDone: (r: { added: boolean; reason?: string; name: string; email: string }) => void;
 }) {
 	const { t } = useTranslation();
 	const [name, setName] = useState("");
@@ -806,10 +790,7 @@ function InviteModal({
 					style={{ width: 440, maxWidth: "94vw", boxShadow: "var(--w-shadow)" }}
 				>
 					<div style={{ padding: "18px 20px" }}>
-						<div
-							className="mb-4 font-display font-bold text-ink"
-							style={{ fontSize: 16 }}
-						>
+						<div className="mb-4 font-display font-bold text-ink" style={{ fontSize: 16 }}>
 							{t("settings.inviteTitle2")}
 						</div>
 						<label style={fieldLabel}>{t("settings.inviteNameLabel")}</label>
@@ -833,10 +814,7 @@ function InviteModal({
 							style={{ padding: "10px 12px", fontSize: 13 }}
 						/>
 						{err && (
-							<div
-								className="mt-2 font-body text-overdue"
-								style={{ fontSize: 12 }}
-							>
+							<div className="mt-2 font-body text-overdue" style={{ fontSize: 12 }}>
 								{err}
 							</div>
 						)}
@@ -845,10 +823,7 @@ function InviteModal({
 						className="flex items-center border-line border-t"
 						style={{ gap: 12, padding: "13px 20px" }}
 					>
-						<span
-							className="font-body text-ink-3"
-							style={{ fontSize: 11.5, flex: 1 }}
-						>
+						<span className="font-body text-ink-3" style={{ fontSize: 11.5, flex: 1 }}>
 							{t("settings.inviteNote")}
 						</span>
 						<button
@@ -881,34 +856,20 @@ function InviteModal({
 
 function RowTitle({ children }: { children: ReactNode }) {
 	return (
-		<div
-			className="font-display"
-			style={{ fontWeight: 600, fontSize: 14, color: "var(--w-ink)" }}
-		>
+		<div className="font-display" style={{ fontWeight: 600, fontSize: 14, color: "var(--w-ink)" }}>
 			{children}
 		</div>
 	);
 }
 function RowDesc({ children }: { children: ReactNode }) {
 	return (
-		<div
-			className="font-body"
-			style={{ fontSize: 12, color: "var(--w-ink-3)" }}
-		>
+		<div className="font-body" style={{ fontSize: 12, color: "var(--w-ink-3)" }}>
 			{children}
 		</div>
 	);
 }
 
-function Avatar({
-	text,
-	size,
-	bg,
-}: {
-	text: string;
-	size: number;
-	bg: string;
-}) {
+function Avatar({ text, size, bg }: { text: string; size: number; bg: string }) {
 	return (
 		<span
 			className="font-display"
@@ -932,15 +893,7 @@ function Avatar({
 }
 
 /** Řádek oznámení — dekorativní zapnutý přepínač (dle designu napevno ON). */
-function NotifyRow({
-	title,
-	desc,
-	divider,
-}: {
-	title: string;
-	desc: string;
-	divider?: boolean;
-}) {
+function NotifyRow({ title, desc, divider }: { title: string; desc: string; divider?: boolean }) {
 	return (
 		<div
 			style={{

@@ -12,6 +12,7 @@ import { API_URL } from "./api";
 import { reflowChain } from "./chainReflow";
 import { powerSync } from "./powersync/db";
 import { showToast } from "./toast";
+import { pushUndo } from "./undo";
 
 export interface ChainStepLite {
 	id: string;
@@ -22,8 +23,7 @@ export interface ChainStepLite {
 	step_state: string | null;
 }
 
-const isClosed = (s: ChainStepLite) =>
-	s.step_state === "done" || s.step_state === "skipped";
+const isClosed = (s: ChainStepLite) => s.step_state === "done" || s.step_state === "skipped";
 
 async function loadChainSteps(chainId: string): Promise<ChainStepLite[]> {
 	return await powerSync.getAll<ChainStepLite>(
@@ -33,10 +33,95 @@ async function loadChainSteps(chainId: string): Promise<ChainStepLite[]> {
 }
 
 async function setStepState(id: string, state: string): Promise<void> {
-	await powerSync.execute(
-		"UPDATE chain_steps SET step_state = ?, activated_at = ? WHERE id = ?",
-		[state, state === "active" ? new Date().toISOString() : null, id],
+	await powerSync.execute("UPDATE chain_steps SET step_state = ?, activated_at = ? WHERE id = ?", [
+		state,
+		state === "active" ? new Date().toISOString() : null,
+		id,
+	]);
+}
+
+/**
+ * Snímek celého postupu pro undo — advance/rewind/cascade mění nejen `tasks.completed_at`
+ * (to řeší toggle), ale i step_state, cizí `tasks.due_date` (reflow) a per-osoba
+ * `assignments.completed_at` (rewind shared_all). Bez snímku by ⌘Z (který drží jen sloupce
+ * zdrojového úkolu z toggle) tyto vedlejší změny NEvrátil → trvale posunuté termíny řetězce
+ * a rozjetý odvozený stav. ORDER BY kvůli stabilnímu porovnání snímků.
+ */
+interface ChainSnapshot {
+	chainId: string;
+	steps: { id: string; step_state: string | null; activated_at: string | null }[];
+	tasks: { id: string; completed_at: string | null; due_date: string | null }[];
+	assignments: { id: string; completed_at: string | null }[];
+}
+
+async function snapshotChain(chainId: string): Promise<ChainSnapshot> {
+	const steps = await powerSync.getAll<{
+		id: string;
+		step_state: string | null;
+		activated_at: string | null;
+		task_id: string | null;
+	}>(
+		"SELECT id, step_state, activated_at, task_id FROM chain_steps WHERE chain_id = ? ORDER BY position, id",
+		[chainId],
 	);
+	const taskIds = steps.map((s) => s.task_id).filter((x): x is string => !!x);
+	const ph = taskIds.map(() => "?").join(", ");
+	const tasks = taskIds.length
+		? await powerSync.getAll<{
+				id: string;
+				completed_at: string | null;
+				due_date: string | null;
+			}>(`SELECT id, completed_at, due_date FROM tasks WHERE id IN (${ph}) ORDER BY id`, taskIds)
+		: [];
+	const assignments = taskIds.length
+		? await powerSync.getAll<{ id: string; completed_at: string | null }>(
+				`SELECT id, completed_at FROM assignments WHERE task_id IN (${ph}) ORDER BY id`,
+				taskIds,
+			)
+		: [];
+	return {
+		chainId,
+		steps: steps.map((s) => ({
+			id: s.id,
+			step_state: s.step_state,
+			activated_at: s.activated_at,
+		})),
+		tasks,
+		assignments,
+	};
+}
+
+async function restoreChain(snap: ChainSnapshot): Promise<void> {
+	await powerSync.writeTransaction(async (tx) => {
+		for (const s of snap.steps)
+			await tx.execute("UPDATE chain_steps SET step_state = ?, activated_at = ? WHERE id = ?", [
+				s.step_state,
+				s.activated_at,
+				s.id,
+			]);
+		for (const t of snap.tasks)
+			await tx.execute("UPDATE tasks SET completed_at = ?, due_date = ? WHERE id = ?", [
+				t.completed_at,
+				t.due_date,
+				t.id,
+			]);
+		for (const a of snap.assignments)
+			await tx.execute("UPDATE assignments SET completed_at = ? WHERE id = ?", [
+				a.completed_at,
+				a.id,
+			]);
+	});
+	// Stav postupu je odvozený od kroků → po obnově dopočítat (ne verbatim ze snímku).
+	await syncChainState(snap.chainId);
+}
+
+/** Zaregistruje kompenzační undo, jen když advance/rewind reálně něco změnil. */
+function pushChainUndo(before: ChainSnapshot, after: ChainSnapshot): void {
+	if (JSON.stringify(before) === JSON.stringify(after)) return;
+	pushUndo({
+		undo: () => restoreChain(before),
+		redo: () => restoreChain(after),
+	});
 }
 
 /**
@@ -86,10 +171,7 @@ async function handoffName(taskId: string | null): Promise<string> {
  * Kaskáda při předání (prototyp _advance závěr, ř. 2483): zpožděný aktivovaný krok
  * v režimu Řetězec se přitáhne na dnešek + navazující kroky se přepočítají (reflow).
  */
-async function cascadePull(
-	chainId: string,
-	step: ChainStepLite,
-): Promise<void> {
+async function cascadePull(chainId: string, step: ChainStepLite): Promise<void> {
 	if (!step.task_id) return;
 	const chain = await powerSync.getAll<{ sched_mode: string | null }>(
 		"SELECT sched_mode FROM chains WHERE id = ? LIMIT 1",
@@ -105,55 +187,42 @@ async function cascadePull(
 	const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 	if (!due || due >= todayIso) return;
 	const delta = Math.round(
-		(new Date(`${todayIso}T00:00:00`).getTime() -
-			new Date(`${due}T00:00:00`).getTime()) /
+		(new Date(`${todayIso}T00:00:00`).getTime() - new Date(`${due}T00:00:00`).getTime()) /
 			86_400_000,
 	);
-	await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [
-		todayIso,
-		step.task_id,
-	]);
+	await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [todayIso, step.task_id]);
 	await reflowChain(chainId, step.position ?? 0);
 	const unit =
-		delta === 1
-			? i18n.t("flows.day1")
-			: delta < 5
-				? i18n.t("flows.day234")
-				: i18n.t("flows.day5");
-	setTimeout(
-		() => showToast(`${i18n.t("flows.cascadeMoved")} ${delta} ${unit}`),
-		1200,
-	);
+		delta === 1 ? i18n.t("flows.day1") : delta < 5 ? i18n.t("flows.day234") : i18n.t("flows.day5");
+	setTimeout(() => showToast(`${i18n.t("flows.cascadeMoved")} ${delta} ${unit}`), 1200);
 }
 
 /** Po změně stavů: pokud jsou všechny kroky uzavřené → chain done; jinak active. */
 async function syncChainState(chainId: string): Promise<void> {
 	const steps = await loadChainSteps(chainId);
 	const allDone = steps.length > 0 && steps.every(isClosed);
-	await powerSync.execute(
-		"UPDATE chains SET state = ?, completed_at = ? WHERE id = ?",
-		[
-			allDone ? "done" : "active",
-			allDone ? new Date().toISOString() : null,
-			chainId,
-		],
-	);
+	await powerSync.execute("UPDATE chains SET state = ?, completed_at = ? WHERE id = ?", [
+		allDone ? "done" : "active",
+		allDone ? new Date().toISOString() : null,
+		chainId,
+	]);
 }
 
 /**
  * Volá se PO toggle `tasks.completed_at`. Pokud je úkol krokem postupu:
  * done → krok done + aktivace dalšího dle gate; un-done → rewind od tohoto kroku.
  */
-export async function advanceChainForTask(
-	taskId: string,
-	nowDone: boolean,
-): Promise<void> {
+export async function advanceChainForTask(taskId: string, nowDone: boolean): Promise<void> {
 	const mine = await powerSync.getAll<ChainStepLite>(
 		"SELECT id, chain_id, task_id, position, gate, step_state FROM chain_steps WHERE task_id = ? LIMIT 1",
 		[taskId],
 	);
 	const me = mine[0];
 	if (!me?.chain_id) return;
+
+	// Snímek PŘED zásahem — kompenzační undo pro vedlejší změny (step_state, cizí due_date,
+	// per-osoba assignments), které toggle do svého ⌘Z nezahrnuje.
+	const before = await snapshotChain(me.chain_id);
 
 	if (nowDone) {
 		await setStepState(me.id, "done");
@@ -168,17 +237,16 @@ export async function advanceChainForTask(
 				// zjednodušeno (varianta B): všechny brány = auto (i legacy manual)
 				await activateRun(steps, i);
 				// „Předáno → X" + kaskádové přitažení zpožděného kroku (prototyp ř. 2482–2483)
-				void handoffName(st.task_id).then((who) =>
-					showToast(`${i18n.t("flows.handedTo")} ${who}`),
-				);
+				void handoffName(st.task_id).then((who) => showToast(`${i18n.t("flows.handedTo")} ${who}`));
 				await cascadePull(me.chain_id, st);
 			}
 			break;
 		}
 	} else {
-		await rewindToStep(me);
+		await rewindToStepImpl(me);
 	}
 	await syncChainState(me.chain_id);
+	pushChainUndo(before, await snapshotChain(me.chain_id));
 }
 
 /**
@@ -208,8 +276,7 @@ export async function repairChain(chainId: string): Promise<void> {
 	let activated = false;
 	for (let i = 0; i < steps.length; i++) {
 		const s = steps[i];
-		if (!s || desired.get(s.id) === "done" || s.step_state === "skipped")
-			continue;
+		if (!s || desired.get(s.id) === "done" || s.step_state === "skipped") continue;
 		const priorClosed = steps.slice(0, i).every((p) => closed(p));
 		if (priorClosed && !activated) {
 			desired.set(s.id, "active");
@@ -227,10 +294,11 @@ export async function repairChain(chainId: string): Promise<void> {
 		await powerSync.writeTransaction(async (tx) => {
 			for (const s of changes) {
 				const ns = desired.get(s.id) ?? "dormant";
-				await tx.execute(
-					"UPDATE chain_steps SET step_state = ?, activated_at = ? WHERE id = ?",
-					[ns, ns === "active" ? new Date().toISOString() : null, s.id],
-				);
+				await tx.execute("UPDATE chain_steps SET step_state = ?, activated_at = ? WHERE id = ?", [
+					ns,
+					ns === "active" ? new Date().toISOString() : null,
+					s.id,
+				]);
 			}
 		});
 	}
@@ -248,10 +316,10 @@ export async function activateStepManually(step: ChainStepLite): Promise<void> {
 }
 
 /**
- * „Vrátit sem" — cílový krok znovu active (jeho úkol od-dokončit), všechny pozdější
- * kroky dormant + úkoly od-dokončit. VERBATIM sémantika rewindStep (ř. 2555).
+ * „Vrátit sem" jádro (bez undo) — cílový krok znovu active (jeho úkol od-dokončit), všechny
+ * pozdější kroky dormant + úkoly od-dokončit. VERBATIM sémantika rewindStep (ř. 2555).
  */
-export async function rewindToStep(target: ChainStepLite): Promise<void> {
+async function rewindToStepImpl(target: ChainStepLite): Promise<void> {
 	if (!target.chain_id) return;
 	const steps = await loadChainSteps(target.chain_id);
 	const idx = steps.findIndex((s) => s.id === target.id);
@@ -261,11 +329,21 @@ export async function rewindToStep(target: ChainStepLite): Promise<void> {
 		if (!st) continue;
 		await setStepState(st.id, i === idx ? "active" : "dormant");
 		if (st.task_id) {
-			await powerSync.execute(
-				"UPDATE tasks SET completed_at = NULL WHERE id = ?",
-				[st.task_id],
-			);
+			await powerSync.execute("UPDATE tasks SET completed_at = NULL WHERE id = ?", [st.task_id]);
+			// R2 — od-dokončit i per-osoba účasti (shared_all), jinak by task vypadal
+			// nedokončený, ale všichni přiřazení by měli completed_at (rozjetý invariant).
+			await powerSync.execute("UPDATE assignments SET completed_at = NULL WHERE task_id = ?", [
+				st.task_id,
+			]);
 		}
 	}
 	await syncChainState(target.chain_id);
+}
+
+/** „Vrátit sem" s kompenzačním undo (přímé volání z detailu postupu). */
+export async function rewindToStep(target: ChainStepLite): Promise<void> {
+	if (!target.chain_id) return;
+	const before = await snapshotChain(target.chain_id);
+	await rewindToStepImpl(target);
+	pushChainUndo(before, await snapshotChain(target.chain_id));
 }

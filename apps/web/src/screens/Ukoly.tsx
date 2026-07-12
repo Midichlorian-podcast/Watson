@@ -54,9 +54,7 @@ export function Ukoly() {
 	const scoped = useMemo(() => {
 		const inboxIds = inboxProjectIds(projects);
 		const noInbox = (allTasks ?? []).filter((x) => !isInboxTask(x, inboxIds));
-		return projektId
-			? noInbox.filter((x) => x.project_id === projektId)
-			: noInbox;
+		return projektId ? noInbox.filter((x) => x.project_id === projektId) : noInbox;
 	}, [allTasks, projektId, projects]);
 	const { q: searchQ } = useListSearch();
 	// Seznam/Nástěnka: podúkoly skrýt — reprezentuje je ⚏ rodiče + vrstvený detail
@@ -89,51 +87,28 @@ export function Ukoly() {
 		}
 		// Stabilní pořadí sekcí = pořadí projektů, ne pořadí seřazených úkolů (prototyp ř. 3040).
 		const order = new Map(projects.map((p, i) => [p.id, i] as const));
-		const totals = new Map<string, number>();
-		for (const tk of scoped) {
-			if (tk.parent_id || tk.completed_at) continue;
-			const k = tk.project_id ?? "—";
-			totals.set(k, (totals.get(k) ?? 0) + 1);
-		}
-		return [...m.entries()]
-			.sort(([a], [b]) => (order.get(a) ?? 999) - (order.get(b) ?? 999))
-			.map(([pid, list]) => ({
-				pid,
-				list,
-				total: totals.get(pid) ?? list.length,
-			}));
-	}, [shown, scoped, projects]);
+		return (
+			[...m.entries()]
+				.sort(([a], [b]) => (order.get(a) ?? 999) - (order.get(b) ?? 999))
+				// total = počet aktuálně zobrazených položek sekce (respektuje Dokončené/filtry/hledání),
+				// ať číslo v hlavičce sedí s vypsanými řádky (dřív se počítalo z nefiltrovaného základu).
+				.map(([pid, list]) => ({ pid, list, total: list.length }))
+		);
+	}, [shown, projects]);
 
-	const projMap = useMemo(
-		() => new Map(projects.map((p) => [p.id, p])),
-		[projects],
-	);
+	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 	const projName = (id: string) => projMap.get(id)?.name ?? "—";
 	const activeProject = projektId ? projMap.get(projektId) : undefined;
-
-	// Deep-link ?ukol= (z „Kopírovat odkaz") → otevřít detail (funguje i pro výskyty id@ISO).
-	useEffect(() => {
-		if (search.ukol) open(search.ukol);
-	}, [search.ukol, open]);
-
-	// Pořadí pro ↑/↓ v detailu (prototyp _navIds) + kbsel navigace (sdílený hook).
-	// VIZUÁLNÍ pořadí = po skupinách projektů (ne flat sort) — jinak shift-rozsah
-	// hromadného výběru a j/k skáčou mimo viditelné pořadí řádků.
-	const visualList = useMemo(
-		() => (projektId ? shown : groups.flatMap((g) => g.list)),
-		[projektId, shown, groups],
-	);
-	const { setNavIds } = useTaskDetail();
-	useEffect(() => {
-		setNavIds(visualList.map((tk) => tk.id));
-	}, [visualList, setNavIds]);
-	const kbSel = useKbNav(visualList, view === "list");
 
 	// Výkon: „Úkoly" je jediná obrazovka renderující VŠECHNY otevřené úkoly najednou. Nad prahem
 	// vykreslíme jen prvních CAP řádků (napříč skupinami) + patičku „zobrazit vše" — brání desítkám
 	// tisíc DOM uzlů. (Plná virtualizace je follow-up; seskupení + kbNav zůstávají zachované.)
 	const CAP = 400;
 	const [showAllRows, setShowAllRows] = useState(false);
+	// „Zobrazit vše" nesmí přežít přechod mezi projekty — jinak by cap znovu nezabral (perf regrese).
+	useEffect(() => {
+		setShowAllRows(false);
+	}, [projektId]);
 	const capped = !showAllRows && shown.length > CAP;
 	const shownCapped = capped ? shown.slice(0, CAP) : shown;
 	const groupsCapped = useMemo(() => {
@@ -149,17 +124,31 @@ export function Ukoly() {
 		return out;
 	}, [groups, capped]);
 
+	// Deep-link ?ukol= (z „Kopírovat odkaz") → otevřít detail (funguje i pro výskyty id@ISO).
+	useEffect(() => {
+		if (search.ukol) open(search.ukol);
+	}, [search.ukol, open]);
+
+	// Pořadí pro ↑/↓ v detailu (prototyp _navIds) + kbsel navigace (sdílený hook).
+	// VIZUÁLNÍ pořadí = po skupinách projektů (ne flat sort) — jinak shift-rozsah
+	// hromadného výběru a j/k skáčou mimo viditelné pořadí řádků. Používáme OŘEZANÝ
+	// (capped) seznam = přesně to, co je vykreslené v DOM, aby j/k a Space/⌫ nemířily
+	// na neviditelné řádky nad capem.
+	const visualList = useMemo(
+		() => (projektId ? shownCapped : groupsCapped.flatMap((g) => g.list)),
+		[projektId, shownCapped, groupsCapped],
+	);
+	const { setNavIds } = useTaskDetail();
+	useEffect(() => {
+		setNavIds(visualList.map((tk) => tk.id));
+	}, [visualList, setNavIds]);
+	const kbSel = useKbNav(visualList, view === "list");
+
 	return (
-		<div
-			className="mx-auto max-w-[1080px]"
-			style={{ padding: "10px 22px 90px" }}
-		>
+		<div className="mx-auto max-w-[1080px]" style={{ padding: "10px 22px 90px" }}>
 			{/* banner filtrovaného projektu */}
 			{activeProject && (
-				<div
-					className="flex items-center"
-					style={{ gap: 10, padding: "6px 4px 10px" }}
-				>
+				<div className="flex items-center" style={{ gap: 10, padding: "6px 4px 10px" }}>
 					<span
 						className="shrink-0 rounded-full"
 						style={{
@@ -168,10 +157,7 @@ export function Ukoly() {
 							background: activeProject.color ?? "var(--w-ink-3)",
 						}}
 					/>
-					<span
-						className="font-display font-extrabold text-ink"
-						style={{ fontSize: 18 }}
-					>
+					<span className="font-display font-extrabold text-ink" style={{ fontSize: 18 }}>
 						{activeProject.name}
 					</span>
 					<button
@@ -193,14 +179,14 @@ export function Ukoly() {
 				</div>
 			)}
 
-			{view !== "calendar" && (
-				<TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />
-			)}
+			{view !== "calendar" && <TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />}
 
 			{view === "calendar" ? (
 				<Calendar tasks={scoped} />
 			) : view === "board" ? (
-				<Board tasks={shown} />
+				// Cap platí i pro Nástěnku (jinak by velký workspace vykreslil desetitisíce karet);
+				// projectId → „+ Přidat" ve sloupci zakládá do filtrovaného projektu, ne do Schránky.
+				<Board tasks={shownCapped} projectId={projektId} />
 			) : (
 				<>
 					{shown.length === 0 &&
@@ -249,16 +235,10 @@ export function Ukoly() {
 									className="flex items-center gap-2.5"
 									style={{ margin: "18px 0 2px", padding: "0 4px" }}
 								>
-									<span
-										className="font-display font-bold text-ink"
-										style={{ fontSize: 13 }}
-									>
+									<span className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
 										{projName(pid)}
 									</span>
-									<span
-										className="font-mono text-ink-3"
-										style={{ fontSize: 11.5 }}
-									>
+									<span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
 										{total}
 									</span>
 								</div>
@@ -293,22 +273,12 @@ export function Ukoly() {
 }
 
 /** Obal řádku se zvýrazněním klávesového výběru (kbSel ring). */
-function KbRow({
-	selected,
-	children,
-}: {
-	selected: boolean;
-	children: ReactNode;
-}) {
+function KbRow({ selected, children }: { selected: boolean; children: ReactNode }) {
 	return (
 		<div
 			data-kbsel={selected || undefined}
 			className="rounded-xl"
-			style={
-				selected
-					? { outline: "2px solid var(--w-brass)", outlineOffset: -1 }
-					: undefined
-			}
+			style={selected ? { outline: "2px solid var(--w-brass)", outlineOffset: -1 } : undefined}
 		>
 			{children}
 		</div>

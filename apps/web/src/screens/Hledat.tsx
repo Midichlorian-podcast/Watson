@@ -21,10 +21,7 @@ type Member = {
 };
 
 /** Pluralizace počtu výsledků — i18next count (cs má 3 tvary, en 2). */
-function totalLabel(
-	total: number,
-	t: (k: string, o: { count: number }) => string,
-): string {
+function totalLabel(total: number, t: (k: string, o: { count: number }) => string): string {
 	return t("search.resultCount", { count: total });
 }
 
@@ -49,9 +46,7 @@ export function Hledat() {
 		chain_id: string | null;
 		step_state: string | null;
 	}>("SELECT chain_id, step_state FROM chain_steps");
-	const { data: goals } = usePsQuery<GoalRow>(
-		"SELECT id, name, scope FROM goals",
-	);
+	const { data: goals } = usePsQuery<GoalRow>("SELECT id, name, scope FROM goals");
 
 	// Lidé napříč všemi prostory (dedup podle id).
 	const memberQueries = useQueries({
@@ -68,47 +63,37 @@ export function Hledat() {
 	});
 	const people = useMemo(() => {
 		const map = new Map<string, Member>();
-		for (const mq of memberQueries)
-			for (const m of mq.data ?? []) map.set(m.id, m);
+		for (const mq of memberQueries) for (const m of mq.data ?? []) map.set(m.id, m);
 		return [...map.values()];
 	}, [memberQueries]);
 
-	const projMap = useMemo(
-		() => new Map(projects.map((p) => [p.id, p] as const)),
-		[projects],
-	);
+	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
 	const inboxIds = useMemo(
-		() =>
-			new Set(
-				projects.filter((p) => INBOX_NAMES.has(p.name ?? "")).map((p) => p.id),
-			),
+		() => new Set(projects.filter((p) => INBOX_NAMES.has(p.name ?? "")).map((p) => p.id)),
 		[projects],
 	);
 
 	const res = useMemo(() => {
 		const ql = q.trim().toLowerCase();
 		if (!ql) return null;
-		const has = (s: string | null | undefined) =>
-			(s ?? "").toLowerCase().includes(ql);
+		const has = (s: string | null | undefined) => (s ?? "").toLowerCase().includes(ql);
 
 		// Úkoly — bez schránkových položek (nezařazené v inbox projektech patří do Schránky).
 		const rTasks = (tasks ?? [])
 			.filter(
 				(tk) =>
 					has(tk.name) &&
-					!(
-						tk.project_id &&
-						inboxIds.has(tk.project_id) &&
-						!tk.due_date &&
-						!tk.parent_id
-					),
+					!(tk.project_id && inboxIds.has(tk.project_id) && !tk.due_date && !tk.parent_id),
 			)
+			// Dokončené řadit až za otevřené (a odlišit v renderu), ať nepřebijí aktivní.
+			.sort((a, b) => (a.completed_at ? 1 : 0) - (b.completed_at ? 1 : 0))
 			.slice(0, 8)
 			.map((tk) => ({
 				id: tk.id,
 				name: tk.name ?? "",
 				sub: (tk.project_id && projMap.get(tk.project_id)?.name) || "",
 				color: (tk.project_id && projMap.get(tk.project_id)?.color) || null,
+				done: !!tk.completed_at,
 				run: () => taskDetail.open(tk.id),
 			}));
 
@@ -159,8 +144,7 @@ export function Hledat() {
 					id: ch.id,
 					name: ch.name ?? "",
 					sub: `${c.done}/${c.total} ${t("search.steps")}`,
-					run: () =>
-						void navigate({ to: "/postupy", search: { postup: ch.id } }),
+					run: () => void navigate({ to: "/postupy", search: { postup: ch.id } }),
 				};
 			});
 
@@ -180,12 +164,7 @@ export function Hledat() {
 				run: () => void navigate({ to: "/cile" }),
 			}));
 
-		const total =
-			rTasks.length +
-			rProjects.length +
-			rPeople.length +
-			rFlows.length +
-			rGoals.length;
+		const total = rTasks.length + rProjects.length + rPeople.length + rFlows.length + rGoals.length;
 		return {
 			tasks: rTasks,
 			projects: rProjects,
@@ -211,10 +190,7 @@ export function Hledat() {
 	]);
 
 	return (
-		<div
-			className="mx-auto max-w-[760px]"
-			style={{ padding: "20px 22px 90px" }}
-		>
+		<div className="mx-auto max-w-[760px]" style={{ padding: "20px 22px 90px" }}>
 			{/* search box */}
 			<div
 				className="mb-[18px] flex items-center gap-2.5 rounded-[13px] border border-line bg-card"
@@ -228,13 +204,7 @@ export function Hledat() {
 					className="shrink-0 text-ink-3"
 					aria-hidden
 				>
-					<circle
-						cx="6.4"
-						cy="6.4"
-						r="4.4"
-						stroke="currentColor"
-						strokeWidth="1.4"
-					/>
+					<circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4" />
 					<line
 						x1="9.6"
 						y1="9.6"
@@ -256,10 +226,7 @@ export function Hledat() {
 					data-search-screen
 				/>
 				{res && (
-					<span
-						className="shrink-0 font-mono text-ink-3"
-						style={{ fontSize: 11.5 }}
-					>
+					<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 11.5 }}>
 						{totalLabel(res.total, t)}
 					</span>
 				)}
@@ -267,10 +234,7 @@ export function Hledat() {
 
 			{!res && (
 				<div className="text-center" style={{ padding: "54px 20px" }}>
-					<div
-						className="mx-auto max-w-[42ch] font-body text-ink-3"
-						style={{ fontSize: 14 }}
-					>
+					<div className="mx-auto max-w-[42ch] font-body text-ink-3" style={{ fontSize: 14 }}>
 						{t("search.prompt")}
 					</div>
 				</div>
@@ -278,10 +242,7 @@ export function Hledat() {
 
 			{res && res.total === 0 && (
 				<div className="text-center" style={{ padding: "54px 20px" }}>
-					<div
-						className="mb-1 font-display font-bold text-ink"
-						style={{ fontSize: 15 }}
-					>
+					<div className="mb-1 font-display font-bold text-ink" style={{ fontSize: 15 }}>
 						{t("search.empty")}
 					</div>
 					<div className="font-body text-ink-3" style={{ fontSize: 13 }}>
@@ -303,8 +264,12 @@ export function Hledat() {
 								}}
 							/>
 							<span
-								className="min-w-0 flex-1 truncate font-body text-ink"
-								style={{ fontSize: 13.5 }}
+								className="min-w-0 flex-1 truncate font-body"
+								style={{
+									fontSize: 13.5,
+									color: r.done ? "var(--w-ink-3)" : "var(--w-ink)",
+									textDecoration: r.done ? "line-through" : "none",
+								}}
 							>
 								{r.name}
 							</span>
@@ -375,20 +340,8 @@ export function Hledat() {
 								className="shrink-0 text-brass-text"
 								aria-hidden
 							>
-								<circle
-									cx="3.5"
-									cy="8"
-									r="1.8"
-									stroke="currentColor"
-									strokeWidth="1.3"
-								/>
-								<circle
-									cx="12.5"
-									cy="8"
-									r="1.8"
-									stroke="currentColor"
-									strokeWidth="1.3"
-								/>
+								<circle cx="3.5" cy="8" r="1.8" stroke="currentColor" strokeWidth="1.3" />
+								<circle cx="12.5" cy="8" r="1.8" stroke="currentColor" strokeWidth="1.3" />
 								<path
 									d="M5.3 8 H10.7 M9 6.3 L10.9 8 L9 9.7"
 									stroke="currentColor"
@@ -421,20 +374,8 @@ export function Hledat() {
 								className="shrink-0 text-brass-text"
 								aria-hidden
 							>
-								<circle
-									cx="8"
-									cy="8"
-									r="6"
-									stroke="currentColor"
-									strokeWidth="1.3"
-								/>
-								<circle
-									cx="8"
-									cy="8"
-									r="2.4"
-									stroke="currentColor"
-									strokeWidth="1.3"
-								/>
+								<circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" />
+								<circle cx="8" cy="8" r="2.4" stroke="currentColor" strokeWidth="1.3" />
 							</svg>
 							<span
 								className="min-w-0 flex-1 truncate font-display font-semibold text-ink"

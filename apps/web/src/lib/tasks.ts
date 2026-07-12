@@ -146,12 +146,17 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 		// a tasks.completed_at nastavit jen ODVOZENĚ; un-toggle symetricky vše zruší.
 		if (asg.length > 0 && !mine) {
 			const nowDone = !task.completed_at;
+			// R4 — u opakovaného úkolu je dokončení posunem řady (+ reset per-osoba účastí),
+			// ne trvalé nastavení completed_at všem.
+			if (nowDone && (await advanceRecurrence(task, asg))) return;
 			const ts = new Date().toISOString();
 			const prevAsg = asg.map((a) => ({ id: a.id, val: a.completed_at }));
-			// už dokončené účasti si při dokončování nechají původní čas
+			// dokončení: už hotové účasti si nechají původní čas. ODškrtnutí neúčastníkem
+			// (S2) NEmaže reálná dokončení kolegů — účasti necháme beze změny a zrušíme jen
+			// odvozený task-level stav; jinak by manažerův un-toggle smazal cizí práci.
 			const nextAsg = asg.map((a) => ({
 				id: a.id,
-				val: nowDone ? (a.completed_at ?? ts) : null,
+				val: nowDone ? (a.completed_at ?? ts) : a.completed_at,
 			}));
 			const prevTaskDone = task.completed_at;
 			const prevStatus = task.status_id;
@@ -180,10 +185,14 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 			if (nowDone !== !!prevTaskDone) await advanceChainForTask(task.id, nowDone);
 			return;
 		}
-		if (asg.length >= 2 && mine) {
+		// >= 1: i jediný zbylý účastník (=já) musí projít odvozeným modelem R2, jinak by
+		// obecná větev nastavila jen tasks.completed_at a mou účast nechala null.
+		if (asg.length >= 1 && mine) {
 			const nowMineDone = !mine.completed_at;
-			const myTs = nowMineDone ? new Date().toISOString() : null;
 			const allDone = asg.every((a) => (a.id === mine.id ? nowMineDone : !!a.completed_at));
+			// R4 — pokud mou účastí spadli všichni a úkol se opakuje, posuň řadu + reset účastí.
+			if (nowMineDone && allDone && (await advanceRecurrence(task, asg))) return;
+			const myTs = nowMineDone ? new Date().toISOString() : null;
 			const prevTaskDone = task.completed_at;
 			const prevStatus = task.status_id;
 			const newTaskDone = allDone ? new Date().toISOString() : null;
@@ -211,56 +220,8 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 	}
 
 	const nowDone = !task.completed_at;
-	const kind = recurrenceKind(task.recurrence_rule);
-	const due = task.due_date?.slice(0, 10);
-	if (nowDone && kind && due) {
-		// Konec opakování z rule JSON (endKind/until/count + doneCount).
-		let rule: Record<string, unknown> = {};
-		try {
-			rule = JSON.parse(task.recurrence_rule ?? "{}") as Record<string, unknown>;
-		} catch {
-			/* ponech prázdné */
-		}
-		const doneCount = (typeof rule.doneCount === "number" ? rule.doneCount : 0) + 1;
-		const endKind = typeof rule.endKind === "string" ? rule.endKind : "never";
-		const reachedCount =
-			endKind === "count" && typeof rule.count === "number" && doneCount >= rule.count;
-		const [next] = expandOccurrences({
-			baseISO: due,
-			kind,
-			weekday: typeof rule.weekday === "number" ? rule.weekday : undefined,
-			nth: typeof rule.nth === "number" ? rule.nth : undefined,
-			day: typeof rule.day === "number" ? rule.day : undefined,
-			parity: rule.parity === "even" || rule.parity === "odd" ? rule.parity : undefined,
-			fromISO: isoPlus(due, 1),
-			toISO: isoPlus(due, 800),
-			cap: 1,
-		});
-		const pastUntil =
-			endKind === "until" && typeof rule.until === "string" && next && next > rule.until;
-		if (next && !reachedCount && !pastUntil) {
-			const nextStart = task.start_date ? `${next}T${task.start_date.slice(11)}` : null;
-			const prev = {
-				due_date: task.due_date,
-				start_date: task.start_date,
-				recurrence_rule: task.recurrence_rule,
-			};
-			const write = async (d: string | null, sd: string | null, rr: string | null) => {
-				await powerSync.execute(
-					"UPDATE tasks SET due_date = ?, start_date = ?, recurrence_rule = ? WHERE id = ?",
-					[d, sd, rr, task.id],
-				);
-			};
-			await write(next, nextStart, JSON.stringify({ ...rule, doneCount }));
-			// ⌘Z vrátí posun řady zpět (prototyp verzuje každou změnu tasks, ř. 2239).
-			pushUndo({
-				undo: () => write(prev.due_date, prev.start_date, prev.recurrence_rule),
-				redo: () => write(next, nextStart, JSON.stringify({ ...rule, doneCount })),
-			});
-			showToast(`${i18n.t("detail.movedTo")} ${occLabel(next)}`);
-			return;
-		}
-	}
+	// R4 — dokončení opakovaného úkolu = posun řady na další výskyt (ne trvalé dokončení).
+	if (nowDone && (await advanceRecurrence(task))) return;
 	// R9: zaškrtnutí ⇄ stav „Hotovo" — synchronizovat i status sloupec (prototyp toggleDone).
 	const nextStatus = await resolveStatusForDone(task.id, nowDone, task.status_id);
 	const prevDone = task.completed_at;
@@ -279,6 +240,120 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 		redo: () => writeDone(newDone, nextStatus),
 	});
 	await advanceChainForTask(task.id, nowDone);
+}
+
+/**
+ * R4 — posun opakovaného úkolu na DALŠÍ výskyt (respekt endKind/until/count + doneCount).
+ * Vrací true, když se řada posunula. `asgReset` = účasti k vynulování pro nový výskyt
+ * (shared_all: „při dalším výskytu reset všech per-osoba dokončení"). Zapisuje undo.
+ */
+async function advanceRecurrence(
+	task: TaskRow,
+	asgReset: { id: string; completed_at: string | null }[] = [],
+): Promise<boolean> {
+	const kind = recurrenceKind(task.recurrence_rule);
+	const due = task.due_date?.slice(0, 10);
+	if (!kind || !due) return false;
+	// Konec opakování z rule JSON (endKind/until/count + doneCount).
+	let rule: Record<string, unknown> = {};
+	try {
+		rule = JSON.parse(task.recurrence_rule ?? "{}") as Record<string, unknown>;
+	} catch {
+		/* ponech prázdné */
+	}
+	const doneCount = (typeof rule.doneCount === "number" ? rule.doneCount : 0) + 1;
+	const endKind = typeof rule.endKind === "string" ? rule.endKind : "never";
+	const reachedCount =
+		endKind === "count" && typeof rule.count === "number" && doneCount >= rule.count;
+	const [next] = expandOccurrences({
+		baseISO: due,
+		kind,
+		weekday: typeof rule.weekday === "number" ? rule.weekday : undefined,
+		nth: typeof rule.nth === "number" ? rule.nth : undefined,
+		day: typeof rule.day === "number" ? rule.day : undefined,
+		parity: rule.parity === "even" || rule.parity === "odd" ? rule.parity : undefined,
+		fromISO: isoPlus(due, 1),
+		toISO: isoPlus(due, 800),
+		cap: 1,
+	});
+	const pastUntil =
+		endKind === "until" && typeof rule.until === "string" && next && next > rule.until;
+	if (!next || reachedCount || pastUntil) return false;
+	const nextStart = task.start_date ? `${next}T${task.start_date.slice(11)}` : null;
+	const prev = {
+		due_date: task.due_date,
+		start_date: task.start_date,
+		recurrence_rule: task.recurrence_rule,
+	};
+	const nextRule = JSON.stringify({ ...rule, doneCount });
+	const write = async (
+		d: string | null,
+		sd: string | null,
+		rr: string | null,
+		asg: { id: string; val: string | null }[],
+	) => {
+		await powerSync.writeTransaction(async (tx) => {
+			await tx.execute(
+				"UPDATE tasks SET due_date = ?, start_date = ?, recurrence_rule = ? WHERE id = ?",
+				[d, sd, rr, task.id],
+			);
+			for (const a of asg)
+				await tx.execute("UPDATE assignments SET completed_at = ? WHERE id = ?", [a.val, a.id]);
+		});
+	};
+	const cleared = asgReset.map((a) => ({ id: a.id, val: null }));
+	const restore = asgReset.map((a) => ({ id: a.id, val: a.completed_at }));
+	await write(next, nextStart, nextRule, cleared);
+	// ⌘Z vrátí posun řady i reset účastí (prototyp verzuje každou změnu tasks, ř. 2239).
+	pushUndo({
+		undo: () => write(prev.due_date, prev.start_date, prev.recurrence_rule, restore),
+		redo: () => write(next, nextStart, nextRule, cleared),
+	});
+	showToast(`${i18n.t("detail.movedTo")} ${occLabel(next)}`);
+	return true;
+}
+
+/**
+ * Přepnutí dokončení KONKRÉTNÍ účasti (per-osoba kulatý checkbox v shared_all detailu).
+ * Po zápisu ODVODÍ tasks.completed_at (R2 — hotovo až když všichni) + status (R9) + posun
+ * postupu; symetricky při odškrtnutí. Vše v jednom undo záznamu (dřív chybělo → R2 obcházeno).
+ */
+export async function toggleAssignmentDone(task: TaskRow, assignmentId: string) {
+	const asg = await powerSync.getAll<{
+		id: string;
+		user_id: string | null;
+		completed_at: string | null;
+	}>("SELECT id, user_id, completed_at FROM assignments WHERE task_id = ?", [task.id]);
+	const target = asg.find((a) => a.id === assignmentId);
+	if (!target) return;
+	const nowDone = !target.completed_at;
+	const allDone = asg.every((a) => (a.id === assignmentId ? nowDone : !!a.completed_at));
+	// R4 — poslední dokončení u opakovaného úkolu = posun řady + reset účastí.
+	if (nowDone && allDone && (await advanceRecurrence(task, asg))) return;
+	const myTs = nowDone ? new Date().toISOString() : null;
+	const prevTaskDone = task.completed_at;
+	const prevStatus = task.status_id;
+	const newTaskDone = allDone ? (task.completed_at ?? new Date().toISOString()) : null;
+	const nextStatus = await resolveStatusForDone(task.id, allDone, task.status_id);
+	const apply = async (aVal: string | null, taskDone: string | null, st: string | null) => {
+		await powerSync.writeTransaction(async (tx) => {
+			await tx.execute("UPDATE assignments SET completed_at = ? WHERE id = ?", [
+				aVal,
+				assignmentId,
+			]);
+			await tx.execute("UPDATE tasks SET completed_at = ?, status_id = ? WHERE id = ?", [
+				taskDone,
+				st,
+				task.id,
+			]);
+		});
+	};
+	await apply(myTs, newTaskDone, nextStatus);
+	pushUndo({
+		undo: () => apply(target.completed_at, prevTaskDone, prevStatus),
+		redo: () => apply(myTs, newTaskDone, nextStatus),
+	});
+	if (allDone !== !!prevTaskDone) await advanceChainForTask(task.id, allDone);
 }
 
 const isoPlus = (iso: string, n: number) => {
@@ -325,7 +400,8 @@ export function deadlineLabel(deadlineRaw: string | null) {
 	if (!deadlineRaw) return undefined;
 	const d = deadlineRaw.slice(0, 10);
 	const dt = fromISO(d);
-	return `do ${wdShort(d)} ${dt.getDate()}. ${dt.getMonth() + 1}.`;
+	// Prefix „do"/„by" přes i18n (dřív natvrdo česky i v EN).
+	return `${i18n.t("deadline.byPrefix")} ${wdShort(d)} ${dt.getDate()}. ${dt.getMonth() + 1}.`;
 }
 
 /**

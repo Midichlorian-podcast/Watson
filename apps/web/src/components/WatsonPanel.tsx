@@ -33,15 +33,17 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
+			if (e.key !== "Escape") return;
+			// Nad drawerem může být vyšší vrstva (⌘K paleta / tahák) — tu zavře Esc dřív;
+			// vlastní data-watson-layer z dotazu vylučujeme, ať se drawer zavře sám.
+			if (document.querySelector("[data-esc-layer]:not([data-watson-layer])")) return;
+			onClose();
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
 	}, [onClose]);
 
-	const { data: tasks } = usePsQuery<TaskRow>(
-		"SELECT id, due_date, completed_at FROM tasks",
-	);
+	const { data: tasks } = usePsQuery<TaskRow>("SELECT id, due_date, completed_at FROM tasks");
 	const userId = session?.user?.id;
 	const { data: myGoals } = usePsQuery<GoalRow>(
 		"SELECT id, name, target, metric FROM goals WHERE owner_id = ? ORDER BY created_at",
@@ -68,31 +70,20 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 		const tdy = todayISO();
 		const now = new Date().toISOString();
 		const overdue = (tasks ?? []).filter(
-			(x) =>
-				!x.completed_at && x.due_date != null && x.due_date.slice(0, 10) < tdy,
+			(x) => !x.completed_at && x.due_date != null && x.due_date.slice(0, 10) < tdy,
 		);
 		for (const tk of overdue) {
-			await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [
-				now,
-				tk.id,
-			]);
+			await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [now, tk.id]);
 		}
 	}
 
 	const hour = new Date().getHours();
 	const greeting =
-		hour < 11
-			? t("today.morning")
-			: hour < 18
-				? t("today.afternoon")
-				: t("today.evening");
+		hour < 11 ? t("today.morning") : hour < 18 ? t("today.afternoon") : t("today.evening");
 	const firstName = session?.user?.name?.split(" ")[0] ?? "";
-	const greet = `${greeting}${firstName ? `, ${firstName}` : ""}. ${t(
-		"today.summaryToday",
-		{
-			count: counts.today,
-		},
-	)}${counts.overdue > 0 ? ` · ${t("today.summaryOverdue", { count: counts.overdue })}` : ""}`;
+	const greet = `${greeting}${firstName ? `, ${firstName}` : ""}. ${t("today.summaryToday", {
+		count: counts.today,
+	})}${counts.overdue > 0 ? ` · ${t("today.summaryOverdue", { count: counts.overdue })}` : ""}`;
 
 	const insights: Insight[] = [];
 	if (counts.overdue > 0) {
@@ -131,6 +122,10 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 				tabIndex={-1}
 				role="dialog"
 				aria-modal="true"
+				// data-esc-layer: kbNav/BulkBar/globální zkratky ho berou jako aktivní vrstvu
+				// → klávesy (⌫/1-4/Space) nemažou ani neupravují úkoly schované za drawerem.
+				data-esc-layer
+				data-watson-layer
 				className="fixed top-0 right-0 bottom-0 flex flex-col border-line border-l bg-card outline-none"
 				style={{
 					width: 384,
@@ -155,10 +150,7 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 					>
 						W
 					</span>
-					<span
-						className="flex-1 font-display font-bold text-ink"
-						style={{ fontSize: 16 }}
-					>
+					<span className="flex-1 font-display font-bold text-ink" style={{ fontSize: 16 }}>
 						{t("watson.title")}
 					</span>
 					<button
@@ -210,10 +202,7 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 										marginTop: 6,
 									}}
 								/>
-								<div
-									className="font-body text-ink-2"
-									style={{ fontSize: 13.5, lineHeight: 1.5 }}
-								>
+								<div className="font-body text-ink-2" style={{ fontSize: 13.5, lineHeight: 1.5 }}>
 									{i.text}
 								</div>
 							</div>
@@ -240,16 +229,8 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 							borderRadius: 12,
 						}}
 					>
-						<Stat
-							n={counts.done}
-							label={t("watson.statDone")}
-							color="var(--w-brass)"
-						/>
-						<Stat
-							n={counts.overdue}
-							label={t("watson.statOverdue")}
-							color="#e8857c"
-						/>
+						<Stat n={counts.done} label={t("watson.statDone")} color="var(--w-brass)" />
+						<Stat n={counts.overdue} label={t("watson.statOverdue")} color="#e8857c" />
 						<Stat n={counts.today} label={t("watson.statToday")} color="#fff" />
 					</div>
 
@@ -281,10 +262,7 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 									>
 										{g.name}
 									</span>
-									<span
-										className="font-mono text-ink-3"
-										style={{ fontSize: 11.5 }}
-									>
+									<span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
 										{t("watson.goalTarget", { target: g.target ?? 0 })}
 									</span>
 								</div>
@@ -297,24 +275,13 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 	);
 }
 
-function Stat({
-	n,
-	label,
-	color,
-}: {
-	n: number;
-	label: string;
-	color: string;
-}) {
+function Stat({ n, label, color }: { n: number; label: string; color: string }) {
 	return (
 		<div>
 			<div className="font-mono" style={{ fontSize: 22, color }}>
 				{n}
 			</div>
-			<div
-				className="font-body"
-				style={{ fontSize: 11, color: "rgba(255,255,255,.6)" }}
-			>
+			<div className="font-body" style={{ fontSize: 11, color: "rgba(255,255,255,.6)" }}>
 				{label}
 			</div>
 		</div>

@@ -29,7 +29,14 @@ import { useProject } from "../lib/projects";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
-import { occLabel, rowDue, setOccurrenceOverride, todayISO, toggleTask } from "../lib/tasks";
+import {
+	occLabel,
+	rowDue,
+	setOccurrenceOverride,
+	todayISO,
+	toggleAssignmentDone,
+	toggleTask,
+} from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { deleteTaskWithUndo } from "../lib/undo";
 import { useOpenMailThread } from "../mail/state";
@@ -165,7 +172,7 @@ export function TaskDetailPanel() {
 }
 
 function Panel({ id, onClose }: { id: string; onClose: () => void }) {
-	const { t } = useTranslation();
+	const { t, i18n } = useTranslation();
 	const { open, navIds } = useTaskDetail();
 	const { openAdd } = useAddTask();
 	const { metaOf } = useRowMeta();
@@ -373,12 +380,19 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	// V3 save-UX: čas posledního uložení (zpětná vazba „Uloženo ✓ HH:MM").
 	const [savedAt, setSavedAt] = useState<number | null>(null);
 	const nameRef = useRef<HTMLInputElement>(null);
+	// In-flight zámky proti dvojímu vložení podúkolu/komentáře (dvojí rychlý Enter).
+	const addingSub = useRef(false);
+	const addingCmt = useRef(false);
+	// Seed lokálního stavu jen při PŘEPNUTÍ úkolu (task.id), ne při každém sync updatu —
+	// jinak vzdálená změna jiného sloupce (status/priorita…) přepíše rozepsaný neuložený
+	// název/popis uprostřed psaní.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reseed jen na task.id
 	useEffect(() => {
 		if (task) {
 			setName(task.name ?? "");
 			setDesc(task.description ?? "");
 		}
-	}, [task]);
+	}, [task?.id]);
 
 	if (!task) return null;
 	const done = occ ? Boolean(occOverride?.done) : Boolean(task.completed_at);
@@ -428,16 +442,25 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		? !done && occ.iso.slice(0, 10) < todayISO()
 		: !done && !!task.due_date && task.due_date.slice(0, 10) < todayISO();
 
-	const toggleDone = () => {
+	const toggleDone = async () => {
 		if (occ) {
 			void setOccurrenceOverride(realId, task.project_id, occ.iso, {
 				done: !done,
 			});
 			return;
 		}
-		// historie: zaznamenej dokončení / obnovení (bez toastu/Zpět — má vlastní akci)
-		void logActivity("completed", done ? "1" : null, done ? null : "1");
-		void toggleTask(task, session?.user?.id);
+		// „completed" logujeme až podle SKUTEČNÉ změny tasks.completed_at — u opakovaného
+		// úkolu (jen posun řady) ani u shared_all dílčí účasti se úkol nedokončí, takže
+		// „označil hotovo" by lhalo. Porovnáme stav před/po zápisu.
+		const before = !!task.completed_at;
+		await toggleTask(task, session?.user?.id);
+		const after = await powerSync.getAll<{ completed_at: string | null }>(
+			"SELECT completed_at FROM tasks WHERE id = ? LIMIT 1",
+			[realId],
+		);
+		const nowDone = !!after[0]?.completed_at;
+		if (before !== nowDone)
+			void logActivity("completed", before ? "1" : null, nowDone ? "1" : null);
 	};
 	const skipOcc = () => {
 		if (!occ) return;
@@ -458,35 +481,45 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 				[realId, task.project_id, uid, new Date().toISOString()],
 			);
 	};
+	// R2 — per-osoba checkbox musí projít odvozeným modelem (dokončit úkol/status/postup
+	// až když jsou hotoví všichni) + undo; přímý UPDATE assignments to dřív obcházel.
 	const togglePersonDone = (a: { id: string; completed_at: string | null }) =>
-		void powerSync.execute("UPDATE assignments SET completed_at = ? WHERE id = ?", [
-			a.completed_at ? null : new Date().toISOString(),
-			a.id,
-		]);
+		void toggleAssignmentDone(task, a.id);
 
 	// Rychlé přidání (checklist styl) — dědí JEN projekt (žádné atributy rodiče),
-	// priorita základní P4; Enter přidá a nechá focus.
+	// priorita základní P4; Enter přidá a nechá focus. Synchronní in-flight zámek (ref):
+	// dvojí rychlý Enter jinak projde guardem dřív, než setState vyprázdní input → duplikát.
 	const addSub = async () => {
-		if (!subText.trim() || depth >= 3) return;
-		await powerSync.execute(
-			"INSERT INTO tasks (id, project_id, parent_id, name, priority, created_at) VALUES (uuid(), ?, ?, ?, 4, ?)",
-			[task.project_id, realId, subText.trim(), new Date().toISOString()],
-		);
-		setSubText("");
+		if (!subText.trim() || depth >= 3 || addingSub.current) return;
+		addingSub.current = true;
+		try {
+			await powerSync.execute(
+				"INSERT INTO tasks (id, project_id, parent_id, name, priority, created_at) VALUES (uuid(), ?, ?, ?, 4, ?)",
+				[task.project_id, realId, subText.trim(), new Date().toISOString()],
+			);
+			setSubText("");
+		} finally {
+			addingSub.current = false;
+		}
 	};
 	const addCmt = async () => {
-		if (!cmtText.trim()) return;
-		await powerSync.execute(
-			"INSERT INTO comments (id, task_id, project_id, author_id, body, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
-			[
-				realId,
-				task.project_id,
-				session?.user?.id ?? null,
-				cmtText.trim(),
-				new Date().toISOString(),
-			],
-		);
-		setCmtText("");
+		if (!cmtText.trim() || addingCmt.current) return;
+		addingCmt.current = true;
+		try {
+			await powerSync.execute(
+				"INSERT INTO comments (id, task_id, project_id, author_id, body, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
+				[
+					realId,
+					task.project_id,
+					session?.user?.id ?? null,
+					cmtText.trim(),
+					new Date().toISOString(),
+				],
+			);
+			setCmtText("");
+		} finally {
+			addingCmt.current = false;
+		}
 	};
 
 	/** Duplikace včetně podúkolů (rekurzivně) a přiřazení (prototyp kopíruje celý objekt). */
@@ -617,7 +650,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								style={{ fontSize: 11, color: "var(--w-success-ink)" }}
 							>
 								{t("detail.saved")} ✓{" "}
-								{new Date(savedAt).toLocaleTimeString("cs", {
+								{new Date(savedAt).toLocaleTimeString(i18n.language, {
 									hour: "2-digit",
 									minute: "2-digit",
 								})}
@@ -656,16 +689,22 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									<MenuItem icon="odkaz" onClick={copyLink}>
 										{t("detail.copyLink")}
 									</MenuItem>
-									<div
-										style={{
-											height: 1,
-											background: "var(--w-line)",
-											margin: "4px 6px",
-										}}
-									/>
-									<MenuItem icon="smazat" danger onClick={del}>
-										{t("detail.delete")}
-									</MenuItem>
+									{/* U výskytu řady „Smazat" skryto — mazalo by CELOU řadu (base úkol),
+									    ne jeden výskyt. Odebrání výskytu = tlačítko „Přeskočit" v patičce. */}
+									{!occ && (
+										<>
+											<div
+												style={{
+													height: 1,
+													background: "var(--w-line)",
+													margin: "4px 6px",
+												}}
+											/>
+											<MenuItem icon="smazat" danger onClick={del}>
+												{t("detail.delete")}
+											</MenuItem>
+										</>
+									)}
 								</div>
 							)}
 						</div>
@@ -910,7 +949,16 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 												<input
 													type="date"
 													value={task[col] ? (task[col] ?? "").slice(0, 10) : ""}
-													onChange={(e) => void patchLog({ [col]: e.target.value || null })}
+													onChange={(e) => {
+														// S4 (R4) — přímá změna termínu u opakovaného úkolu by posunula
+														// kotvu CELÉ řady bez dotazu tento/další/celá řada; blokujeme
+														// stejně jako quick-shift (deadline se řady netýká).
+														if (col === "due_date" && task.recurrence_rule) {
+															showToast(t("bulk.recurringSkipped", { count: 1 }));
+															return;
+														}
+														void patchLog({ [col]: e.target.value || null });
+													}}
 													className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-ink-2 text-xs outline-none focus:border-brass"
 												/>
 											</label>

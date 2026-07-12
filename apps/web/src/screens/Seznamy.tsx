@@ -31,19 +31,37 @@ import { useWorkspace, useWorkspaces } from "../lib/workspace";
  * přidávání položek, akce Reset po akci / Uložit jako šablonu / Archivovat).
  */
 
+interface TplItem {
+	text: string;
+	qty?: string | null;
+}
+
 interface TplSection {
 	name: string;
-	items: string[];
+	items: TplItem[];
 }
+
+// Položku ber jako strukturovaný {text, qty}. Starý formát „text|qty" jen jako
+// fallback pro data v DB — round-trip přes „|" rozbíjel text obsahující „|".
+const parseTplItem = (v: unknown): TplItem => {
+	if (v && typeof v === "object" && typeof (v as TplItem).text === "string")
+		return { text: (v as TplItem).text, qty: (v as TplItem).qty ?? null };
+	const [text, qty] = String(v ?? "").split("|");
+	return { text: text ?? "", qty: qty || null };
+};
 
 const parseTplSections = (raw: string | null): TplSection[] => {
 	try {
 		const v = JSON.parse(raw ?? "[]") as unknown;
 		if (!Array.isArray(v)) return [];
-		return v.filter(
-			(s): s is TplSection =>
-				!!s && typeof (s as TplSection).name === "string" && Array.isArray((s as TplSection).items),
-		);
+		return v
+			.filter(
+				(s): s is { name: string; items: unknown[] } =>
+					!!s &&
+					typeof (s as { name?: unknown }).name === "string" &&
+					Array.isArray((s as { items?: unknown }).items),
+			)
+			.map((s) => ({ name: s.name, items: s.items.map(parseTplItem) }));
 	} catch {
 		return [];
 	}
@@ -134,10 +152,9 @@ export function Seznamy() {
 
 	/** Založit seznam ze šablony (prototyp createListFrom + _instTpl). */
 	const createFromTemplate = async (tpl: ListTemplateRow) => {
-		const wsId =
-			activeWs && !(workspaces ?? []).find((w) => w.id === activeWs)?.isPersonal
-				? activeWs
-				: (tpl.workspace_id ?? activeWs);
+		// Založ do sféry, ze které šablona vznikla (osobní×týmová) — dřív se osobní
+		// šablona v aktivním týmu založila do týmu a tichým zápisem ji sdílela všem.
+		const wsId = tpl.workspace_id ?? activeWs;
 		if (!wsId) return;
 		const listId = crypto.randomUUID();
 		const now = new Date().toISOString();
@@ -165,11 +182,12 @@ export function Seznamy() {
 					[secId, listId, wsId, sec.name, si, now],
 				);
 				for (let ii = 0; ii < sec.items.length; ii++) {
-					const [text, qty] = String(sec.items[ii] ?? "").split("|");
+					const item = sec.items[ii];
+					if (!item) continue;
 					await tx.execute(
 						`INSERT INTO list_items (id, list_id, section_id, workspace_id, text, qty, done, position, created_at)
              VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-						[crypto.randomUUID(), listId, secId, wsId, text ?? "", qty ?? null, ii, now],
+						[crypto.randomUUID(), listId, secId, wsId, item.text, item.qty ?? null, ii, now],
 					);
 				}
 			}
@@ -319,7 +337,9 @@ export function Seznamy() {
 				{t("lists.intro")}
 			</p>
 
-			{active.length === 0 && (
+			{/* prázdný stav jen když ani nejde nic založit — jinak by kolidoval se
+			    skupinami, které samy nesou zakládací tlačítko „+ Nový seznam" */}
+			{active.length === 0 && !myPersonalWs && !teamTargetWs && (
 				<div
 					className="text-center font-body text-ink-3"
 					style={{ padding: "40px 20px", fontSize: 13.5 }}
@@ -468,6 +488,12 @@ function ListDetail({
 	// editace názvu/eventu — lokální stav, zápis na blur/Enter (ne per klávesa)
 	const [name, setName] = useState(list.name ?? "");
 	const [event, setEvent] = useState(list.event ?? "");
+	// „dirty" = pole má rozepsanou, dosud neuloženou editaci → příchozí sync ho
+	// nesmí přepsat (kolega přejmenuje týž seznam, zatímco tu píšu)
+	const nameDirty = useRef(false);
+	const eventDirty = useRef(false);
+	// zámek proti duplicitám z rychlého dvojkliku na „Uložit jako šablonu"
+	const [savingTpl, setSavingTpl] = useState(false);
 	const [assignOpen, setAssignOpen] = useState<string | null>(null);
 	const [inputs, setInputs] = useState<Record<string, string>>({});
 	// nová sekce (feedback — sekce šly dřív jen ze šablon)
@@ -479,11 +505,22 @@ function ListDetail({
 	const [doneDown, setDoneDown] = useState(
 		() => localStorage.getItem(`watson.listDoneSort.${list.id}`) === "1",
 	);
+	// Přepnutí na jiný seznam (list.id) — tvrdý reset polí i dirty příznaků.
 	useEffect(() => {
+		nameDirty.current = false;
+		eventDirty.current = false;
 		setName(list.name ?? "");
 		setEvent(list.event ?? "");
 		setDoneDown(localStorage.getItem(`watson.listDoneSort.${list.id}`) === "1");
-	}, [list.id, list.name, list.event]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [list.id]);
+	// Příchozí sync téhož seznamu — přepiš pole jen když ho uživatel právě needituje.
+	useEffect(() => {
+		if (!nameDirty.current) setName(list.name ?? "");
+	}, [list.name]);
+	useEffect(() => {
+		if (!eventDirty.current) setEvent(list.event ?? "");
+	}, [list.event]);
 	const toggleDoneSort = () =>
 		setDoneDown((v) => {
 			const n = !v;
@@ -605,11 +642,28 @@ function ListDetail({
 		);
 	};
 
-	/** Reset po akci — vše odškrtnout + odarchivovat (prototyp resetList). */
+	/** Reset po akci — vše odškrtnout + odarchivovat (prototyp resetList).
+	 * Snímek done (a archived) do undo — reset maže i cizí odškrtnutí napříč týmem,
+	 * bez ⌘Z by šel omylný klik nevratně (na rozdíl od delete operací). */
 	const reset = async () => {
-		await powerSync.writeTransaction(async (tx) => {
-			await tx.execute("UPDATE list_items SET done = 0 WHERE list_id = ?", [list.id]);
-			await tx.execute("UPDATE lists SET archived = 0 WHERE id = ?", [list.id]);
+		const snap = await powerSync.getAll<Row>("SELECT id, done FROM list_items WHERE list_id = ?", [
+			list.id,
+		]);
+		const wasArchived = list.archived ? 1 : 0;
+		const doReset = () =>
+			powerSync.writeTransaction(async (tx) => {
+				await tx.execute("UPDATE list_items SET done = 0 WHERE list_id = ?", [list.id]);
+				await tx.execute("UPDATE lists SET archived = 0 WHERE id = ?", [list.id]);
+			});
+		await doReset();
+		pushUndo({
+			undo: () =>
+				powerSync.writeTransaction(async (tx) => {
+					for (const r of snap ?? [])
+						await tx.execute("UPDATE list_items SET done = ? WHERE id = ?", [r.done ?? 0, r.id]);
+					await tx.execute("UPDATE lists SET archived = ? WHERE id = ?", [wasArchived, list.id]);
+				}),
+			redo: doReset,
 		});
 		showToast(t("lists.resetToast"));
 	};
@@ -624,25 +678,32 @@ function ListDetail({
 
 	/** Uložit jako šablonu (prototyp saveListAsTpl) — sekce+položky → JSON blueprint. */
 	const saveAsTemplate = async () => {
-		const secs: TplSection[] = sections.map((sec) => ({
-			name: sec.name ?? "",
-			items: (itemsBySection.get(sec.id) ?? []).map(
-				(it) => `${it.text ?? ""}${it.qty ? `|${it.qty}` : ""}`,
-			),
-		}));
-		await powerSync.execute(
-			`INSERT INTO list_templates (id, workspace_id, name, description, sections, created_at)
+		if (savingTpl) return; // dvojklik → jinak vznikne víc identických šablon
+		setSavingTpl(true);
+		try {
+			const secs: TplSection[] = sections.map((sec) => ({
+				name: sec.name ?? "",
+				items: (itemsBySection.get(sec.id) ?? []).map((it) => ({
+					text: it.text ?? "",
+					qty: it.qty ?? null,
+				})),
+			}));
+			await powerSync.execute(
+				`INSERT INTO list_templates (id, workspace_id, name, description, sections, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-			[
-				crypto.randomUUID(),
-				list.workspace_id,
-				`${name} ${t("lists.tplSuffix")}`,
-				t("lists.tplCustomDesc"),
-				JSON.stringify(secs),
-				new Date().toISOString(),
-			],
-		);
-		showToast(t("lists.savedTplToast"));
+				[
+					crypto.randomUUID(),
+					list.workspace_id,
+					`${name} ${t("lists.tplSuffix")}`,
+					t("lists.tplCustomDesc"),
+					JSON.stringify(secs),
+					new Date().toISOString(),
+				],
+			);
+			showToast(t("lists.savedTplToast"));
+		} finally {
+			setSavingTpl(false);
+		}
 	};
 
 	return (
@@ -697,7 +758,8 @@ function ListDetail({
 				<button
 					type="button"
 					onClick={() => void saveAsTemplate()}
-					className={pillBtnCls}
+					disabled={savingTpl}
+					className={`${pillBtnCls} disabled:opacity-50`}
 					style={pillBtnStyle}
 				>
 					{t("lists.saveAsTpl")}
@@ -723,8 +785,18 @@ function ListDetail({
 			>
 				<input
 					value={name}
-					onChange={(e) => setName(e.target.value)}
-					onBlur={() => void saveField("name", name.trim() || (list.name ?? ""))}
+					onChange={(e) => {
+						nameDirty.current = true;
+						setName(e.target.value);
+					}}
+					onBlur={() => {
+						nameDirty.current = false;
+						const val = name.trim();
+						// prázdný název = návrat k původnímu i ve vstupu (jinak zůstane vizuálně
+						// prázdný, protože saveField nic nezapíše a sync efekt se nespustí)
+						if (!val) setName(list.name ?? "");
+						void saveField("name", val || (list.name ?? ""));
+					}}
 					onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
 					className="w-full border-none bg-transparent font-display font-extrabold text-ink outline-none"
 					style={{ fontSize: 20 }}
@@ -747,8 +819,14 @@ function ListDetail({
 					</svg>
 					<input
 						value={event}
-						onChange={(e) => setEvent(e.target.value)}
-						onBlur={() => void saveField("event", event.trim())}
+						onChange={(e) => {
+							eventDirty.current = true;
+							setEvent(e.target.value);
+						}}
+						onBlur={() => {
+							eventDirty.current = false;
+							void saveField("event", event.trim());
+						}}
 						onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
 						placeholder={t("lists.eventPlaceholder")}
 						className="flex-1 border-none bg-transparent font-mono text-ink-2 outline-none"
@@ -864,7 +942,9 @@ function ListDetail({
 									)}
 									<button
 										type="button"
-										title={who?.name ?? t("lists.assignTitle")}
+										title={
+											who?.name ?? (it.who_id ? t("lists.assignUnknown") : t("lists.assignTitle"))
+										}
 										onClick={(e) => {
 											e.stopPropagation();
 											setAssignOpen(assignOpen === key ? null : key);
@@ -878,7 +958,8 @@ function ListDetail({
 											fontSize: 9,
 										}}
 									>
-										{who ? initials(who.name) : "+"}
+										{/* přiřazeno na neznámého/nenačteného člena → „?" (ne shodné „+" jako nepřiřazené) */}
+										{who ? initials(who.name) : it.who_id ? "?" : "+"}
 									</button>
 									{/* smazat položku s undo (feedback 2026-07-11) */}
 									<button

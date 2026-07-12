@@ -1,7 +1,7 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useMemo, useRef, useState } from "react";
 import { CalendarWidget } from "../components/CalendarWidget";
 import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
 import { useFlowSteps } from "../lib/flowSteps";
@@ -226,8 +226,11 @@ export function Prehled() {
 						minute: "2-digit",
 					}).format(new Date(iso))
 				: "";
+		// completed_at je UTC ISO → převod na LOKÁLNÍ den (en-CA = YYYY-MM-DD),
+		// jinak úkol dokončený těsně po půlnoci spadne do včerejška/zítřka
+		const localDay = (iso: string) => new Date(iso).toLocaleDateString("en-CA");
 		(allTasks ?? [])
-			.filter((tk) => fOk(tk) && tk.completed_at && tk.completed_at.slice(0, 10) === tdy)
+			.filter((tk) => fOk(tk) && tk.completed_at && localDay(tk.completed_at) === tdy)
 			.sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""))
 			.slice(0, 3)
 			.forEach((tk) => {
@@ -326,7 +329,18 @@ export function Prehled() {
 	]);
 
 	// „Přeplánovat zpožděné" — všechny zpožděné na dnes, jedním undo záznamem (prototyp reschedule)
+	// Pojistka proti dvojkliku: bez ní dva rychlé kliky vyrobí 2 undo záznamy a 2 toasty.
+	const reschedulingRef = useRef(false);
 	const rescheduleOverdue = async () => {
+		if (reschedulingRef.current) return;
+		reschedulingRef.current = true;
+		try {
+			await doReschedule();
+		} finally {
+			reschedulingRef.current = false;
+		}
+	};
+	const doReschedule = async () => {
 		const tdy = todayISO();
 		// S4 (R4) — opakované úkoly VYNECHAT: posun due_date by přepsal kotvu celé
 		// řady bez dotazu „tento / tento a další / celá řada" (uprav řadu v detailu).
@@ -491,8 +505,10 @@ export function Prehled() {
 								margin: "0 auto",
 							}
 						: {
+								// min(100%, 330px): na úzkém telefonu (~360px) klesne track na
+								// šířku kontejneru místo 330px → nevznikne horizontální scroll
 								display: "grid",
-								gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))",
+								gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 330px), 1fr))",
 								gap: 14,
 								alignItems: "start",
 							}
@@ -589,6 +605,7 @@ export function Prehled() {
 							setPeek({
 								kind: "day",
 								dateISO,
+								firm,
 								name: new Intl.DateTimeFormat(i18n.language, {
 									weekday: "long",
 									day: "numeric",

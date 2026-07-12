@@ -1,7 +1,8 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSession } from "../lib/auth-client";
 import { inboxProjectIds } from "../lib/inbox";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
 import type { TaskRow } from "../lib/powersync/AppSchema";
@@ -12,8 +13,7 @@ import { toggleTask } from "../lib/tasks";
 import { useWorkspace } from "../lib/workspace";
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const isoOf = (d: Date) =>
-	`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 function triageDate(kind: "today" | "tomorrow" | "nextWeek"): string {
 	const d = new Date();
@@ -33,16 +33,25 @@ export function Schranka() {
 	const { open } = useTaskDetail();
 	const { activeWs } = useWorkspace();
 	const { q: searchQ } = useListSearch();
-	const [undo, setUndo] = useState<{ id: string; label: string } | null>(null);
+	const { data: session } = useSession();
+	const meId = session?.user?.id;
+	// Undo nese vlastní revert (naplánování i přeřazení) — nejde jen o due_date.
+	const [undo, setUndo] = useState<{
+		label: string;
+		revert: () => Promise<void>;
+	} | null>(null);
+
+	// Undo lišta se sama schová po 5 s (jen skryje, akci nevrací).
+	useEffect(() => {
+		if (!undo) return;
+		const id = setTimeout(() => setUndo(null), 5000);
+		return () => clearTimeout(id);
+	}, [undo]);
 
 	const inboxIds = useMemo(() => inboxProjectIds(projects), [projects]);
 	// Cílové projekty pro přeřazení — jen aktivní prostor (prototyp wsProjs, ř. 3086).
 	const targetProjects = useMemo(
-		() =>
-			projects.filter(
-				(p) =>
-					!inboxIds.has(p.id) && (!activeWs || p.workspace_id === activeWs),
-			),
+		() => projects.filter((p) => !inboxIds.has(p.id) && (!activeWs || p.workspace_id === activeWs)),
 		[projects, inboxIds, activeWs],
 	);
 
@@ -52,70 +61,63 @@ export function Schranka() {
 	const items = useMemo(
 		() =>
 			filterByQuery(
-				(tasks ?? []).filter(
-					(tk) => tk.project_id && inboxIds.has(tk.project_id),
-				),
+				(tasks ?? []).filter((tk) => tk.project_id && inboxIds.has(tk.project_id)),
 				searchQ,
 			),
 		[tasks, inboxIds, searchQ],
 	);
 
-	const toggle = (tk: TaskRow) => void toggleTask(tk);
+	// actorId (R2): u shared_all úkolu přepnout jen mou účast, ne dokončit za všechny.
+	const toggle = (tk: TaskRow) => void toggleTask(tk, meId);
 
-	const schedule = async (
-		tk: TaskRow,
-		kind: "today" | "tomorrow" | "nextWeek",
-	) => {
+	const schedule = async (tk: TaskRow, kind: "today" | "tomorrow" | "nextWeek") => {
 		await powerSync.execute("UPDATE tasks SET due_date = ? WHERE id = ?", [
 			triageDate(kind),
 			tk.id,
 		]);
-		setUndo({ id: tk.id, label: t("inbox.scheduled") });
+		setUndo({
+			label: t("inbox.scheduled"),
+			revert: async () => {
+				await powerSync.execute("UPDATE tasks SET due_date = NULL WHERE id = ?", [tk.id]);
+			},
+		});
 	};
 
-	const reassign = (tk: TaskRow, projectId: string) =>
-		void powerSync.execute("UPDATE tasks SET project_id = ? WHERE id = ?", [
-			projectId,
-			tk.id,
-		]);
+	// Přeřazení mizí z filtru schránky — nabídnout undo na předchozí project_id.
+	const reassign = (tk: TaskRow, projectId: string) => {
+		const prev = tk.project_id;
+		void powerSync.execute("UPDATE tasks SET project_id = ? WHERE id = ?", [projectId, tk.id]);
+		setUndo({
+			label: t("inbox.reassigned"),
+			revert: async () => {
+				await powerSync.execute("UPDATE tasks SET project_id = ? WHERE id = ?", [prev, tk.id]);
+			},
+		});
+	};
 
 	const doUndo = async () => {
 		if (!undo) return;
-		await powerSync.execute("UPDATE tasks SET due_date = NULL WHERE id = ?", [
-			undo.id,
-		]);
+		await undo.revert();
 		setUndo(null);
 	};
 
 	return (
-		<div
-			className="mx-auto max-w-[820px]"
-			style={{ padding: "20px 22px 90px" }}
-		>
+		<div className="mx-auto max-w-[820px]" style={{ padding: "20px 22px 90px" }}>
 			<div className="mb-1 flex items-center gap-2.5">
-				<h1
-					className="font-display font-extrabold text-ink"
-					style={{ fontSize: 17 }}
-				>
+				<h1 className="font-display font-extrabold text-ink" style={{ fontSize: 17 }}>
 					{t("inbox.heading")}
 				</h1>
 				<span className="font-mono text-ink-3" style={{ fontSize: 12 }}>
 					{items.length}
 				</span>
 			</div>
-			<p
-				className="mb-4 max-w-[58ch] font-body text-ink-3"
-				style={{ fontSize: 13 }}
-			>
+			<p className="mb-4 max-w-[58ch] font-body text-ink-3" style={{ fontSize: 13 }}>
 				{t("inbox.subtitle")}
 			</p>
 
 			{items.length === 0 ? (
 				<div className="text-center" style={{ padding: "54px 20px" }}>
-					<div
-						className="mb-1 font-display font-bold text-ink"
-						style={{ fontSize: 15 }}
-					>
+					<div className="mb-1 font-display font-bold text-ink" style={{ fontSize: 15 }}>
 						{t("inbox.empty")}
 					</div>
 					<div className="font-body text-ink-3" style={{ fontSize: 13 }}>
@@ -153,8 +155,7 @@ export function Schranka() {
 								>
 									{tk.project_id && inboxIds.has(tk.project_id) && (
 										<option value={tk.project_id}>
-											{projects.find((p) => p.id === tk.project_id)?.name ??
-												t("nav.inbox")}
+											{projects.find((p) => p.id === tk.project_id)?.name ?? t("nav.inbox")}
 										</option>
 									)}
 									{targetProjects.map((p) => (
@@ -163,10 +164,7 @@ export function Schranka() {
 										</option>
 									))}
 								</select>
-								<span
-									className="mx-0.5 bg-line"
-									style={{ width: 1, height: 18 }}
-								/>
+								<span className="mx-0.5 bg-line" style={{ width: 1, height: 18 }} />
 								{(["today", "tomorrow", "nextWeek"] as const).map((k) => (
 									<button
 										key={k}
@@ -186,13 +184,7 @@ export function Schranka() {
 							aria-label={t("detail.description")}
 							className="mt-0.5 flex shrink-0 text-ink-3 hover:text-ink"
 						>
-							<svg
-								width="15"
-								height="15"
-								viewBox="0 0 16 16"
-								fill="currentColor"
-								aria-hidden
-							>
+							<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
 								<circle cx="8" cy="3.5" r="1.4" />
 								<circle cx="8" cy="8" r="1.4" />
 								<circle cx="8" cy="12.5" r="1.4" />
@@ -221,6 +213,14 @@ export function Schranka() {
 						style={{ fontSize: 13 }}
 					>
 						{t("inbox.undo")}
+					</button>
+					<button
+						type="button"
+						onClick={() => setUndo(null)}
+						aria-label={t("common.close")}
+						className="grid h-6 w-6 place-items-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
+					>
+						<Icon name="zavrit" size={13} />
 					</button>
 				</div>
 			)}

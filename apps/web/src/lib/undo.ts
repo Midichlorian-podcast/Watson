@@ -122,6 +122,9 @@ const CHILD_TABLES = [
 	"comments",
 	"reminders",
 	"task_occurrence_overrides",
+	// R6 — per-user barva (task_id): bez ní by delete+undo trvale ztratilo barevný overlay,
+	// protože server kaskádně smaže server-side řádek a undo ho nikdy nereinsertuje.
+	"task_user_colors",
 ] as const;
 
 /**

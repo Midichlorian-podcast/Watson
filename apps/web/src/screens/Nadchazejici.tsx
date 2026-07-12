@@ -16,11 +16,7 @@ import { WorkspaceChips } from "../components/WorkspaceChips";
 import { useFlowSteps } from "../lib/flowSteps";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
-import {
-	expandOccurrences,
-	occId,
-	parseRecurrenceRule,
-} from "../lib/occurrences";
+import { expandOccurrences, occId, parseRecurrenceRule } from "../lib/occurrences";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
@@ -36,26 +32,15 @@ const iso = (ms: number) => {
 };
 
 type Bucket = "dnes" | "zitra" | "vikend" | "pristi" | "pmonth" | "later";
-const BUCKET_ORDER: Bucket[] = [
-	"dnes",
-	"zitra",
-	"vikend",
-	"pristi",
-	"pmonth",
-	"later",
-];
+const BUCKET_ORDER: Bucket[] = ["dnes", "zitra", "vikend", "pristi", "pmonth", "later"];
 
 const wdLong = (d: string) =>
-	new Intl.DateTimeFormat(i18n.language, { weekday: "long" }).format(
-		new Date(`${d}T00:00:00`),
-	);
+	new Intl.DateTimeFormat(i18n.language, { weekday: "long" }).format(new Date(`${d}T00:00:00`));
 
 /** Bucket dne (port _dayBucket, prototyp ř. 2649). */
 function dayBucket(d: string, tdy: string): Bucket {
 	const diff = Math.round(
-		(new Date(`${d}T00:00:00`).getTime() -
-			new Date(`${tdy}T00:00:00`).getTime()) /
-			DAY,
+		(new Date(`${d}T00:00:00`).getTime() - new Date(`${tdy}T00:00:00`).getTime()) / DAY,
 	);
 	if (diff <= 0) return "dnes";
 	if (diff === 1) return "zitra";
@@ -78,10 +63,7 @@ export function Nadchazejici() {
 	const { t } = useTranslation();
 	const { view } = useViewMode();
 	const projects = useProjects();
-	const projMap = useMemo(
-		() => new Map(projects.map((p) => [p.id, p] as const)),
-		[projects],
-	);
+	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
 	const [wsFilter, setWsFilter] = useState<string | null>(null);
 	// Výkon: bez „Dokončené" filtruj hotové v SQL (opakované úkoly mají completed_at vždy NULL —
@@ -90,6 +72,12 @@ export function Nadchazejici() {
 		tb.showDone
 			? "SELECT * FROM tasks WHERE due_date IS NOT NULL ORDER BY due_date"
 			: "SELECT * FROM tasks WHERE due_date IS NOT NULL AND completed_at IS NULL ORDER BY due_date",
+	);
+	// Kalendář má vlastní zdroj: NEOŘEZANÝ do budoucna (jinak zmizí minulé/zpožděné úkoly a panel
+	// „Plánování → Zpožděné" je mrtvý) a nezávislý na skrytém „Dokončené" (aby šlo hotové vidět
+	// a přes CalCheck zas odškrtnout). Filtruje se jen podle workspace, ne toolbarem ani hledáním.
+	const { data: calAll } = usePsQuery<TaskRow>(
+		"SELECT * FROM tasks WHERE due_date IS NOT NULL ORDER BY due_date",
 	);
 	const flowSteps = useFlowSteps();
 	const { setNavIds } = useTaskDetail();
@@ -119,14 +107,18 @@ export function Nadchazejici() {
 		let list = (allTasks ?? []).filter((x) => (dayOf(x) ?? "") >= tdy);
 		if (wsFilter)
 			list = list.filter(
-				(x) =>
-					x.project_id && projMap.get(x.project_id)?.workspace_id === wsFilter,
+				(x) => x.project_id && projMap.get(x.project_id)?.workspace_id === wsFilter,
 			);
-		return filterByQuery(
-			sortTasks(filterTasks(list, tb, tbCtx), tb, tbCtx),
-			searchQ,
-		);
+		return filterByQuery(sortTasks(filterTasks(list, tb, tbCtx), tb, tbCtx), searchQ);
 	}, [allTasks, tb, tbCtx, wsFilter, projMap, searchQ]);
+
+	// Zdroj pro kalendář — jen wsFilter, bez ořezu na budoucnost, bez toolbaru/hledání.
+	const calTasks = useMemo(() => {
+		const list = calAll ?? [];
+		return wsFilter
+			? list.filter((x) => x.project_id && projMap.get(x.project_id)?.workspace_id === wsFilter)
+			: list;
+	}, [calAll, wsFilter, projMap]);
 
 	const view2 = useMemo(() => {
 		const tdy = todayISO();
@@ -168,9 +160,7 @@ export function Nadchazejici() {
 						...tk,
 						id: vid,
 						due_date: od,
-						start_date: tk.start_date
-							? `${od}T${tk.start_date.slice(11)}`
-							: null,
+						start_date: tk.start_date ? `${od}T${tk.start_date.slice(11)}` : null,
 						completed_at: ex?.done ? new Date().toISOString() : null,
 					};
 					const ob = dayBucket(od, tdy);
@@ -211,7 +201,7 @@ export function Nadchazejici() {
 		return (
 			<div className="mx-auto max-w-[1080px] px-5 py-7">
 				<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
-				<Calendar tasks={tasks} />
+				<Calendar tasks={calTasks} />
 			</div>
 		);
 	}
@@ -226,10 +216,7 @@ export function Nadchazejici() {
 	}
 
 	return (
-		<div
-			className="mx-auto max-w-[1080px]"
-			style={{ padding: "10px 22px 90px" }}
-		>
+		<div className="mx-auto max-w-[1080px]" style={{ padding: "10px 22px 90px" }}>
 			<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
 			<TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />
 			{empty && (
@@ -247,10 +234,7 @@ export function Nadchazejici() {
 						className="flex items-center"
 						style={{ gap: 10, margin: "18px 0 2px", padding: "0 4px" }}
 					>
-						<span
-							className="font-display font-bold text-ink"
-							style={{ fontSize: 13 }}
-						>
+						<span className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
 							{label}
 						</span>
 						<span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
@@ -271,9 +255,7 @@ export function Nadchazejici() {
 							>
 								<TaskItem
 									task={tk}
-									project={
-										tk.project_id ? projMap.get(tk.project_id) : undefined
-									}
+									project={tk.project_id ? projMap.get(tk.project_id) : undefined}
 									flow={flowSteps.get(tk.id)}
 								/>
 							</div>

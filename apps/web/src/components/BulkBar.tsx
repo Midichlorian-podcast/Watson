@@ -5,6 +5,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useBulkSelect } from "../lib/bulkSelect";
+import { advanceChainForTask } from "../lib/chainAdvance";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
@@ -84,6 +85,28 @@ function Bar() {
 	const isMobile = useIsMobile();
 	const [menu, setMenu] = useState<MenuKey | null>(null);
 	const ref = useRef<HTMLDivElement>(null);
+
+	/**
+	 * Re-entrancy pojistka: tlačítka zůstávají aktivní, dokud dávku nedoběhne clear()
+	 * (u více úkolů běží sekvenční smyčka déle). Bez guardu dvojklik / druhý klik během
+	 * běhu spustí dvě souběžné dávky → duplicitní undo/toasty a u opakované řady tichý
+	 * posun výskytu dvakrát (R4). `busy` (ref) blokuje synchronně hned, `running` (state)
+	 * jen zneviditelní tlačítka. finally po clear() může běžet na odmountované liště —
+	 * v React 19 je setState no-op, ref na zahozené instanci je neškodný.
+	 */
+	const busy = useRef(false);
+	const [running, setRunning] = useState(false);
+	const guard = async (fn: () => Promise<void>) => {
+		if (busy.current) return;
+		busy.current = true;
+		setRunning(true);
+		try {
+			await fn();
+		} finally {
+			busy.current = false;
+			setRunning(false);
+		}
+	};
 
 	const ids = Object.keys(selected);
 	const ph = ids.map(() => "?").join(", ");
@@ -278,12 +301,57 @@ function Bar() {
 		showToast(toast);
 	};
 
+	/** R9 — done → is_done status projektu (jinak status nech). Zrcadlí resolveStatusForDone
+	 * (privátní v tasks.ts) pro směr done=true; bulkDone jen dokončuje, nikdy neodškrtává. */
+	const doneStatusFor = async (taskId: string, currentStatusId: string | null) => {
+		const sts = await powerSync.getAll<{ id: string; is_done: number | null }>(
+			`SELECT s.id, s.is_done FROM statuses s
+			 JOIN tasks t ON t.project_id = s.project_id WHERE t.id = ? ORDER BY s.position`,
+			[taskId],
+		);
+		return sts.find((s) => s.is_done)?.id ?? currentStatusId;
+	};
+
 	const bulkDone = async () => {
 		const uid = session?.user?.id;
 		const rowsAll = await loadSelected(); // D5
 		const open = rowsAll.filter((tk) => !tk.completed_at);
-		// toggleTask drží invarianty (R2 shared_all = jen má účast, R4 posun řady, R9 status).
-		for (const tk of open) await toggleTask(tk, uid);
+		// Úkoly s vlastními invarianty (R4 posun opakované řady, R2 shared_all per-osoba)
+		// necháme projít toggleTask jednotlivě — jejich dokončení není prostý zápis
+		// completed_at a každý si drží vlastní (správný) undo záznam.
+		const complex = open.filter(
+			(tk) => !!tk.recurrence_rule || tk.assignment_mode === "shared_all",
+		);
+		const plain = open.filter((tk) => !tk.recurrence_rule && tk.assignment_mode !== "shared_all");
+		// Prosté úkoly zabalíme do JEDNOHO undo záznamu (⌘Z vrátí celou dávku najednou,
+		// stejně jako bulkDelete/bulkAssign), místo N samostatných z toggleTask.
+		if (plain.length) {
+			const ts = new Date().toISOString();
+			const snaps = await Promise.all(
+				plain.map(async (tk) => ({
+					id: tk.id,
+					prevDone: tk.completed_at,
+					prevStatus: tk.status_id,
+					nextStatus: await doneStatusFor(tk.id, tk.status_id),
+				})),
+			);
+			const write = (mode: "apply" | "revert") =>
+				powerSync.writeTransaction(async (tx) => {
+					for (const s of snaps) {
+						await tx.execute("UPDATE tasks SET completed_at = ?, status_id = ? WHERE id = ?", [
+							mode === "apply" ? ts : s.prevDone,
+							mode === "apply" ? s.nextStatus : s.prevStatus,
+							s.id,
+						]);
+					}
+				});
+			await write("apply");
+			// undo záznam až PO úspěšném zápisu (D9)
+			pushUndo({ undo: () => write("revert"), redo: () => write("apply") });
+			// Postupy (štafeta) posouvá toggleTask fire-and-forget mimo undo — držíme paritu.
+			for (const s of snaps) await advanceChainForTask(s.id, true);
+		}
+		for (const tk of complex) await toggleTask(tk, uid);
 		clear();
 		showToast(t("bulk.doneToast", { count: open.length }));
 	};
@@ -388,9 +456,10 @@ function Bar() {
 
 			<button
 				type="button"
-				onClick={() => void bulkDone()}
+				onClick={() => void guard(bulkDone)}
+				disabled={running}
 				className={bulkBtnCls}
-				style={bulkBtnStyle}
+				style={{ ...bulkBtnStyle, opacity: running ? 0.5 : 1 }}
 			>
 				{t("bulk.done")}
 			</button>
@@ -411,7 +480,7 @@ function Bar() {
 							<button
 								key={o.key}
 								type="button"
-								onClick={() => void bulkTerm(o.key, o.label)}
+								onClick={() => void guard(() => bulkTerm(o.key, o.label))}
 								className={dropItemCls}
 								style={dropItemStyle}
 							>
@@ -439,7 +508,9 @@ function Bar() {
 								key={p.id}
 								type="button"
 								onClick={() =>
-									void bulkProject(p.id, t("bulk.projToast", { count, name: p.name ?? "" }))
+									void guard(() =>
+										bulkProject(p.id, t("bulk.projToast", { count, name: p.name ?? "" })),
+									)
 								}
 								className={dropItemCls}
 								style={dropItemStyle}
@@ -475,7 +546,7 @@ function Bar() {
 							<button
 								key={p}
 								type="button"
-								onClick={() => void bulkPriority(p)}
+								onClick={() => void guard(() => bulkPriority(p))}
 								className="rounded-lg border border-line font-display font-bold text-ink hover:border-brass"
 								style={{ fontSize: 12, padding: "6px 10px" }}
 							>
@@ -508,7 +579,7 @@ function Bar() {
 							<button
 								key={m.id}
 								type="button"
-								onClick={() => void bulkAssign(m.id, m.name)}
+								onClick={() => void guard(() => bulkAssign(m.id, m.name))}
 								className={dropItemCls}
 								style={{ ...dropItemStyle, padding: "6px 10px" }}
 							>
@@ -532,9 +603,10 @@ function Bar() {
 
 			<button
 				type="button"
-				onClick={() => void bulkDelete()}
+				onClick={() => void guard(bulkDelete)}
+				disabled={running}
 				className={bulkBtnCls}
-				style={{ ...bulkBtnStyle, color: "var(--w-overdue)" }}
+				style={{ ...bulkBtnStyle, color: "var(--w-overdue)", opacity: running ? 0.5 : 1 }}
 			>
 				{t("bulk.delete")}
 			</button>
