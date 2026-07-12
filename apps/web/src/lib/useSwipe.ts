@@ -7,10 +7,13 @@
  *  · dotyk (pointer touch) — akce na zvednutí prstů dle prahu;
  *  · stisk + tah (myš / jeden prst) — pointer capture, akce na puštění
  *    tlačítka (drží i mimo řádek/trackpad);
- *  · dvouprstý trackpad (wheel) — prohlížeč zvednutí prstů NEHLÁSÍ, commit
- *    proto přichází 140 ms po posledním pohybu (≈ okamžik puštění; delší
- *    zamrznutí s prsty dole od toho web neodliší — platformní strop).
- *    Svislý scroll během gesta ho ruší bez akce.
+ *  · dvouprstý trackpad (wheel) — prohlížeč zvednutí prstů NEHLÁSÍ (na rozdíl
+ *    od nativní appky jako Spark, která má fáze gesta began/ended/momentum).
+ *    Proto: karta DRŽÍ tam, kde se přestaneš hýbat (žádný snap zpět), a můžeš
+ *    plynule POKRAČOVAT (zpět i dál) — pauza jen resetuje časovač. Akce se
+ *    provede až po ZŘETELNÉM klidu (WHEEL_SETTLE_MS ≈ puštění prstů) NEBO hned
+ *    při rozhodném přetažení přes velký práh. Krátké mikro-pauzy při dolaďování
+ *    tedy NEcvaknou. Svislý scroll gesto ruší bez akce.
  *
  * Prahy: malé potažení 110 px (tier 1) / velké 260 px (tier 2), gumový
  * odpor za velkým prahem, vibrace při překročení prahu (kde zařízení umí).
@@ -38,8 +41,10 @@ export function releaseGesture(id: symbol): void {
 export const SWIPE_SHORT = 110;
 /** Velké potažení (tier 2). */
 export const SWIPE_LONG = 260;
-/** Usazení trackpadu — commit po posledním pohybu (≈ puštění prstů). */
-const WHEEL_SETTLE_MS = 140;
+/** Usazení trackpadu — akce až po ZŘETELNÉM klidu (≈ puštění prstů). Štědré okno,
+ *  aby šlo kartu podržet a plynule pokračovat; mikro-pauza při dolaďování necvakne.
+ *  (Pauza časovač resetuje, takže reálné držení = kolikrát chceš, dokud se hýbeš.) */
+const WHEEL_SETTLE_MS = 600;
 
 const ACTION_TIERS = new Set<SwipeMag>(["r1", "r2", "l1", "l2"]);
 
@@ -207,8 +212,18 @@ export function useSwipe(opts: {
 			}
 			// obsah jede proti směru prstů (natural scroll)
 			wheel.current.acc -= e.deltaX;
-			emit(wheel.current.acc);
+			const acc = wheel.current.acc;
+			emit(acc);
 			if (wheel.current.timer) clearTimeout(wheel.current.timer);
+			// Rozhodné přetažení přes VELKÝ práh = commit HNED (nečeká se na klid) —
+			// jasný záměr „provést velkou akci". Pod prahem se drží a jde pokračovat.
+			if (Math.abs(swipeEase(acc)) >= SWIPE_LONG) {
+				wheel.current = { acc: 0, armed: false, timer: null };
+				finish(acc);
+				return;
+			}
+			// Jinak: karta DRŽÍ. Časovač commitne až po zřetelném klidu (≈ puštění).
+			// Každý další pohyb ho resetuje → reálné držení + plynulé pokračování zpět i dál.
 			wheel.current.timer = setTimeout(() => {
 				const dx = wheel.current.acc;
 				wheel.current = { acc: 0, armed: false, timer: null };
