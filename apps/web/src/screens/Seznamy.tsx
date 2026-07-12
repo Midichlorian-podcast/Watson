@@ -10,6 +10,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { type CtxItem, useContextMenu } from "../components/ContextMenu";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
@@ -108,6 +109,7 @@ function XIcon() {
 export function Seznamy() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const cm = useContextMenu();
 	const search = useSearch({ strict: false }) as { seznam?: string };
 	const { data: session } = useSession();
 	const { activeWs } = useWorkspace();
@@ -253,6 +255,22 @@ export function Seznamy() {
 	const activePersonal = active.filter((l) => personalWsIds.has(l.workspace_id ?? ""));
 	const activeTeam = active.filter((l) => !personalWsIds.has(l.workspace_id ?? ""));
 
+	// Otevřít / (od)archivovat seznam z kontextového menu karty — archivace je stejný
+	// jednosloupcový zápis jako `archive` v detailu, jen mířený na kartu z přehledu.
+	const openList = (l: ListRow) => void navigate({ to: "/seznamy", search: { seznam: l.id } });
+	const toggleArchiveList = (l: ListRow) =>
+		void powerSync.execute("UPDATE lists SET archived = ? WHERE id = ?", [
+			l.archived ? 0 : 1,
+			l.id,
+		]);
+	const listCardCtx = (l: ListRow): CtxItem[] => [
+		{ label: t("ctx.open"), onClick: () => openList(l) },
+		{
+			label: l.archived ? t("lists.unarchive") : t("lists.archiveAct"),
+			onClick: () => toggleArchiveList(l),
+		},
+	];
+
 	const listCard = (l: ListRow) => {
 		const st = statsOf.list(l.id);
 		const complete = st.total > 0 && st.done >= st.total;
@@ -260,6 +278,7 @@ export function Seznamy() {
 			<div
 				key={l.id}
 				onClick={() => void navigate({ to: "/seznamy", search: { seznam: l.id } })}
+				onContextMenu={(e) => cm.open(e, listCardCtx(l))}
 				className="cursor-pointer rounded-[14px] border border-line bg-card hover:border-brass"
 				style={{ padding: "15px 16px", boxShadow: "var(--w-shadow-sm)" }}
 			>
@@ -371,6 +390,11 @@ export function Seznamy() {
 					return (
 						<div
 							key={tpl.id}
+							onContextMenu={(e) =>
+								cm.open(e, [
+									{ label: t("lists.useTemplate"), onClick: () => void createFromTemplate(tpl) },
+								])
+							}
 							className="rounded-[13px] border border-line border-dashed bg-card"
 							style={{ padding: "13px 14px" }}
 						>
@@ -421,6 +445,7 @@ export function Seznamy() {
 								<div
 									key={l.id}
 									onClick={() => void navigate({ to: "/seznamy", search: { seznam: l.id } })}
+									onContextMenu={(e) => cm.open(e, listCardCtx(l))}
 									className="cursor-pointer rounded-[14px] border border-line bg-card"
 									style={{ padding: "15px 16px" }}
 								>
@@ -485,6 +510,7 @@ function ListDetail({
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
+	const cm = useContextMenu();
 	// editace názvu/eventu — lokální stav, zápis na blur/Enter (ne per klávesa)
 	const [name, setName] = useState(list.name ?? "");
 	const [event, setEvent] = useState(list.event ?? "");
@@ -890,6 +916,35 @@ function ListDetail({
 							return (
 								<div
 									key={it.id}
+									onContextMenu={(e) =>
+										cm.open(e, [
+											{
+												label: it.done ? t("lists.uncheck") : t("lists.check"),
+												onClick: () => toggleItem(it),
+											},
+											{
+												label: t("lists.assignTitle"),
+												children: [
+													{
+														label: t("lists.assignNone"),
+														on: !it.who_id,
+														onClick: () => setWho(it, null),
+													},
+													...(team ?? []).map((m) => ({
+														label: m.name,
+														on: it.who_id === m.id,
+														onClick: () => setWho(it, m.id),
+													})),
+												],
+											},
+											{ sep: true },
+											{
+												label: t("lists.deleteItem"),
+												danger: true,
+												onClick: () => void deleteItem(it),
+											},
+										])
+									}
 									className="group relative flex items-center border-line border-t"
 									style={{ gap: 10, padding: "8px 16px" }}
 								>

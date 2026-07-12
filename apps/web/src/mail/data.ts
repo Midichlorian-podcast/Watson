@@ -1016,3 +1016,28 @@ export const SIGS: MailSig[] = [
  * shodné s prahy úkolů (lib/useSwipe). ── */
 export const SW_SHORT = 110;
 export const SW_LONG = 260;
+
+/* ── Kontakty pro našeptávač příjemce (composer To/Cc/Bcc) ──
+ * Demo zdroj = lidé týmu (P) + sdílené schránky (MB). Reálný adresář přijde
+ * s mail backendem M1–M3; teď stačí jméno + adresa pro fulltext a chipy. */
+
+/** Kontakt v našeptávači příjemce. */
+export interface MailContact {
+	name: string;
+	addr: string;
+}
+
+/** Adresa člena týmu z jeho jména (diakritika pryč): „Adam Košír“ → adam.kosir@… */
+const slugAddr = (n: string): string =>
+	`${n
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.replace(/[^a-z0-9]+/g, ".")
+		.replace(/(^\.|\.$)/g, "")}@t-group-dance.cz`;
+
+/** Sloučené kontakty: nejdřív lidé (osobní adresy), pak sdílené schránky. */
+export const CONTACTS: MailContact[] = [
+	...Object.values(P).map((p) => ({ name: p.n, addr: slugAddr(p.n) })),
+	...Object.values(MB).map((mb) => ({ name: `${mb.team} · ${mb.short}`, addr: mb.addr })),
+];

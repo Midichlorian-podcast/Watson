@@ -35,9 +35,14 @@ const PLANNING_LS = "watson.calPlanning";
 /** Pixely/minuta (prototyp PPMOPT, ř. 1912). */
 const PPMOPT = { comfortable: 0.62, spacious: 0.95 } as const;
 const MAX_LANES = 3;
-// Limit celodenního pásu — přeplněné úkoly se kapují na „+N", pás nikdy nescrolluje.
-const MAX_BARS = 2; // max řádků vícedenních pruhů (nad rámec „+N")
-const ALLDAY_PER_COL = 3; // celkový rozpočet CELÝ DEN na sloupec (pruhy + chipy), pak „+N"
+// Pás CELÝ DEN: JEDEN per-den rozpočet. Vícedenní celodenní = defaultně tenká překryvná
+// linka protínající sloupce (nezabírá kartu). V dni, kde je rozpočet plný, se linka na tom
+// segmentu nekreslí a událost spadne do „+N" toho dne (odtud otevřitelná). Přeplněné chipy
+// i přetečené vícedenní se tak kapují na „+N" — pás nikdy nescrolluje.
+const ALLDAY_PER_COL = 3; // rozpočet karet CELÝ DEN na sloupec (jednodenní chipy), pak „+N"
+const MAX_LINE_ROWS = 3; // max řádků tenkých vícedenních linek (nad rámec → „+N")
+const LINE_ROW_H = 9; // výška řádku linky (klikací obálka)
+const LINE_H = 5; // tloušťka samotné linky
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -1279,32 +1284,97 @@ function TimeGrid({
 		onAdd(iso, snap((e.clientY - rect.top) / PPM));
 	};
 
-	// ── data pro pás CELÝ DEN ── (pruhy jen v týdnu; v Dni je vícedenní úkol chip — prototyp ř. 2808)
+	// ── data pro pás CELÝ DEN ── JEDEN per-den rozpočet (ALLDAY_PER_COL karet).
+	// Vícedenní celodenní = tenké linky protínající sloupce; v plném dni linka na tom segmentu
+	// nekreslí a událost spadne do „+N" toho dne (odtud otevřitelná — i přetečená vícedenní).
 	const isWeekBand = isos.length > 1;
-	const multiDay = !isWeekBand
-		? []
-		: calTasks.filter((tk) => {
-				// pás = jen CELODENNÍ vícedenní (bez času). Časované multi-day → mřížka (segmenty).
-				if (startMin(tk) != null) return false;
-				const s = tIso(tk);
-				const e2 = tIsoEnd(tk);
-				return !!s && !!e2 && e2 > s && isos.some((iso) => iso >= s && iso <= e2);
+	const isoKey = isos.join("|");
+	// biome-ignore lint/correctness/useExhaustiveDependencies: isoKey pokrývá isos (stabilní klíč).
+	const allDay = useMemo(() => {
+		type Seg = { tk: TaskRow; row: number; x0: number; x1: number };
+		type Col = { chips: TaskRow[]; overflow: TaskRow[] };
+		const alldayTk = calTasks.filter((tk) => startMin(tk) == null);
+		// Den: vše celodenní přes hit() jako chipy (bez linek); rozpočet 3, zbytek „+N".
+		if (!isWeekBand) {
+			const iso = isos[0] ?? todayIso;
+			const hits = alldayTk.filter((tk) => hit(tk, iso));
+			const cols = new Map<string, Col>();
+			cols.set(iso, {
+				chips: hits.slice(0, ALLDAY_PER_COL),
+				overflow: hits.slice(ALLDAY_PER_COL),
 			});
-	// stack řádků pruhů
-	const barRows: TaskRow[][] = [];
-	for (const tk of multiDay) {
-		const s = tIso(tk) ?? "";
-		const e2 = tIsoEnd(tk) ?? "";
-		let placed = false;
-		for (const row of barRows) {
-			if (row.every((o) => (tIsoEnd(o) ?? "") < s || (tIso(o) ?? "") > e2)) {
-				row.push(tk);
-				placed = true;
-				break;
-			}
+			return { segs: [] as Seg[], stripRows: 0, cols };
 		}
-		if (!placed) barRows.push([tk]);
-	}
+		const n = isos.length;
+		// jednodenní celodenní chipy per sloupec + vícedenní celodenní (linky)
+		const singleByIso = new Map<string, TaskRow[]>();
+		for (const iso of isos) singleByIso.set(iso, []);
+		const multi: TaskRow[] = [];
+		for (const tk of alldayTk) {
+			const s = tIso(tk);
+			const e = tIsoEnd(tk);
+			if (!s || !e) continue;
+			if (e > s && (tk.days ?? 1) > 1) {
+				if (isos.some((iso) => iso >= s && iso <= e)) multi.push(tk);
+			} else singleByIso.get(s)?.push(tk);
+		}
+		// stack vícedenních do řádků (nepřekrývající se → stejný řádek)
+		const rows: TaskRow[][] = [];
+		for (const tk of multi) {
+			const s = tIso(tk) ?? "";
+			const e = tIsoEnd(tk) ?? "";
+			let placed = false;
+			for (const row of rows) {
+				if (row.every((o) => (tIsoEnd(o) ?? "") < s || (tIso(o) ?? "") > e)) {
+					row.push(tk);
+					placed = true;
+					break;
+				}
+			}
+			if (!placed) rows.push([tk]);
+		}
+		const shown = rows.slice(0, MAX_LINE_ROWS);
+		// den je plný, když jednodenní chipy vyčerpají rozpočet → tam se linka nekreslí
+		const isFull = (iso: string) => (singleByIso.get(iso)?.length ?? 0) >= ALLDAY_PER_COL;
+		const segs: Seg[] = [];
+		shown.forEach((row, ri) => {
+			for (const tk of row) {
+				const s = tIso(tk) ?? "";
+				const e = tIsoEnd(tk) ?? "";
+				let run: number | null = null;
+				for (let i = 0; i < n; i++) {
+					const iso = isos[i] ?? "";
+					const draw = iso >= s && iso <= e && !isFull(iso);
+					if (draw) {
+						if (run == null) run = i;
+					} else if (run != null) {
+						segs.push({ tk, row: ri, x0: run, x1: i - 1 });
+						run = null;
+					}
+				}
+				if (run != null) segs.push({ tk, row: ri, x0: run, x1: n - 1 });
+			}
+		});
+		const drawnByCol = isos.map(() => new Set<string>());
+		for (const sg of segs) for (let i = sg.x0; i <= sg.x1; i++) drawnByCol[i]?.add(sg.tk.id);
+		const cols = new Map<string, Col>();
+		isos.forEach((iso, idx) => {
+			const singles = singleByIso.get(iso) ?? [];
+			const multisCrossing = multi.filter((tk) => {
+				const s = tIso(tk);
+				const e = tIsoEnd(tk);
+				return !!s && !!e && s <= iso && iso <= e;
+			});
+			// přetok = chipy nad rozpočet + vícedenní, které tu nemají nakreslenou linku
+			const multiOverflow = multisCrossing.filter((tk) => !drawnByCol[idx]?.has(tk.id));
+			cols.set(iso, {
+				chips: singles.slice(0, ALLDAY_PER_COL),
+				overflow: [...singles.slice(ALLDAY_PER_COL), ...multiOverflow],
+			});
+		});
+		const stripRows = segs.length ? Math.max(...segs.map((s) => s.row)) + 1 : 0;
+		return { segs, stripRows, cols };
+	}, [calTasks, isWeekBand, isoKey, todayIso]);
 
 	return (
 		// full-bleed flex sloupec — bez rounded karty (prototyp buildWeek, ř. 2861)
@@ -1337,7 +1407,8 @@ function TimeGrid({
 			{/* triage popover přetečených celodenních úkolů — odškrtni / otevři / přeplánuj */}
 			{adPopover &&
 				(() => {
-					const list = calTasks.filter((tk) => hit(tk, adPopover.iso) && startMin(tk) == null);
+					// přetečené celodenní toho dne — chipy nad rozpočet i vícedenní bez linky (otevřitelné)
+					const list = allDay.cols.get(adPopover.iso)?.overflow ?? [];
 					return (
 						<>
 							{/* biome-ignore lint/a11y/useKeyWithClickEvents: overlay pro zavření */}
@@ -1497,117 +1568,49 @@ function TimeGrid({
 					{t("calendar.allDayBand")}
 				</div>
 				<div className="relative min-w-0 flex-1">
-					{/* vícedenní pruhy (strop MAX_BARS řádků + „+N" indikátor) */}
-					{barRows.length > 0 && (
-						<div
-							className="relative"
-							style={{ height: Math.min(barRows.length, MAX_BARS) * 23 + 2 }}
-						>
-							{barRows.slice(0, MAX_BARS).map((row, ri) =>
-								row.map((tk) => {
-									const s = tIso(tk) ?? "";
-									const e2 = tIsoEnd(tk) ?? "";
-									const li = Math.max(
-										0,
-										isos.findIndex((x) => x >= s),
-									);
-									let riIdx = isos.length - 1;
-									for (let i = isos.length - 1; i >= 0; i--) {
-										const v = isos[i];
-										if (v !== undefined && v <= e2) {
-											riIdx = i;
-											break;
-										}
-									}
-									const leftPct = (li / isos.length) * 100;
-									const wPct = ((riIdx - li + 1) / isos.length) * 100;
-									const done = Boolean(tk.completed_at);
-									const daysN = tk.days ?? 1;
-									// pás = jen celodenní vícedenní → počet dní (časované jdou do mřížky)
-									const rangeLabel = t("today.daysCount", { count: daysN });
-									return (
-										// biome-ignore lint/a11y/useKeyWithClickEvents: kalendářní pruh, klik = detail
-										<div
-											key={tk.id}
-											onClick={() => onOpen(tk)}
-											title={`${tk.name ?? ""} · ${rangeLabel}`}
-											className="absolute flex cursor-pointer items-center bg-card"
-											style={{
-												top: ri * 23 + 2,
-												left: `calc(${leftPct}% + 2px)`,
-												width: `calc(${wPct}% - 4px)`,
-												height: 20,
-												gap: 5,
-												borderLeft: `3px solid ${done ? "var(--w-line)" : borderColorOf(tk)}`,
-												borderRadius: 6,
-												padding: "0 6px",
-												boxShadow: "var(--w-shadow-sm)",
-												opacity: done ? 0.55 : 1,
-												background:
-													!done && uc(tk.id, tk.color)
-														? tcTint(uc(tk.id, tk.color) as string)
-														: undefined,
-												zIndex: 3,
-											}}
-										>
-											<CalCheck t={tk} size={12} />
-											<span
-												className="min-w-0 truncate font-display font-semibold"
-												style={{
-													fontSize: 11,
-													color: done ? "var(--w-ink-3)" : "var(--w-ink)",
-												}}
-											>
-												{tk.name}
-											</span>
-											<span
-												className="ml-auto shrink-0 font-mono"
-												style={{ fontSize: 9, color: "var(--w-ink-3)" }}
-											>
-												{rangeLabel}
-											</span>
-										</div>
-									);
-								}),
-							)}
-							{barRows.length > MAX_BARS && (
-								<span
-									className="absolute font-mono"
-									style={{
-										top: MAX_BARS * 23 - 14,
-										right: 4,
-										fontSize: 9,
-										color: "var(--w-ink-3)",
-									}}
-								>
-									+{barRows.length - MAX_BARS}
-								</span>
-							)}
+					{/* vícedenní celodenní = tenké překryvné linky protínající sloupce (strop MAX_LINE_ROWS).
+					    V plném dni se segment linky nekreslí — událost je v „+N" toho dne (viz allDay memo). */}
+					{allDay.stripRows > 0 && (
+						<div className="relative" style={{ height: allDay.stripRows * LINE_ROW_H + 4 }}>
+							{allDay.segs.map((sg, i) => {
+								const done = Boolean(sg.tk.completed_at);
+								const leftPct = (sg.x0 / isos.length) * 100;
+								const wPct = ((sg.x1 - sg.x0 + 1) / isos.length) * 100;
+								const col = done
+									? "var(--w-line)"
+									: (uc(sg.tk.id, sg.tk.color) as string) || borderColorOf(sg.tk);
+								return (
+									// biome-ignore lint/a11y/useKeyWithClickEvents: linka, tap = detail / drag = přesun (allDayChipDown)
+									<div
+										key={`${sg.tk.id}:${i}`}
+										data-adchip
+										onPointerDown={allDayChipDown(sg.tk)}
+										title={`${sg.tk.name ?? ""} · ${t("today.daysCount", { count: sg.tk.days ?? 1 })}`}
+										className="absolute flex cursor-grab items-center"
+										style={{
+											top: sg.row * LINE_ROW_H + 2,
+											left: `calc(${leftPct}% + 2px)`,
+											width: `calc(${wPct}% - 4px)`,
+											height: LINE_ROW_H,
+											opacity: done ? 0.55 : 1,
+											zIndex: 3,
+										}}
+									>
+										<span
+											className="w-full"
+											style={{ height: LINE_H, borderRadius: 999, background: col }}
+										/>
+									</div>
+								);
+							})}
 						</div>
 					)}
-					{/* celodenní chipy per sloupec — v týdnu jen jednodenní, v Dni všechny přes hit (ř. 2798) */}
+					{/* celodenní chipy per sloupec — jednodenní (týden) / vše přes hit (den); rozpočet + „+N" */}
 					<div className="flex">
 						{isos.map((iso) => {
-							const listAll = calTasks.filter((tk) =>
-								isWeekBand
-									? startMin(tk) == null && (tk.days ?? 1) <= 1 && tIso(tk) === iso
-									: // den: jen celodenní (bez času). Časované (i multi-day) → mřížka.
-										hit(tk, iso) && startMin(tk) == null,
-							);
-							// Max 3 celkem VČETNĚ vícedenních pruhů protínajících tento den →
-							// chipy dostanou jen zbytek rozpočtu, přebytek přes „+N".
-							const barsInCol = isWeekBand
-								? barRows.slice(0, MAX_BARS).filter((row) =>
-										row.some((tk) => {
-											const bs = tIso(tk);
-											const be = tIsoEnd(tk);
-											return !!bs && !!be && bs <= iso && iso <= be;
-										}),
-									).length
-								: 0;
-							const chipCap = Math.max(0, ALLDAY_PER_COL - barsInCol);
-							const list = listAll.slice(0, chipCap);
-							const overflowN = listAll.length - list.length;
+							const colM = allDay.cols.get(iso) ?? { chips: [], overflow: [] };
+							const list = colM.chips;
+							const overflowN = colM.overflow.length;
 							const isToday = iso === todayIso;
 							return (
 								// biome-ignore lint/a11y/useKeyWithClickEvents: klik do prázdna = nový úkol

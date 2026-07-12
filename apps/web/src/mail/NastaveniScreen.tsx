@@ -11,6 +11,7 @@ import { useState } from "react";
 import { useTheme } from "../layout/useTheme";
 import { showToast } from "../lib/toast";
 import { MB, NAST_SEED, type NastSeed } from "./data";
+import { sigIdOf } from "./SigPicker";
 import { useMail } from "./state";
 
 /** Kopie osobního seedu — lokální demo stav se nesmí propsat do seedu. */
@@ -60,10 +61,85 @@ const headStyle = {
 	borderBottom: "1px solid var(--line)",
 } as const;
 
+/** Inline editor jednoho podpisu (název + tělo po řádcích). */
+function SigEditor({
+	ed,
+	setEd,
+	onSave,
+}: {
+	ed: { id: string | null; n: string; b: string };
+	setEd: (v: { id: string | null; n: string; b: string } | null) => void;
+	onSave: () => void;
+}) {
+	return (
+		<div
+			style={{
+				padding: "12px 18px",
+				borderBottom: "1px solid var(--line)",
+				background: "var(--panel-2)",
+			}}
+		>
+			<input
+				value={ed.n}
+				onChange={(e) => setEd({ ...ed, n: e.target.value })}
+				placeholder="Název podpisu (např. Plný, Krátký)"
+				style={{
+					width: "100%",
+					boxSizing: "border-box",
+					border: "1px solid var(--line)",
+					background: "var(--panel)",
+					borderRadius: 9,
+					padding: "8px 11px",
+					fontFamily: "var(--w-font-display)",
+					fontWeight: 600,
+					fontSize: 12.5,
+					color: "var(--ink)",
+					outline: "none",
+				}}
+			/>
+			<textarea
+				value={ed.b}
+				onChange={(e) => setEd({ ...ed, b: e.target.value })}
+				rows={4}
+				placeholder="Tělo podpisu — každý řádek zvlášť. Prázdné = bez podpisu."
+				style={{
+					width: "100%",
+					boxSizing: "border-box",
+					border: "1px solid var(--line)",
+					background: "var(--panel)",
+					borderRadius: 10,
+					padding: "9px 11px",
+					marginTop: 8,
+					fontFamily: "var(--w-font-body)",
+					fontSize: 12.5,
+					color: "var(--ink)",
+					lineHeight: 1.55,
+					outline: "none",
+					resize: "none",
+				}}
+			/>
+			<div style={{ display: "flex", gap: 7, marginTop: 8 }}>
+				<span onClick={onSave} data-primary style={{ fontSize: 11.5, padding: "6px 14px" }}>
+					Uložit
+				</span>
+				<span
+					onClick={() => setEd(null)}
+					data-ghost
+					style={{ fontSize: 11.5, padding: "6px 12px" }}
+				>
+					Zrušit
+				</span>
+			</div>
+		</div>
+	);
+}
+
 export function NastaveniScreen() {
 	const m = useMail();
 	const { theme, toggle } = useTheme();
 	const [nast, setNastRaw] = useState<NastSeed>(cache.nast);
+	// editor podpisu: {id:null} = nový, jinak úprava existujícího (název + tělo po řádcích)
+	const [sigEd, setSigEd] = useState<{ id: string | null; n: string; b: string } | null>(null);
 
 	const setNast = (patch: Partial<NastSeed>) => {
 		cache.nast = { ...cache.nast, ...patch };
@@ -89,6 +165,24 @@ export function NastaveniScreen() {
 		id,
 		addr: id === "osobni" ? "kosir.adam@gmail.com" : (MB[id]?.addr ?? id),
 	}));
+
+	/** Identity pro výběr výchozího podpisu: 4 schránky + osobní. */
+	const sigIdents = ["info", "granty", "podcast", "studio", "osobni"].map((id) => ({
+		id,
+		label: id === "osobni" ? "osobní" : (MB[id]?.short ?? id),
+	}));
+
+	/** Ulož editor: prázdné tělo (jen bílé řádky) = podpis „bez podpisu" ([]). */
+	const saveSig = () => {
+		if (!sigEd) return;
+		const lines = sigEd.b.split("\n");
+		const body = lines.every((l) => !l.trim()) ? [] : lines;
+		const name = sigEd.n.trim() || "Podpis";
+		if (sigEd.id) m.updateSig(sigEd.id, { n: name, body });
+		else m.addSig(name, body);
+		setSigEd(null);
+		showToast(sigEd.id ? "Podpis upraven" : "Podpis přidán");
+	};
 
 	return (
 		<div
@@ -542,59 +636,159 @@ export function NastaveniScreen() {
 					</div>
 				</div>
 
-				{/* ── Podpisy (prototyp ř. 1716–1727) ── */}
+				{/* ── Podpisy — uživatelsky definované, výchozí per schránka (persistováno) ── */}
 				<div style={cardStyle}>
 					<div style={headStyle}>Podpisy</div>
-					{Object.entries(MB).map(([id, mb]) => (
-						<div
-							key={id}
-							style={{
-								display: "flex",
-								alignItems: "center",
-								gap: 10,
-								padding: "10px 18px",
-								borderBottom: "1px solid var(--line)",
-							}}
-						>
-							<span
-								data-mbdot={id}
-								style={{ width: 9, height: 9, borderRadius: "50%", flex: "none" }}
-							/>
-							<span
+
+					{/* seznam vytvořených podpisů + inline editor */}
+					{m.sigs.map((s) =>
+						sigEd && sigEd.id === s.id ? (
+							<SigEditor key={s.id} ed={sigEd} setEd={setSigEd} onSave={saveSig} />
+						) : (
+							<div
+								key={s.id}
 								style={{
-									width: 90,
-									flex: "none",
-									fontFamily: "var(--w-font-mono)",
-									fontSize: 11,
-									color: "var(--ink-2)",
+									display: "flex",
+									alignItems: "flex-start",
+									gap: 10,
+									padding: "10px 18px",
+									borderBottom: "1px solid var(--line)",
 								}}
 							>
-								{mb.short}
-							</span>
-							<span
-								style={{
-									flex: 1,
-									fontFamily: "var(--w-font-body)",
-									fontSize: 12,
-									color: "var(--ink-3)",
-									overflow: "hidden",
-									textOverflow: "ellipsis",
-									whiteSpace: "nowrap",
-								}}
-							>
-								{mb.sig}
-							</span>
+								<div style={{ flex: 1, minWidth: 0 }}>
+									<div
+										style={{
+											fontFamily: "var(--w-font-display)",
+											fontWeight: 600,
+											fontSize: 12.5,
+											color: "var(--ink)",
+										}}
+									>
+										{s.n}
+									</div>
+									<div
+										style={{
+											fontFamily: "var(--w-font-body)",
+											fontSize: 11,
+											color: "var(--ink-3)",
+											marginTop: 2,
+											whiteSpace: "pre-line",
+											lineHeight: 1.5,
+										}}
+									>
+										{s.body.length ? s.body.join("\n") : "— bez textu —"}
+									</div>
+								</div>
+								<span
+									data-ghost
+									onClick={() => setSigEd({ id: s.id, n: s.n, b: s.body.join("\n") })}
+									style={{ fontSize: 11, padding: "4px 10px", flex: "none" }}
+								>
+									Upravit
+								</span>
+								<span
+									data-ghost
+									onClick={() => {
+										m.deleteSig(s.id);
+										showToast(`Podpis „${s.n}" smazán`);
+									}}
+									title="Smazat podpis"
+									style={{
+										fontSize: 11,
+										padding: "4px 10px",
+										flex: "none",
+										color: "var(--overdue)",
+									}}
+								>
+									Smazat
+								</span>
+							</div>
+						),
+					)}
+
+					{/* nový podpis (editor mimo seznam) */}
+					{sigEd && sigEd.id === null ? (
+						<SigEditor ed={sigEd} setEd={setSigEd} onSave={saveSig} />
+					) : (
+						<div style={{ padding: "10px 18px", borderBottom: "1px solid var(--line)" }}>
 							<span
 								data-ghost
-								onClick={() =>
-									showToast(`Úprava podpisu pro ${mb.short} — sdílený pro celou schránku`)
-								}
-								style={{ fontSize: 11, padding: "4px 10px", flex: "none" }}
+								onClick={() => setSigEd({ id: null, n: "", b: "" })}
+								style={{ fontSize: 11.5, padding: "5px 12px" }}
 							>
-								Upravit
+								+ Nový podpis
 							</span>
 						</div>
-					))}
+					)}
+
+					{/* výchozí podpis per schránka (= sigChoice, čte composer i odeslání) */}
+					<div
+						style={{
+							fontFamily: "var(--w-font-display)",
+							fontWeight: 700,
+							fontSize: 11,
+							letterSpacing: ".04em",
+							textTransform: "uppercase",
+							color: "var(--ink-3)",
+							padding: "12px 18px 4px",
+						}}
+					>
+						Výchozí podle schránky
+					</div>
+					{sigIdents.map((idn) => {
+						const cur = sigIdOf(m.sigChoice, idn.id);
+						return (
+							<div
+								key={idn.id}
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: 10,
+									padding: "9px 18px",
+									borderBottom: "1px solid var(--line)",
+									flexWrap: "wrap",
+								}}
+							>
+								<span
+									data-mbdot={idn.id}
+									style={{ width: 9, height: 9, borderRadius: "50%", flex: "none" }}
+								/>
+								<span
+									style={{
+										width: 78,
+										flex: "none",
+										fontFamily: "var(--w-font-mono)",
+										fontSize: 11,
+										color: "var(--ink-2)",
+									}}
+								>
+									{idn.label}
+								</span>
+								<div style={{ display: "flex", gap: 5, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+									{m.sigs.map((s) => (
+										<span
+											key={s.id}
+											onClick={() => m.setSigChoice(idn.id, s.id)}
+											data-statepill
+											data-on={cur === s.id || undefined}
+											style={{
+												fontFamily: "var(--w-font-display)",
+												fontWeight: 600,
+												fontSize: 10.5,
+												padding: "3px 10px",
+												borderRadius: 999,
+												cursor: "pointer",
+												whiteSpace: "nowrap",
+											}}
+										>
+											{s.n}
+										</span>
+									))}
+								</div>
+							</div>
+						);
+					})}
+
 					<div
 						style={{
 							fontFamily: "var(--w-font-body)",
@@ -604,7 +798,8 @@ export function NastaveniScreen() {
 							background: "var(--panel-2)",
 						}}
 					>
-						Podpis se doplňuje podle schránky, za kterou odpovídáš — ne podle toho, kdo píše.
+						Podpis se doplňuje podle schránky, za kterou odpovídáš — ne podle toho, kdo píše. V okně
+						psaní ho ještě přepneš tlačítkem Podpis. Volba i podpisy se ukládají do prohlížeče.
 					</div>
 				</div>
 

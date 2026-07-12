@@ -22,6 +22,7 @@ import {
 	ADM_SEED,
 	type AdmSeed,
 	GK,
+	type MailSig,
 	type MailThread,
 	MB,
 	NAST_SEED,
@@ -221,9 +222,14 @@ interface MailCtxValue {
 	setPerOsoba: (v: boolean) => void;
 	mbRead: Record<string, "per" | "shared">;
 	setMbRead: (mb: string, mode: "per" | "shared") => void;
-	// podpisy composeru (vzor Spark) — klíč = id schránky nebo "osobni", hodnota = id podpisu (SIGS)
+	// podpisy composeru (vzor Spark) — klíč = id schránky nebo "osobni", hodnota = id podpisu
 	sigChoice: Record<string, string>;
 	setSigChoice: (mb: string, sigId: string) => void;
+	// uživatelsky definované podpisy (Nastavení → Podpisy, persistováno watson-mail.sigs)
+	sigs: MailSig[];
+	addSig: (n: string, body: string[]) => void;
+	updateSig: (id: string, patch: { n?: string; body?: string[] }) => void;
+	deleteSig: (id: string) => void;
 	// gatekeeper
 	gkDone: Record<string, string>;
 	gkDecide: (id: string, verdict: "accept" | "acceptDone" | "block" | "blockDom") => void;
@@ -265,6 +271,7 @@ const LS = {
 	mbRead: "watson-mail.mbRead",
 	chatOff: "watson-mail.chatOff",
 	sig: "watson-mail.sig",
+	sigs: "watson-mail.sigs",
 };
 
 const loadJSON = <T,>(key: string, fallback: T): T => {
@@ -317,10 +324,15 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const [mbRead, setMbReadState] = useState<Record<string, "per" | "shared">>(() =>
 		loadJSON(LS.mbRead, {}),
 	);
-	// volba podpisu per identita — drží jen explicitní volby, defaulty řeší SigPicker.sigBody
+	// volba podpisu per identita — drží jen explicitní volby, defaulty řeší SigPicker.sigIdOf
 	const [sigChoice, setSigChoiceState] = useState<Record<string, string>>(() =>
 		loadJSON(LS.sig, {}),
 	);
+	// uživatelské podpisy — seed SIGS jen když v úložišti nic není (pak už žije edit)
+	const [sigs, setSigsState] = useState<MailSig[]>(() => {
+		const saved = loadJSON<MailSig[] | null>(LS.sigs, null);
+		return Array.isArray(saved) && saved.length ? saved : SIGS;
+	});
 	const [gkDone, setGkDone] = useState<Record<string, string>>({});
 	const [sd, setSdState] = useState<Record<string, SdState>>({});
 	const [soTh, setSoTh] = useState<string | null>(null);
@@ -695,7 +707,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			// MailThread:3652) — v editoru je jen náhled, do těla nepatří.
 			const mbKey = t.personal ? "osobni" : t.mb;
 			const sigId = sigChoice[mbKey] ?? (mbKey === "osobni" ? "kratky" : "plny");
-			const sig = SIGS.find((s) => s.id === sigId)?.body ?? [];
+			const sig = sigs.find((s) => s.id === sigId)?.body ?? [];
 			prevSend.current = {
 				id: t.id,
 				ov: ov[t.id] ? { ...ov[t.id] } : undefined,
@@ -740,7 +752,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 				});
 			}, 1000);
 		},
-		[outgoingText, ov, attached, sentX, setOv, detach, drafts, sigChoice],
+		[outgoingText, ov, attached, sentX, setOv, detach, drafts, sigChoice, sigs],
 	);
 
 	/** Řetěz ochran před odesláním (prototyp checkSend, ř. 3406–3429).
@@ -882,6 +894,47 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 		setSigChoiceState((s) => {
 			const next = { ...s, [mb]: sigId };
 			localStorage.setItem(LS.sig, JSON.stringify(next));
+			return next;
+		});
+	}, []);
+	const addSig = useCallback((n: string, body: string[]) => {
+		setSigsState((prev) => {
+			const next = [...prev, { id: crypto.randomUUID(), n: n.trim() || "Podpis", body }];
+			try {
+				localStorage.setItem(LS.sigs, JSON.stringify(next));
+			} catch {
+				/* plné úložiště */
+			}
+			return next;
+		});
+	}, []);
+	const updateSig = useCallback((id: string, patch: { n?: string; body?: string[] }) => {
+		setSigsState((prev) => {
+			const next = prev.map((s) =>
+				s.id === id
+					? {
+							...s,
+							...(patch.n !== undefined ? { n: patch.n } : null),
+							...(patch.body !== undefined ? { body: patch.body } : null),
+						}
+					: s,
+			);
+			try {
+				localStorage.setItem(LS.sigs, JSON.stringify(next));
+			} catch {
+				/* plné úložiště */
+			}
+			return next;
+		});
+	}, []);
+	const deleteSig = useCallback((id: string) => {
+		setSigsState((prev) => {
+			const next = prev.filter((s) => s.id !== id);
+			try {
+				localStorage.setItem(LS.sigs, JSON.stringify(next));
+			} catch {
+				/* plné úložiště */
+			}
 			return next;
 		});
 	}, []);
@@ -1053,6 +1106,10 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			setMbRead,
 			sigChoice,
 			setSigChoice,
+			sigs,
+			addSig,
+			updateSig,
+			deleteSig,
 			gkDone,
 			gkDecide,
 			gkLeft,
@@ -1133,6 +1190,10 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			setMbRead,
 			sigChoice,
 			setSigChoice,
+			sigs,
+			addSig,
+			updateSig,
+			deleteSig,
 			gkDone,
 			gkDecide,
 			gkLeft,

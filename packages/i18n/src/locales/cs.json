@@ -208,7 +208,9 @@
 		"members_few": "{{count}} členové",
 		"members_other": "{{count}} členů",
 		"showActive": "← Aktivní projekty",
-		"archivedEmpty": "Žádné archivované projekty."
+		"archivedEmpty": "Žádné archivované projekty.",
+		"archiveAction": "Archivovat",
+		"unarchiveAction": "Odarchivovat"
 	},
 	"calendar": {
 		"prev": "Předchozí",
@@ -817,7 +819,9 @@
 		"assignNone": "Nikdo",
 		"tplSuffix": "(šablona)",
 		"tplCustomDesc": "Vlastní šablona",
-		"assignUnknown": "Přiřazeno (člen mimo tým)"
+		"assignUnknown": "Přiřazeno (člen mimo tým)",
+		"check": "Zaškrtnout",
+		"uncheck": "Odškrtnout"
 	},
 	"prehled": {
 		"chipAll": "Vše",

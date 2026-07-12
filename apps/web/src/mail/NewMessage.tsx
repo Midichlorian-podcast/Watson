@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { showToast } from "../lib/toast";
 import { MB, TPL } from "./data";
-import { SigBlock, SigPicker } from "./SigPicker";
+import { RecipientField, SigBlock, SigPicker } from "./SigPicker";
 import { useMail } from "./state";
 
 /** Regex „text slibuje přílohu" — shodný se state.checkSend (prototyp ř. 3417). */
@@ -44,6 +44,8 @@ interface Att {
 interface NewDraft {
 	from: string;
 	to: string;
+	cc: string;
+	bcc: string;
 	subj: string;
 	body: string;
 	atts: string[];
@@ -57,6 +59,8 @@ const loadNewDraft = (): NewDraft | null => {
 		return {
 			from: typeof d.from === "string" ? d.from : "info",
 			to: typeof d.to === "string" ? d.to : "",
+			cc: typeof d.cc === "string" ? d.cc : "",
+			bcc: typeof d.bcc === "string" ? d.bcc : "",
 			subj: typeof d.subj === "string" ? d.subj : "",
 			body: typeof d.body === "string" ? d.body : "",
 			atts: Array.isArray(d.atts) ? d.atts.filter((a) => typeof a === "string") : [],
@@ -72,6 +76,10 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	// výchozí identita info@ (prototyp state.newFrom: 'info', ř. 2284)
 	const [from, setFrom] = useState(saved?.from ?? "info");
 	const [to, setTo] = useState(saved?.to ?? "");
+	const [cc, setCc] = useState(saved?.cc ?? "");
+	const [bcc, setBcc] = useState(saved?.bcc ?? "");
+	// Cc/Bcc rozbalené, když z minula zůstala kopie (jinak schované za „Kopie")
+	const [ccOn, setCcOn] = useState(!!(saved?.cc || saved?.bcc));
 	const [subj, setSubj] = useState(saved?.subj ?? "");
 	const [body, setBody] = useState(saved?.body ?? "");
 	const [atts, setAtts] = useState<Att[]>(() =>
@@ -125,18 +133,19 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	useEffect(() => {
 		const timer = setTimeout(() => {
 			try {
-				if (!to && !subj && !body && atts.length === 0) localStorage.removeItem(LS_NEW);
+				if (!to && !cc && !bcc && !subj && !body && atts.length === 0)
+					localStorage.removeItem(LS_NEW);
 				else
 					localStorage.setItem(
 						LS_NEW,
-						JSON.stringify({ from, to, subj, body, atts: atts.map((a) => a.label) }),
+						JSON.stringify({ from, to, cc, bcc, subj, body, atts: atts.map((a) => a.label) }),
 					);
 			} catch {
 				/* plné úložiště — koncept zůstává aspoň v paměti */
 			}
 		}, 1000);
 		return () => clearTimeout(timer);
-	}, [from, to, subj, body, atts]);
+	}, [from, to, cc, bcc, subj, body, atts]);
 
 	const isFwd = subj.startsWith("Fwd:");
 	const extOn = hasExternal(to);
@@ -145,6 +154,9 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	const reset = () => {
 		setFrom("info");
 		setTo("");
+		setCc("");
+		setBcc("");
+		setCcOn(false);
 		setSubj("");
 		setBody("");
 		setAtts([]);
@@ -360,20 +372,10 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 				>
 					Komu
 				</span>
-				<input
+				<RecipientField
 					value={to}
-					onChange={(e) => setTo(e.target.value)}
+					onChange={setTo}
 					placeholder="jméno nebo adresa… (našeptává z kontaktů)"
-					style={{
-						flex: 1,
-						minWidth: 0,
-						border: "none",
-						background: "transparent",
-						outline: "none",
-						fontFamily: "var(--w-font-body)",
-						fontSize: 13,
-						color: "var(--ink)",
-					}}
 				/>
 				{extOn && (
 					<span
@@ -391,18 +393,80 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 						externí
 					</span>
 				)}
-				<span
-					onClick={() => showToast("Kopie a skrytá kopie přijdou s reálným odesíláním (M2)")}
-					style={{
-						fontFamily: "var(--w-font-mono)",
-						fontSize: 10,
-						color: "var(--ink-3)",
-						cursor: "pointer",
-					}}
-				>
-					Kopie
-				</span>
+				{!ccOn && (
+					<span
+						onClick={() => setCcOn(true)}
+						title="Přidat kopii (Cc) a skrytou kopii (Bcc)"
+						style={{
+							fontFamily: "var(--w-font-mono)",
+							fontSize: 10,
+							color: "var(--brass-text)",
+							fontWeight: 600,
+							cursor: "pointer",
+							flex: "none",
+						}}
+					>
+						Kopie
+					</span>
+				)}
 			</div>
+
+			{/* Kopie (Cc) + Skrytá kopie (Bcc) — rozbalí se tlačítkem „Kopie" (parita s MailThread) */}
+			{ccOn && (
+				<>
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							gap: 8,
+							borderTop: "1px solid var(--line)",
+							padding: "8px 0",
+						}}
+					>
+						<span
+							style={{
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 600,
+								fontSize: 11,
+								color: "var(--ink-3)",
+								width: 52,
+								flex: "none",
+							}}
+						>
+							Kopie
+						</span>
+						<RecipientField
+							value={cc}
+							onChange={setCc}
+							placeholder="Cc — kopie (našeptává z kontaktů)"
+							autoFocus
+						/>
+					</div>
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							gap: 8,
+							borderTop: "1px solid var(--line)",
+							padding: "8px 0",
+						}}
+					>
+						<span
+							style={{
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 600,
+								fontSize: 11,
+								color: "var(--ink-3)",
+								width: 52,
+								flex: "none",
+							}}
+						>
+							Skrytá
+						</span>
+						<RecipientField value={bcc} onChange={setBcc} placeholder="Bcc — skrytá kopie" />
+					</div>
+				</>
+			)}
 
 			{/* Předmět (ř. 1825–1829) */}
 			<div

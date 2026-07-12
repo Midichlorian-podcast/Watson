@@ -10,7 +10,8 @@ import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
 import { deadlineLabel, rowDue, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
-import { pushUndo } from "../lib/undo";
+import { deleteTaskWithUndo, pushUndo } from "../lib/undo";
+import { useContextMenu } from "./ContextMenu";
 
 /**
  * Nástěnka — sloupce dle `statuses` (R9: drop do sloupce s is_done ⇄ completed_at).
@@ -44,6 +45,7 @@ export function Board({
 	const { t } = useTranslation();
 	const { open } = useTaskDetail();
 	const { openAdd } = useAddTask();
+	const cm = useContextMenu();
 	const { metaOf } = useRowMeta();
 	const { data: session } = useSession();
 	const uid = session?.user?.id;
@@ -190,6 +192,11 @@ export function Board({
 		});
 	};
 
+	// Priorita z kontextového menu — per-sloupcový PATCH (nepřepíše kolegův souběžný
+	// zápis jiného sloupce, R6/save-UX invariant); barva = priorita se odvodí z borderu.
+	const setPriority = (tk: TaskRow, p: 1 | 2 | 3 | 4) =>
+		void powerSync.execute("UPDATE tasks SET priority = ? WHERE id = ?", [p, tk.id]);
+
 	if (columns.length === 0) {
 		return (
 			<p className="rounded-xl border border-line border-dashed px-4 py-10 text-center text-ink-3 text-sm">
@@ -265,6 +272,32 @@ export function Board({
 										setOverCard((c) => (c?.id === tk.id && c.pos === pos ? c : { id: tk.id, pos }));
 									}}
 									onClick={() => open(tk.id)}
+									onContextMenu={(e) =>
+										cm.open(e, [
+											{ label: t("ctx.open"), onClick: () => open(tk.id) },
+											{
+												label: done ? t("swipe.revert") : t("bulk.done"),
+												onClick: () => void toggleTask(tk, uid),
+											},
+											{
+												label: t("detail.priority"),
+												children: ([1, 2, 3, 4] as const).map((p) => ({
+													label: `P${p}`,
+													on: (tk.priority ?? 4) === p,
+													onClick: () => setPriority(tk, p),
+												})),
+											},
+											{ sep: true },
+											{
+												label: t("bulk.delete"),
+												danger: true,
+												onClick: () => {
+													void deleteTaskWithUndo(tk.id);
+													showToast(t("bulk.deletedToast", { count: 1 }));
+												},
+											},
+										])
+									}
 									className="cursor-grab rounded-[11px] border bg-card transition-shadow hover:shadow-md"
 									style={{
 										padding: "11px 12px",

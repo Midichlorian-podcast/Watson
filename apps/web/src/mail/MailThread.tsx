@@ -12,7 +12,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
 import { showToast } from "../lib/toast";
 import { MB, P, SLA, STL, TPL } from "./data";
 import { HostPreview } from "./HostPreview";
-import { SigBlock, SigPicker } from "./SigPicker";
+import { RecipientField, SigBlock, SigPicker } from "./SigPicker";
 import { useMail } from "./state";
 import { TaskModal } from "./TaskModal";
 
@@ -153,20 +153,6 @@ const menuHint: CSSProperties = {
 	color: "var(--ink-3)",
 };
 
-/** Input Cc/Bcc (prototyp ř. 1219–1220). */
-const ccInput: CSSProperties = {
-	flex: 1,
-	minWidth: 150,
-	border: "1px solid var(--line)",
-	background: "var(--panel-2)",
-	borderRadius: 9,
-	padding: "7px 10px",
-	fontFamily: "var(--w-font-body)",
-	fontSize: 12,
-	color: "var(--ink)",
-	outline: "none",
-};
-
 const CheckSvg = ({ size = 12, style }: { size?: number; style?: CSSProperties }) => (
 	<svg width={size} height={size} viewBox="0 0 14 14" fill="none" style={style} aria-hidden>
 		<path
@@ -258,6 +244,8 @@ export function MailThread() {
 	const [cpop, setCpop] = useState<CPop>(null);
 	const [lnkUrl, setLnkUrl] = useState("https://");
 	const [ccOn, setCcOn] = useState(false);
+	const [cc, setCc] = useState("");
+	const [bcc, setBcc] = useState("");
 	const [conf, setConf] = useState(false);
 	const [hostPrev, setHostPrev] = useState(false);
 	const [taskM, setTaskM] = useState(false);
@@ -299,6 +287,8 @@ export function MailThread() {
 		setPop(null);
 		setCpop(null);
 		setCcOn(false);
+		setCc("");
+		setBcc("");
 		setConf(false);
 		setHostPrev(false);
 		setTaskM(false);
@@ -3082,12 +3072,19 @@ export function MailThread() {
 						</div>
 						{ccOn && (
 							<div style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-								<input
+								<RecipientField
+									value={cc}
+									onChange={setCc}
 									placeholder="Cc — kopie (našeptává z kontaktů)"
-									title="Reply-all guard ohlídá externí adresy v kopii"
-									style={ccInput}
+									bordered
+									autoFocus
 								/>
-								<input placeholder="Bcc — skrytá kopie" style={ccInput} />
+								<RecipientField
+									value={bcc}
+									onChange={setBcc}
+									placeholder="Bcc — skrytá kopie"
+									bordered
+								/>
 							</div>
 						)}
 

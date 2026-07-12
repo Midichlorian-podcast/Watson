@@ -26,7 +26,7 @@ const STATUSES = [
 ] as const;
 
 /** Patch sloupců projektu (write-path: tabulka `projects`, self-členství). */
-async function patchProject(id: string, data: Record<string, unknown>) {
+export async function patchProject(id: string, data: Record<string, unknown>) {
 	const cols = Object.keys(data);
 	if (cols.length === 0) return;
 	const sets = cols.map((c) => `${c} = ?`).join(", ");

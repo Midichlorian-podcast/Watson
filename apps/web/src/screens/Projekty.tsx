@@ -1,8 +1,11 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useState } from "react";
+import { useContextMenu } from "../components/ContextMenu";
+import { patchProject } from "../components/ProjectDetailPanel";
 import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
 import { initials } from "../lib/format";
@@ -24,6 +27,8 @@ const ZERO: Counts = { open: 0, done: 0, total: 0 };
  */
 export function Projekty() {
 	const { t } = useTranslation();
+	const navigate = useNavigate();
+	const cm = useContextMenu();
 	const projects = useProjects();
 	const { open } = useProjectDetail();
 
@@ -201,20 +206,43 @@ export function Projekty() {
 						gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))",
 					}}
 				>
-					{shown.map((p) => (
-						<ProjectCard
-							key={p.id}
-							project={p}
-							counts={counts.get(p.id) ?? ZERO}
-							week={weekStats.get(p.id)}
-							members={memberCounts.get(p.id) ?? 0}
-							avatars={(membersByProject.get(p.id) ?? []).map((uid) => ({
-								name: nameById.get(uid) ?? "?",
-								isOwner: uid === p.owner_id,
-							}))}
-							onOpen={() => open(p.id)}
-						/>
-					))}
+					{shown.map((p) => {
+						const isArchived = (p.status ?? "active") === "archive";
+						return (
+							<ProjectCard
+								key={p.id}
+								project={p}
+								counts={counts.get(p.id) ?? ZERO}
+								week={weekStats.get(p.id)}
+								members={memberCounts.get(p.id) ?? 0}
+								avatars={(membersByProject.get(p.id) ?? []).map((uid) => ({
+									name: nameById.get(uid) ?? "?",
+									isOwner: uid === p.owner_id,
+								}))}
+								onOpen={() => open(p.id)}
+								onContextMenu={(e) =>
+									cm.open(e, [
+										{
+											label: t("projects.viewTasks"),
+											onClick: () => void navigate({ to: "/ukoly", search: { projekt: p.id } }),
+										},
+										{ label: t("projects.editProject"), onClick: () => open(p.id) },
+										{ sep: true },
+										{
+											label: isArchived
+												? t("projects.unarchiveAction")
+												: t("projects.archiveAction"),
+											onClick: () =>
+												void patchProject(p.id, {
+													status: isArchived ? "active" : "archive",
+													archived_at: isArchived ? null : new Date().toISOString(),
+												}),
+										},
+									])
+								}
+							/>
+						);
+					})}
 				</div>
 			)}
 
@@ -425,6 +453,7 @@ function ProjectCard({
 	members,
 	avatars,
 	onOpen,
+	onContextMenu,
 }: {
 	project: ProjectRow;
 	counts: Counts;
@@ -433,6 +462,7 @@ function ProjectCard({
 	members: number;
 	avatars: { name: string; isOwner: boolean }[];
 	onOpen: () => void;
+	onContextMenu: (e: MouseEvent) => void;
 }) {
 	const { t, i18n } = useTranslation();
 	const pct = counts.total > 0 ? Math.round((counts.done / counts.total) * 100) : 0;
@@ -462,6 +492,7 @@ function ProjectCard({
 		<button
 			type="button"
 			onClick={onOpen}
+			onContextMenu={onContextMenu}
 			className="flex flex-col rounded-2xl border border-line bg-card p-4 text-left shadow-[var(--w-shadow-sm)] transition hover:-translate-y-0.5 hover:shadow-[var(--w-shadow)]"
 		>
 			<div className="flex items-center gap-2">
