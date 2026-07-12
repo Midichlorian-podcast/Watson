@@ -88,7 +88,9 @@ const freshDraft = (project: string | null): Draft => ({
 	priority: 2,
 	assignees: [],
 	assignMode: "any",
-	dateKind: "dnes",
+	// Výchozí = BEZ termínu (uživatel: nový úkol nemá být defaultně „dnes"). Kontextové
+	// otevření (kalendář/den) termín dodá přes `initial.date`; „Dnes" jde vybrat ručně.
+	dateKind: "none",
 	customDate: "",
 	time: "",
 	duration: 0,
