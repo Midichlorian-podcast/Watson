@@ -668,3 +668,37 @@ Multi-agent audit (19 auditorů × adversariální ověření každého nálezu)
 - **⚪ LOW** `rowMeta.tsx:78` — Avatary přiřazených z jiného prostoru se zobrazí jako '?' (team scoped na activeWs, asg globální) [correctness]
   - Scénář: Uživatel je členem ≥2 prostorů (A i B) s neshodným členstvím. V aktivním prostoru A otevře nescopovanou obrazovku Úkoly (Ukoly.tsx:50-51, SELECT * FROM tasks bez ws filtru), Nadcházející nebo Oblíbené. Úkol patřící prostoru B, přiřazený uživateli, který je členem jen B (ne A), se vykreslí přes TaskItem → metaOf → meta.avatars; jeho iniciály jsou "?" (rowMeta.tsx:106), protože nameMap se plní jen ze členů activeWs=A (ř. 78-88). Pilulka „Každý zvlášť N/M" počítá správně, nečitelná je jen identita lidí. Jde o degradaci čitelnosti avatarů v agregovaných cross-workspace seznamech, bez dopadu na správnost dat či bezpečnost. Oprava: řešit jména členů napříč všemi prostory (existující useAllMembers z lib/overview.ts) místo jen activeWs. Dílčí bod o neomezené cache je nepodstatný — Map se invaliduje s daty přes useMemo deps.
   - Oprava: Načítat jména členů napříč všemi prostory uživatele (nebo globální members endpoint) místo jen activeWs; pro cache zvážit horní mez / WeakMap.
+---
+
+## Vyřešení — 2026-07-12 (commity c48c248, f6e0873, 7986a94)
+
+Opravy provedeny multi-agentním fix workflow (14 disjunktních klastrů) +
+centrální dořešení. **~125 nálezů opraveno** (všechny HIGH + většina MED +
+bezpečné LOW). Gates po opravách: `tsc` celý workspace čistý, occurrences
+14/14, quickadd corpus 321/321 (aktualizován stale case „za N dní" + přidán
+kanonický), prettier čistý, všech 12 rout renderuje bez error-boundary.
+
+### Přeskočeno / odloženo (16), s důvodem
+Většina jsou **falešné poplachy** (audit sám značil `uncertain`, nebo kód už
+guard měl) a subjektivní/kosmetické LOW:
+- **Falešné pro daný soubor** (guard už existuje): kbNav.tsx:29 zkratky vs.
+  popover (skutečný fix doplněn v TasksToolbar — viz níže); BulkBar.tsx:153
+  Esc (guard `openId || [data-esc-layer]` už je).
+- **Uncertain / produktové rozhodnutí**: duplikace opakovaného úkolu a
+  doneCount; řazení „dle termínu" null=∞; dvojité odeslání v MailPeek
+  (React odmountuje tlačítko dřív).
+- **Vyžaduje širší změnu než LOW**: CalendarWidget filtr firmy + limit dotazu
+  (kříží Prehled/PeekPanel); Velin urgentní KPI z ořezaného digestu; undo
+  toast 5→10 s (lib/toast.tsx); handoffName offline; chain manual gate;
+  Calendar dotykové cíle (1:1 s Cloud Design).
+- **Záměrný port prototypu**: Seznamy reset odarchivuje.
+
+### Dořešeno centrálně nad rámec klastrů (commit 7986a94)
+- **MED** TasksToolbar Filtr/Řazení popover → `data-esc-layer` + Esc zavře
+  (skutečný nositel „zkratky vs. popover").
+- **MED** state.doSend připojí zvolený podpis (SigBlock) při odeslání.
+
+### Deferred backlog (koncepční, mimo tuto dávku)
+- undo řetězců postupů vyžaduje 2× ⌘Z (sloučení patří do toggleTask/tasks.ts).
+- CalendarWidget filtr firmy + limit; Velin urgentní KPI sladit s NotifCenter.
+- undo action-toast TTL 10 s (lib/toast.tsx).
