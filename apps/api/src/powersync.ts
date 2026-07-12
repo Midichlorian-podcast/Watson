@@ -334,6 +334,20 @@ const TABLES: Record<string, TableDef> = {
 		workspaceVia: { kind: "column", col: "workspace_id" },
 	},
 	// Seznamy — checklisty na akce (handoff 2026-07-10): instance + sekce + položky + šablony.
+	contacts: {
+		columns: {
+			workspace_id: "text",
+			name: "text",
+			email: "text",
+			org: "text",
+			role: "text",
+			areas: "text",
+			note: "text",
+		},
+		hasUpdatedAt: true,
+		creatorCol: "created_by",
+		workspaceVia: { kind: "column", col: "workspace_id" },
+	},
 	lists: {
 		columns: {
 			workspace_id: "text",

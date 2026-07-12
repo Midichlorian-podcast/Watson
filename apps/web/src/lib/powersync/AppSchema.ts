@@ -309,6 +309,21 @@ const list_templates = new Table(
 	{ indexes: { by_workspace: ["workspace_id"] } },
 );
 
+const contacts = new Table(
+	{
+		workspace_id: column.text,
+		name: column.text,
+		email: column.text,
+		org: column.text,
+		role: column.text,
+		areas: column.text,
+		note: column.text,
+		created_by: column.text,
+		created_at: column.text,
+	},
+	{ indexes: { by_workspace: ["workspace_id"] } },
+);
+
 export const AppSchema = new Schema({
 	tasks,
 	projects,
@@ -330,6 +345,7 @@ export const AppSchema = new Schema({
 	list_sections,
 	list_items,
 	list_templates,
+	contacts,
 });
 
 export type Database = (typeof AppSchema)["types"];
@@ -351,4 +367,5 @@ export type GoalMilestoneRow = Database["goal_milestones"];
 export type ListRow = Database["lists"];
 export type ListSectionRow = Database["list_sections"];
 export type ListItemRow = Database["list_items"];
+export type ContactRow = Database["contacts"];
 export type ListTemplateRow = Database["list_templates"];

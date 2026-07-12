@@ -10,6 +10,7 @@
  *    na konci mailu (SigBlock) — do těla se nevpisuje, při odeslání se přidá.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useContacts } from "../lib/contacts";
 import { CONTACTS, type MailSig } from "./data";
 import { useMail } from "./state";
 
@@ -55,6 +56,19 @@ export function RecipientField({
 	const [focus, setFocus] = useState(false);
 	const inRef = useRef<HTMLInputElement>(null);
 	const chips = useMemo(() => toChips(value), [value]);
+	// REÁLNÉ kontakty (tabulka contacts) mají přednost; demo (P + schránky MB) doplní.
+	const realContacts = useContacts();
+	const pool = useMemo(() => {
+		const seen = new Set<string>();
+		const out: { name: string; addr: string }[] = [];
+		for (const c of [...realContacts, ...CONTACTS]) {
+			const k = c.addr.toLowerCase();
+			if (!c.addr || seen.has(k)) continue;
+			seen.add(k);
+			out.push({ name: c.name, addr: c.addr });
+		}
+		return out;
+	}, [realContacts]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: autofocus jen při mountu
 	useEffect(() => {
@@ -66,12 +80,14 @@ export function RecipientField({
 		const needle = q.trim().toLowerCase();
 		if (!needle) return [];
 		const has = new Set(chips.map((c) => c.toLowerCase()));
-		return CONTACTS.filter(
-			(c) =>
-				!has.has(c.addr.toLowerCase()) &&
-				(c.name.toLowerCase().includes(needle) || c.addr.toLowerCase().includes(needle)),
-		).slice(0, 6);
-	}, [q, chips]);
+		return pool
+			.filter(
+				(c) =>
+					!has.has(c.addr.toLowerCase()) &&
+					(c.name.toLowerCase().includes(needle) || c.addr.toLowerCase().includes(needle)),
+			)
+			.slice(0, 6);
+	}, [q, chips, pool]);
 
 	const open = focus && sugg.length > 0;
 

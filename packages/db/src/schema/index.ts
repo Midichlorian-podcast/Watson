@@ -7,6 +7,7 @@
 
 export * from "./auth";
 export * from "./collab";
+export * from "./contacts";
 export * from "./enums";
 export * from "./flow";
 export * from "./goals";

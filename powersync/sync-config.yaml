@@ -90,3 +90,7 @@ bucket_definitions:
       - SELECT id, workspace_id, name, description, sections, created_by, created_at
         FROM list_templates
         WHERE workspace_id = bucket.workspace_id
+      # Kontakty — reálný adresář (sféra = workspace); zdroj pro našeptávání v mailu.
+      - SELECT id, workspace_id, name, email, org, role, areas, note, created_by, created_at
+        FROM contacts
+        WHERE workspace_id = bucket.workspace_id
