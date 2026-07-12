@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import { showToast } from "../lib/toast";
+import { useFocusTrap } from "../lib/useFocusTrap";
 import { P } from "./data";
 
 type Provider = "gmail" | "m365" | "imap";
@@ -46,13 +47,7 @@ const hint = {
 	margin: "10px 0 8px",
 } as const;
 
-export function MailboxWizard({
-	open,
-	onClose,
-}: {
-	open: boolean;
-	onClose: () => void;
-}) {
+export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
 	const [step, setStep] = useState(1);
 	const [prov, setProv] = useState<Provider>("gmail");
 	const [auth, setAuth] = useState(false);
@@ -61,6 +56,18 @@ export function MailboxWizard({
 	const [port, setPort] = useState("143");
 	const [failPort, setFailPort] = useState("143");
 	const [ppl, setPpl] = useState<Record<string, boolean>>({ ad: true, ps: true });
+	// a11y: fokus dovnitř modalu + cyklení Tab uvnitř + návrat po zavření (audit MED MailboxWizard.tsx:120)
+	const trapRef = useFocusTrap<HTMLDivElement>(open);
+
+	// scroll-lock pozadí po dobu otevření modalu (audit MED MailboxWizard.tsx:120)
+	useEffect(() => {
+		if (!open) return;
+		const prev = document.body.style.overflow;
+		document.body.style.overflow = "hidden";
+		return () => {
+			document.body.style.overflow = prev;
+		};
+	}, [open]);
 
 	// otevření = čistý průvodce (prototyp wizOpen, ř. 3304)
 	useEffect(() => {
@@ -97,6 +104,9 @@ export function MailboxWizard({
 		showToast("Připojení funguje");
 	};
 
+	// krok 2 = přihlášení; „Pokračovat" povol až po ověření (OAuth) / testu (IMAP)
+	const canNext = step !== 2 || (prov === "imap" ? tested === "ok" : auth);
+
 	const finish = () => {
 		const n = PIDS.filter((pid) => ppl[pid]).length;
 		showToast(
@@ -118,6 +128,8 @@ export function MailboxWizard({
 			}}
 		>
 			<div
+				ref={trapRef}
+				tabIndex={-1}
 				data-screen-label="Připojení schránky"
 				onClick={(e) => e.stopPropagation()}
 				style={{
@@ -126,6 +138,7 @@ export function MailboxWizard({
 					left: "50%",
 					transform: "translate(-50%,-50%)",
 					zIndex: 80,
+					outline: "none",
 					width: "min(440px, 94vw)",
 					maxHeight: "88vh",
 					overflow: "auto",
@@ -139,7 +152,15 @@ export function MailboxWizard({
 			>
 				{/* hlavička s krokem (prototyp ř. 1844–1848) */}
 				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 800, fontSize: 14.5, color: "var(--ink)", flex: 1 }}>
+					<span
+						style={{
+							fontFamily: "var(--w-font-display)",
+							fontWeight: 800,
+							fontSize: 14.5,
+							color: "var(--ink)",
+							flex: 1,
+						}}
+					>
 						Připojit schránku
 					</span>
 					<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)" }}>
@@ -157,7 +178,9 @@ export function MailboxWizard({
 				{/* krok 1 — poskytovatel (prototyp ř. 1849–1856) */}
 				{step === 1 && (
 					<>
-						<div style={hint}>Odkud schránka je? Multi-doména i mix poskytovatelů je v pořádku.</div>
+						<div style={hint}>
+							Odkud schránka je? Multi-doména i mix poskytovatelů je v pořádku.
+						</div>
 						<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
 							{PROVS.map((p) => (
 								<span
@@ -169,7 +192,13 @@ export function MailboxWizard({
 										setAuth(false);
 										setTested(null);
 									}}
-									style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 12, padding: "9px 13px", borderRadius: 11 }}
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 600,
+										fontSize: 12,
+										padding: "9px 13px",
+										borderRadius: 11,
+									}}
 								>
 									{p.l}
 								</span>
@@ -183,9 +212,24 @@ export function MailboxWizard({
 					<>
 						<div style={hint}>Přihlášení proběhne u poskytovatele — Watson heslo nikdy nevidí.</div>
 						{auth ? (
-							<div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--success-soft)", borderRadius: 10, padding: "9px 12px" }}>
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: 8,
+									background: "var(--success-soft)",
+									borderRadius: 10,
+									padding: "9px 12px",
+								}}
+							>
 								<span style={{ color: "var(--success-ink)", fontWeight: 700 }}>✓</span>
-								<span style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--success-ink)" }}>
+								<span
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 12,
+										color: "var(--success-ink)",
+									}}
+								>
 									Ověřeno — token v šifrovaném vaultu
 								</span>
 							</div>
@@ -212,20 +256,62 @@ export function MailboxWizard({
 					<>
 						<div style={hint}>Servery zadáš ručně — funguje s kýmkoli.</div>
 						{tested === "fail" && (
-							<div style={{ display: "flex", gap: 8, alignItems: "flex-start", border: "1px solid var(--ink-3)", borderRadius: 10, padding: "8px 11px", marginBottom: 8 }}>
-								<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 800, fontSize: 12, color: "var(--ink)", flex: "none" }}>⚠</span>
-								<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
+							<div
+								style={{
+									display: "flex",
+									gap: 8,
+									alignItems: "flex-start",
+									border: "1px solid var(--ink-3)",
+									borderRadius: 10,
+									padding: "8px 11px",
+									marginBottom: 8,
+								}}
+							>
+								<span
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 800,
+										fontSize: 12,
+										color: "var(--ink)",
+										flex: "none",
+									}}
+								>
+									⚠
+								</span>
+								<span
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 11.5,
+										color: "var(--ink-2)",
+										lineHeight: 1.5,
+									}}
+								>
 									{/* lidská hláška dle auditu A-01 — co se stalo + konkrétní rada */}
-									Server odmítl spojení na portu {failPort} — zkus 993 (šifrované
-									IMAP), nebo ověř u poskytovatele, že máš IMAP zapnutý. Heslo se
-									neodeslalo.
+									Server odmítl spojení na portu {failPort} — zkus 993 (šifrované IMAP), nebo ověř u
+									poskytovatele, že máš IMAP zapnutý. Heslo se neodeslalo.
 								</span>
 							</div>
 						)}
 						{tested === "ok" && (
-							<div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--success-soft)", borderRadius: 10, padding: "8px 11px", marginBottom: 8 }}>
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: 8,
+									background: "var(--success-soft)",
+									borderRadius: 10,
+									padding: "8px 11px",
+									marginBottom: 8,
+								}}
+							>
 								<span style={{ color: "var(--success-ink)", fontWeight: 700 }}>✓</span>
-								<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--success-ink)" }}>
+								<span
+									style={{
+										fontFamily: "var(--w-font-body)",
+										fontSize: 11.5,
+										color: "var(--success-ink)",
+									}}
+								>
 									Připojení funguje — IMAP i SMTP odpovídají.
 								</span>
 							</div>
@@ -234,7 +320,12 @@ export function MailboxWizard({
 							<input placeholder="IMAP server — imap.forpsi.com" style={inputStyle} />
 							<input
 								value={port}
-								onChange={(e) => setPort(e.target.value)}
+								onChange={(e) => {
+									setPort(e.target.value);
+									// změna portu ruší předchozí výsledek testu — jinak by po úspěchu na 993
+									// zůstal „ok" i po přepnutí na 143 (audit LOW MailboxWizard.tsx:317)
+									setTested(null);
+								}}
 								title="IMAP port — 993 je šifrovaný standard"
 								style={inputStyle}
 							/>
@@ -246,7 +337,11 @@ export function MailboxWizard({
 							<input placeholder="přihlašovací jméno" autoComplete="off" style={inputStyle} />
 							<input type="password" placeholder="heslo" autoComplete="off" style={inputStyle} />
 						</div>
-						<span data-ghost onClick={doTest} style={{ display: "inline-flex", fontSize: 11, padding: "6px 12px", marginTop: 8 }}>
+						<span
+							data-ghost
+							onClick={doTest}
+							style={{ display: "inline-flex", fontSize: 11, padding: "6px 12px", marginTop: 8 }}
+						>
 							{tested === "fail" ? "Otestovat znovu" : "Otestovat připojení"}
 						</span>
 					</>
@@ -255,7 +350,9 @@ export function MailboxWizard({
 				{/* krok 3 — lidé s přístupem (prototyp ř. 1883–1894) */}
 				{step === 3 && (
 					<>
-						<div style={hint}>Kdo schránku uvidí? Ostatním v UI nebude existovat. Doladíš pak v matici.</div>
+						<div style={hint}>
+							Kdo schránku uvidí? Ostatním v UI nebude existovat. Doladíš pak v matici.
+						</div>
 						<div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
 							{PIDS.map((pid) => {
 								const p = P[pid];
@@ -266,11 +363,31 @@ export function MailboxWizard({
 										data-statepill
 										data-on={ppl[pid] || undefined}
 										onClick={() => setPpl((s) => ({ ...s, [pid]: !s[pid] }))}
-										style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10.5, padding: "3px 10px 3px 4px", borderRadius: 999 }}
+										style={{
+											display: "inline-flex",
+											alignItems: "center",
+											gap: 5,
+											fontFamily: "var(--w-font-display)",
+											fontWeight: 600,
+											fontSize: 10.5,
+											padding: "3px 10px 3px 4px",
+											borderRadius: 999,
+										}}
 									>
 										<span
 											data-av={p.av || undefined}
-											style={{ width: 17, height: 17, borderRadius: "50%", background: "var(--avatar-navy)", color: "#fff", fontSize: 7, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+											style={{
+												width: 17,
+												height: 17,
+												borderRadius: "50%",
+												background: "var(--avatar-navy)",
+												color: "#fff",
+												fontSize: 7,
+												fontWeight: 700,
+												display: "inline-flex",
+												alignItems: "center",
+												justifyContent: "center",
+											}}
 										>
 											{p.ini}
 										</span>
@@ -285,15 +402,38 @@ export function MailboxWizard({
 				{/* krok 4 — hotovo, poctivý závěr (zadání; prototyp končil toastem) */}
 				{step === 4 && (
 					<>
-						<div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--success-soft)", borderRadius: 10, padding: "9px 12px", marginTop: 10 }}>
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 8,
+								background: "var(--success-soft)",
+								borderRadius: 10,
+								padding: "9px 12px",
+								marginTop: 10,
+							}}
+						>
 							<span style={{ color: "var(--success-ink)", fontWeight: 700 }}>✓</span>
-							<span style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--success-ink)" }}>
-								Schránka připojena — po první synchronizaci se objeví v sidebaru.
-								Přístup: {PIDS.filter((pid) => ppl[pid]).length} lidí, zbytek ji
-								neuvidí vůbec.
+							<span
+								style={{
+									fontFamily: "var(--w-font-body)",
+									fontSize: 12,
+									color: "var(--success-ink)",
+								}}
+							>
+								Schránka připojena — po první synchronizaci se objeví v sidebaru. Přístup:{" "}
+								{PIDS.filter((pid) => ppl[pid]).length} lidí, zbytek ji neuvidí vůbec.
 							</span>
 						</div>
-						<div style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)", marginTop: 10, lineHeight: 1.6 }}>
+						<div
+							style={{
+								fontFamily: "var(--w-font-mono)",
+								fontSize: 9.5,
+								color: "var(--ink-3)",
+								marginTop: 10,
+								lineHeight: 1.6,
+							}}
+						>
 							Demo — reálné připojení přijde s mail backendem (M1).
 						</div>
 					</>
@@ -301,31 +441,73 @@ export function MailboxWizard({
 
 				{/* navigace + progress tečky (prototyp ř. 1896–1900; tečky dle zadání) */}
 				<div style={{ display: "flex", gap: 7, marginTop: 14, alignItems: "center" }}>
-					<span style={{ display: "inline-flex", gap: 5, flex: 1 }} aria-label={`Krok ${step} ze 4`}>
+					<span
+						style={{ display: "inline-flex", gap: 5, flex: 1 }}
+						aria-label={`Krok ${step} ze 4`}
+					>
 						{[1, 2, 3, 4].map((s) => (
 							<span
 								key={s}
-								style={{ width: 7, height: 7, borderRadius: "50%", background: s <= step ? "var(--brass)" : "var(--line)" }}
+								style={{
+									width: 7,
+									height: 7,
+									borderRadius: "50%",
+									background: s <= step ? "var(--brass)" : "var(--line)",
+								}}
 							/>
 						))}
 					</span>
 					{step > 1 && step < 4 && (
-						<span data-ghost onClick={() => setStep((s) => Math.max(1, s - 1))} style={{ fontSize: 11.5, padding: "7px 13px" }}>
+						<span
+							data-ghost
+							onClick={() => setStep((s) => Math.max(1, s - 1))}
+							style={{ fontSize: 11.5, padding: "7px 13px" }}
+						>
 							← Zpět
 						</span>
 					)}
 					{step < 3 && (
-						<span data-primary onClick={() => setStep((s) => Math.min(3, s + 1))} style={{ fontSize: 11.5, padding: "7px 15px", display: "inline-flex" }}>
+						<span
+							data-primary
+							onClick={() => {
+								// krok 2 nejde přeskočit bez ověření — OAuth vyžaduje přihlášení,
+								// IMAP úspěšný test (audit LOW MailboxWizard.tsx:317)
+								if (!canNext) {
+									showToast(
+										prov === "imap"
+											? "Nejdřív otestuj připojení (port 993) — teprve pak pokračuj."
+											: "Nejdřív se přihlas u poskytovatele — teprve pak pokračuj.",
+									);
+									return;
+								}
+								setStep((s) => Math.min(3, s + 1));
+							}}
+							style={{
+								fontSize: 11.5,
+								padding: "7px 15px",
+								display: "inline-flex",
+								opacity: canNext ? 1 : 0.5,
+								cursor: canNext ? "pointer" : "not-allowed",
+							}}
+						>
 							Pokračovat
 						</span>
 					)}
 					{step === 3 && (
-						<span data-primary onClick={finish} style={{ fontSize: 11.5, padding: "7px 15px", display: "inline-flex" }}>
+						<span
+							data-primary
+							onClick={finish}
+							style={{ fontSize: 11.5, padding: "7px 15px", display: "inline-flex" }}
+						>
 							Připojit
 						</span>
 					)}
 					{step === 4 && (
-						<span data-primary onClick={onClose} style={{ fontSize: 11.5, padding: "7px 15px", display: "inline-flex" }}>
+						<span
+							data-primary
+							onClick={onClose}
+							style={{ fontSize: 11.5, padding: "7px 15px", display: "inline-flex" }}
+						>
 							Hotovo
 						</span>
 					)}

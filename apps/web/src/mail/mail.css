@@ -203,7 +203,11 @@
 [data-rzline]{ background:transparent; transition:background .12s; }
 [data-rz]:hover [data-rzline]{ background:var(--brass); }
 [data-drag="true"] [data-rzline]{ background:var(--brass); }
-[data-lcol="true"] [data-listpane]{ display:none !important; }
+/* Full Screen čtení (lcol) skrývá seznam JEN na desktopu — na mobilu řídí
+   viditelnost panelů data-mstep (ř. 197–198). Bez tohoto guardu se dal ve stavu
+   lcol+mstep=list zmenšením pod 880px skrýt seznam i vlákno naráz bez cesty zpět
+   (ovládání resetu lcol je uvnitř skrytého [data-tabup]) — audit MED mail.css:206. */
+@media (min-width:880px){ [data-lcol="true"] [data-listpane]{ display:none !important; } }
 [data-cw="win"]{ position:fixed; z-index:62; left:50%; transform:translateX(-50%); bottom:22px; width:min(780px, 94vw); border:1px solid var(--line) !important; border-radius:16px; box-shadow:var(--shadow); animation:wPop .16s ease; }
 /* Embedded režim — Mail běží uvnitř WatsonApp (dc-import); sidebar dodává aplikace */
 [data-mailapp][data-embedded="true"]{ height:100% !important; flex:1; min-width:0; min-height:0; }

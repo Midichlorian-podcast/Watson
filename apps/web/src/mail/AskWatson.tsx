@@ -48,13 +48,7 @@ function WBadge({ size = 17 }: { size?: number }) {
 	);
 }
 
-export function AskWatson({
-	open,
-	onClose,
-}: {
-	open: boolean;
-	onClose: () => void;
-}) {
+export function AskWatson({ open, onClose }: { open: boolean; onClose: () => void }) {
 	const m = useMail();
 	const [q, setQ] = useState("");
 	const [a, setA] = useState<AskAnswer | null>(null);
@@ -91,42 +85,9 @@ export function AskWatson({
 		if (busyTimer.current) clearTimeout(busyTimer.current);
 		setBusy(false);
 
-		// „napiš drafty…" — hromadné návrhy odpovědí (prototyp ř. 4283–4310)
-		if (/draft|napiš|napis|připrav|priprav|odpově(z|d)/.test(ql)) {
-			const num = ql.match(/\d+/);
-			const lim = num?.[0] ? Number.parseInt(num[0], 10) : 10;
-			const list = m.threads
-				.filter((t) => {
-					const e = m.eff(t);
-					return (
-						!t.personal &&
-						!t.sentF &&
-						!t.draftF &&
-						(m.ovOf(t.id).grp ?? t.grp) === "inbox" &&
-						!e.closed &&
-						!e.sent &&
-						!e.arch &&
-						!e.trash &&
-						!e.snoozed &&
-						m.adm.ai[t.mb] !== "off"
-					);
-				})
-				.slice(0, lim);
-			if (list.length) {
-				// Poctivě: návrhy se do fronty „AI návrhy ke schválení" reálně nepřidají
-				// (state API frontu nevystavuje) — hláška drží znění prototypu.
-				setA({
-					text: `Připravuju návrhy odpovědí na ${list.length} příchozích vláken (granty@ vynechávám — AI je tam vypnutá). Najdeš je nahoře v Inboxu jako „AI návrhy ke schválení“ — projdeš, schválíš, odešleš. Sám nic neodesílám.`,
-					src: list.slice(0, 2).map((t) => ({ id: t.id, l: t.subj })),
-				});
-			} else {
-				setA({
-					text: "Teď nevidím žádné příchozí vlákno bez odpovědi, pro které bych mohl draft připravit.",
-					src: [],
-				});
-			}
-			return;
-		}
+		// POŘADÍ: nejdřív konkrétní věcné klíče (faktura/grant/MČR/sdílené), teprve
+		// pak obecná draftová větev — jinak „napiš mi kolik zbývá za nájem" spadlo
+		// do draftů místo věcné odpovědi (audit LOW AskWatson.tsx:95).
 		// „mistrovství / MČR" — hledá napříč Watsonem (prototyp ř. 4311–4320)
 		if (/mistrovstv|mčr|mcr/.test(ql)) {
 			setA({
@@ -166,6 +127,43 @@ export function AskWatson({
 				text: "U žádosti OP JAK (CZ.02.01.01/00/25_042) chybí rozpočet po jednotkových cenách — doplnit přes ISKP21+ do 31. 7. Marie ho nahraje do čtvrtka.",
 				src: [{ id: "opjak", l: "Výzva OP JAK — doplnění žádosti" }],
 			});
+			return;
+		}
+		// „napiš drafty…" — hromadné návrhy odpovědí (prototyp ř. 4283–4310).
+		// Až ZA věcnými klíči, ať obecné „napiš/odpověz" nepřebije konkrétní dotaz.
+		if (/draft|napiš|napis|připrav|priprav|odpově(z|d)/.test(ql)) {
+			const num = ql.match(/\d+/);
+			const lim = num?.[0] ? Number.parseInt(num[0], 10) : 10;
+			const list = m.threads
+				.filter((t) => {
+					const e = m.eff(t);
+					return (
+						!t.personal &&
+						!t.sentF &&
+						!t.draftF &&
+						(m.ovOf(t.id).grp ?? t.grp) === "inbox" &&
+						!e.closed &&
+						!e.sent &&
+						!e.arch &&
+						!e.trash &&
+						!e.snoozed &&
+						m.adm.ai[t.mb] !== "off"
+					);
+				})
+				.slice(0, lim);
+			if (list.length) {
+				// Poctivě: návrhy se do fronty „AI návrhy ke schválení" reálně nepřidají
+				// (state API frontu nevystavuje) — hláška drží znění prototypu.
+				setA({
+					text: `Připravuju návrhy odpovědí na ${list.length} příchozích vláken (granty@ vynechávám — AI je tam vypnutá). Najdeš je nahoře v Inboxu jako „AI návrhy ke schválení“ — projdeš, schválíš, odešleš. Sám nic neodesílám.`,
+					src: list.slice(0, 2).map((t) => ({ id: t.id, l: t.subj })),
+				});
+			} else {
+				setA({
+					text: "Teď nevidím žádné příchozí vlákno bez odpovědi, pro které bych mohl draft připravit.",
+					src: [],
+				});
+			}
 			return;
 		}
 		// Jiné dotazy: prototyp volá živou AI (askAI) — tady poctivá odpověď,
@@ -231,7 +229,15 @@ export function AskWatson({
 				}}
 			>
 				{/* vstupní řádek (prototyp ř. 2133–2137) */}
-				<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", borderBottom: "1px solid var(--line)" }}>
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: 10,
+						padding: "13px 16px",
+						borderBottom: "1px solid var(--line)",
+					}}
+				>
 					<WBadge size={18} />
 					<input
 						ref={inputRef}
@@ -252,7 +258,11 @@ export function AskWatson({
 							color: "var(--ink)",
 						}}
 					/>
-					<span onClick={send} data-primary style={{ fontSize: 11.5, padding: "6px 13px", flex: "none", display: "inline-flex" }}>
+					<span
+						onClick={send}
+						data-primary
+						style={{ fontSize: 11.5, padding: "6px 13px", flex: "none", display: "inline-flex" }}
+					>
 						Zeptat se
 					</span>
 				</div>
@@ -273,39 +283,80 @@ export function AskWatson({
 					<>
 						<div style={{ padding: "13px 16px 6px", display: "flex", gap: 10 }}>
 							<WBadge />
-							<div style={{ fontFamily: "var(--w-font-body)", fontSize: 13, color: "var(--ink)", lineHeight: 1.6 }}>
+							<div
+								style={{
+									fontFamily: "var(--w-font-body)",
+									fontSize: 13,
+									color: "var(--ink)",
+									lineHeight: 1.6,
+								}}
+							>
 								{a.text}
 							</div>
 						</div>
 						{exclOn && (
-							<div style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 16px 8px 43px", flexWrap: "wrap" }}>
-								<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)" }}>
-									AI nevidí do: {offBoxes.join(", ")} (vypnutá per schránka) — fulltext ⌘K prohledává i je.
+							<div
+								style={{
+									display: "flex",
+									alignItems: "center",
+									gap: 7,
+									padding: "2px 16px 8px 43px",
+									flexWrap: "wrap",
+								}}
+							>
+								<span
+									style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)" }}
+								>
+									AI nevidí do: {offBoxes.join(", ")} (vypnutá per schránka) — fulltext ⌘K
+									prohledává i je.
 								</span>
 								<span
 									onClick={() => {
 										// „Hledat všude" (prototyp goSearch) — zavře Ask a otevře
 										// fulltext přes zkratku ⌘K, kterou poslouchá MailScreen.
 										close();
-										window.dispatchEvent(
-											new KeyboardEvent("keydown", { key: "k", metaKey: true }),
-										);
+										window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
 									}}
-									style={{ fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 10.5, color: "var(--brass-text)", cursor: "pointer" }}
+									style={{
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 600,
+										fontSize: 10.5,
+										color: "var(--brass-text)",
+										cursor: "pointer",
+									}}
 								>
 									Hledat všude →
 								</span>
 							</div>
 						)}
-						<div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "4px 16px 13px 43px" }}>
+						<div
+							style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "4px 16px 13px 43px" }}
+						>
 							{a.src.map((sr) => (
 								<span
 									key={sr.l}
 									onClick={() => openSrc(sr)}
 									data-oneclick
-									style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--w-font-display)", fontWeight: 600, fontSize: 11, padding: "4px 11px", borderRadius: 999 }}
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 6,
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 600,
+										fontSize: 11,
+										padding: "4px 11px",
+										borderRadius: 999,
+									}}
 								>
-									<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+									<svg
+										width="10"
+										height="10"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="2"
+										aria-hidden
+									>
 										<rect x="3.5" y="5" width="17" height="14" rx="1.6" />
 										<path d="M4.2 6.4 L12 12.6 L19.8 6.4" />
 									</svg>
@@ -317,10 +368,18 @@ export function AskWatson({
 				)}
 
 				{/* patička — hranice oprávnění (prototyp ř. 2167) */}
-				<div style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)", padding: "9px 16px", borderTop: "1px solid var(--line)", background: "var(--panel-2)" }}>
-					Watson odpovídá jen z pošty, kam máš přístup — osobní schránka je mimo.
-					Odpověď odkazuje na zdroj. Příkazy („napiš drafty…“) vytvoří jen návrhy ke
-					schválení — odesíláš vždy ty.
+				<div
+					style={{
+						fontFamily: "var(--w-font-body)",
+						fontSize: 10.5,
+						color: "var(--ink-3)",
+						padding: "9px 16px",
+						borderTop: "1px solid var(--line)",
+						background: "var(--panel-2)",
+					}}
+				>
+					Watson odpovídá jen z pošty, kam máš přístup — osobní schránka je mimo. Odpověď odkazuje
+					na zdroj. Příkazy („napiš drafty…“) vytvoří jen návrhy ke schválení — odesíláš vždy ty.
 				</div>
 			</div>
 		</div>

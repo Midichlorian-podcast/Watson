@@ -148,6 +148,8 @@ interface MailCtxValue {
 	filters: { unread: boolean; att: boolean; mine: boolean; fu: boolean };
 	toggleFilter: (k: "unread" | "att" | "mine" | "fu") => void;
 	sel: string | null;
+	/** Kurzor seznamu (j/k) — jen posun výběru, bez otevření/označení přečteno. */
+	setSel: (id: string | null) => void;
 	ctab: "vlakno" | "chat";
 	setCtab: (v: "vlakno" | "chat") => void;
 	mstep: "list" | "thread";
@@ -173,7 +175,7 @@ interface MailCtxValue {
 		id: string,
 		kind: "done" | "pin" | "snooze" | "arch" | "trash" | "spam" | "unread" | "mute" | "restore",
 	) => void;
-	bulkAct: (kind: "done" | "arch" | "trash" | "unread") => void;
+	bulkAct: (kind: "done" | "arch" | "trash" | "unread" | "snooze") => void;
 	setOv: (id: string, patch: ThreadOv) => void;
 	setFlag: (id: string, flag: string) => void;
 	setThreadState: (id: string, st: string) => void;
@@ -185,7 +187,8 @@ interface MailCtxValue {
 	attach: (id: string, label: string) => void;
 	detach: (id: string) => void;
 	sentX: Record<string, SentMsg[]>;
-	checkSend: (t: MailThread, markDone: boolean) => void;
+	/** Vrací true, pokud se REÁLNĚ odeslalo (false = zablokováno pojistkou). */
+	checkSend: (t: MailThread, markDone: boolean) => boolean;
 	// sdílené koncepty + schvalování (prototyp sd, ř. 1272–1291 + 4035–4046)
 	sd: Record<string, SdState>;
 	sdShare: (id: string) => void;
@@ -238,14 +241,18 @@ interface MailCtxValue {
 	setSum: (v: boolean) => void;
 	// vazby na úkoly (reálné tasks.mail_th přes bridge; seed fallback bez bridge)
 	taskLinks: Record<string, { n: string; owner: string; prio: string; app: string }[]>;
-	/** Email → úkol jedním klikem (prototyp quickTask, ř. 2594) — přes bridge.onCreateTask. */
-	quickTask: (id: string) => void;
+	/** Email → úkol jedním klikem (prototyp quickTask, ř. 2594) — přes bridge.onCreateTask.
+	 * `silent` potlačí per-vlákno toast (hromadná cesta si dělá souhrn sama). */
+	quickTask: (id: string, opts?: { silent?: boolean }) => "created" | "exists" | "busy";
 	bridge: MailBridge;
 	// admin/nastavení: adm = seed + živé overrides (fixed, ai) — banner v seznamu
 	// a warn tečky sidebaru musí vidět, co správce přepnul (audit S5)
 	adm: AdmSeed;
 	setAdmFixed: (v: boolean) => void;
 	setAdmAi: (mb: string, lvl: "off" | "read" | "triage") => void;
+	/** Přepnutí role v matici Přístupů — žije v provideru (S5), aby ji viděla
+	 * i karta osoby (PersonCard), ne jen lokální cache Administrace. */
+	setAdmAcc: (mbid: string, pid: string, v: number) => void;
 	nast: typeof NAST_SEED;
 }
 
@@ -332,7 +339,8 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const [admOv, setAdmOv] = useState<{
 		fixed?: boolean;
 		ai: Record<string, "off" | "read" | "triage">;
-	}>({ ai: {} });
+		acc: Record<string, Record<string, number>>;
+	}>({ ai: {}, acc: {} });
 	// Reálné vazby z tasks.mail_th (bridge); seed jen jako fallback bez aplikace.
 	const taskLinks = bridge?.taskLinks ?? TASK_LINKS_SEED;
 
@@ -377,6 +385,9 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	} | null>(null);
 	// per vlákno (D6) — jeden sdílený timer by odjištění jednoho vlákna zrušil jinému
 	const collTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+	// synchronní zámek proti dvojímu založení úkolu — taskLinks se plní až po
+	// PowerSync roundtripu, takže dvojklik by jinak založil dva stejné úkoly (audit D8)
+	const quickTaskLock = useRef<Set<string>>(new Set());
 
 	// D11: timery nesmí přežít provider — setState po unmountu + únik intervalu
 	useEffect(
@@ -553,16 +564,62 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const bulkAct = useCallback<MailCtxValue["bulkAct"]>(
 		(kind) => {
 			const ids = Object.keys(selIds);
+			if (!ids.length) return;
+			// Jeden souhrnný snapshot + jeden toast se společným Zpět. Dřív bulk volal
+			// rowAct N×, jenže showToast je singleton → viděl jsi jen poslední toast a
+			// jeho Zpět vrátil jen jedno vlákno (audit R553). Zpět teď obnoví všechna
+			// dotčená vlákna najednou; „bulk tlačítko Přečtené" značí PŘEČTENÉ (K3).
+			const patchFor = (id: string): ThreadOv | null => {
+				const t = TH.find((x) => x.id === id);
+				if (!t) return null;
+				if (kind === "unread") return { read: true };
+				if (kind === "snooze") return { snoozed: "zítra 8:00" };
+				// osobní „done" → archiv (parita s rowAct)
+				const k = kind === "done" && t.personal ? "arch" : kind;
+				if (k === "done") return { st: "hotovo", closed: true, read: true };
+				if (k === "arch") return { arch: true, read: true };
+				if (k === "trash") return { trash: true };
+				return null;
+			};
+			const prev: Record<string, ThreadOv> = {};
+			const next: Record<string, ThreadOv> = {};
 			for (const id of ids) {
-				// bulk tlačítko se jmenuje „Přečtené" → označ jako PŘEČTENÉ
-				// (dřív dělalo opak — audit K3; per-řádkový toggle zůstává v rowAct)
-				if (kind === "unread") setOv(id, { read: true });
-				else rowAct(id, kind);
+				const patch = patchFor(id);
+				if (!patch) continue;
+				const before: ThreadOv = {};
+				for (const key of Object.keys(patch) as (keyof ThreadOv)[]) {
+					// biome-ignore lint/suspicious/noExplicitAny: zrcadlení klíčů patche
+					(before as any)[key] = (ovOf(id) as any)[key];
+				}
+				prev[id] = before;
+				next[id] = patch;
 			}
 			setSelIds({});
-			if (kind === "unread") showToast(`${ids.length} označeno jako přečtené`);
+			const n = Object.keys(next).length;
+			if (!n) return;
+			setOvState((s) => {
+				const merged = { ...s };
+				for (const id of Object.keys(next)) merged[id] = { ...merged[id], ...next[id] };
+				return merged;
+			});
+			const labels: Record<string, string> = {
+				done: "hotovo",
+				arch: "archivováno",
+				trash: "přesunuto do koše",
+				unread: "označeno jako přečtené",
+				snooze: "odloženo na zítra 8:00",
+			};
+			showToast(`${n} ${labels[kind]}`, {
+				label: "Zpět",
+				onClick: () =>
+					setOvState((s) => {
+						const merged = { ...s };
+						for (const id of Object.keys(prev)) merged[id] = { ...merged[id], ...prev[id] };
+						return merged;
+					}),
+			});
 		},
-		[selIds, rowAct, setOv],
+		[selIds, ovOf],
 	);
 
 	/** Vlajka urgence: P1/P2 hlásí auto-úkol „Odpovědět: …" (prototyp setFlag, ř. 4109). */
@@ -616,10 +673,23 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 		});
 	}, []);
 
+	/** Text, který se REÁLNĚ odešle. Explicitní draft record (i prázdný „empty"
+	 * po Zahodit) je autoritativní; na AI návrh t.draft se fallbackuje jen když
+	 * žádný draft record neexistuje. Dřív checkSend počítal text přes `??` a doSend
+	 * přes `||`, takže po Zahodit odešel zahozený t.draft a hlídač přílohy hlídal
+	 * jiný text než co se poslalo (audit HIGH state.tsx:622). */
+	const outgoingText = useCallback(
+		(t: MailThread): string => {
+			const d = drafts[t.id];
+			return d ? d.text : (t.draft ?? []).join("\n");
+		},
+		[drafts],
+	);
+
 	/** Odeslání (prototyp sendReply, ř. 4117): zpráva do vlákna, stav, undo okno 10 s. */
 	const doSend = useCallback(
 		(t: MailThread, markDone: boolean) => {
-			const text = drafts[t.id]?.text?.trim() || (t.draft ?? []).join("\n");
+			const text = outgoingText(t);
 			prevSend.current = {
 				id: t.id,
 				ov: ov[t.id] ? { ...ov[t.id] } : undefined,
@@ -664,21 +734,29 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 				});
 			}, 1000);
 		},
-		[drafts, ov, attached, sentX, setOv, detach],
+		[outgoingText, ov, attached, sentX, setOv, detach, drafts],
 	);
 
-	/** Řetěz ochran před odesláním (prototyp checkSend, ř. 3406–3429). */
+	/** Řetěz ochran před odesláním (prototyp checkSend, ř. 3406–3429).
+	 * Vrací true, když se skutečně odeslalo — plovoucí composer podle toho zavírá okno. */
 	const checkSend = useCallback(
-		(t: MailThread, markDone: boolean) => {
+		(t: MailThread, markDone: boolean): boolean => {
+			// prázdné tělo neodesílej — dřív se přes fallbacky odeslal zahozený nebo
+			// úplně prázdný obsah bez varování (audit HIGH state.tsx:622)
+			const text = outgoingText(t);
+			if (!text.trim()) {
+				showToast("Prázdná zpráva — napiš text před odesláním.");
+				return false;
+			}
 			// sdílený koncept ve schvalování — pending && !approved blokuje odeslání
 			const sdt = sd[t.id];
 			if (sdt?.pending && !sdt.approved) {
 				showToast("Koncept čeká na schválení — odeslat ho půjde až po schválení pověřenou osobou.");
-				return;
+				return false;
 			}
 			if (sdt?.returned && !sdt.approved) {
 				showToast("Koncept je vrácený s komentářem — uprav ho a vyžádej schválení znovu.");
-				return;
+				return false;
 			}
 			// kolizní pojistka — kolega právě dopisuje (seed t.coll); druhý klik do 6 s
 			// odešle. Odjištění platí JEN pro tohle vlákno (D6) — globální bool by
@@ -691,18 +769,20 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 					() => setCollArmed((s) => ({ ...s, [t.id]: false })),
 					6000,
 				);
-				return;
+				return false;
 			}
 			setCollArmed((s) => (s[t.id] ? { ...s, [t.id]: false } : s));
-			// hlídání přílohy: text slibuje přílohu, ale žádná není
-			const text = drafts[t.id]?.text ?? (t.draft ?? []).join("\n");
-			if (/příloh|příloz|přikládám|přiložen|attach/i.test(text) && !attached[t.id]) {
+			// hlídání přílohy: text slibuje přílohu, ale žádná není. Negace („nepřikládám")
+			// se odstraní, ať nespustí planý poplach (audit LOW NewMessage.tsx:150).
+			const attText = text.replace(/nepřikládám|nepřiložen\w*/gi, " ");
+			if (/příloh|příloz|přikládám|přiložen|attach/i.test(attText) && !attached[t.id]) {
 				setWarn({ id: t.id, markDone });
-				return;
+				return false;
 			}
 			doSend(t, markDone);
+			return true;
 		},
-		[collArmed, drafts, attached, doSend, sd],
+		[collArmed, attached, doSend, sd, outgoingText],
 	);
 
 	/* Sdílené koncepty + schvalování (prototyp sdShare/sdAsk/sdApprove/sdReturn,
@@ -830,13 +910,26 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const setAdmAi = useCallback((mb: string, lvl: "off" | "read" | "triage") => {
 		setAdmOv((s) => ({ ...s, ai: { ...s.ai, [mb]: lvl } }));
 	}, []);
+	const setAdmAcc = useCallback((mbid: string, pid: string, v: number) => {
+		setAdmOv((s) => ({
+			...s,
+			acc: { ...s.acc, [mbid]: { ...s.acc[mbid], [pid]: v } },
+		}));
+	}, []);
 	// S5: merge seed + ov drží tvar ADM_SEED — konzumenti (MailList banner,
-	// MailSub tečky, MailThread AI) čtou m.adm beze změny a vidí živý stav
+	// MailSub tečky, MailThread AI) čtou m.adm beze změny a vidí živý stav.
+	// acc (matice Přístupů) žije taky tady, aby karta osoby (PersonCard) viděla
+	// změny z matice, ne jen seed (audit LOW AdminScreen.tsx:597).
 	const adm = useMemo<AdmSeed>(
 		() => ({
 			...ADM_SEED,
 			fixed: admOv.fixed ?? ADM_SEED.fixed,
 			ai: { ...ADM_SEED.ai, ...admOv.ai },
+			acc: Object.fromEntries(
+				Array.from(new Set([...Object.keys(ADM_SEED.acc), ...Object.keys(admOv.acc)])).map(
+					(mbid) => [mbid, { ...ADM_SEED.acc[mbid], ...admOv.acc[mbid] }],
+				),
+			),
 		}),
 		[admOv],
 	);
@@ -851,23 +944,32 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 
 	/** Email → úkol jedním klikem (prototyp quickTask, ř. 2594–2610): priorita
 	 * z vlajky (p1/p2 → P1/P2, jinak P3), termín dnes, název „Odpovědět: …". */
-	const quickTask = useCallback(
-		(id: string) => {
+	const quickTask = useCallback<MailCtxValue["quickTask"]>(
+		(id, opts) => {
 			const t = TH.find((x) => x.id === id);
-			if (!t || !bridge?.onCreateTask) return;
+			if (!t || !bridge?.onCreateTask) return "busy";
 			if ((taskLinks[id] ?? []).length) {
-				showToast("Vlákno už úkol má — stav vidíš na chipu");
-				return;
+				if (!opts?.silent) showToast("Vlákno už úkol má — stav vidíš na chipu");
+				return "exists";
 			}
+			// synchronní zámek přežije stale taskLinks (PowerSync roundtrip) — dvojklik
+			// jinak založí dva stejné úkoly (audit MED state.tsx:858)
+			if (quickTaskLock.current.has(id)) return "busy";
+			quickTaskLock.current.add(id);
 			const o = ov[id] ?? {};
 			const flag = o.flag ?? (t.flag === "prop" ? "p2" : (t.flag ?? "none"));
-			void bridge.onCreateTask({
-				id: crypto.randomUUID(),
-				name: `Odpovědět: ${t.subj}`,
-				mailTh: t.id,
-				mailLabel: t.subj,
-				priority: flag === "p1" ? 1 : flag === "p2" ? 2 : 3,
+			void Promise.resolve(
+				bridge.onCreateTask({
+					id: crypto.randomUUID(),
+					name: `Odpovědět: ${t.subj}`,
+					mailTh: t.id,
+					mailLabel: t.subj,
+					priority: flag === "p1" ? 1 : flag === "p2" ? 2 : 3,
+				}),
+			).finally(() => {
+				quickTaskLock.current.delete(id);
 			});
+			return "created";
 		},
 		[bridge, taskLinks, ov],
 	);
@@ -886,6 +988,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			filters,
 			toggleFilter,
 			sel,
+			setSel,
 			ctab,
 			setCtab,
 			mstep,
@@ -962,6 +1065,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			adm,
 			setAdmFixed,
 			setAdmAi,
+			setAdmAcc,
 			nast: NAST_SEED,
 		}),
 		[
@@ -1039,6 +1143,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			adm,
 			setAdmFixed,
 			setAdmAi,
+			setAdmAcc,
 		],
 	);
 

@@ -33,6 +33,14 @@ const hasExternal = (to: string): boolean =>
  * přežívají (watson-mail.drafts), tohle okno drželo text jen v useState. */
 const LS_NEW = "watson-mail.newDraft";
 
+/** Příloha se stabilním id — dřív se klíčovala/odebírala podle zobrazeného názvu,
+ * takže po přidání→odebrání→přidání vznikl duplicitní název, kolizní React key
+ * a klik na × smazal obě stejnojmenné (audit LOW NewMessage.tsx:172). */
+interface Att {
+	id: string;
+	label: string;
+}
+
 interface NewDraft {
 	from: string;
 	to: string;
@@ -66,7 +74,9 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	const [to, setTo] = useState(saved?.to ?? "");
 	const [subj, setSubj] = useState(saved?.subj ?? "");
 	const [body, setBody] = useState(saved?.body ?? "");
-	const [atts, setAtts] = useState<string[]>(saved?.atts ?? []);
+	const [atts, setAtts] = useState<Att[]>(() =>
+		(saved?.atts ?? []).map((label) => ({ id: crypto.randomUUID(), label })),
+	);
 	const [warnAtt, setWarnAtt] = useState(false);
 	const [tplOpen, setTplOpen] = useState(false);
 	const taRef = useRef<HTMLTextAreaElement>(null);
@@ -87,13 +97,18 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 		if (!open) return;
 		const h = (e: globalThis.KeyboardEvent) => {
 			if (e.key === "Escape") {
-				setTplOpen(false);
+				// první Esc zavře jen otevřený popover šablon, teprve druhý celé okno
+				// (audit LOW NewMessage.tsx:88/89)
+				if (tplOpen) {
+					setTplOpen(false);
+					return;
+				}
 				onClose();
 			}
 		};
 		document.addEventListener("keydown", h);
 		return () => document.removeEventListener("keydown", h);
-	}, [open, onClose]);
+	}, [open, onClose, tplOpen]);
 
 	// klik mimo popover šablon ho zavře
 	useEffect(() => {
@@ -111,7 +126,11 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 		const timer = setTimeout(() => {
 			try {
 				if (!to && !subj && !body && atts.length === 0) localStorage.removeItem(LS_NEW);
-				else localStorage.setItem(LS_NEW, JSON.stringify({ from, to, subj, body, atts }));
+				else
+					localStorage.setItem(
+						LS_NEW,
+						JSON.stringify({ from, to, subj, body, atts: atts.map((a) => a.label) }),
+					);
 			} catch {
 				/* plné úložiště — koncept zůstává aspoň v paměti */
 			}
@@ -147,7 +166,15 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 		onClose();
 	};
 	const trySend = () => {
-		if (ATT_RE.test(body) && atts.length === 0) {
+		// prázdný příjemce → neodesílej (parita s hlídkami přílohy/externího;
+		// prázdný mail bez adresy dřív prošel bez varování — audit LOW NewMessage.tsx:149)
+		if (!to.trim()) {
+			showToast("Zadej příjemce (pole Komu) — mail bez adresy poslat nejde.");
+			return;
+		}
+		// negace („nepřikládám") nesmí spustit hlídku přílohy (audit LOW NewMessage.tsx:150)
+		const bodyForAtt = body.replace(/nepřikládám|nepřiložen\w*/gi, " ");
+		if (ATT_RE.test(bodyForAtt) && atts.length === 0) {
 			setWarnAtt(true);
 			return;
 		}
@@ -170,7 +197,10 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	};
 
 	const addAtt = () => {
-		setAtts((s) => [...s, `dokument_${s.length + 1}.pdf · 118 kB`]);
+		setAtts((s) => [
+			...s,
+			{ id: crypto.randomUUID(), label: `dokument_${s.length + 1}.pdf · 118 kB` },
+		]);
 		setWarnAtt(false);
 	};
 
@@ -462,7 +492,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 				<div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
 					{atts.map((a) => (
 						<span
-							key={a}
+							key={a.id}
 							style={{
 								display: "inline-flex",
 								alignItems: "center",
@@ -484,9 +514,9 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 									strokeLinecap="round"
 								/>
 							</svg>
-							{a}
+							{a.label}
 							<span
-								onClick={() => setAtts((s) => s.filter((x) => x !== a))}
+								onClick={() => setAtts((s) => s.filter((x) => x.id !== a.id))}
 								title="Odebrat přílohu"
 								style={{ cursor: "pointer", color: "var(--ink-3)", lineHeight: 1 }}
 							>

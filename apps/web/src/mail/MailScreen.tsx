@@ -128,7 +128,18 @@ export function MailScreen() {
 			// ⌘K → hledání (před typing guardem, funguje i z pole; prototyp ř. 2745)
 			if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
 				e.preventDefault();
-				setSearchOn((v) => !v);
+				setSearchOn((v) => {
+					if (v) {
+						// zavírám hledání ⌘K → stejný reset jako Esc/klik-mimo, jinak zůstane
+						// zúžení „ve vlákně" (soTh) i starý dotaz (audit MED MailScreen.tsx:129)
+						mRef.current.setSoTh(null);
+						return false;
+					}
+					// neotvírej hledání nad jiným esc-layerem (Nová zpráva, plovoucí composer),
+					// jinak by jedno Esc zavřelo obě vrstvy naráz (audit LOW MailScreen.tsx:129)
+					if (document.querySelector("[data-esc-layer]")) return false;
+					return true;
+				});
 				return;
 			}
 			if (e.key === "Escape") {
@@ -155,16 +166,19 @@ export function MailScreen() {
 			const cur = mail.sel ? ids.indexOf(mail.sel) : -1;
 			const k = e.key.toLowerCase();
 			switch (k) {
+				// j/k = jen posun kurzoru (setSel) — otevře + označí přečteno až o/Enter.
+				// Dřív každé projetí seznamu vlákno otevřelo a nevratně označilo
+				// přečteným, na mobilu skočilo do vlákna (audit MED MailScreen.tsx:158).
 				case "j": {
 					e.preventDefault();
 					const n = ids[Math.min(ids.length - 1, cur + 1)];
-					if (n) mail.openThread(n);
+					if (n) mail.setSel(n);
 					break;
 				}
 				case "k": {
 					e.preventDefault();
 					const n = ids[Math.max(0, cur - 1)];
-					if (n) mail.openThread(n);
+					if (n) mail.setSel(n);
 					break;
 				}
 				case "o":
@@ -312,8 +326,10 @@ export function MailScreen() {
 			    navigaci drží jediná aplikační lišta; Napsat + hamburger Schránek
 			    jsou v hlavičce seznamu (onCompose/onOpenDrawer). */}
 
-			{/* overlaye modulu: hledání ⌘K, Nová zpráva, tahák zkratek, plovoucí composer */}
-			<SearchOverlay open={searchOn} onClose={() => setSearchOn(false)} />
+			{/* overlaye modulu: hledání ⌘K, Nová zpráva, tahák zkratek, plovoucí composer.
+			    SearchOverlay renderujeme podmíněně — zavření (i přes ⌘K) ho odmountuje,
+			    takže se lokální dotaz `q` vždy vyresetuje (audit MED MailScreen.tsx:129). */}
+			{searchOn && <SearchOverlay open onClose={() => setSearchOn(false)} />}
 			<NewMessage
 				open={newOn}
 				onClose={() => {

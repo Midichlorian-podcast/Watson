@@ -30,13 +30,13 @@ const RULES = [
 	{ mb: "podcast", cond: "hlavička list-unsubscribe", act: "skupina Newslettery" },
 ];
 
-/** Lokální demo vrstva = jen gate + acc (hluboká kopie, ať se nepropíše do
- * seedu). `fixed` a `ai` žijí v MailProvider (audit S5) — čtou je i banner
- * v seznamu a warn tečky sidebaru, lokální cache by je nechala svítit. */
-type AdmLocal = Pick<AdmSeed, "gate" | "acc">;
+/** Lokální demo vrstva = už jen gate (hluboká kopie, ať se nepropíše do seedu).
+ * `fixed`, `ai` i `acc` žijí v MailProvider (audit S5) — čtou je i banner
+ * v seznamu, warn tečky sidebaru a karta osoby (PersonCard); lokální cache by je
+ * nechala rozejít se se seedem (audit LOW AdminScreen.tsx:597). */
+type AdmLocal = Pick<AdmSeed, "gate">;
 const admInit = (): AdmLocal => ({
 	gate: { ...ADM_SEED.gate },
-	acc: Object.fromEntries(Object.entries(ADM_SEED.acc).map(([k, v]) => [k, { ...v }])),
 });
 
 /** Demo mezipaměť — přepnuté toggly přežijí odchod z obrazovky v rámci session. */
@@ -594,7 +594,8 @@ export function AdminScreen() {
 										{mb.short}
 									</span>
 									{COLS.map(({ pid, p }) => {
-										const v = adm.acc[mbid]?.[pid] ?? 0;
+										// acc z provideru (S5) — matice i karta osoby čtou tentýž živý stav
+										const v = m.adm.acc[mbid]?.[pid] ?? 0;
 										return (
 											<span
 												key={pid}
@@ -603,9 +604,7 @@ export function AdminScreen() {
 												data-lock="false"
 												onClick={() => {
 													const nv = (v + 1) % 3;
-													setAdm({
-														acc: { ...adm.acc, [mbid]: { ...adm.acc[mbid], [pid]: nv } },
-													});
+													m.setAdmAcc(mbid, pid, nv);
 													showToast(
 														`${p.n} — ${ROLE[nv]} pro ${mb.short}${nv === 0 ? ". Schránka z jeho UI zmizí („co nevidíš, neexistuje“)" : ""}`,
 													);

@@ -9,6 +9,7 @@
  */
 import {
 	type CSSProperties,
+	type KeyboardEvent,
 	type MouseEvent,
 	type ReactNode,
 	useMemo,
@@ -1019,6 +1020,61 @@ export function MailList({
 		return () => document.removeEventListener("mousedown", h);
 	}, [vmenu]);
 
+	// A11y: span-tlačítka jsou jen onClick — Enter/Space je zpřístupní klávesnici
+	// a čtečka je hlásí jako tlačítka (audit MED MailList.tsx:1229).
+	const kb = (fn: () => void) => ({
+		role: "button" as const,
+		tabIndex: 0,
+		onKeyDown: (e: KeyboardEvent) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				fn();
+			}
+		},
+	});
+	// Akce hlavičky navíc zavřou popover Filtry/Zobrazení — jinak zůstal otevřený
+	// „na pozadí" pod jiným overlayem (audit LOW MailList.tsx:1012).
+	const openDrawer = () => {
+		setVmenu(false);
+		onOpenDrawer();
+	};
+	const openSearch = () => {
+		setVmenu(false);
+		onSearch();
+	};
+	const openBell = () => {
+		setVmenu(false);
+		bellSeen = true;
+		setBellDot(false);
+		setNotifOn(true);
+	};
+	const openAsk = () => {
+		setVmenu(false);
+		setAskOn(true);
+	};
+	const openCompose = () => {
+		setVmenu(false);
+		onCompose();
+	};
+	const toggleVmenu = () => setVmenu((v) => !v);
+	// Hromadné „→ úkoly": jeden souhrnný toast (i pro 1 vlákno), per-vlákno hlášky
+	// quickTasku potlačené (audit LOW MailList.tsx:1674).
+	const bulkToTasks = () => {
+		const ids = Object.keys(m.selIds);
+		let created = 0;
+		let skipped = 0;
+		for (const id of ids) {
+			if (m.quickTask(id, { silent: true }) === "created") created++;
+			else skipped++;
+		}
+		m.clearSel();
+		showToast(
+			skipped
+				? `${created} úkolů založeno · ${skipped} přeskočeno (už úkol mají)`
+				: `${created} úkolů založeno z vybraných vláken`,
+		);
+	};
+
 	const selCount = Object.keys(m.selIds).length;
 	const fCount = Object.values(m.filters).filter(Boolean).length;
 	const pinShown = m.pinExp ? pinRows : pinRows.slice(0, 3);
@@ -1134,7 +1190,9 @@ export function MailList({
 				>
 					<span
 						data-msubbtn
-						onClick={onOpenDrawer}
+						onClick={openDrawer}
+						{...kb(openDrawer)}
+						aria-label="Schránky a složky"
 						style={{
 							width: 31,
 							height: 31,
@@ -1208,7 +1266,9 @@ export function MailList({
 					<span style={{ flex: 1 }} />
 					<span
 						data-rowbtn
-						onClick={onSearch}
+						onClick={openSearch}
+						{...kb(openSearch)}
+						aria-label="Hledat v poště"
 						title="Hledat v poště ( / nebo ⌘K )"
 						style={{ border: "1px solid var(--line)", background: "var(--panel)" }}
 					>
@@ -1228,11 +1288,9 @@ export function MailList({
 					{/* zvonek — NotifCenter (prototyp ui.bell, ř. 329) */}
 					<span
 						data-rowbtn
-						onClick={() => {
-							bellSeen = true;
-							setBellDot(false);
-							setNotifOn(true);
-						}}
+						onClick={openBell}
+						{...kb(openBell)}
+						aria-label="Oznámení"
 						title="Oznámení"
 						style={{
 							border: "1px solid var(--line)",
@@ -1272,7 +1330,9 @@ export function MailList({
 					{/* Ask Watson — mosazné W (prototyp ui.ask, ř. 330) */}
 					<span
 						data-rowbtn
-						onClick={() => setAskOn(true)}
+						onClick={openAsk}
+						{...kb(openAsk)}
+						aria-label="Ask Watson — zeptej se pošty"
 						title="Ask Watson — zeptej se pošty"
 						style={{
 							border: "1px solid var(--brass)",
@@ -1299,7 +1359,9 @@ export function MailList({
 					</span>
 					<span
 						data-rowbtn
-						onClick={() => setVmenu((v) => !v)}
+						onClick={toggleVmenu}
+						{...kb(toggleVmenu)}
+						aria-label="Filtry a zobrazení"
 						title="Filtry a zobrazení"
 						style={{
 							border: "1px solid var(--line)",
@@ -1349,7 +1411,9 @@ export function MailList({
 					</span>
 					<span
 						data-primary
-						onClick={onCompose}
+						onClick={openCompose}
+						{...kb(openCompose)}
+						aria-label="Napsat novou zprávu"
 						style={{
 							display: "inline-flex",
 							alignItems: "center",
@@ -1673,12 +1737,8 @@ export function MailList({
 					<span style={{ flex: 1 }} />
 					<span
 						data-ghost
-						onClick={() => {
-							const ids = Object.keys(m.selIds);
-							for (const id of ids) m.quickTask(id);
-							m.clearSel();
-							if (ids.length > 1) showToast(`${ids.length} úkolů založeno z vybraných vláken`);
-						}}
+						onClick={bulkToTasks}
+						{...kb(bulkToTasks)}
 						title="Z každého vybraného vlákna vznikne úkol s předvyplněním"
 						style={{ fontSize: 11, padding: "5px 10px", color: "var(--brass-text)" }}
 					>
@@ -1687,6 +1747,7 @@ export function MailList({
 					<span
 						data-ghost
 						onClick={() => m.bulkAct("done")}
+						{...kb(() => m.bulkAct("done"))}
 						style={{ fontSize: 11, padding: "5px 10px" }}
 					>
 						Hotovo
@@ -1694,18 +1755,15 @@ export function MailList({
 					<span
 						data-ghost
 						onClick={() => m.bulkAct("unread")}
+						{...kb(() => m.bulkAct("unread"))}
 						style={{ fontSize: 11, padding: "5px 10px" }}
 					>
 						Přečtené
 					</span>
 					<span
 						data-ghost
-						onClick={() => {
-							const ids = Object.keys(m.selIds);
-							for (const id of ids) m.setOv(id, { snoozed: "zítra 8:00" });
-							m.clearSel();
-							showToast(`${ids.length} odloženo na zítra 8:00`);
-						}}
+						onClick={() => m.bulkAct("snooze")}
+						{...kb(() => m.bulkAct("snooze"))}
 						style={{ fontSize: 11, padding: "5px 10px" }}
 					>
 						Odložit
@@ -1713,6 +1771,7 @@ export function MailList({
 					<span
 						data-ghost
 						onClick={() => m.bulkAct("arch")}
+						{...kb(() => m.bulkAct("arch"))}
 						style={{ fontSize: 11, padding: "5px 10px" }}
 					>
 						Archiv
@@ -1720,6 +1779,7 @@ export function MailList({
 					<span
 						data-ghost
 						onClick={() => m.bulkAct("trash")}
+						{...kb(() => m.bulkAct("trash"))}
 						style={{ fontSize: 11, padding: "5px 10px", color: "var(--overdue)" }}
 					>
 						Koš
@@ -1727,6 +1787,8 @@ export function MailList({
 					<span
 						data-rowbtn
 						onClick={m.clearSel}
+						{...kb(m.clearSel)}
+						aria-label="Zrušit výběr"
 						title="Zrušit výběr (Esc)"
 						style={{ border: "1px solid var(--line)", background: "var(--panel)" }}
 					>
