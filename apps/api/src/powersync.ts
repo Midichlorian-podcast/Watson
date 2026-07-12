@@ -106,6 +106,12 @@ interface TableDef {
 	refProjectCols?: { col: string; table: string }[];
 	/** Sloupce s user_id, které musí být členem projektu řádku (assignments.user_id). */
 	memberCols?: string[];
+	/** FK sloupce na řádek se sloupcem `workspace_id`, jehož workspace musí být STEJNÝ jako
+	 *  workspace zapisovaného řádku — brání cross-tenant referenci u workspace-scoped tabulek
+	 *  (list_items.list_id/section_id, lists.project_id/template_id). Audit S7. */
+	refWorkspaceCols?: { col: string; table: string }[];
+	/** Sloupce s user_id, které musí být členem workspace řádku (list_items.who_id). Audit S7. */
+	memberWorkspaceCols?: string[];
 }
 
 /** Pořadí projektových rolí (R5) — vyšší číslo = víc práv. */
@@ -360,6 +366,10 @@ const TABLES: Record<string, TableDef> = {
 		hasUpdatedAt: true,
 		creatorCol: "created_by",
 		workspaceVia: { kind: "column", col: "workspace_id" },
+		refWorkspaceCols: [
+			{ col: "project_id", table: "projects" },
+			{ col: "template_id", table: "list_templates" },
+		],
 	},
 	list_sections: {
 		columns: {
@@ -370,6 +380,7 @@ const TABLES: Record<string, TableDef> = {
 		},
 		hasUpdatedAt: false,
 		workspaceVia: { kind: "column", col: "workspace_id" },
+		refWorkspaceCols: [{ col: "list_id", table: "lists" }],
 	},
 	list_items: {
 		columns: {
@@ -384,6 +395,11 @@ const TABLES: Record<string, TableDef> = {
 		},
 		hasUpdatedAt: false,
 		workspaceVia: { kind: "column", col: "workspace_id" },
+		refWorkspaceCols: [
+			{ col: "list_id", table: "lists" },
+			{ col: "section_id", table: "list_sections" },
+		],
+		memberWorkspaceCols: ["who_id"],
 	},
 	list_templates: {
 		columns: {
@@ -524,6 +540,19 @@ async function workspaceFromDb(
 }
 
 /**
+ * Workspace_id libovolného řádku tabulky se sloupcem `workspace_id` (pro validaci
+ * cross-tenant FK referencí — audit S7). `table` je z pevného registru, ne z uživatele.
+ * Vrací null, pokud řádek zatím neexistuje (offline: reference se ještě nenahrála) —
+ * v tom případě se kontrola přeskočí (stejně shovívavě jako refProjectCols).
+ */
+async function workspaceOfRow(db: Db, table: string, id: string): Promise<string | null> {
+	const rows = (await db.execute(
+		sql`SELECT workspace_id AS v FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
+	)) as Rows;
+	return (rows[0]?.v as string) ?? null;
+}
+
+/**
  * R-oprávnění (#14): „Host" (workspace_role = guest) je jen pro čtení. True, pokud je uživatel
  * v prostoru daného projektu členem s rolí guest → jakýkoli zápis se odmítne.
  */
@@ -642,12 +671,19 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 	// Workspace-scoped tabulky (cíle): membership + role kontrola přes memberships.
 	if (def.workspaceVia) {
 		const wsNeed = new Set<string>();
+		let rowWs: string | null = null;
 		if (body.op === "PUT" || body.op === "PATCH") {
 			const w = (data[def.workspaceVia.col] as string) ?? null;
-			if (w) wsNeed.add(w);
+			if (w) {
+				wsNeed.add(w);
+				rowWs = w;
+			}
 		}
 		const cur = await workspaceFromDb(db, body.table, def, body.id);
-		if (cur) wsNeed.add(cur);
+		if (cur) {
+			wsNeed.add(cur);
+			if (!rowWs) rowWs = cur;
+		}
 		if (!(body.op === "DELETE" && wsNeed.size === 0)) {
 			if (wsNeed.size === 0) return c.json({ error: "forbidden" }, 403);
 			for (const w of wsNeed) {
@@ -657,6 +693,26 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 			}
 		}
 		try {
+			// Audit S7 — cross-tenant integrita workspace-scoped FK referencí: list_id/section_id/
+			// project_id/template_id MUSÍ patřit do stejného workspace jako řádek. Bez toho by šlo
+			// zapsat položku s workspace_id vlastního prostoru, ale list_id/who_id mířícím jinam.
+			if ((body.op === "PUT" || body.op === "PATCH") && rowWs) {
+				for (const ref of def.refWorkspaceCols ?? []) {
+					const refId = data[ref.col] as string | undefined;
+					if (!refId) continue;
+					const refWs = await workspaceOfRow(db, ref.table, refId);
+					// null = reference se ještě nenahrála (offline) → přeskoč (jako refProjectCols).
+					if (refWs && refWs !== rowWs)
+						return c.json({ error: "cross-workspace-reference" }, 403);
+				}
+				// who_id apod. musí být člen workspace řádku (ne cizí/neexistující uživatel).
+				for (const col of def.memberWorkspaceCols ?? []) {
+					const uid = data[col] as string | undefined;
+					if (!uid) continue;
+					if (!(await workspaceRole(db, rowWs, uid)))
+						return c.json({ error: "assignee not a workspace member" }, 403);
+				}
+			}
 			await applyWrite(db, body.table, def, body.op, body.id, data, userId);
 			await auditLog(db, body.table, body.op, body.id, data, userId);
 		} catch (err) {
