@@ -19,7 +19,7 @@ import {
 } from "react";
 import { showToast } from "../lib/toast";
 import { type SwipeSide, useSwipe } from "../lib/useSwipe";
-import { AskWatson } from "./AskWatson";
+import { useWatson } from "../lib/watson";
 import { CtxMenu } from "./CtxMenu";
 import { AI_QUEUE_SEED, type AiQueueItem, GK, MB, P, SLA, STL, type MailThread } from "./data";
 import { NotifCenter } from "./NotifCenter";
@@ -952,9 +952,9 @@ export function MailList({
 	const [vmenu, setVmenu] = useState(false);
 	// kontextové menu řádku (pravý klik); hledání a Napsat řídí MailScreen (⌘K/C)
 	const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(null);
-	// zvonek (NotifCenter) + Ask Watson — overlaye ukotvené na hlavičce seznamu
+	// zvonek (NotifCenter) ukotvený na hlavičce; Watson = JEDEN globální (karta W)
 	const [notifOn, setNotifOn] = useState(false);
-	const [askOn, setAskOn] = useState(false);
+	const { toggleWatson } = useWatson();
 	const [bellDot, setBellDot] = useState(!bellSeen);
 	// zobrazení: hustota + počet řádků náhledu (prototyp dens/lines, persist)
 	const [dens, setDensRaw] = useState<"comfort" | "compact">(() =>
@@ -1048,9 +1048,10 @@ export function MailList({
 		setBellDot(false);
 		setNotifOn(true);
 	};
+	// Watson v mailu = TÝŽ globální Watson jako všude jinde (jedna karta, jedno chování).
 	const openAsk = () => {
 		setVmenu(false);
-		setAskOn(true);
+		toggleWatson();
 	};
 	const openCompose = () => {
 		setVmenu(false);
@@ -1332,8 +1333,8 @@ export function MailList({
 						data-rowbtn
 						onClick={openAsk}
 						{...kb(openAsk)}
-						aria-label="Ask Watson — zeptej se pošty"
-						title="Ask Watson — zeptej se pošty"
+						aria-label="Zeptej se Watsona"
+						title="Zeptej se Watsona"
 						style={{
 							border: "1px solid var(--brass)",
 							background: "var(--brass-soft)",
@@ -2322,7 +2323,6 @@ export function MailList({
 			<CtxMenu ctx={ctx} onClose={() => setCtx(null)} />
 			{/* overlaye hlavičky: notifikační centrum + Ask Watson */}
 			<NotifCenter open={notifOn} onClose={() => setNotifOn(false)} />
-			<AskWatson open={askOn} onClose={() => setAskOn(false)} />
 		</div>
 	);
 }

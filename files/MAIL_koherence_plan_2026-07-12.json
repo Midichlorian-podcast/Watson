@@ -1,0 +1,234 @@
+{
+  "summary": "Audit průřezové nekonzistence mailu vs zbytek appky (Watson, hledání, oznámení, nastavení, filtry) + plán sjednocení",
+  "agentCount": 6,
+  "logs": [
+    "parallel[0] failed: agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output",
+    "parallel[1] failed: agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output",
+    "parallel[2] failed: agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output",
+    "parallel[3] failed: agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output"
+  ],
+  "result": {
+    "plan": {
+      "principle": "Mail je OBSAHOVÝ modul, ne samostatná appka: průřezové prvky (Watson, hledání, oznámení, nastavení, filtry) jsou JEDNY sdílené komponenty vykreslené všude stejně, a mail si drží jen svůj obsahový toolbar.",
+      "summary": "Kořen problému je strukturální: v apps/web/src/layout/AppLayout.tsx:73 platí `{!onMail && <Header />}` — na mailové route se POTLAČÍ celý globální Header a MailList.tsx si vykreslí VLASTNÍ hlavičku se svým Watsonem (W), hledáním (lupa), zvonkem, filtry a Napsat. Odtud pramení všechny duplicity: dva různí Watsoni (mail/AskWatson.tsx = demo canned odpovědi + „AI backend není připojen\" vs components/WatsonCard.tsx = reálný Claude přes /api/watson/command), dvojí hledání (mail/SearchOverlay.tsx vs screens/Hledat.tsx + CommandPalette), dva zvonky (mail/NotifCenter.tsx vs components/NotifCenter.tsx v Header) a dvojí nastavení (mail/NastaveniScreen+AdminScreen vs screens/Nastaveni.tsx). WatsonProvider je přitom už namontován app-wide (AppLayout.tsx:54), takže globální Watson jde v mailu zpřístupnit levně pouhým přesměrováním tlačítka. Plán řadí práci od nejlevnějšího/nejviditelnějšího (Watson) přes strukturální páteř (zrušení „header takeover\") k filtrům a nakonec k reálnému mailu (M1), který je oddělený, protože mail je z ~95 % demo (seed data.ts + localStorage) a reálně persistuje jen „úkol z mailu\".",
+      "phases": [
+        {
+          "name": "Fáze 1 — Jeden Watson všude (headline)",
+          "concern": "Dva různí asistenti se stejným jménem/ikonou: v mailu demo Q&A s canned odpovědmi a hláškou „AI backend není připojen\" (mail/AskWatson.tsx), ve zbytku appky reálný Claude s návrhy akcí ke schválení (components/WatsonCard.tsx přes /api/watson/command). Uživatel v mailu dostane jiného, slabšího Watsona.",
+          "whatChanges": "Mailové tlačítko W (MailList.tsx:1330, openAsk) a overlay AskWatson se nahradí globální kartou WatsonCard. Jedna ikona, jedna karta, jedno chování. AskWatson.tsx se po dosažení parity vyřadí a smaže.",
+          "approach": "openAsk v MailList napojit na useWatson().toggleWatson() — provider už běží app-wide (AppLayout.tsx:54), takže žádný nový mount. Vizuál W-badge sjednotit s globálním (kroužek W). Demo canned odpovědi (faktura/grant/MČR/sdílené) NEmigrovat do reálné cesty — jsou to seed fikce; buď je dočasně předat WatsonCard jako read-only „mail knowledge\" kontext, nebo je do M1 vypnout (viz otevřené rozhodnutí). Permission-aware patička mailu („odpovídá jen z pošty, kam máš přístup\") přenést jako copy do sdílené karty, až bude reálný mail.",
+          "effort": "M",
+          "risk": "Střední. Mailový Watson uměl odkazovat na mailové zdroje (byť demo) a měl per-schránka „AI vypnutá\" logiku; globální Watson tohle neumí a mailová data zatím nevidí (mail je demo). Do M1 tedy globální Watson v mailu neodpoví na obsah pošty — nutno komunikovat honestně, ne předstírat.",
+          "userFacing": "Jedno „W\", jedna karta, stejné chování v mailu i mimo. V mailu už nevyskočí druhý odlišný asistent; mailově-obsahové dotazy počkají na reálný mail (M1)."
+        },
+        {
+          "name": "Fáze 2 — Sdílený chrome: konec „header takeover\"",
+          "concern": "Root cause `{!onMail && <Header />}` (AppLayout.tsx:73): mail nahrazuje celý globální Header vlastní hlavičkou v MailList.tsx (řádek ~1266–1434: lupa, zvonek, W, filtry, Napsat). Odtud DUPLICITA hledání, oznámení, Watsona a systémových ikon — a vizuální nesoulad (mail používá vlastní data-rowbtn ikony, jiné hover/rozměry než ICON_BTN v Header.tsx).",
+          "whatChanges": "Mail přestane potlačovat globální Header. Systémové ikony (hledání, zvonek, motiv, Watson) = tytéž globální komponenty z Header.tsx. MailList si nechá jen OBSAHOVÝ toolbar: název složky + počet, přepínač hustoty/náhledu, Napsat. Mailové SearchOverlay a NotifCenter přestanou být samostatné vstupní body v hlavičce.",
+          "approach": "Vykreslit Header i onMail (odstranit výjimku, nebo zavést variantu Header pro mail, která ukáže mailové subtitle/akce). Z MailList header row vyjmout lupu/zvonek/W. Napojit obsah: globální hledání otevře mailový výsledkový režim když jsme v mailu (přes MailBridge, který už existuje — mail/bridge.tsx), globální zvonek agreguje i mailové položky (Fáze 4). Sladit výšky/scroll (mail.css počítá s plnou výškou bez globálního headeru) a data-wm-theme scope. Reconciliovat s handoff prototypem (files/MAIL_*.md, design/BRIEF_mail*).",
+          "effort": "L",
+          "risk": "Střední až vysoký. MailList.tsx má 2485 řádků a hlavička je hluboko inline; mail layout (3-panel, resize táhlo, Full Screen čtení) předpokládá, že nad ním není globální Header → riziko regresí ve výšce/scrollu na desktopu i mobilu. Zároveň to VĚDOMĚ odchyluje mail od samostatného 1:1 prototypu → nutný design sign-off (memory „Design fidelity 1:1\").",
+          "userFacing": "Napříč celou appkou stejná horní lišta se stejnými ikonami na stejných místech. V mailu zmizí pocit „appka v appce\"; nahoře zůstane jen to, co je opravdu mailové (název složky, Napsat, hustota)."
+        },
+        {
+          "name": "Fáze 3 — Jedno filtrovací paradigma",
+          "concern": "Mail = 4 pevné booleany (unread/att/mine/fu) schované za neoznačenou ikonou (tři čárky+tečky) ve sloučeném popoveru „Filtry a zobrazení\", aktivní chipy v samostatném řádku s neutrálním okrajem + mono „zrušit vše\". Úkoly = multi-dimenzionální datově-řízené filtry + řazení přes označené tlačítko „Filtr\" (nálevka), inline mosazné chipy (TasksToolbar.tsx). Dva různé ovladače pro stejný pojem; navíc duplikované a rozcházející se labely (CHIP_LBL „Nepřečtené\" vs FROWS „Jen nepřečtené\").",
+          "whatChanges": "Vznikne sdílený primitiv <FilterToolbar> + chipStyle/pillStyle/SectionLabel (vytěženo z TasksToolbar.tsx do apps/web/src/components/filterUi.tsx). Mail i úkoly ho konzumují. Mailový popover se rozdělí: „Zobrazení\" (hustota/náhled/označit přečtené) zůstane vlastním ovladačem, „Filtr\" se surface-uje jako toolbar řádek nad seznamem identický s úkoly. Sjednotí se aktivní-chip vizuál (inline mosazné rounded-full + jeden clear-all) a smaže CHIP_LBL/FROWS duplikace.",
+          "approach": "1) Vytáhnout helpery + generický <FilterToolbar> (parametrizovaný: booleany i pole). 2) Refaktorovat TasksToolbar na sdílený primitiv bez změny chování (ověření abstrakce). 3) Mailové m.filters/m.toggleFilter (state.tsx) namapovat na jednu toggle-skupinu; volitelně přidat skupiny Schránka + Osoba pro paritu. 4) Sjednotit segmentované záložky (mail data-tab Inbox/Dispečink, úkoly tab-pilulky, Header view-switcher) na jeden token. 5) Rozhodnout scope životnosti filtrů (viz otevřené rozhodnutí).",
+          "effort": "L",
+          "risk": "Střední. Filtry jsou ephemerální UI stav (žádné schéma/backend), nízké riziko ztráty dat, ale filtr-UI je hluboko inline v 2485řádkovém MailList a svázané se sloučeným popoverem → riziko regresí při rozpletení. Doporučeno po skupinách: nejdřív vstupní bod + styl chipů + labely (rychlá shoda), pak generalizace stavového modelu.",
+          "userFacing": "Filtr v mailu vypadá i ovládá se přesně jako v úkolech: stejná nálevka, stejné pilulky ve stejném popoveru, stejné mosazné inline chipy, jeden „Vymazat filtry\". Konec matoucího „proč tu filtruju jinak\"."
+        },
+        {
+          "name": "Fáze 4 — Oznámení a Nastavení jako sdílené povrchy",
+          "concern": "Dva zvonky: mailový NotifCenter (SLA/@zmínka/gatekeeper/bounce, session cache) žije jen v mailu, globální NotifCenter (štafety/po termínu/pošta) v Header. A dvojí nastavení: mailové podpisy/VIP/gatekeeper/AI úrovně (mail/NastaveniScreen.tsx + AdminScreen.tsx, dosažitelné jen z mail/MailSub přes m.setScr) vs globální screens/Nastaveni.tsx.",
+          "whatChanges": "Mailové notifikační položky přitečou do globálního NotifCenter jako další ZDROJ (ne druhý zvonek). Mailová nastavení se stanou sekcemi globálních Nastavení (jedna vstupní cesta, jeden vzhled), Admin/gatekeeper jako karta uvnitř.",
+          "approach": "Rozšířit components/NotifCenter useNotifItems o mailové zdroje (odvození z mail/state — SLA, @zmínky, gatekeeper fronta, bounce), sjednotit vizuál teček/řádků. Mailové settings screeny nechat jako komponenty, ale montovat je ze screens/Nastaveni.tsx jako sekce; odkaz v mail/MailSub přesměrovat tam. Respektovat, že mailová nastavení jsou z 95 % demo (localStorage) — sjednotit vzhled, ale nepředstírat serverovou persistenci.",
+          "effort": "L",
+          "risk": "Střední. Mailové notif položky jsou odvozené ze seedu — sloučení do globálního centra nesmí rozbít „viděno\" stav. Settings jsou demo → sjednocení je hlavně UI/navigační, malé datové riziko, ale nutné jasně označit, co je zatím demo.",
+          "userFacing": "Jeden zvonek s jedním odznakem pro celou appku (i mailové SLA/gatekeeper). Jedno Nastavení, kde mailové volby (podpisy, VIP, AI úrovně) najdeš tam, kde všechno ostatní — ne schované uvnitř mailu."
+        },
+        {
+          "name": "Fáze 5 — Reálný mail (M1) — oddělené",
+          "concern": "Mail je z ~95 % demo: seed data.ts + localStorage, reálně persistuje jen „úkol z mailu\". Sjednocený Watson/hledání/oznámení proto zatím operují nad fikcí, ne nad skutečnou poštou.",
+          "whatChanges": "Teprve tady dostanou už sjednocené průřezové prvky reálná mailová data: explicitní tabulky + entity_links, sféra=isPersonal, gatekeeper/AI úrovně nad reálnou schránkou. Watson začne odpovídat na skutečný obsah pošty, hledání i zvonek čtou reálné mailové entity.",
+          "approach": "Dle files/MAIL_integracni_PLAN.md a memory „Mail integrační plán\" (architektura A, fázování M1–M3). MIMO rozsah sjednocení chrome — chrome se sjednotí nad demem (Fáze 1–4), M1 pak jen vymění zdroj dat pod už sdílenými komponentami. To je záměrné pořadí: neblokovat konzistenci UI čekáním na backend.",
+          "effort": "XL",
+          "risk": "Vysoký. Velký přepis s reálným schématem, sync (PowerSync), oprávněními a sférami; dotýká se bezpečnosti a per-user viditelnosti. Ale díky Fázím 1–4 už bude UI jednotné, takže M1 nese jen datové/backendové riziko, ne UI-konzistenční.",
+          "userFacing": "Watson, hledání a oznámení začnou vidět skutečnou poštu místo seedu; do té doby vše vypadá a ovládá se jednotně, jen mailový obsah je demo."
+        }
+      ],
+      "openDecisions": [
+        "Watson do M1: mají mailově-obsahové canned odpovědi (faktura/grant/MČR/sdílené) zůstat dočasně jako demo „mail knowledge\" v jedné sdílené kartě (kontinuita), nebo je do reálného mailu úplně vypnout (honestně: Watson v mailu zatím na obsah pošty neodpoví)?",
+        "Scope životnosti filtrů: sjednotit obě strany na ephemerální per-screen (jako dnešní TasksToolbar, resetuje se při remountu), nebo obě persistovat (mailové dnes přežijí přepnutí složky, ne reload)? Rozhodnutí určí, kam uložit stav.",
+        "Mailová Nastavení: fyzicky přesunout do screens/Nastaveni.tsx jako sekce (jedna cesta, jeden zdroj), nebo nechat mail/NastaveniScreen+AdminScreen jako komponenty a jen je montovat z globálních Nastavení + sjednotit vzhled? (rychlost vs. čistota)",
+        "Segmentované záložky mailu (Inbox/Oznámení/Newslettery, Dispečink): zůstanou jako mailově-specifický scoping (nemají obdobu v úkolech), nebo se mají mapovat na sdílený tab-token spolu s Header view-switcherem a úkolovými pilulkami?",
+        "Globální Header na mailu (Fáze 2): má „Napsat\" zůstat v mailovém obsahovém toolbaru (kontextové, mizí mimo mail), nebo se povýšit do globálního headeru jako primární akce vedle „+ Úkol\"? A má header ukazovat mailové subtitle (počet ve složce) obdobně jako u úkolů?",
+        "Design governance: kdo dělá sign-off na to, že sjednocený chrome je NOVÝ zdroj pravdy? Nutná aktualizace handoffu (files/MAIL_*.md, design/BRIEF_mail*), protože Fáze 2 vědomě odchyluje mail od jeho samostatného 1:1 prototypu (memory „Design = zdroj pravdy\" / „Design fidelity 1:1\")."
+      ]
+    },
+    "audits": [
+      {
+        "concern": "FILTROVÁNÍ — jak se ovládají a zobrazují filtry v mailu vs. v úkolech/seznamech. Cíl: jedno filtrovací paradigma (stejné ovládání, chipy, umístění, styl) napříč celou appkou.",
+        "mailVersion": "Soubor: /Users/adamkosir/Desktop/Watson/apps/web/src/mail/MailList.tsx (+ stav /Users/adamkosir/Desktop/Watson/apps/web/src/mail/state.tsx). MODEL: 4 pevné booleany — m.filters = { unread, att, mine, fu } (state.tsx:150, 304–308), přepínání m.toggleFilter (state.tsx:998). Žádná priorita/projekt/stav/osoba jako filtr, ŽÁDNÉ řazení (pořadí je natvrdo dle priority ve useListRows, MailList.tsx:124–196). ENTRY POINT: filtry jsou schované ve SLOUČENÉM popoveru „Filtry a zobrazení\" (vmenu) za neoznačeným ikon-tlačítkem se třemi čárkami+tečkami (vypadá jako posuvníky/nastavení), vpravo v hlavičce mezi lupou/zvonkem/W/Napsat (MailList.tsx:1360–1411); ikona nese mosazný číselný badge fCount. RENDER VOLEB: uvnitř popoveru sekce „Filtry\" = 4 CELOŠÍŘKOVÉ řádky se zaškrtnutím (data-menuitem, FROWS, MailList.tsx:1465–1487), pod tím sekce „Zobrazení\" (hustota/náhled = data-statepill pilulky) a „Označit vše jako přečtené\". AKTIVNÍ CHIPY: samostatný řádek POD hlavičkou, chip rounded-999 s okrajem var(--line) (neutrální, ne mosazná výplň) + × u každého + mono odkaz „zrušit vše\" (MailList.tsx:1564–1606). Labely filtrů DUPLIKOVÁNY a NEKONZISTENTNÍ: CHIP_LBL.unread = „Nepřečtené\" (MailList.tsx:85–90) vs FROWS.unread = „Jen nepřečtené\" (MailList.tsx:1085–1090). Navíc mail má paralelní scoping přes segmentované záložky Inbox/Oznámení/Newslettery a Dispečink (data-tab, MailList.tsx:1608–1708) — vlastní filtrovací mechanismus bez obdoby v úkolech.",
+        "globalVersion": "Soubor: /Users/adamkosir/Desktop/Watson/apps/web/src/components/TasksToolbar.tsx (použit z /Users/adamkosir/Desktop/Watson/apps/web/src/screens/Ukoly.tsx:193). MODEL: multi-dimenzionální, pole nad reálnými daty — ToolbarState = { priorities:number[], statuses:StatusKey[], projects:string[], people:string[], sortBy, asc, showDone } (TasksToolbar.tsx:13–32); čisté funkce filterTasks/sortTasks (TasksToolbar.tsx:125–174); data z workspace (projekty, členové) přes useToolbarCtx. STAV je LOKÁLNÍ per-obrazovka (useState tb ve VseTab, Ukoly.tsx:55) — neperzistuje, resetuje se při remountu. ENTRY POINT: inline TOOLBAR řádek nad seznamem s OZNAČENÝM chip-tlačítkem „Filtr\" (nálevkovitá ikona + ▾, chipStyle, TasksToolbar.tsx:322–339), vedle split-buttonu „Řazení\" + směr (TasksToolbar.tsx:484–537) a toggle „Dokončené\" (572–589). RENDER VOLEB: popover se sekcemi Priorita (P1–P4 pilulky), Stav (4 pilulky), Projekt (search input + pilulky s barevnou tečkou), Osoba (search + pilulky, skryto v osobním ws) + odkaz „Vymazat filtry\" (TasksToolbar.tsx:340–479); vše přes sdílené helpery chipStyle/pillStyle (179–201) a komponentu SectionLabel. AKTIVNÍ CHIPY: INLINE v témže toolbar řádku, mosazná výplň brass-soft rounded-full s × (TasksToolbar.tsx:591–609), BEZ „zrušit vše\" (clear je jen „Vymazat filtry\" uvnitř popoveru). Řazení je plnohodnotné ovládání (split-button + asc/desc), i18n přes t().",
+        "divergence": "FUNKČNĚ: (1) mail = 4 pevné on/off booleany; úkoly = 4 multi-select dimenze (priorita/stav/projekt/osoba) řízené reálnými daty + řazení + Dokončené — zcela jiná datová expresivita. (2) mail NEMÁ řazení; úkoly mají prominentní split-button řazení + směr. (3) mail filtry žijí v globálním MailProvideru (přežijí přepnutí složky, ale ne reload); úkolový toolbar je per-obrazovka lokální a neperzistuje — jiný scope životnosti. (4) mail používá schránky-jako-složky + segmentované záložky (Inbox/Dispečink) jako scoping; úkoly projekty-jako-filtr. VIZUÁLNĚ (proč to mate): (a) vstupní bod — mail = NEoznačená ikona (posuvníky) v řadě systémových ikon, úkoly = OZNAČENÉ tlačítko „Filtr\" s nálevkou ve vlastním řádku → uživatel v mailu filtry ani nepozná jako filtry. (b) render voleb — mail = celoširoké zaškrtávací menu-řádky, úkoly = malé pilulky; stejný pojem (multi-select) dvěma úplně jinými ovladači. (c) aktivní chipy — mail = samostatný řádek, neutrální rounded-999 s okrajem + „zrušit vše\"; úkoly = inline, mosazná výplň rounded-full, bez clear-all. (d) mail mixuje filtry s „Zobrazením\" (hustota/náhled/označit přečtené) do jednoho popoveru — koncept „filtruji\" a „nastavuji vzhled\" splynul. (e) duplikované a rozcházející se labely (Nepřečtené vs Jen nepřečtené). (f) styl chipů: mail inline-styly a CHIP_LBL/FROWS, úkoly sdílené chipStyle/pillStyle — dva zdroje pravdy.",
+        "unifyRecommendation": "Přijmout paradigma TasksToolbaru jako kanonické (je bohatší, datově řízené, má sdílené helpery i i18n) a mailový seznam k němu přitáhnout. Konkrétně: (1) Vytěžit sdílený primitiv — z /Users/adamkosir/Desktop/Watson/apps/web/src/components/TasksToolbar.tsx vytáhnout chipStyle/pillStyle/SectionLabel a generický <FilterToolbar> (označené tlačítko „Filtr\" s nálevkou + popover skupin pilulek + inline aktivní chipy + volitelné Řazení + volitelné trailing toggly) do sdíleného ui modulu (např. apps/web/src/components/filterUi.tsx). Parametrizovat dimenze: úkoly předají priorita/stav/projekt/osoba (pole), mail své 4 booleany jako jednu skupinu toggle-pilulek (mapováno na m.filters/m.toggleFilter beze změny stavu) + volitelně skupiny Schránka a Osoba/vlastník reuse stejného vzoru. (2) V mailu ROZDĚLIT dnešní vmenu „Filtry a zobrazení\": „Zobrazení\" (hustota/náhled/označit přečtené) nechat pod samostatným ovladačem, a Filtr surface-ovat jako vlastní toolbar řádek nad seznamem identický s úkoly (stejná nálevka, chipStyle tlačítko, pilulkový render voleb, inline brass-soft aktivní chipy, „Vymazat filtry\"). (3) Sjednotit aktivní-chip vizuál na JEDEN (inline mosazné rounded-full + jednotný clear-all) a odstranit mailový samostatný řádek s neutrálními chipy a mono „zrušit vše\". (4) Smazat duplikaci labelů (CHIP_LBL/FROWS) — jeden zdroj, opravit „Nepřečtené\" vs „Jen nepřečtené\". (5) Sjednotit segmentované záložky (mail data-tab vs úkoly tab-pilulky vs view-switcher v Header.tsx) na jeden token/komponentu. (6) Rozhodnout scope životnosti filtrů a srovnat obě strany (buď obě ephemerálně per-screen, nebo obě persistovat). (7) Governance: tato změna VĚDOMĚ odchyluje mail od jeho samostatného 1:1 prototypu — nutno reconciliovat s design handoffem (files/MAIL_*.md, design/BRIEF_mail*), aby sjednocený chrome byl nový zdroj pravdy (viz memory „Design = zdroj pravdy\" a „Design fidelity 1:1\").",
+        "steps": [
+          "Vytáhnout chipStyle/pillStyle/SectionLabel + generický <FilterToolbar> z TasksToolbar.tsx do sdíleného modulu (apps/web/src/components/filterUi.tsx); parametrizovat skupiny filtrů (booleany i pole).",
+          "Refaktorovat TasksToolbar tak, aby konzumoval sdílený primitiv — bez změny chování (ověření abstrakce).",
+          "V MailList.tsx rozdělit vmenu: Zobrazení (hustota/náhled/označit přečtené) do vlastního ovladače; Filtr renderovat sdíleným <FilterToolbar> jako řádek nad seznamem, styl 1:1 s úkoly (nálevka, chipStyle, pilulky).",
+          "Namapovat m.filters/m.toggleFilter na jednu toggle-skupinu sdíleného toolbaru; volitelně přidat skupiny Schránka + Osoba/vlastník pro paritu.",
+          "Sjednotit aktivní-chip vizuál (inline brass-soft rounded-full + jeden clear-all), odstranit mailový samostatný chip řádek a mono „zrušit vše“.",
+          "Smazat CHIP_LBL/FROWS duplikaci, jeden zdroj labelů, opravit Nepřečtené vs Jen nepřečtené.",
+          "Sjednotit segmentované záložky (mail data-tab, úkoly tab-pilulky, Header view-switcher) na jeden sdílený styl/komponentu.",
+          "Sjednotit scope životnosti filtrů (obě per-screen ephemerálně, nebo obě persistovat) — rozhodnout produktově.",
+          "Reconciliovat s design handoffem (files/MAIL_*.md, design/BRIEF_mail*) + design sign-off; teprve pak je sjednocený chrome zdroj pravdy.",
+          "Ověřit v běžící appce: filtr v mailu i v úkolech vypadá i se chová identicky (vstupní bod, popover, chipy, clear)."
+        ],
+        "effort": "L",
+        "risk": "Střední. Bez schématu/backendu — filtry jsou ephemerální UI stav, nízké riziko ztráty dat. Ale: (1) MailList.tsx je 2485 řádků a filtr-UI je hluboko inline a svázané se sloučeným vmenu → riziko regresí při rozpletení. (2) Hlavní riziko je DESIGN-KONTRAKT: mail byl postaven 1:1 ze SAMOSTATNÉHO prototypu a memory tvrdě požaduje 1:1 fidelitu — sjednocení mail vědomě odchyluje od toho prototypu, takže bez aktualizace handoffu a design sign-offu hrozí konflikt „design vs. konzistence\". Přesně to je napětí, které uživatel pojmenoval. Doporučeno dělat po skupinách (nejdřív vstupní bod + styl chipů + labely = rychlá shoda, pak generalizace stavového modelu)."
+      }
+    ]
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Audit"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Plan"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "audit:watson",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "af3cf81f2812919db",
+      "model": "claude-opus-4-8",
+      "state": "error",
+      "startedAt": 1783876894744,
+      "queuedAt": 1783876894732,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Watson (headline pruzezu): existuji DVA nezavisli Watsoni s…",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync). Mail modul (apps/web/src/mail/*) byl postaven 1:1 z SAMOSTATNÉHO design prototypu → chová se jako „appka v appce\" s VLASTNÍM chrome (vlastní Watson, hledání, oznámení, nastavení, filtry), paralelně k GLOBÁLNÍM verzím zbytku appky. Uživatel (2026-07-12): „Watson v mailu má mít TUTÉŽ funkci jako Watson ve zbyt…",
+      "lastProgressAt": 1783877377591,
+      "error": "agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output",
+      "tokens": 85683,
+      "toolCalls": 24,
+      "durationMs": 482846
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "audit:search",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "a35d897e7e6268b30",
+      "model": "claude-opus-4-8",
+      "state": "error",
+      "startedAt": 1783876894745,
+      "queuedAt": 1783876894732,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "HLEDANI: jeden koncept, realne 4 nezavisle implementace (3 …",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync). Mail modul (apps/web/src/mail/*) byl postaven 1:1 z SAMOSTATNÉHO design prototypu → chová se jako „appka v appce\" s VLASTNÍM chrome (vlastní Watson, hledání, oznámení, nastavení, filtry), paralelně k GLOBÁLNÍM verzím zbytku appky. Uživatel (2026-07-12): „Watson v mailu má mít TUTÉŽ funkci jako Watson ve zbyt…",
+      "lastProgressAt": 1783877317143,
+      "error": "agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output",
+      "tokens": 83908,
+      "toolCalls": 18,
+      "durationMs": 422397
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "audit:notifications",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "aa6102675eb6669ab",
+      "model": "claude-opus-4-8",
+      "state": "error",
+      "startedAt": 1783876894746,
+      "queuedAt": 1783876894732,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Stížnost je u oznámení doslova pravdivá, ale mechanismus je…",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync). Mail modul (apps/web/src/mail/*) byl postaven 1:1 z SAMOSTATNÉHO design prototypu → chová se jako „appka v appce\" s VLASTNÍM chrome (vlastní Watson, hledání, oznámení, nastavení, filtry), paralelně k GLOBÁLNÍM verzím zbytku appky. Uživatel (2026-07-12): „Watson v mailu má mít TUTÉŽ funkci jako Watson ve zbyt…",
+      "lastProgressAt": 1783877379055,
+      "error": "agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output",
+      "tokens": 87236,
+      "toolCalls": 20,
+      "durationMs": 484309
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "audit:settings",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "a67c215a952bd418e",
+      "model": "claude-opus-4-8",
+      "state": "error",
+      "startedAt": 1783876894746,
+      "queuedAt": 1783876894732,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Uživatel je uvnitř mailu a nastavení najde na DVOU nespojen…",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync). Mail modul (apps/web/src/mail/*) byl postaven 1:1 z SAMOSTATNÉHO design prototypu → chová se jako „appka v appce\" s VLASTNÍM chrome (vlastní Watson, hledání, oznámení, nastavení, filtry), paralelně k GLOBÁLNÍM verzím zbytku appky. Uživatel (2026-07-12): „Watson v mailu má mít TUTÉŽ funkci jako Watson ve zbyt…",
+      "lastProgressAt": 1783877387038,
+      "error": "agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output",
+      "tokens": 108000,
+      "toolCalls": 16,
+      "durationMs": 492292
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "audit:filtering",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "acb0518ff4e7283be",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783876894747,
+      "queuedAt": 1783876894732,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "FILTROVÁNÍ — jak se ovládají a zobrazují filtry v mailu vs.…",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync). Mail modul (apps/web/src/mail/*) byl postaven 1:1 z SAMOSTATNÉHO design prototypu → chová se jako „appka v appce\" s VLASTNÍM chrome (vlastní Watson, hledání, oznámení, nastavení, filtry), paralelně k GLOBÁLNÍM verzím zbytku appky. Uživatel (2026-07-12): „Watson v mailu má mít TUTÉŽ funkci jako Watson ve zbyt…",
+      "lastProgressAt": 1783877078728,
+      "tokens": 97076,
+      "toolCalls": 9,
+      "durationMs": 183981,
+      "resultPreview": "{\"concern\":\"FILTROVÁNÍ — jak se ovládají a zobrazují filtry v mailu vs. v úkolech/seznamech. Cíl: jedno filtrovací paradigma (stejné ovládání, chipy, umístění, styl) napříč celou appkou.\",\"mailVersion\":\"Soubor: /Users/adamkosir/Desktop/Watson/apps/web/src/mail/MailList.tsx (+ stav /Users/adamkosir/Desktop/Watson/apps/web/src/mail/state.tsx). MODEL: 4 pevné booleany — m.filters = { unread, att, min…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 6,
+      "label": "unify-plan",
+      "phaseIndex": 2,
+      "phaseTitle": "Plan",
+      "agentId": "a8c61154c5cc01d32",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783877387077,
+      "queuedAt": 1783877387041,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Mail je OBSAHOVÝ modul, ne samostatná appka: průřezové prvk…",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync). Mail modul (apps/web/src/mail/*) byl postaven 1:1 z SAMOSTATNÉHO design prototypu → chová se jako „appka v appce\" s VLASTNÍM chrome (vlastní Watson, hledání, oznámení, nastavení, filtry), paralelně k GLOBÁLNÍM verzím zbytku appky. Uživatel (2026-07-12): „Watson v mailu má mít TUTÉŽ funkci jako Watson ve zbyt…",
+      "lastProgressAt": 1783877804908,
+      "tokens": 90564,
+      "toolCalls": 18,
+      "durationMs": 417830,
+      "resultPreview": "{\"principle\":\"Mail je OBSAHOVÝ modul, ne samostatná appka: průřezové prvky (Watson, hledání, oznámení, nastavení, filtry) jsou JEDNY sdílené komponenty vykreslené všude stejně, a mail si drží jen svůj obsahový toolbar.\",\"summary\":\"Kořen problému je strukturální: v apps/web/src/layout/AppLayout.tsx:73 platí `{!onMail && <Header />}` — na mailové route se POTLAČÍ celý globální Header a MailList.tsx …"
+    }
+  ],
+  "totalTokens": 552467,
+  "totalToolCalls": 105
+}
