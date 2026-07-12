@@ -36,6 +36,10 @@ export const env = {
 		privateKey: process.env.VAPID_PRIVATE_KEY,
 	},
 	resendApiKey: process.env.RESEND_API_KEY,
+	/** Claude (Anthropic) — pohání AI vrstvu (modul Mítingy, Watson příkazy). */
+	anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+	/** Model pro AI extrakci — default Opus, přepnutelný přes .env kvůli ceně. */
+	anthropicModel: process.env.ANTHROPIC_MODEL ?? "claude-opus-4-8",
 };
 
 /** Google login se zapne sám, jakmile jsou v .env oba klíče. */
@@ -48,3 +52,7 @@ export const pushEnabled = Boolean(env.vapid.publicKey && env.vapid.privateKey);
 
 /** E-mailové notifikace (Resend) — jen když je klíč. */
 export const emailEnabled = Boolean(env.resendApiKey);
+
+/** AI vrstva (Claude) se zapne, jakmile je v .env ANTHROPIC_API_KEY. Bez něj běží
+ *  modul Mítingy v „mock" režimu (deterministická ukázková extrakce). */
+export const aiEnabled = Boolean(env.anthropicApiKey);

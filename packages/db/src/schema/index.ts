@@ -12,6 +12,7 @@ export * from "./enums";
 export * from "./flow";
 export * from "./goals";
 export * from "./lists";
+export * from "./meetings";
 export * from "./system";
 export * from "./task";
 export * from "./workspace";

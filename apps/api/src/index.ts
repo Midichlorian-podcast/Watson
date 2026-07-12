@@ -17,6 +17,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { auth } from "./auth";
 import { env, googleEnabled, pushEnabled } from "./env";
+import { meetingsRoutes } from "./meetings";
 import { powersyncRoutes } from "./powersync";
 import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
@@ -70,6 +71,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 /** PowerSync — JWKS, token, write upload. */
 app.route("/", powersyncRoutes);
+app.route("/", meetingsRoutes);
 
 /** Web Push — VAPID klíč, (od)hlášení odběru, test. */
 app.route("/", pushRoutes);
