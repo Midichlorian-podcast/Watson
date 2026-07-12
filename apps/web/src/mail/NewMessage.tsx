@@ -8,11 +8,22 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { showToast } from "../lib/toast";
 import { MB, TPL } from "./data";
+import { RichText, type RichTextHandle } from "./RichText";
 import { RecipientField, SigBlock, sigIdOf, SigPicker } from "./SigPicker";
 import { useMail } from "./state";
 
 /** Regex „text slibuje přílohu" — shodný se state.checkSend (prototyp ř. 3417). */
 const ATT_RE = /příloh|příloz|přikládám|přiložen|attach/i;
+
+/** Prostý text z HTML těla (composer je rich-text) — pro prázdnost + hlídku přílohy. */
+const plainText = (html: string): string =>
+	html
+		.replace(/<br\s*\/?>/gi, "\n")
+		.replace(/<\/(p|div|li)>/gi, "\n")
+		.replace(/<[^>]*>/g, "")
+		.replace(/&nbsp;/g, " ")
+		.replace(/&amp;/g, "&")
+		.trim();
 
 /** Pořadí identit v řádku Od (prototyp froms, ř. 4205–4208): 4 schránky + osobní. */
 const FROM_IDS = ["info", "granty", "podcast", "studio"] as const;
@@ -104,7 +115,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	);
 	const [warnAtt, setWarnAtt] = useState(false);
 	const [tplOpen, setTplOpen] = useState(false);
-	const taRef = useRef<HTMLTextAreaElement>(null);
+	const rteRef = useRef<RichTextHandle>(null);
 	const tplRef = useRef<HTMLDivElement>(null);
 	const m = useMail();
 
@@ -122,7 +133,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	useEffect(() => {
 		if (!open || !fwd) return;
 		setSubj((s) => s || fwd.subj);
-		setBody((b) => b || fwd.body);
+		setBody((b) => b || fwd.body.replace(/\n/g, "<br>"));
 	}, [open, fwd]);
 
 	// Esc zavírá okno (prototyp globální Escape, ř. 2746) — vlastní listener
@@ -158,7 +169,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	useEffect(() => {
 		const timer = setTimeout(() => {
 			try {
-				if (!to && !cc && !bcc && !subj && !body && atts.length === 0)
+				if (!to && !cc && !bcc && !subj && !plainText(body) && atts.length === 0)
 					localStorage.removeItem(LS_NEW);
 				else
 					localStorage.setItem(
@@ -210,7 +221,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 			return;
 		}
 		// negace („nepřikládám") nesmí spustit hlídku přílohy (audit LOW NewMessage.tsx:150)
-		const bodyForAtt = body.replace(/nepřikládám|nepřiložen\w*/gi, " ");
+		const bodyForAtt = plainText(body).replace(/nepřikládám|nepřiložen\w*/gi, " ");
 		if (ATT_RE.test(bodyForAtt) && atts.length === 0) {
 			setWarnAtt(true);
 			return;
@@ -218,19 +229,13 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 		doSend();
 	};
 
-	/** Vložení šablony NA KURZOR / append — neprázdné tělo NIKDY nepřepisuj
-	 * (audit L-50): vkládá se s prázdným řádkem kolem. */
+	/** Vložení šablony NA KURZOR (rich editor) — neprázdné tělo se nepřepisuje,
+	 * text se vloží na aktuální pozici kurzoru (audit L-50). */
 	const insertTpl = (b: string) => {
-		const ta = taRef.current;
-		setBody((prev) => {
-			if (!prev.trim()) return b;
-			const pos = ta ? (ta.selectionStart ?? prev.length) : prev.length;
-			const before = prev.slice(0, pos).replace(/\n*$/, "");
-			const after = prev.slice(pos).replace(/^\n*/, "");
-			return before + (before ? "\n\n" : "") + b + (after ? `\n\n${after}` : "");
-		});
+		if (plainText(body).trim()) rteRef.current?.insertText(`\n${b}\n`);
+		else setBody(b.replace(/\n/g, "<br>"));
 		setTplOpen(false);
-		ta?.focus();
+		rteRef.current?.focus();
 	};
 
 	const addAtt = () => {
@@ -514,31 +519,15 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 				)}
 			</div>
 
-			{/* tělo (ř. 1830) */}
-			<textarea
-				ref={taRef}
-				value={body}
-				onChange={(e) => setBody(e.target.value)}
-				rows={7}
-				placeholder="Piš… formátování a přílohy dole."
-				style={{
-					width: "100%",
-					boxSizing: "border-box",
-					border: "1px solid var(--line)",
-					background: "var(--panel-2)",
-					borderRadius: 11,
-					padding: "11px 13px",
-					fontFamily: "var(--w-font-body)",
-					fontSize: 13,
-					color: "var(--ink)",
-					lineHeight: 1.6,
-					outline: "none",
-					resize: "none",
-					maxHeight: "44vh",
-					overflow: "auto",
-					marginTop: 6,
-				}}
-			/>
+			{/* tělo — sdílený rich-text editor (formátování + barvy, všude stejně) */}
+			<div style={{ marginTop: 6 }}>
+				<RichText
+					ref={rteRef}
+					value={body}
+					onChange={setBody}
+					placeholder="Piš… tučně, kurzíva, odrážky, odkaz a barvy máš nahoře."
+				/>
+			</div>
 
 			{/* blok zvoleného podpisu (vzor Spark) — readonly, při odeslání se přidá k tělu */}
 			<SigBlock sigId={sigId} />
