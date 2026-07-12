@@ -29,7 +29,7 @@ export const MAIN_NAV: NavItem[] = [
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
 	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox", count: true },
 	{ to: "/mail", icon: "mail", labelKey: "nav.mail", count: true },
-	{ to: "/mitingy", icon: "tym", labelKey: "nav.meetings" },
+	{ to: "/meets", icon: "tym", labelKey: "nav.meetings" },
 	{ to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks" },
 	{
 		to: "/nadchazejici",

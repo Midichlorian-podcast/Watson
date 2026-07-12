@@ -100,8 +100,7 @@ export function Mitingy() {
 	// přiřazení řešitelů (členů prostoru) jinak selže na R5 (nejsou členy cizího projektu).
 	const projects = (allProjects ?? []).filter((p) => p.workspace_id === activeWs);
 	// Výchozí = první „skutečný" projekt prostoru; osobní Inbox až jako fallback.
-	const inbox =
-		projects.find((p) => p.name !== "Doručené" && p.name !== "Inbox") ?? projects[0];
+	const inbox = projects.find((p) => p.name !== "Doručené" && p.name !== "Inbox") ?? projects[0];
 
 	const [mode, setMode] = useState<"list" | "new" | "review">("list");
 	const [list, setList] = useState<MeetingListItem[]>([]);
@@ -191,7 +190,7 @@ export function Mitingy() {
 						new Date().toISOString(),
 					],
 				);
-				void logTaskActivity(taskId, projectId, uid, "created", null, "míting");
+				void logTaskActivity(taskId, projectId, uid, "created", null, "porada");
 				if (p.assigneeUserId) {
 					await powerSync.execute(
 						"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -206,7 +205,7 @@ export function Mitingy() {
 					credentials: "include",
 				}).catch(() => {});
 			}
-			showToast(`Vytvořeno ${created} úkolů z mítingu.`);
+			showToast(`Vytvořeno ${created} úkolů z porady.`);
 			setMode("list");
 			setTitle("");
 			setTranscript("");
@@ -229,7 +228,7 @@ export function Mitingy() {
 					className="font-display"
 					style={{ fontWeight: 800, fontSize: 24, color: "var(--w-ink)", margin: 0 }}
 				>
-					Mítingy
+					Meets
 				</h1>
 				{mode === "list" && (
 					<button
@@ -237,11 +236,14 @@ export function Mitingy() {
 						style={{ ...BTN_PRIMARY, marginLeft: "auto" }}
 						onClick={() => setMode("new")}
 					>
-						+ Nový míting
+						+ Nová porada
 					</button>
 				)}
 			</div>
-			<p className="font-body" style={{ fontSize: 13, color: "var(--w-ink-3)", margin: "0 0 20px" }}>
+			<p
+				className="font-body"
+				style={{ fontSize: 13, color: "var(--w-ink-3)", margin: "0 0 20px" }}
+			>
 				Vlož přepis porady — AI z něj vytáhne úkoly, přiřadí je a navrhne priority i termíny. Ty
 				doplníš, co chybí, a potvrdíš.
 			</p>
@@ -252,9 +254,14 @@ export function Mitingy() {
 					{list.length === 0 ? (
 						<div
 							className="font-body"
-							style={{ padding: "28px 18px", textAlign: "center", color: "var(--w-ink-3)", fontSize: 13.5 }}
+							style={{
+								padding: "28px 18px",
+								textAlign: "center",
+								color: "var(--w-ink-3)",
+								fontSize: 13.5,
+							}}
 						>
-							Zatím žádný míting. Klikni na „+ Nový míting" a vlož přepis schůzky.
+							Zatím žádná porada. Klikni na „+ Nová porada" a vlož přepis schůzky.
 						</div>
 					) : (
 						list.map((m) => (
@@ -273,9 +280,12 @@ export function Mitingy() {
 										className="font-display"
 										style={{ fontWeight: 700, fontSize: 14, color: "var(--w-ink)" }}
 									>
-										{m.title || "Míting bez názvu"}
+										{m.title || "Porada bez názvu"}
 									</div>
-									<div className="font-body" style={{ fontSize: 11.5, color: "var(--w-ink-3)", marginTop: 2 }}>
+									<div
+										className="font-body"
+										style={{ fontSize: 11.5, color: "var(--w-ink-3)", marginTop: 2 }}
+									>
 										{m.taskCount} úkolů · {m.status === "committed" ? "zpracováno" : "návrh"}
 									</div>
 								</div>
@@ -287,7 +297,15 @@ export function Mitingy() {
 
 			{/* ── NOVÝ MÍTING ── */}
 			{mode === "new" && (
-				<div style={{ ...CARD, padding: "18px 18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+				<div
+					style={{
+						...CARD,
+						padding: "18px 18px 20px",
+						display: "flex",
+						flexDirection: "column",
+						gap: 14,
+					}}
+				>
 					<div>
 						<div style={{ ...LABEL, marginBottom: 6 }}>Název (volitelně)</div>
 						<input
@@ -369,7 +387,9 @@ export function Mitingy() {
 								style={{ marginTop: 9, flex: "none", accentColor: "var(--w-brass)" }}
 								aria-label="Vytvořit tento úkol"
 							/>
-							<div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+							<div
+								style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 8 }}
+							>
 								<input
 									value={p.title}
 									onChange={(e) => patchProposal(i, { title: e.target.value })}

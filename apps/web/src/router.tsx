@@ -53,7 +53,7 @@ const mailRoute = createRoute({
 });
 const mitingyRoute = createRoute({
 	getParentRoute: () => rootRoute,
-	path: "/mitingy",
+	path: "/meets",
 	component: Mitingy,
 });
 // „/" = domovská routa sloučeného modulu Úkoly → záložka Dnes (zachovává landing redirect
