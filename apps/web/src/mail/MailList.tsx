@@ -22,7 +22,7 @@ import { type SwipeSide, useSwipe } from "../lib/useSwipe";
 import { useWatson } from "../lib/watson";
 import { CtxMenu } from "./CtxMenu";
 import { AI_QUEUE_SEED, type AiQueueItem, GK, MB, P, SLA, STL, type MailThread } from "./data";
-import { NotifCenter } from "./NotifCenter";
+import { NotifCenter } from "../components/NotifCenter";
 import { type ThreadEff, useMail } from "./state";
 
 /** Ženská příjmení v seed světě (prototyp FEM — „už četla" vs „už četl"). */
