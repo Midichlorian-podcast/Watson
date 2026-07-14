@@ -12,7 +12,8 @@
     "verify:reminders": "tsx verify-reminders.ts",
     "verify:contract": "tsx verify-contract.ts",
     "verify:drizzle": "tsx verify-drizzle-smoke.ts",
-    "verify:rbac": "tsx verify-rbac.ts"
+    "verify:rbac": "tsx verify-rbac.ts",
+    "verify:export": "tsx verify-export.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

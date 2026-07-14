@@ -21,6 +21,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { auth } from "./auth";
 import { env, googleEnabled, pushEnabled } from "./env";
 import { employeeRoutes } from "./employee";
+import { exportRoutes } from "./export";
 import { meetingsRoutes } from "./meetings";
 import { powersyncRoutes } from "./powersync";
 import { watsonRoutes } from "./watson";
@@ -160,6 +161,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route("/", powersyncRoutes);
 app.route("/", meetingsRoutes);
 app.route("/", watsonRoutes);
+app.route("/", exportRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);
