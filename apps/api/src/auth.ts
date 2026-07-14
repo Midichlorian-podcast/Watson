@@ -132,9 +132,20 @@ export const auth = betterAuth({
 	plugins: [
 		twoFactor(),
 		magicLink({
-			// Dev odesílatel — bez e-mailové služby. Odkaz najdeš v logu API.
+			// CC-P0-11 — bearer token NIKDY do logu bez explicitního dev flagu a nikdy
+			// v produkci (centralizované logy = únik přihlášení). Bez maileru a bez flagu
+			// je kanál záměrně fail-closed; dev si token vytáhne z tabulky verifications.
 			sendMagicLink: async ({ email, url }) => {
-				console.log(`\n[watson-api] ✉️  Magic link pro ${email}:\n${url}\n`);
+				if (
+					process.env.DEV_AUTH_LOG_LINKS === "1" &&
+					process.env.NODE_ENV !== "production"
+				) {
+					console.log(`\n[watson-api] ✉️  Magic link pro ${email}:\n${url}\n`);
+				} else {
+					console.log(
+						`[watson-api] ✉️  Magic link pro ${email} vygenerován (odkaz se neloguje; zapni DEV_AUTH_LOG_LINKS=1, nebo použij tabulku verifications)`,
+					);
+				}
 			},
 		}),
 	],

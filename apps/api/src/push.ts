@@ -3,7 +3,8 @@
  *
  * - `pushRoutes` — REST: VAPID veřejný klíč, (od)hlášení odběru, testovací push.
  * - `startReminderWorker` — periodicky projde splatné `reminders`, doručí přes Web Push
- *   (kanál `email` je zatím gated na RESEND_API_KEY), označí `sent_at`.
+ *   a `sent_at` nastaví AŽ po potvrzeném doručení aspoň jednomu odběru (CC-P0-09);
+ *   kanál `email` je neimplementovaný a scan ho přeskakuje (zůstává pending).
  *
  * `push_subscriptions` se NEsynchronizuje do klienta (server-only) — odběry drží jen server.
  */
@@ -19,7 +20,7 @@ import {
 import { Hono } from "hono";
 import webpush from "web-push";
 import { auth } from "./auth";
-import { emailEnabled, env, pushEnabled } from "./env";
+import { env, pushEnabled } from "./env";
 
 if (pushEnabled) {
 	webpush.setVapidDetails(
@@ -96,10 +97,9 @@ export async function pushToUser(
 	return ok;
 }
 
-async function sendEmailReminder(_r: DueReminder): Promise<void> {
-	if (!emailEnabled) return; // Resend klíč není → gated no-op (RECONCILIACE: e-mail digest #E)
-	// TODO(Resend): odeslat e-mail, až bude RESEND_API_KEY.
-}
+// E-mailový kanál připomínek: záměrně BEZ implementace i BEZ fake „sent" větve
+// (CC-P0-09). Scan e-mailové připomínky přeskakuje; kanál se zapne až s reálným
+// mailerem (Resend) a delivery state machine v F5.
 
 /** Projde splatné připomínky (sent_at NULL, úkol nedokončený), doručí, označí sent. */
 export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
@@ -126,14 +126,20 @@ export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
 	for (const r of rows) {
 		const fireAt = reminderFireTime(r);
 		if (!fireAt || fireAt.getTime() > now.getTime()) continue;
+		// CC-P0-09: e-mailový kanál není implementovaný (sendEmailReminder je no-op) —
+		// připomínka zůstává pending; `sent_at` nesmí lhát o doručení.
+		if (r.channel === "email") continue;
 		const payload = {
 			title: "Watson · připomínka",
 			body: r.taskName,
 			tag: `reminder-${r.id}`,
 			url: "/dnes",
 		};
-		if (r.channel === "email") await sendEmailReminder(r);
-		else await pushToUser(r.userId, payload);
+		const delivered = await pushToUser(r.userId, payload);
+		// `sent_at` až po potvrzeném úspěchu aspoň jednoho odběru; při 0 doručeních
+		// zůstává pending a další scan to zkusí znovu (plná state machine s retry
+		// limitem a dead-letter = CC-P0-09 v F5).
+		if (delivered === 0) continue;
 		await db
 			.update(reminders)
 			.set({ sentAt: now })
@@ -190,6 +196,10 @@ pushRoutes.post("/api/push/subscribe", async (c) => {
 			auth: authKey,
 			userAgent: c.req.header("user-agent") ?? null,
 		})
+		// Kolize endpointu = STEJNÉ zařízení (push subscription je per browser profil,
+		// sdílená napříč účty) → přepis na aktuální session je legitimní přepnutí účtu.
+		// Vzdálený útočník by musel znát celý capability URL endpointu. Plné vlastnictví
+		// + ověření řeší CC-P0-09/P1-10 se state machine; tady vědomě zůstává reassign.
 		.onConflictDoUpdate({
 			target: pushSubscriptions.endpoint,
 			set: { userId: session.user.id, p256dh, auth: authKey },
@@ -206,9 +216,15 @@ pushRoutes.post("/api/push/unsubscribe", async (c) => {
 	} | null;
 	if (!body?.endpoint) return c.json({ error: "invalid" }, 400);
 	const db = getDb();
+	// CC-P0-09: mazat jen VLASTNÍ odběr — cizí session nesmí odhlásit cizí endpoint.
 	await db
 		.delete(pushSubscriptions)
-		.where(eq(pushSubscriptions.endpoint, body.endpoint));
+		.where(
+			and(
+				eq(pushSubscriptions.endpoint, body.endpoint),
+				eq(pushSubscriptions.userId, session.user.id),
+			),
+		);
 	return c.json({ ok: true });
 });
 

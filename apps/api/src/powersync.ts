@@ -8,7 +8,7 @@
  * kontrolou (R5) přes členství v projektu. Přidat tabulku = přidat záznam do registru,
  * žádné natvrdo psané SQL per tabulka.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { getDb, sql } from "@watson/db";
 import { Hono } from "hono";
@@ -29,6 +29,9 @@ let publicJwk: JWK;
 
 async function loadKeys() {
 	if (existsSync(keyFile)) {
+		// CC-P0-12: soubor s privátním klíčem smí číst jen vlastník — starší generace
+		// ho zapsala s výchozím 644, tak práva zpřísni i zpětně.
+		chmodSync(keyFile, 0o600);
 		const stored = JSON.parse(readFileSync(keyFile, "utf8")) as {
 			privateJwk: JWK;
 			publicJwk: JWK;
@@ -43,8 +46,9 @@ async function loadKeys() {
 	privateKey = priv as CryptoKey;
 	const privateJwk = await exportJWK(priv);
 	publicJwk = { ...(await exportJWK(pub)), kid: KID, alg: ALG, use: "sig" };
-	if (!existsSync(keyDir)) mkdirSync(keyDir, { recursive: true });
-	writeFileSync(keyFile, JSON.stringify({ privateJwk, publicJwk }, null, 2));
+	if (!existsSync(keyDir)) mkdirSync(keyDir, { recursive: true, mode: 0o700 });
+	// CC-P0-12: privátní klíč pouze pro vlastníka (0600), ne world-readable 644
+	writeFileSync(keyFile, JSON.stringify({ privateJwk, publicJwk }, null, 2), { mode: 0o600 });
 	console.log("[watson-api] vygenerován nový PowerSync RSA keypair (.keys/)");
 }
 await loadKeys();
@@ -81,7 +85,7 @@ export async function issueBridgeToken(claims: { email: string; personId?: strin
 		.sign(privateKey);
 }
 
-export const powersyncRoutes = new Hono();
+export const powersyncRoutes = new Hono<{ Variables: { requestId: string } }>();
 
 /** JWKS — PowerSync service sem chodí pro veřejné klíče. */
 powersyncRoutes.get("/api/powersync/jwks", (c) => c.json({ keys: [publicJwk] }));
@@ -115,6 +119,10 @@ interface TableDef {
 	ownerCol?: string;
 	/** Append-only tabulka (audit log): PATCH a DELETE jsou zakázané. */
 	appendOnly?: boolean;
+	/** Tabulka se přes sync jen EDITUJE — create patří výhradně API commandu
+	 *  (CC-P0-07 atomicita: projekt vzniká se statusy a managerem najednou).
+	 *  PUT se odmítne deterministicky (400), ne až NOT NULL chybou z DB. */
+	patchOnly?: boolean;
 	/** Minimální projektová role pro zápis (default „editor"). commenter smí jen komentáře/overlaye. */
 	minRole?: "commenter" | "editor" | "manager";
 	/** Sloupce, jejichž změna vyžaduje roli „manager" (owner_id/visibility/archivace projektu). */
@@ -148,7 +156,8 @@ const PROJECT_ROLE_RANK: Record<string, number> = {
 	manager: 3,
 };
 
-const TABLES: Record<string, TableDef> = {
+/** Write registry — exportovaný i pro contract test (verify-contract.ts). */
+export const TABLES: Record<string, TableDef> = {
 	tasks: {
 		columns: {
 			project_id: "text",
@@ -194,6 +203,7 @@ const TABLES: Record<string, TableDef> = {
 	// projektu přes write-path tím pádem NEjde (člen ještě neexistuje) — to řeší server/API.
 	// Záměrně bez `workspace_id` (přesun mezi prostory není klientská operace).
 	projects: {
+		patchOnly: true,
 		columns: {
 			name: "text",
 			color: "text",
@@ -477,9 +487,32 @@ type Rows = any;
  * POZOR: SQLSTATE není jen 5 číslic — např. `22P02` (invalid_text_representation, neplatné UUID/enum)
  * má písmeno. Dřívější `^(22|23)\d{3}$` ho minul → vracelo 500 → zaseklá fronta a ztráta offline dat.
  */
+/**
+ * CC-P0-16 — bezpečná chybová odpověď: klient NIKDY nedostane driver/SQL text,
+ * stack ani názvy constraintů. SQLSTATE kód (např. 23502) je bezpečný a budoucí
+ * Centrum sync problémů podle něj rozliší důvod odmítnutí.
+ */
+function safeWriteError(err: unknown): { error: string; code: string | null } {
+	return { error: "write_failed", code: sqlstateOf(err) };
+}
+
+/**
+ * SQLSTATE z chyby NEBO z jejího `cause` řetězu — drizzle-orm od 0.45 balí driver
+ * chyby do DrizzleQueryError a kód je až v `cause.code`. Bez průchodu řetězem by
+ * constraint chyby padaly jako 500 → PowerSync by je retryoval donekonečna.
+ */
+export function sqlstateOf(err: unknown): string | null {
+	let e = err as { code?: unknown; cause?: unknown } | null | undefined;
+	for (let depth = 0; depth < 4 && e; depth++) {
+		if (typeof e.code === "string" && /^[0-9A-Za-z]{5}$/.test(e.code)) return e.code;
+		e = e.cause as typeof e;
+	}
+	return null;
+}
+
 function isDeterministicDbError(err: unknown): boolean {
-	const code = (err as { code?: string }).code;
-	return typeof code === "string" && /^(22|23)[0-9A-Za-z]{3}$/.test(code);
+	const code = sqlstateOf(err);
+	return code != null && /^(22|23)[0-9A-Za-z]{3}$/.test(code);
 }
 
 function coerce(type: ColType, v: unknown): unknown {
@@ -720,6 +753,8 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 
 	// Append-only tabulky (audit log): měnit ani mazat nelze.
 	if (def.appendOnly && body.op !== "PUT") return c.json({ error: "append-only" }, 403);
+	if (def.patchOnly && body.op === "PUT")
+		return c.json({ error: "create_via_api_only" }, 400);
 
 	// Vlastníkův sloupec (osobní připomínky/barvy/audit) — server VŽDY dosadí session userId.
 	// Klient nemůže padělat cizí identitu ani injektovat řádek do overlaye/pushe jiného uživatele.
@@ -786,8 +821,11 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 			await applyWrite(db, body.table, def, body.op, body.id, data, userId);
 			await auditLog(db, body.table, body.op, body.id, data, userId);
 		} catch (err) {
-			console.error("[watson-api] write selhal:", err);
-			return c.json({ error: String(err) }, isDeterministicDbError(err) ? 400 : 500);
+			console.error(`[watson-api][req:${c.get("requestId") ?? "-"}] write selhal:`, err);
+			return c.json(
+				{ ...safeWriteError(err), requestId: c.get("requestId") ?? null },
+				isDeterministicDbError(err) ? 400 : 500,
+			);
 		}
 		return c.json({ ok: true });
 	}
@@ -863,8 +901,11 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 		await applyWrite(db, body.table, def, body.op, body.id, data, userId);
 		await auditLog(db, body.table, body.op, body.id, data, userId);
 	} catch (err) {
-		console.error("[watson-api] write selhal:", err);
-		return c.json({ error: String(err) }, isDeterministicDbError(err) ? 400 : 500);
+		console.error(`[watson-api][req:${c.get("requestId") ?? "-"}] write selhal:`, err);
+		return c.json(
+			{ ...safeWriteError(err), requestId: c.get("requestId") ?? null },
+			isDeterministicDbError(err) ? 400 : 500,
+		);
 	}
 
 	return c.json({ ok: true });

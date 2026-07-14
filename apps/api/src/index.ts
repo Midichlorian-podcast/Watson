@@ -5,6 +5,7 @@ import {
 	eq,
 	getDb,
 	memberships,
+	ne,
 	projectMembers,
 	projects,
 	sql,
@@ -14,9 +15,12 @@ import {
 } from "@watson/db";
 import { DEFAULT_LOCALE, WORKSPACE_ROLES } from "@watson/shared";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { auth } from "./auth";
 import { env, googleEnabled, pushEnabled } from "./env";
+import { employeeRoutes } from "./employee";
 import { meetingsRoutes } from "./meetings";
 import { powersyncRoutes } from "./powersync";
 import { watsonRoutes } from "./watson";
@@ -33,7 +37,88 @@ const WS_ROLE_RANK: Record<string, number> = {
 const roleRank = (r?: string | null): number =>
 	(r ? WS_ROLE_RANK[r] : undefined) ?? 0;
 
-const app = new Hono();
+/**
+ * CC-P0-05 — smí volající spravovat ČLENSTVÍ projektu? Rozhodnutí §15/5:
+ * project manager, nebo workspace admin/owner. Editor/commenter/member NIKDY.
+ * Vrací workspaceId projektu, ať endpointy nedělají druhý lookup.
+ */
+async function canManageProjectMembers(
+	db: ReturnType<typeof getDb>,
+	projectId: string,
+	userId: string,
+): Promise<{ found: boolean; ok: boolean; workspaceId?: string }> {
+	const proj = (
+		await db
+			.select({ workspaceId: projects.workspaceId })
+			.from(projects)
+			.where(eq(projects.id, projectId))
+	)[0];
+	if (!proj) return { found: false, ok: false };
+	const pm = (
+		await db
+			.select({ role: projectMembers.role })
+			.from(projectMembers)
+			.where(
+				and(
+					eq(projectMembers.projectId, projectId),
+					eq(projectMembers.userId, userId),
+				),
+			)
+	)[0];
+	if (pm?.role === "manager")
+		return { found: true, ok: true, workspaceId: proj.workspaceId };
+	const ws = (
+		await db
+			.select({ ownerId: workspaces.ownerId })
+			.from(workspaces)
+			.where(eq(workspaces.id, proj.workspaceId))
+	)[0];
+	if (ws?.ownerId === userId)
+		return { found: true, ok: true, workspaceId: proj.workspaceId };
+	const m = (
+		await db
+			.select({ role: memberships.role })
+			.from(memberships)
+			.where(
+				and(
+					eq(memberships.workspaceId, proj.workspaceId),
+					eq(memberships.userId, userId),
+				),
+			)
+	)[0];
+	return { found: true, ok: m?.role === "admin", workspaceId: proj.workspaceId };
+}
+
+const app = new Hono<{ Variables: { requestId: string } }>();
+
+// F1 — request ID: každá odpověď nese X-Request-Id a chybové logy ho prefixují,
+// takže uživatelské hlášení jde spárovat s konkrétním serverovým záznamem.
+app.use("/*", async (c, next) => {
+	const rid = crypto.randomUUID().slice(0, 8);
+	c.set("requestId", rid);
+	c.header("X-Request-Id", rid);
+	await next();
+});
+
+// CC-P0-16 — minimální security headers pro JSON API: nosniff, žádné rámování,
+// CSP default-src 'none' (API nevrací HTML, ale error/redirect stránky si browser
+// jinak interpretuje). HSTS posílá Hono default — na http ho prohlížeč ignoruje.
+app.use(
+	"/*",
+	secureHeaders({
+		contentSecurityPolicy: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
+	}),
+);
+// CC-P0-16 — globální strop velikosti těla: největší legitimní payload je přepis
+// porady (stovky kB); 2 MB stačí všem a zastaví zbytek. Přílohy (M1/F7) dostanou
+// vlastní upload endpoint s vlastním limitem.
+app.use(
+	"/*",
+	bodyLimit({
+		maxSize: 2 * 1024 * 1024,
+		onError: (c) => c.json({ error: "body_too_large" }, 413),
+	}),
+);
 
 app.use(
 	"/*",
@@ -42,6 +127,7 @@ app.use(
 		credentials: true,
 		allowHeaders: ["Content-Type", "Authorization"],
 		allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+		exposeHeaders: ["X-Request-Id"],
 	}),
 );
 
@@ -74,6 +160,9 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route("/", powersyncRoutes);
 app.route("/", meetingsRoutes);
 app.route("/", watsonRoutes);
+
+/** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
+app.route("/", employeeRoutes);
 
 /** Web Push — VAPID klíč, (od)hlášení odběru, test. */
 app.route("/", pushRoutes);
@@ -375,6 +464,37 @@ app.patch("/api/workspaces/:id/members/:userId/role", async (c) => {
 	if (roleRank(role) > callerRank)
 		return c.json({ error: "cannot grant role above your own" }, 403);
 
+	const target = (
+		await db
+			.select({ role: memberships.role })
+			.from(memberships)
+			.where(
+				and(eq(memberships.workspaceId, wsId), eq(memberships.userId, targetId)),
+			)
+	)[0];
+	if (!target) return c.json({ error: "not a member" }, 404);
+	// CC-P0-05: měnit lze jen uživatele s NIŽŠÍ hodností, než má volající — manager
+	// nesmí degradovat admina a admin nesmí přepsat jiného admina (to smí jen owner, rank 99).
+	if (roleRank(target.role) >= callerRank)
+		return c.json({ error: "cannot change member with same or higher role" }, 403);
+	// Poslední admin: degradace by nechala prostor bez správce s membership řádkem
+	// (owner je chráněn zvlášť, ale nemusí mít admin membership).
+	if (target.role === "admin" && role !== "admin") {
+		const otherAdmin = await db
+			.select({ id: memberships.id })
+			.from(memberships)
+			.where(
+				and(
+					eq(memberships.workspaceId, wsId),
+					eq(memberships.role, "admin"),
+					ne(memberships.userId, targetId),
+				),
+			)
+			.limit(1);
+		if (otherAdmin.length === 0)
+			return c.json({ error: "cannot demote last admin" }, 409);
+	}
+
 	await db
 		.update(memberships)
 		.set({ role })
@@ -485,31 +605,18 @@ app.post("/api/projects/:id/members", async (c) => {
 	if (!userId) return c.json({ error: "userId required" }, 400);
 
 	const db = getDb();
-	const mine = await db
-		.select({ r: projectMembers.role })
-		.from(projectMembers)
-		.where(
-			and(
-				eq(projectMembers.projectId, pid),
-				eq(projectMembers.userId, session.user.id),
-			),
-		);
-	if (mine.length === 0) return c.json({ error: "forbidden" }, 403);
+	// CC-P0-05: členství smí měnit jen project manager nebo workspace admin/owner (§15/5)
+	const gate = await canManageProjectMembers(db, pid, session.user.id);
+	if (!gate.found) return c.json({ error: "not found" }, 404);
+	if (!gate.ok) return c.json({ error: "forbidden" }, 403);
 
 	// cílový uživatel musí být členem prostoru, kterému projekt patří
-	const proj = (
-		await db
-			.select({ workspaceId: projects.workspaceId })
-			.from(projects)
-			.where(eq(projects.id, pid))
-	)[0];
-	if (!proj) return c.json({ error: "not found" }, 404);
 	const target = await db
 		.select({ r: memberships.role })
 		.from(memberships)
 		.where(
 			and(
-				eq(memberships.workspaceId, proj.workspaceId),
+				eq(memberships.workspaceId, gate.workspaceId as string),
 				eq(memberships.userId, userId),
 			),
 		);
@@ -531,16 +638,41 @@ app.delete("/api/projects/:id/members/:userId", async (c) => {
 	const targetId = c.req.param("userId");
 
 	const db = getDb();
-	const mine = await db
-		.select({ r: projectMembers.role })
-		.from(projectMembers)
-		.where(
-			and(
-				eq(projectMembers.projectId, pid),
-				eq(projectMembers.userId, session.user.id),
-			),
-		);
-	if (mine.length === 0) return c.json({ error: "forbidden" }, 403);
+	// CC-P0-05: členství smí měnit jen project manager nebo workspace admin/owner (§15/5)
+	const gate = await canManageProjectMembers(db, pid, session.user.id);
+	if (!gate.found) return c.json({ error: "not found" }, 404);
+	if (!gate.ok) return c.json({ error: "forbidden" }, 403);
+
+	const target = (
+		await db
+			.select({ role: projectMembers.role })
+			.from(projectMembers)
+			.where(
+				and(
+					eq(projectMembers.projectId, pid),
+					eq(projectMembers.userId, targetId),
+				),
+			)
+	)[0];
+	// idempotence: nebyl členem → nic k odebrání
+	if (!target) return c.json({ ok: true });
+	// poslední project manager nesmí zmizet — projekt bez managera je známý dluh (13 kusů),
+	// který se nesmí dál prohlubovat; nejdřív povyš jiného člena.
+	if (target.role === "manager") {
+		const otherManager = await db
+			.select({ id: projectMembers.id })
+			.from(projectMembers)
+			.where(
+				and(
+					eq(projectMembers.projectId, pid),
+					eq(projectMembers.role, "manager"),
+					ne(projectMembers.userId, targetId),
+				),
+			)
+			.limit(1);
+		if (otherManager.length === 0)
+			return c.json({ error: "cannot remove last manager" }, 409);
+	}
 
 	await db
 		.delete(projectMembers)
