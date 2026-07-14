@@ -93,11 +93,14 @@ const dayLbl = (iso: string) => shortDayLabel(iso, i18n.language);
 export function MeetDetail({
 	meetingId,
 	hubId,
+	initialTab,
 	onClose,
 	onOpenMeet,
 }: {
 	meetingId: string;
 	hubId: string;
+	/** Otevřít rovnou na záložce (např. „prepis" z tlačítka Vložit přepis). */
+	initialTab?: Tab;
 	onClose: () => void;
 	/** Přepnutí na jiný meet v řetězu (naviguje uvnitř overlaye). */
 	onOpenMeet: (meetingId: string, hubId: string) => void;
@@ -106,7 +109,7 @@ export function MeetDetail({
 	const uid = session?.user?.id;
 	const members = useAllMembers();
 	const { open: openTask } = useTaskDetail();
-	const [tab, setTab] = useState<Tab>("prehled");
+	const [tab, setTab] = useState<Tab>(initialTab ?? "prehled");
 	const [busy, setBusy] = useState(false);
 
 	// ── lokální data (offline) ──
@@ -129,18 +132,29 @@ export function MeetDetail({
 	);
 	const derived = useMemo(() => new Set((linkRows ?? []).map((l) => l.to_id)), [linkRows]);
 	const prep = (subRows ?? []).filter((s) => !derived.has(s.id));
-	const actions = (subRows ?? []).filter((s) => derived.has(s.id));
+	// Akční body DLE LINEAGE (entity_links), ne dle aktuálního zařazení — bod přesunutý
+	// carryoverem do navazující porady zůstává v historii TÉTO porady viditelný (audit UX).
+	const { data: actionRows, isLoading: actLoading } = usePsQuery<TaskRow>(
+		`SELECT t.* FROM entity_links el JOIN tasks t ON t.id = el.to_id
+		 WHERE el.from_type = 'meeting' AND el.from_id = ? AND el.relation = 'derived_from'
+		 ORDER BY t.completed_at IS NOT NULL, t.created_at`,
+		[meetingId],
+	);
+	const actions = actionRows ?? [];
 	const { data: whoRows, isLoading: whoLoading } = usePsQuery<{ user_id: string }>(
 		"SELECT user_id FROM assignments WHERE task_id = ?",
 		[hubId],
 	);
 	const who = (whoRows ?? []).map((w) => w.user_id);
 	// CC-P0-01: obchodní tvrzení („Zatím žádná…/0/0") až po dojezdu lokálních dotazů.
-	const contentReady = !subLoading && !linkLoading && !whoLoading;
+	const contentReady = !subLoading && !linkLoading && !whoLoading && !actLoading;
 	// Řešitelé VŠECH podúkolů jedním dotazem (audit F2-4: per-row watchery drhly).
 	const { data: subAsgRows } = usePsQuery<{ task_id: string; user_id: string }>(
-		"SELECT a.task_id, a.user_id FROM assignments a JOIN tasks t2 ON t2.id = a.task_id WHERE t2.parent_id = ?",
-		[hubId],
+		`SELECT a.task_id, a.user_id FROM assignments a WHERE a.task_id IN (
+		   SELECT id FROM tasks WHERE parent_id = ?
+		   UNION SELECT to_id FROM entity_links WHERE from_type = 'meeting' AND from_id = ? AND relation = 'derived_from'
+		 )`,
+		[hubId, meetingId],
 	);
 	const subNames = useMemo(() => {
 		const m = new Map<string, string[]>();
@@ -686,6 +700,7 @@ export function MeetDetail({
 											<SubRow
 												key={s.id}
 												t={s}
+												moved={s.parent_id !== hubId}
 												names={subNames.get(s.id) ?? []}
 												onToggle={() => void toggleTask(s, uid)}
 												onOpen={() => {
@@ -775,11 +790,14 @@ export function MeetDetail({
 function SubRow({
 	t,
 	names: nameList,
+	moved,
 	onToggle,
 	onOpen,
 }: {
 	t: TaskRow;
 	names: string[];
+	/** Bod už žije pod navazující poradou (carryover) — jen informační chip. */
+	moved?: boolean;
 	onToggle: () => void;
 	onOpen: () => void;
 }) {
@@ -828,6 +846,22 @@ function SubRow({
 			>
 				{t.name}
 			</button>
+			{moved && (
+				<span
+					className="font-mono"
+					title="Nedodělek přesunutý do navazující porady"
+					style={{
+						fontSize: 9.5,
+						color: "var(--w-brass-text)",
+						background: "var(--w-brass-soft)",
+						borderRadius: 999,
+						padding: "2px 8px",
+						flex: "none",
+					}}
+				>
+					→ přeneseno dál
+				</span>
+			)}
 			{names && (
 				<span className="font-body" style={{ fontSize: 11, color: "var(--w-ink-3)", flex: "none" }}>
 					{names}

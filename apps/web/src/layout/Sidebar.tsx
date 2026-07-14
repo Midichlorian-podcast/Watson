@@ -177,7 +177,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 			// protože seznam Dnes porady zobrazuje a badge musí sedět s řádky.
 			"/": visible.filter((t) => {
 				const dd = day(t.due_date);
-				return dd != null && dd <= today;
+				if (dd == null) return false;
+				// porada jen ve svůj den — po něm není „zpožděná" položka agendy
+				return t.kind === "meeting" ? dd === today : dd <= today;
 			}).length,
 			// D3 — kánon = filtr obrazovky Nadcházející (>= dnes, viz Nadchazejici.tsx
 			// a Header): dřívější `> dnes` dával jiné číslo než header a obsah.

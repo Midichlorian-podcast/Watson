@@ -40,10 +40,11 @@ function TaskViewTabs({ active }: { active: TaskTab }) {
 		project_id: string | null;
 		due_date: string | null;
 		parent_id: string | null;
+		kind: string | null;
 	}>(
 		// Dnes = denní agenda (porady ZAPOČÍTÁVÁ — seznam je ukazuje, badge musí sedět
 		// s řádky); Zásobník je nedatovaný a porady mají termín vždy → filtr netřeba.
-		"SELECT project_id, due_date, parent_id FROM tasks WHERE completed_at IS NULL",
+		"SELECT project_id, due_date, parent_id, kind FROM tasks WHERE completed_at IS NULL",
 	);
 
 	const { dnes, zasobnik } = useMemo(() => {
@@ -56,7 +57,9 @@ function TaskViewTabs({ active }: { active: TaskTab }) {
 		return {
 			dnes: visible.filter((r) => {
 				const dd = r.due_date ? r.due_date.slice(0, 10) : null;
-				return dd != null && dd <= today;
+				if (dd == null) return false;
+				// porada jen ve svůj den — po něm není „zpožděná" položka agendy (hlásí ji Meets)
+				return r.kind === "meeting" ? dd === today : dd <= today;
 			}).length,
 			zasobnik: visible.filter((r) => !r.due_date).length,
 		};

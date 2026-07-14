@@ -155,7 +155,8 @@ export function DnesTab() {
 		return {
 			overdue: opn.filter((x) => {
 				const d = dayOf(x);
-				return !x.completed_at && d !== null && d < tdy;
+				// Porada po svém dni NENÍ „po termínu" — proběhla; „čeká na zápis" hlásí Meets.
+				return !x.completed_at && d !== null && d < tdy && x.kind !== "meeting";
 			}),
 			// Nedatované (d === null) do Dnes NEpatří — přesunuly se do záložky Zásobník (triage).
 			// Dnes = jen skutečný dnešek + dnes dokončené zpožděné (ať sekce nezmizí hned po odškrtnutí).

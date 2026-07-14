@@ -131,9 +131,13 @@ export function Mitingy() {
 	// Výchozí = první „skutečný" projekt prostoru; osobní Inbox až jako fallback.
 	const inbox = projects.find((p) => p.name !== "Doručené" && p.name !== "Inbox") ?? projects[0];
 
-	const [mode, setMode] = useState<"list" | "plan" | "new" | "review">("list");
+	const [mode, setMode] = useState<"list" | "pick" | "plan" | "new" | "review">("list");
 	// Detail meetu (záložky Přehled/Příprava/Přepis/Řetěz) — overlay nad přehledem.
-	const [detail, setDetail] = useState<{ meetingId: string; hubId: string } | null>(null);
+	const [detail, setDetail] = useState<{
+		meetingId: string;
+		hubId: string;
+		tab?: "prehled" | "priprava" | "prepis" | "retez";
+	} | null>(null);
 	const [title, setTitle] = useState("");
 	const [transcript, setTranscript] = useState("");
 	const [proposals, setProposals] = useState<Editable[]>([]);
@@ -398,9 +402,12 @@ export function Mitingy() {
 				created++;
 			}
 			if (meetingId) {
+				// I rychlý zápis dostane lineage — úkoly jdou dohledat zpět k přepisu.
 				await fetch(`${API_URL}/api/meetings/${meetingId}/commit`, {
 					method: "POST",
 					credentials: "include",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ taskIds: Object.values(idByIndex) }),
 				}).catch(() => {});
 			}
 			showToast(`Vytvořeno ${created} úkolů z porady.`);
@@ -430,7 +437,19 @@ export function Mitingy() {
 				</h1>
 				{mode === "list" && (
 					<div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-						<button type="button" style={BTN_GHOST} onClick={() => setMode("new")}>
+						<button
+							type="button"
+							style={BTN_GHOST}
+							onClick={() => {
+								// Přepis patří k poradě: nabídni nezpracované meety (se sidecarem). Během
+								// načítání NErozhodovat z prázdna (audit: cold start skočil na rychlý zápis
+								// a vyrobil duplikát) — pick mód má vlastní loading/empty stavy.
+								const candidates = (hubMeets ?? []).filter(
+									(m) => m.m_status !== "committed" && m.meeting_id,
+								);
+								setMode(hubLoading || candidates.length ? "pick" : "new");
+							}}
+						>
 							Vložit přepis
 						</button>
 						<button type="button" style={BTN_PRIMARY} onClick={openPlan}>
@@ -615,6 +634,86 @@ export function Mitingy() {
 							</div>
 						</div>
 					)}
+				</div>
+			)}
+
+			{/* ── KE KTERÉ PORADĚ PATŘÍ PŘEPIS? (oprava UX: dřív vznikal duplikát) ── */}
+			{mode === "pick" && (
+				<div style={{ ...CARD, overflow: "hidden" }}>
+					<div style={{ ...LABEL, padding: "14px 16px 8px" }}>Ke které poradě patří přepis?</div>
+					{hubLoading && (
+						<div
+							className="font-body"
+							style={{ padding: "10px 16px", fontSize: 12.5, color: "var(--w-ink-3)" }}
+						>
+							Načítám porady…
+						</div>
+					)}
+					{!hubLoading &&
+						(hubMeets ?? []).filter((m) => m.m_status !== "committed" && m.meeting_id).length ===
+							0 && (
+							<div
+								className="font-body"
+								style={{ padding: "10px 16px", fontSize: 12.5, color: "var(--w-ink-3)" }}
+							>
+								Žádná porada nečeká na zápis — pokračuj rychlým zápisem níže.
+							</div>
+						)}
+					{(hubMeets ?? [])
+						.filter((m) => m.m_status !== "committed" && m.meeting_id)
+						.map((m) => {
+							const day = (m.due_date ?? m.start_date ?? "").slice(0, 10);
+							return (
+								<button
+									key={m.id}
+									type="button"
+									onClick={() => {
+										if (m.meeting_id) {
+											setDetail({ meetingId: m.meeting_id, hubId: m.id, tab: "prepis" });
+											setMode("list");
+										}
+									}}
+									className="hover:bg-panel-2 font-display"
+									style={{
+										display: "flex",
+										alignItems: "center",
+										gap: 12,
+										width: "100%",
+										textAlign: "left",
+										background: "transparent",
+										border: "none",
+										borderTop: "1px solid var(--w-line)",
+										padding: "11px 16px",
+										cursor: "pointer",
+									}}
+								>
+									<span
+										className="font-mono"
+										style={{ fontSize: 11, color: "var(--w-ink-3)", flex: "none", width: 80 }}
+									>
+										{day ? dayLabel(day) : "—"}
+									</span>
+									<span style={{ fontWeight: 600, fontSize: 13.5, color: "var(--w-ink)", flex: 1 }}>
+										{m.name}
+									</span>
+								</button>
+							);
+						})}
+					<div
+						style={{
+							display: "flex",
+							gap: 10,
+							padding: "11px 16px",
+							borderTop: "1px solid var(--w-line)",
+						}}
+					>
+						<button type="button" style={BTN_GHOST} onClick={() => setMode("new")}>
+							Rychlý zápis bez porady →
+						</button>
+						<button type="button" style={BTN_GHOST} onClick={() => setMode("list")}>
+							Zpět
+						</button>
+					</div>
 				</div>
 			)}
 
@@ -890,6 +989,7 @@ export function Mitingy() {
 				<MeetDetail
 					meetingId={detail.meetingId}
 					hubId={detail.hubId}
+					initialTab={detail.tab}
 					onClose={() => setDetail(null)}
 					onOpenMeet={(mid, hid) => setDetail({ meetingId: mid, hubId: hid })}
 				/>

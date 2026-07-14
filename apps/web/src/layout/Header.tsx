@@ -46,10 +46,11 @@ export function Header() {
 		duration_min: number | null;
 		parent_id: string | null;
 		project_id: string | null;
+		kind: string | null;
 	}>(
 		// Hlavička Dnes = denní AGENDA — porady ZAPOČÍTÁVÁ (seznam Dnes je zobrazuje;
 		// badge/hodiny musí sedět s viditelnými řádky). Pracovní statistiky je filtrují jinde.
-		"SELECT due_date, start_date, duration_min, parent_id, project_id FROM tasks WHERE completed_at IS NULL",
+		"SELECT due_date, start_date, duration_min, parent_id, project_id, kind FROM tasks WHERE completed_at IS NULL",
 	);
 	const { data: projRows } = usePsQuery<{ id: string; name: string | null }>(
 		"SELECT id, name FROM projects",
@@ -75,8 +76,13 @@ export function Header() {
 			const d = r.due_date ? r.due_date.slice(0, 10) : null;
 			if (!d && r.project_id && inboxIds.has(r.project_id)) return false;
 			if (dnesView)
-				// jen s termínem dnes/zpožděné (nedatované už nepatří do Dnes)
-				return (r.parent_id ? d !== null : true) && d !== null && d <= tdyISO;
+				// jen s termínem dnes/zpožděné (nedatované už nepatří do Dnes);
+				// porada se počítá JEN ve svůj den — po něm není „zpožděná" (hlásí ji Meets)
+				return (
+					(r.parent_id ? d !== null : true) &&
+					d !== null &&
+					(r.kind === "meeting" ? d === tdyISO : d <= tdyISO)
+				);
 			if (backlogView) return !r.parent_id && d === null; // Zásobník = nedatované top-level
 			if (path.startsWith("/nadchazejici")) return d !== null && d >= tdyISO;
 			return !r.parent_id; // Vše / Oblíbené: jen top-level
