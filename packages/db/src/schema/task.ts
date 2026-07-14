@@ -9,6 +9,7 @@ import {
 	type AnyPgColumn,
 	boolean,
 	check,
+	date,
 	foreignKey,
 	index,
 	integer,
@@ -45,11 +46,13 @@ export const tasks = pgTable(
 		priority: integer("priority").notNull().default(4),
 		/** R6 — uživatelský barevný akcent úkolu. */
 		color: varchar("color", { length: 9 }),
-		/** B1 — kdy se plánuje pracovat. */
-		dueDate: timestamp("due_date", { withTimezone: true }),
+		/** B1 — kdy se plánuje pracovat. P1-06 (§15/7): termín bez času je DATE —
+		 *  kalendářní den se nemění s časovým pásmem. mode:'date' kvůli reminder
+		 *  enginu (počítá s JS Date). Časový plán zůstává start_date (timestamptz). */
+		dueDate: date("due_date", { mode: "date" }),
 		startDate: timestamp("start_date", { withTimezone: true }),
-		/** R6/B2 — dokdy musí být hotovo (zobrazit zřetelně, červeně). */
-		deadline: timestamp("deadline", { withTimezone: true }),
+		/** R6/B2 — dokdy musí být hotovo (zobrazit zřetelně, červeně). DATE dle §15/7. */
+		deadline: date("deadline", { mode: "date" }),
 		/** B3 — odhad délky pro time-blocking (NE time tracking). */
 		durationMin: integer("duration_min"),
 		/** Vícedenní úkol — počet dní od due_date (1 = jednodenní); kalendář kreslí pruh. */
