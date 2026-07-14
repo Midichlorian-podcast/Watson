@@ -240,6 +240,7 @@ export const RichText = forwardRef<
 					ref={elRef}
 					contentEditable
 					role="textbox"
+					tabIndex={0}
 					aria-multiline="true"
 					aria-label={placeholder ?? "Tělo zprávy"}
 					data-rte

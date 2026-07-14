@@ -101,7 +101,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 			return;
 		}
 		setTested("ok");
-		showToast("Připojení funguje");
+		showToast("Simulace testu připojení — žádný server nebyl kontaktován");
 	};
 
 	// krok 2 = přihlášení; „Pokračovat" povol až po ověření (OAuth) / testu (IMAP)
@@ -110,7 +110,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 	const finish = () => {
 		const n = PIDS.filter((pid) => ppl[pid]).length;
 		showToast(
-			`Schránka připojena — po první synchronizaci se objeví v sidebaru. Přístup dostalo ${n} lidí, zbytek ji neuvidí vůbec.`,
+			`Simulace: schránka připojena jen v demu (nic se reálně nepřipojilo). Přístup dostalo ${n} lidí, zbytek ji neuvidí vůbec.`,
 		);
 		setStep(4);
 	};
@@ -230,7 +230,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 										color: "var(--success-ink)",
 									}}
 								>
-									Ověřeno — token v šifrovaném vaultu
+									Simulace ověření — reálný token a vault přijdou s M1
 								</span>
 							</div>
 						) : (
@@ -240,7 +240,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 									// demo — OAuth okno poskytovatele tu není, rovnou „připojeno"
 									setAuth(true);
 									showToast(
-										"Ověřeno — token uložen do šifrovaného vaultu, sahá na něj jen Mail Sync Service",
+										"Simulace ověření — žádný token nevznikl; šifrovaný vault přijde s M1",
 									);
 								}}
 								style={{ display: "inline-flex", fontSize: 12, padding: "9px 16px" }}
@@ -312,7 +312,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 										color: "var(--success-ink)",
 									}}
 								>
-									Připojení funguje — IMAP i SMTP odpovídají.
+									Simulace testu — reálné ověření IMAP/SMTP přijde s mail backendem (M1).
 								</span>
 							</div>
 						)}
@@ -421,7 +421,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 									color: "var(--success-ink)",
 								}}
 							>
-								Schránka připojena — po první synchronizaci se objeví v sidebaru. Přístup:{" "}
+								Schránka připojena (simulace) — objeví se v sidebaru dema. Přístup:{" "}
 								{PIDS.filter((pid) => ppl[pid]).length} lidí, zbytek ji neuvidí vůbec.
 							</span>
 						</div>

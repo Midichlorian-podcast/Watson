@@ -542,8 +542,14 @@ export function MailThread() {
 	const isOpen = (i: number) => m.exp[expKey(i)] ?? i === last;
 	const anyCollapsed = msgsAll.some((_, i) => !isOpen(i));
 	const expAll = () => {
-		if (anyCollapsed) msgsAll.forEach((_, i) => m.setExp(expKey(i), true));
-		else msgsAll.forEach((_, i) => m.setExp(expKey(i), i === last));
+		if (anyCollapsed)
+			msgsAll.forEach((_, i) => {
+				m.setExp(expKey(i), true);
+			});
+		else
+			msgsAll.forEach((_, i) => {
+				m.setExp(expKey(i), i === last);
+			});
 	};
 
 	/* ── composer (prototyp comp, ř. 3986–4104) ── */
@@ -656,7 +662,7 @@ export function MailThread() {
 	 */
 	const plan = (when: string) => {
 		setCpop(null);
-		showToast(`Naplánováno na ${when} — zrušíš v Dění → Nadcházející.`);
+		showToast(`Simulace: naplánováno na ${when} — nic se samo neodešle; zrušíš v Dění → Nadcházející.`);
 	};
 
 	const sendChatNow = () => {
@@ -978,7 +984,7 @@ export function MailThread() {
 									}}
 								>
 									<LockSvg size={9} />
-									osobní · šifrováno
+									osobní · demo
 								</span>
 							)}
 							{aiOffOn && (
@@ -1846,7 +1852,7 @@ export function MailThread() {
 												color: "var(--ink)",
 											}}
 										>
-											Nedoručeno — zpráva se vrátila
+											Simulace: nedoručeno — zpráva se vrátila
 										</div>
 										<div
 											style={{
@@ -2212,7 +2218,7 @@ export function MailThread() {
 														color: "var(--brass-text)",
 													}}
 												>
-													odesláno za {mb.short} · odeslal {name}
+													odesláno (simulace) za {mb.short} · odeslal {name}
 												</span>
 											</div>
 										)}
@@ -3973,7 +3979,7 @@ export function MailThread() {
 					}}
 				>
 					<span style={{ fontFamily: "var(--w-font-body)", fontSize: 12.5 }}>
-						Odesláno za {MB[m.undo.mb]?.short ?? "osobní adresu"}
+						Odesláno (simulace) za {MB[m.undo.mb]?.short ?? "osobní adresu"}
 					</span>
 					<span
 						onClick={m.undoBack}

@@ -818,7 +818,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const sdAsk = useCallback(
 		(id: string) => {
 			sdPatch(id, { pending: true, returned: false });
-			showToast("Odesláno ke schválení Tereze — do té doby koncept nejde odeslat.");
+			showToast("Simulace: odesláno ke schválení Tereze — do té doby koncept nejde odeslat.");
 		},
 		[sdPatch],
 	);

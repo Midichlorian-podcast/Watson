@@ -47,7 +47,8 @@ const DENI_SEED: DeniEvent[] = [
 	{ d: "dnes", t: "8:52", p: "ad", txt: "převzal vlákno", th: "faktura" },
 	{ d: "dnes", t: "8:47", p: "mh", txt: "nastavila vlajku P1 — SLA běží do 17:00", th: "opjak" },
 	{ d: "dnes", t: "8:15", p: "ps", work: "kalendář", txt: "přesunula zkoušku velkého sálu na 18:00", subj: "Studio Dornych · kalendář" },
-	{ d: "driv", t: "út 16:40", p: "ad", txt: "odeslal odpověď za granty@ a přepnul stav na Odesláno", th: "smlouva" },
+	{ d: "driv", t: "út 16:40", p: "ad", txt: "odeslal odpověď za granty@ a přepnul stav na Odesláno", th: "smlouva" }, // demo-seed
+
 	{ d: "driv", t: "út 11:10", p: "fk", work: "projekt", txt: "posunul projekt „Epizoda #42“ do fáze Natáčení", subj: "Podcast · projekty" },
 	{ d: "driv", t: "po 16:30", p: "js", txt: "přepnul na Čeká a nastavil follow-up na čt 10. 7.", th: "reklamace" },
 	{ d: "driv", t: "pá 14:05", sys: true, txt: "navrhl předat Filipovi (oblast podcast) — čeká na potvrzení", th: "host42" },
@@ -396,7 +397,7 @@ export function DeniScreen() {
 											e.stopPropagation();
 											cache.gone = { ...cache.gone, [u.txt]: true };
 											setGone(cache.gone);
-											showToast("Naplánované odeslání zrušeno — koncept zůstává u vlákna");
+											showToast("Naplánované odeslání zrušeno (simulace) — koncept zůstává u vlákna");
 										}}
 										style={{ fontSize: 10, padding: "3px 9px", flex: "none" }}
 									>

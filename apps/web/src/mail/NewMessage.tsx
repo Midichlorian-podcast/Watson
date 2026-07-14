@@ -8,6 +8,7 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { showToast } from "../lib/toast";
 import { MB, TPL } from "./data";
+import { MailDemoBanner } from "./DemoBanner";
 import { RichText, type RichTextHandle } from "./RichText";
 import { RecipientField, SigBlock, sigIdOf, SigPicker } from "./SigPicker";
 import { useMail } from "./state";
@@ -209,7 +210,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	/** Odeslání (prototyp nw.send, ř. 4220) — s pojistkou na slíbenou přílohu.
 	 * Zvolený podpis (SigBlock) se k tělu přidá při odeslání — demo jen v UI. */
 	const doSend = () => {
-		showToast(`Odesláno z ${addrOf(from)}`);
+		showToast(`Odesláno (simulace) z ${addrOf(from)} — zpráva neopustila Watson`);
 		reset();
 		onClose();
 	};
@@ -268,6 +269,10 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 				padding: "16px 18px",
 			}}
 		>
+			{/* CC-P0-08 — composer nesmí vypadat jako reálné odesílání */}
+			<div style={{ margin: "-16px -18px 12px", borderRadius: "16px 16px 0 0", overflow: "hidden" }}>
+				<MailDemoBanner compact />
+			</div>
 			{/* hlavička (prototyp ř. 1809–1812) */}
 			<div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
 				<span

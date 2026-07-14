@@ -930,14 +930,14 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								/>
 								<path d="M4 5 V3.8 A2 2 0 0 1 8 3.8 V5" stroke="currentColor" strokeWidth="1.2" />
 							</svg>
-							šifrováno · bez AI
+							demo · bez AI
 						</span>
 						<span style={{ flex: 1 }} />
 						<span
 							data-ghost
 							onClick={() =>
 								showToast(
-									"Osobní schránka by se odpojila — šifrovaná vlákna zůstávají jen v tvém zařízení",
+									"Simulace: osobní schránka by se odpojila — vlákna zůstávají jen v tvém zařízení (demo, nešifrováno)",
 								)
 							}
 							style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)", flex: "none" }}
@@ -953,7 +953,8 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 							padding: "0 18px 13px",
 						}}
 					>
-						Uložená šifrovaně, mimo týmové hledání, AI i správu týmu. Admin ji nevidí.
+						Mimo týmové hledání, AI i správu týmu; admin ji nevidí. V demu uložená lokálně bez
+						šifrování — to přijde s M1.
 					</div>
 				</div>
 			</div>

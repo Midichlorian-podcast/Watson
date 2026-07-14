@@ -17,6 +17,7 @@ import { useTheme } from "../layout/useTheme";
 import "./mail.css";
 import { showToast } from "../lib/toast";
 import { CheatSheet } from "./CheatSheet";
+import { MailDemoBanner } from "./DemoBanner";
 import { DeniScreen } from "./DeniScreen";
 import { FloatComposer } from "./FloatComposer";
 import { MailList, useListRows } from "./MailList";
@@ -214,6 +215,8 @@ export function MailScreen() {
 			data-wm-theme={theme === "dark" ? "dark" : "light"}
 			style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}
 		>
+			{/* CC-P0-08 — permanentní demo stav modulu; nesundávat před M1 */}
+			<MailDemoBanner />
 			<div
 				data-mailroot
 				data-mstep={m.mstep}

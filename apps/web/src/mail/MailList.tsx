@@ -1810,7 +1810,7 @@ export function MailList({
 									color: "var(--pers-ink)",
 								}}
 							>
-								OSOBNÍ SCHRÁNKA — ŠIFROVÁNO
+								OSOBNÍ SCHRÁNKA — DEMO
 							</div>
 							<div
 								style={{

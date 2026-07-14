@@ -7,6 +7,7 @@ import { API_URL } from "../lib/api";
 import { signOut, useSession } from "../lib/auth-client";
 import { downloadBackup } from "../lib/backup";
 import { AdminScreen } from "../mail/AdminScreen";
+import { MailDemoBanner } from "../mail/DemoBanner";
 import { NastaveniScreen as MailSettings } from "../mail/NastaveniScreen";
 import { initials } from "../lib/format";
 import { disconnectPowerSync } from "../lib/powersync/db";
@@ -245,16 +246,17 @@ export function Nastaveni() {
 		bio: string;
 	} | null>(null);
 
-	// Lokální záloha „o nic nepřijít" — stáhne všechna data do souboru (bez Googlu).
+	// P1-12: lokální EXPORT nasyncovaných dat — bez importu/restore to NENÍ záloha
+	// a UI to nesmí tvrdit (skutečná záloha s obnovou = F3/CC-P0-14).
 	const [backingUp, setBackingUp] = useState(false);
 	async function runBackup() {
 		if (backingUp) return;
 		setBackingUp(true);
 		try {
 			const res = await downloadBackup(new Date().toISOString());
-			showToast(`Záloha stažena — ${res.rowCount} položek (${res.filename})`);
+			showToast(`Export stažen — ${res.rowCount} položek (${res.filename})`);
 		} catch {
-			showToast("Zálohu se nepodařilo vytvořit");
+			showToast("Export se nepodařilo vytvořit");
 		} finally {
 			setBackingUp(false);
 		}
@@ -449,14 +451,15 @@ export function Nastaveni() {
 							className="font-display"
 							style={{ fontWeight: 700, fontSize: 13.5, color: "var(--w-ink)" }}
 						>
-							Stáhnout zálohu
+							Stáhnout export dat
 						</div>
 						<div
 							className="font-body"
 							style={{ fontSize: 11.5, color: "var(--w-ink-3)", marginTop: 2 }}
 						>
-							Uloží všechna tvoje data (úkoly, projekty, seznamy, cíle, kontakty) do jednoho
-							souboru. Ať o nic nepřijdeš.
+							Uloží data nasyncovaná v tomhle zařízení (úkoly, projekty, seznamy, cíle, kontakty,
+							porady) do JSON souboru. Neobsahuje historii změn ani mail a zatím neexistuje
+							obnova ze souboru — plnohodnotná záloha s obnovením se připravuje.
 						</div>
 					</div>
 					<button
@@ -473,7 +476,7 @@ export function Nastaveni() {
 							cursor: backingUp ? "default" : "pointer",
 						}}
 					>
-						{backingUp ? "Zálohuji…" : "Stáhnout"}
+						{backingUp ? "Exportuji…" : "Stáhnout"}
 					</button>
 				</div>
 				{/* Google Disk — automatická záloha; upřímný stav (vyžaduje propojení s Googlem) */}
@@ -517,6 +520,8 @@ export function Nastaveni() {
 				Pošta
 			</div>
 			<div data-wm-theme={theme === "dark" ? "dark" : "light"} style={{ marginBottom: 10 }}>
+				{/* CC-P0-08 — mailová sekce v Nastavení musí nést demo stav stejně jako modul */}
+				<MailDemoBanner compact />
 				<MailSettings embedded />
 			</div>
 
@@ -532,6 +537,7 @@ export function Nastaveni() {
 						Administrace pošty
 					</div>
 					<div data-wm-theme={theme === "dark" ? "dark" : "light"} style={{ marginBottom: 10 }}>
+						<MailDemoBanner compact />
 						<AdminScreen embedded />
 					</div>
 				</>

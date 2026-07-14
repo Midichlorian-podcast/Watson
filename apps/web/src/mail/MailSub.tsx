@@ -563,7 +563,7 @@ export function MailSub({
 				<SRow
 					active={isF("osobni")}
 					onClick={() => m.setFolder("osobni")}
-					title="kosir.adam@gmail.com — šifrováno, bez AI"
+					title="kosir.adam@gmail.com — osobní sféra (demo), bez AI"
 					pad="6px 10px"
 				>
 					<span
@@ -592,7 +592,7 @@ export function MailSub({
 								marginTop: 1,
 							}}
 						>
-							šifrováno · bez AI
+							demo · bez AI
 						</div>
 					</div>
 					<Badge>{un.pers || ""}</Badge>

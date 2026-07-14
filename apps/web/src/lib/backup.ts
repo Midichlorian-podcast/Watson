@@ -1,11 +1,10 @@
 /**
- * Lokální záloha „o nic nepřijít" — stáhne VŠECHNA data, která má klient
- * nasyncovaná v PowerSync SQLite, jako jeden JSON soubor. Funguje offline, bez
- * serveru i bez Googlu (ten je volitelná nadstavba pro automatické zálohy).
+ * Lokální EXPORT dat nasyncovaných v PowerSync SQLite jako jeden JSON soubor.
+ * Funguje offline, bez serveru i bez Googlu.
  *
- * Proč klient a ne server: PowerSync už drží kompletní podmnožinu dat uživatele
- * lokálně (úkoly, projekty, seznamy, cíle, kontakty…). Dump z lokální DB je tedy
- * úplný, rychlý a nevyžaduje žádné další oprávnění.
+ * P1-12 — tohle NENÍ záloha a UI to tak nesmí prezentovat: chybí import/restore,
+ * manifest schématu, checksum i data, která lokální DB nedrží (task_activity,
+ * audit_events, mail). Skutečná versioned záloha s ověřeným restore = F3 (CC-P0-14).
  */
 import { powerSync } from "./powersync/db";
 

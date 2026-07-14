@@ -7,6 +7,7 @@
  */
 import { useEffect } from "react";
 import { MB } from "./data";
+import { MailDemoBanner } from "./DemoBanner";
 import { useMail } from "./state";
 
 export function FloatComposer() {
@@ -140,6 +141,8 @@ export function FloatComposer() {
 						overflow: "hidden",
 					}}
 				>
+					{/* CC-P0-08 — plovoucí composer nesmí vypadat jako reálné odesílání */}
+					<MailDemoBanner compact />
 					<div
 						style={{
 							flex: "none",

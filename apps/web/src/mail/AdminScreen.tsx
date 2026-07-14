@@ -204,7 +204,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 					}}
 				>
 					Vidí jen správce týmu. Osobní schránky sem nepatří — připojuje si je každý sám v Nastavení
-					a jsou šifrované.
+					(šifrování přijde s reálným backendem M1).
 				</div>
 
 				{/* ── Připojené schránky (prototyp ř. 1470–1509) ── */}
@@ -284,7 +284,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 												background: "var(--success)",
 											}}
 										/>
-										připojeno
+										připojeno (simulace)
 									</span>
 								)}
 								{warnOn && (
@@ -463,8 +463,8 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 						<span
 							style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)" }}
 						>
-							Gmail / M365 přes OAuth, nebo IMAP+SMTP kdekoli — jen super-admin, přihlášení míří do
-							šifrovaného vaultu
+							Gmail / M365 přes OAuth, nebo IMAP+SMTP kdekoli — jen super-admin; v demu se
+							přihlášení nikam neukládá (šifrovaný vault je až součást M1, v demu neexistuje)
 						</span>
 					</div>
 					<div
