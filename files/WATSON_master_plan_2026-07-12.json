@@ -1,0 +1,596 @@
+{
+  "summary": "Plán všeho: komplexní mail composer (barevný text, všude stejně) + Watson Radar + AI příkazová vrstva (Claude) + hlasové diktování (Wispr-styl)",
+  "agentCount": 5,
+  "logs": [],
+  "result": {
+    "master": {
+      "overview": "Master plán slučuje čtyři domény (sdílený rich-text composer, deterministický Watson Radar + vycentrovaná karta, hlasové diktování, AI příkazová vrstva Claude) do pěti fází řazených podle pravidla „hodnota hned a bez závislostí první\". Fáze 1–3 nepotřebují Claude klíč a dají uživateli okamžitě použitelné věci (formátovaný mail všude, chytrý radar pozornosti nad reálnými daty, diktování do polí). Fáze 4–5 zapnou AI teprve až uživatel dodá Claude klíč (příkazy nad mailem/úkoly, diktát→úkoly). Klíčová poctivost: mail je z ~95 % demo (seed + localStorage, reálně persistuje jen „úkol z mailu\"), takže rich-text i AI příkazy nad mailem jsou zobrazovací/návrhové až do samostatné várky mail-persistence M1 — v plánu je to explicitně označeno u každé dotčené fáze.",
+      "phases": [
+        {
+          "name": "F1 — Sdílený rich-text composer (barevný text všude stejně)",
+          "goal": "Jeden formátovací editor včetně barevného textu ve VŠECH čtyřech composerech (Nová zpráva, odpověď ve vlákně, mail peek, plovoucí composer) místo dnešního mixu holého textarea + jednoho RTE.",
+          "includes": [
+            "Extrahovat funkční contentEditable RTE z MailThread.tsx do sdílené komponenty apps/web/src/mail/RichText.tsx (editor + toolbar + link popover + sanitizer), včetně load-bearing triku „nastav innerHTML jen když se value liší od lastHtml\" (jinak skáče kurzor)",
+            "Přidat ovladač barvy textu jako FIXNÍ Watson paletu (~6–8 hex hodnot čitelných v light i dark), ne volný hex picker — kvůli kontrastu a allowlistu v sanitizeru",
+            "Přidat sanitizeMailHtml() (dnes ŽÁDNÝ sanitizer neexistuje) s allowlistem tagů + onPaste čištění; normalizovat execCommand <font color> na <span style=color>",
+            "Aditivně rozšířit draft store (state.tsx): k poli text přidat volitelné html; text zůstává kanonická plain projekce, aby chips/snip/send-split nepraskly",
+            "Nasadit <RichText> do MailThread (smaže ~200 řádků), NewMessage (pozor: ATT_RE a empty-form detekce musí běžet na plain projekci, ne na HTML), PeekPanel MailPeek a FloatComposer",
+            "Znovupoužít existující [data-rte] CSS v mail.css; ověřit kontrast barev na var(--panel-2) v obou tématech"
+          ],
+          "effort": "L",
+          "needsClaudeKey": false,
+          "shipsValue": "Plnohodnotný formátovací composer (tučné/kurzíva/seznamy/odkaz/barva) identicky ve všech čtyřech místech mailu; draft rozepsaný v peeku se ukáže formátovaný ve vlákně. Formátování je zatím composer-only (odeslané zprávy se renderují jako plain), skutečné doručení formátu přijde s mail M1."
+        },
+        {
+          "name": "F2 — Watson: vycentrovaná karta + deterministický Radar pozornosti (režim A)",
+          "goal": "Nahradit slabý boční drawer WatsonPanel vycentrovanou kartou (vzor AddTaskModal) a naplnit ji deterministickým radarem nad REÁLNĚ syncovanými daty: míč u tebe, uvázlo (tichý stall), dnes hoří, predikce cílů, kaskádová projekce Postupů.",
+          "includes": [
+            "Překlopit surface: lib/watson.tsx stav open na {mode:'radar'|'ask'}; nová WatsonCard.tsx klonuje interakční skořápku AddTaskModalu (focus-trap, Esc kaskáda přes data-esc-layer, wPop animace); prázdný tab „Řekni Watsonovi\" pro budoucí režim B",
+            "Sdílený engine lib/radar.ts: čte tasks/assignments/chain_steps/chains/goals + session.user.id, vrací tři počty (u tebe/uvázlo/hoří) se single-lane dedupem",
+            "Oprava #1 (reálný bug): extrahovat SPRÁVNOU verzi přeplánování z Prehled.tsx do lib/reschedule.ts (date-only, přeskočí recurrence R4, undo+toast) a použít v Přehledu i Radaru; zahodit bugovou kopii z WatsonPanel (píše plný timestamp bez R4/undo)",
+            "Oprava #2 (counts): nedatované úkoly nesmí padat do „dnes\" (dnešní d==null||d===tdy → d!=null && d<=tdy)",
+            "Pruh „Míč u tebe\" plně lokálně z chain_steps.activated_at + assignments.created_at; provenienci předávky dopočítat v JS z předchozího kroku",
+            "Pruh „Uvázlo\" jako offline proxy z activated_at (aktivní krok ≥3 dny bez pohybu, ještě ne po termínu); pro neštafetové úkoly „kdo naposledy hnul\" volitelně malý Hono endpoint GET /api/activity/digest (task_activity se nesyncuje dolů)",
+            "Doplnit Přehled: čistá goalForecast() (projekce tempa cíle) a čistá simulateReflow() vytažená z chainReflow.ts BEZ zápisu (refaktor, ne duplikát) — použít v kartě i v radarových pruzích",
+            "Paměť delt: localStorage watermark (vzor NotifCenter), přepínač Nové/Vše; koordinovat s NotifCenter, ať zvonek a karta nedublují signály; i18n klíče watson.radar.*"
+          ],
+          "effort": "L",
+          "needsClaudeKey": false,
+          "shipsValue": "Vycentrovaná Watson karta místo draweru + skutečně užitečný radar: „co je míč u tebe\", „co uvázlo\", „co dnes hoří\" (s tlačítkem přeplánovat), predikce cílů a dopadová projekce Postupů — vše nad reálnými synced daty, offline. Dva reálné bugy (přeplánování, počty) opraveny. Mailové radar-pruhy se shipnou jen jako viditelné demo."
+        },
+        {
+          "name": "F3 — Hlasové diktování do textových polí (STT, bez Claude)",
+          "goal": "Mikrofon → přepis → vložení textu na pozici kurzoru do všech composerů i QuickAddu. Serverová STT cesta (konzistentní napříč prohlížeči), zatím BEZ Claude cleanupu.",
+          "includes": [
+            "Backend: nový Hono endpoint apps/api/src/voice.ts (POST /api/voice/transcribe, multipart audio → {rawText}) zapojený v index.ts; klíče v env.ts vzorem googleEnabled (voiceEnabled = Boolean klíčů); rate-limit + strop délky audia (60–120 s)",
+            "STT provider za swappable adaptérem transcribe(audio, lang='cs') — start s jedním providerem po krátkém cs bake-offu (ElevenLabs Scribe/Speechmatics pro kvalitu cs vs Groq/OpenAI pro cenu). POZOR: Anthropic NEMÁ speech-to-text → potřeba SAMOSTATNÝ STT klíč, ne Claude klíč",
+            "Frontend: sdílený hook lib/useDictation.ts (getUserMedia→MediaRecorder→POST) + komponenta MicButton.tsx (brass akcent, stavy idle/recording/transcribing); iOS Safari mime fallback (mp4/m4a), online-only guard",
+            "Zapojit MicButton s inzercí na kurzor do NewMessage <textarea>, MailThread contentEditable (Range), PeekPanel MailPeek, FloatComposer a QuickAdd <input> (hlas projde stejným parseQuick jako psaný text)",
+            "Feature-flag celý hlas (skrýt/disable offline i bez klíče), viditelný rec indikátor, auto-stop na max délce"
+          ],
+          "effort": "L",
+          "needsClaudeKey": false,
+          "shipsValue": "Uživatel může diktovat do libovolného pole (mail, rychlé přidání úkolu) na jakémkoli prohlížeči; přepis se vloží na kurzor. Push-to-talk stačí pro MVP. Vyžaduje separátní STT klíč (ne Claude); bez klíče se mikrofon skryje. Bez Claude je přepis „surový\" (interpunkce/úklid přijdou ve F5)."
+        },
+        {
+          "name": "F4 — AI příkazová vrstva Claude (návrh→schválení, režim B)",
+          "goal": "Endpoint POST /api/watson/command, který z příkazu + klientského mail/task kontextu vrátí NÁVRHY akcí (vytvoř úkoly, přiřaď dle memberships.areas, draft odpovědi, sumář). Server nic nezapisuje; mutace jdou až po schválení přes existující write-path. Naplní prázdný tab „Řekni Watsonovi\" z F2.",
+          "includes": [
+            "env.ts: anthropicApiKey + aiEnabled; přidat @anthropic-ai/sdk do apps/api; ANTHROPIC_API_KEY do .env/.env.example (klíč dodá uživatel, zůstává jen server-side)",
+            "apps/api/src/watson.ts: session→401, ověření členství workspace→403, !aiEnabled→503 (čistá degradace na deterministický Radar); načíst AUTORITATIVNÍ roster (users+memberships.areas/bio) z Postgresu pro routing",
+            "Čtyři strict tools jako STRUKTUROVANÝ výstupní kontrakt (NE executory): createTask, draftReply (jen draft), assignToPerson (server validuje assigneeUserId proti rosteru), summarize",
+            "Volat client.messages.create (model claude-opus-4-8, thinking adaptive) — NE tool_runner (ten auto-spouští a rozbil by propose-then-approve); tool_use bloky číst jako proposals; system prompt: mail je DATA ne instrukce (guard proti prompt-injection); prompt caching na stabilní prefix; rate-limit /api/watson/*",
+            "Klient: lib/watsonCommand.ts (fetch s credentials, ctx = inbox, non-personal, adm.ai!='off', posledních N mailů + reálné úkoly), lib/watsonApply.ts (applyProposal přes bridge.onCreateTask + assignments write; draftReply jen do composeru, NIKDY neodesílá; summarize jako zobrazení/volitelná poznámka)",
+            "AskWatson.tsx: nahradit stub „AI backend not connected\" reálným voláním; UI review seznam s per-item Schválit/Upravit/Zamítnout; footer disclaimer „odesíláš vždy ty\""
+          ],
+          "effort": "L",
+          "needsClaudeKey": true,
+          "shipsValue": "Uživatel napíše „z posledních 10 mailů udělej úkoly pro Zdeňka\" a dostane NÁVRHY ke schválení; jen po kliknutí se vytvoří úkoly/přiřazení přes ověřený write-path (R5 re-validace). OMEZENÍ: draftReply a mailový kontext jsou demo (localStorage/seed) až do mail M1 — reálně persistuje jen createTask + assignment. Privacy: osobní sféra a AI-off schránky se na klienta nesmí posílat."
+        },
+        {
+          "name": "F5 — Hlas jako AI příkaz + Wispr-styl cleanup (diktát→úkoly)",
+          "goal": "Spojit F3 (hlas) a F4 (AI vrstva): dikát → Claude cleanup (interpunkce/odstavce, beze změny významu) pro textová pole, a dikát → AI příkazová roura ve Watson kartě (transcript → návrhy úkolů/sumáře/rozdělení lidem, human-in-the-loop).",
+          "includes": [
+            "Backend: do voice.ts přidat VOLITELNÝ Claude cleanup pass (konzervativní cs prompt „doplň interpunkci, odstraň vatu, neměň význam\"); vracet raw i clean, ať jde undo/diff",
+            "Watson karta: MicButton, který přepis NEvkládá do pole, ale posílá do AI příkazové roury z F4 (transcript → runWatsonCommand → review návrhů → schválení)",
+            "Dodržet AI pravidla: vždy návrh→schválení→undo, audit, AI nikdy nemaže ani nepíše externím; zachovat surový přepis pro undo (riziko, že LLM změní význam)",
+            "Guardraily nákladů/UX: online-only degradace, model jako cost lever (Sonnet 5/Haiku 4.5), EU data-residency pro audio (EU endpoint/self-host)"
+          ],
+          "effort": "M",
+          "needsClaudeKey": true,
+          "shipsValue": "„Wispr kvalita\": diktát se automaticky vyčistí (interpunkce, odstavce) a hlasem lze rovnou zadat AI příkaz „rozděl tohle mezi lidi\" → strukturované návrhy ke schválení. Hlas je tenká nadstavba nad F4, takže přírůstkově malé. Vyžaduje Claude klíč (cleanup + příkazy) i STT klíč z F3."
+        }
+      ],
+      "sequencingRationale": "Pořadí drží tři pravidla. (1) Hodnota bez klíče první: F1 (composer) a F2 (Radar) nepotřebují žádný externí klíč a řeší dvě věci, které uživatel vidí denně — formátování mailu a přehled „na co si dát pozor\"; navíc F2 cestou opravuje dva reálné bugy (přeplánování, počty). (2) Diktování (F3) je před AI, protože jde o infrastrukturu (getUserMedia, MediaRecorder, STT endpoint, MicButton), která má hodnotu i sama o sobě (surový přepis do polí) a nepotřebuje Claude klíč — potřebuje jen separátní STT klíč. (3) AI až s klíčem: F4 zapíná Claude příkazovou vrstvu a musí přijít po F2, protože sdílí vycentrovanou Watson kartu a plní její prázdný tab „Řekni Watsonovi\". F5 je záměrně poslední a nejmenší — spojuje už hotové F3+F4 (hlas → cleanup, hlas → příkaz), takže je to tenká nadstavba, ne nový kus. Každá fáze je samostatně shippable a degraduje čistě: bez STT klíče se mikrofon skryje, bez Claude klíče endpoint vrací 503 a app spadne zpět na deterministický Radar.",
+      "decisionsNeeded": [
+        "Formátování na odeslání: mají odeslané odpovědi ZACHOVAT formát (html na SentMsg + sanitizovaný render island), nebo je rich-text jen composer-only a při odeslání se zploští na plain (do mail M1)?",
+        "Rozsah barev: jen barva textu, nebo i zvýraznění/pozadí? A přesná paleta — reuse priority/brand tokenů (brass, p1–p4, ink) nebo dedikovaná malá sada?",
+        "Watson karta vs. drawer: koncept WATSON_koncept_radar_2026-07-12.md chce ZACHOVAT pravý drawer, zadání a paměť chtějí vycentrovanou kartu. Potvrdit kartu (vratné rozhodnutí).",
+        "Stall provenience: postavit /api/activity/digest hned (provenience = jádro důvěry), nebo se spokojit s offline proxy z activated_at bez „kdo hnul\"? task_activity se nesyncuje dolů.",
+        "Watermark paměti delt: per-zařízení localStorage (stačí pro MVP), nebo synced per-uživatel (jinak se delty na více zařízeních rozjedou)?",
+        "STT provider pro čeština/cena: krátký cs bake-off (ElevenLabs Scribe / Speechmatics vs Groq Whisper / OpenAI gpt-4o-transcribe), držet za swappable adaptérem. Vyžaduje SEPARÁTNÍ STT klíč nad rámec Claude.",
+        "EU data-residency pro audio: DPA / EU endpoint / self-host Whisper? Watson je deklarovaně EU-region.",
+        "Model pro AI vrstvu: default claude-opus-4-8 vs claude-sonnet-5/haiku-4-5 jako cost lever pro vysoký objem draftů (nákladové rozhodnutí uživatele).",
+        "Kolik mailu posílat Claudovi: plná těla vs truncation per vlákno (limit tokenů + PII expozice); a chceme per-workspace AI on/off + consent gate před odesláním obsahu mailu?",
+        "Kam persistuje schválený draftReply, když je mail demo? Přijmout localStorage-only do mail M1, nebo draftReply z prvního řezu vyřadit?"
+      ],
+      "risks": [
+        "Mail je z ~95 % demo (seed + localStorage): rich-text formátování i AI draftReply/mailový kontext jsou zobrazovací/návrhové až do samostatné velké várky mail-persistence M1; reálně dnes persistuje jen createTask + assignment. Nutno v UI i plánu poctivě označit.",
+        "Změna sdíleného draft store (F1) je hlavní hazard: html musí být striktně aditivní, text zůstává kanonická plain projekce — jinak prasknou chips/snip/send-split. NewMessage ATT_RE a empty-form detekce musí běžet na plain projekci, ne na HTML.",
+        "contentEditable + execCommand jsou deprecated a foreColor emituje cross-browser variabilní <font color>; držet demo-scoped, sanitizer normalizuje. Paste přijímá libovolné HTML → sanitizer + onPaste musí běžet na každý persist, ne jen na toolbar akce.",
+        "Prompt injection v tělech mailů (F4): struktura to tlumí (server nic nespouští, injection dá jen návrh ke schválení), ale system prompt musí rámovat mail jako data-ne-instrukce a assigneeUserId se validuje proti DB rosteru + write-path R5.",
+        "Náklady/runaway (F4/F5): claude-opus-4-8 je drahý a „drafty pro 10 mailů\" fan-out; nutný rate-limit /api/watson/*, případně denní cap a prompt caching; Sonnet/Haiku jako levnější volba.",
+        "NESMÍ se použít SDK tool_runner ve F4 — auto-spouští tooly a rozbil by invariant návrh-pak-schválení; musí to být plain messages.create čtoucí tool_use bloky.",
+        "Refaktor reflowChain na čistou simulateReflow (F2) může změnit termíny existujících Postupů (skip_weekend/anchor) — nutná regrese na advance/reflow.",
+        "Anthropic NEMÁ speech-to-text: F3 vyžaduje SEPARÁTNÍ STT klíč, ne Claude klíč — snadné zaměnit; bez něj se hlas musí skrýt. Web Speech API je nespolehlivý základ (Firefox nepodporuje, Safari cs nejistá) → serverová cesta primární.",
+        "Online-only (AI i hlas): offline-first app musí degradovat na deterministický Radar / skrytý mikrofon a nezobrazovat chyby.",
+        "Překryv Watson karty s NotifCenter (zvonek): stejný signál dvakrát; nutné sdílené odvození a jasné rozdělení rolí, jinak duplicitní upozornění."
+      ]
+    },
+    "domainPlans": [
+      {
+        "domain": "Frontend — shared rich-text mail composer (React contentEditable, PowerSync/localStorage demo persistence)",
+        "recommendedApproach": "Extract MailThread's existing contentEditable RTE into ONE shared component `apps/web/src/mail/RichText.tsx` (editor + toolbar + link popover + NEW color control + sanitizer) and mount it in all four composers (NewMessage, MailThread reply, MailPeek, FloatComposer). State stays additive: keep the shared draft store's `text` field as the canonical PLAIN projection (chips, snip, send-split, un-migrated readers all keep working) and add an optional `html` field that the RTE writes alongside it — nothing that reads `text` today breaks. Colored text = a FIXED Watson palette swatch popover (not a free hex picker) so colors match design tokens, stay readable in light+dark, and the sanitizer can allowlist only known hex. Add real sanitization (on every persist + on paste) since none exists today and this HTML will feed mail send in M1. Keep `document.execCommand` for the demo exactly as the prototype does (documented as demo-only, real editor comes with mail backend M1–M3).",
+        "steps": [
+          {
+            "title": "Create shared RichText.tsx component",
+            "detail": "New file exporting <RichText value onChange placeholder onSubmit autoFocus minHeight variant> plus an internal <RichTextToolbar>. Lift MailThread's proven pattern verbatim: rteRef, a lastHtml guard ref, an effect that sets innerHTML ONLY when the incoming value differs from lastHtml (prevents cursor jump on every keystroke — this is the load-bearing trick from lines 311-319/593-616), onInput → sanitize → emit BOTH html (sanitized innerHTML) and plain text (innerText). Move the link popover (saved Range via rteRange, lnkApply createLink/insertHTML) and the toolbar buttons (bold/italic/underline/strikeThrough/insertUnorderedList/insertOrderedList/formatBlock blockquote/removeFormat/unlink) into it. onMouseDown preventDefault on toolbar (the existing `pd`) so the selection isn't stolen. ⌘Enter calls onSubmit.",
+            "touchesFiles": [
+              "apps/web/src/mail/RichText.tsx"
+            ]
+          },
+          {
+            "title": "Add colored-text control (palette, not free picker)",
+            "detail": "In the toolbar add an 'A' swatch button opening a small popover with a fixed Watson palette (~6-8 literal hex values chosen to read on BOTH panel light/dark backgrounds — resolve from design tokens to hex, do NOT store var() because sent mail has no CSS vars) plus a 'default/clear' chip and optionally a highlight sub-row. Apply via execCommand('foreColor', false, hex) (and 'hiliteColor'/'backColor' for highlight). The sanitizer normalizes execCommand's <font color> output to <span style=\"color:HEX\"> and only lets palette hex through.",
+            "touchesFiles": [
+              "apps/web/src/mail/RichText.tsx",
+              "apps/web/src/mail/mail.css"
+            ]
+          },
+          {
+            "title": "Add sanitizeMailHtml() + move textToHtml/htmlToText helpers",
+            "detail": "There is currently NO sanitizer (only textToHtml which escapes &/< then joins <br>). Add a hand-rolled DOM-walk sanitizer (no new dependency for the demo; recommend swapping to DOMPurify at M1): allowlist tags b/strong/i/em/u/s/strike/a/ul/ol/li/blockquote/p/div/br/span/font; allow a[href] only for http(s)/mailto, and color-only style/font[color] limited to palette hex; strip everything else (script/style/on*/img/class/id). Wire an onPaste handler that inserts sanitized (or plain) content so pasting arbitrary markup can't inject. Export textToHtml (moved out of MailThread) as the plain→html fallback used when a draft has only legacy plain text.",
+            "touchesFiles": [
+              "apps/web/src/mail/RichText.tsx"
+            ]
+          },
+          {
+            "title": "Extend the draft store additively (html alongside text)",
+            "detail": "In state.tsx change DraftState from {mode,text} to {mode,text,html?} and setDraft(id,text,mode?,html?) to persist html. Leave outgoingText()/doSend() splitting `text` on \\n for the demo sent-render (formatting is composer-display-only for now) and leave chips (d.text.trim()) and snip (text.slice) reading `text` — all unchanged. Optional later phase: carry html on SentMsg and render it through a sanitized island so sent replies keep formatting. localStorage key watson-mail.drafts stays; old records lacking html just fall back to textToHtml(text).",
+            "touchesFiles": [
+              "apps/web/src/mail/state.tsx"
+            ]
+          },
+          {
+            "title": "Swap MailThread reply RTE for <RichText>",
+            "detail": "Replace the inline contentEditable block (line 3647), the toolbar (lines 3099-3301), and the local rteCmd/persistRte/linkOpen/lnkApply/textToHtml effect with <RichText value={draft.html ?? textToHtml(draft.text)} onChange={(html,text)=>m.setDraft(t.id,text,'edit',html)} onSubmit={()=>m.checkSend(t,false)} />. Keep the surrounding SigBlock, attachment chip, AI-draft card and quick-reply rows untouched. Net deletion of ~200 lines now living in the shared component.",
+            "touchesFiles": [
+              "apps/web/src/mail/MailThread.tsx"
+            ]
+          },
+          {
+            "title": "Swap NewMessage textarea for <RichText>",
+            "detail": "Replace the <textarea> (line 518). NewMessage isn't keyed by a thread id so it keeps its own channel: change NewDraft.body to hold html, and add a plain projection (htmlToText) for the two places that inspect the body — the ATT_RE 'promised attachment' check (line 213) and the empty-form detection that clears LS (line 161) must run on plain text, not raw HTML, or tags will skew the regex/empty test. Convert insertTpl (line 223, currently textarea slice math) to an editor insert (execCommand insertHTML at cursor via the component's imperative insert, keeping the L-50 rule: never overwrite non-empty body).",
+            "touchesFiles": [
+              "apps/web/src/mail/NewMessage.tsx"
+            ]
+          },
+          {
+            "title": "Swap MailPeek + FloatComposer textareas for <RichText>",
+            "detail": "MailPeek reply textarea (PeekPanel.tsx line 859) and FloatComposer textarea (line 264) both bind to m.drafts[id].text today. Point them at <RichText value={draft.html ?? textToHtml(draft.text)} onChange={(html,text)=>m.setDraft(id,text,'edit',html)}> so the SAME editor/toolbar/color appears in all three shared-store composers. They already share the draft store, so a reply started in the peek shows formatted in the thread and vice-versa. Preserve each one's ⌘Enter→checkSend and close-on-real-send behavior.",
+            "touchesFiles": [
+              "apps/web/src/components/PeekPanel.tsx",
+              "apps/web/src/mail/FloatComposer.tsx"
+            ]
+          },
+          {
+            "title": "Reuse/extend [data-rte] CSS and verify light+dark",
+            "detail": "The editor styling already exists in mail.css (lines 102-108: [data-rte] box, :focus, :empty::before placeholder, a/blockquote/ul/ol). Reuse it for all four composers (they get identical look for free). Add only swatch-button/color-popover styles. Manually verify colored text contrast on var(--panel-2) in both themes and that the placeholder (data-ph) still shows when empty across all four mounts.",
+            "touchesFiles": [
+              "apps/web/src/mail/mail.css"
+            ]
+          }
+        ],
+        "effort": "L",
+        "dependencies": [
+          "No new runtime dependency required for the demo — hand-rolled sanitizer + existing execCommand. (Recommend adding DOMPurify only when mail send/persistence M1 lands.)",
+          "Shared draft store in apps/web/src/mail/state.tsx (DraftState/setDraft/outgoingText/doSend) — schema touched additively",
+          "SigPicker/SigBlock and TaskModal already shared across composers — unaffected but co-mounted"
+        ],
+        "risks": [
+          "execCommand is deprecated (already true in the prototype) and foreColor emits <font color> with cross-browser variance — keep it demo-scoped, sanitizer normalizes to <span style=color>.",
+          "Changing the shared draft store is the main hazard: html must be strictly additive, text stays the canonical plain projection or chips/snip/send-split break.",
+          "contentEditable paste accepts arbitrary HTML — sanitizer + onPaste must run on every persist, not only toolbar actions, or markup round-trips into the draft (and at M1 into sent mail).",
+          "Dark-mode contrast: a color readable on light can vanish on dark — the fixed dual-theme palette avoids it; a free hex picker would reintroduce it.",
+          "NewMessage body becomes HTML — ATT_RE attachment guard and empty-form LS cleanup must use a plain-text projection or they misfire.",
+          "Sent messages render as plain string[] paragraphs today (no dangerouslySetInnerHTML), so formatting is composer-only until an optional later phase adds a sanitized SentMsg render island."
+        ],
+        "openQuestions": [
+          "Should sent replies actually PRESERVE formatting (carry html on SentMsg + sanitized render island), or is rich text composer-only for the demo and flattened to plain on send?",
+          "Color scope: text color only, or also highlight/background? And exact palette — reuse priority/brand tokens (brass, p1-p4, ink) or a dedicated small set?",
+          "Should NewMessage's own draft channel eventually fold into the shared draft store, or stay separate because it has no thread id?"
+        ],
+        "needsClaudeKey": false
+      },
+      {
+        "domain": "Hlasové diktování (speech-to-text, Wispr-styl) pro mailové composery, QuickAdd a Watson AI-kartu v offline-first React/PowerSync + Hono appce. Cíl: mikrofon → přepis → (a) vložit text do composeru/quickaddu NEBO (b) poslat přepis Watsonovi jako AI příkaz (diktát → úkoly/sumář/rozdělení lidem, human-in-the-loop).",
+        "recommendedApproach": "DOPORUČENÍ: serverová cesta (nahrávka → upload → cloudový STT → Claude „cleanup\") jako PRIMÁRNÍ, ne prohlížečové Web Speech API. Tři důvody přesně pro tento případ: (1) Cross-browser — Firefox Web Speech API NEPODPORUJE vůbec, Safari má webkitSpeechRecognition od 14.1 ale kvalita cs je nejistá; jen Chrome/Edge posílají audio na Google servery (privacy, online-only). Watson je PWA pro všechny prohlížeče, takže Web Speech je nespolehlivý základ. (2) Čeština — Web Speech je laděné hlavně na krátké příkazy, na souvislý český diktát je přesnost slabá a bez interpunkce; cloudové modely dávají pro cs výrazně lepší WER (ElevenLabs Scribe ~3,1 % FLEURS / 5,5 % Common Voice cs, Speechmatics ~96 % přesnost; Whisper large-v3 obecně horší pro cs, ale použitelný přes Groq/OpenAI). (3) „Wispr kvalita\" NENÍ jen přepis — je to přepis + LLM úklid (interpunkce, formátování, odstranění vaty, „napiš, netranskribuj\"). Přesně tohle už UMÍTE udělat Claudem, který stejně potřebujete pro AI příkazovou vrstvu Watsona. Takže: MediaRecorder → POST audia na nový Hono endpoint /api/voice/transcribe → STT provider (swappable adaptér) → surový přepis → volitelný Claude cleanup pass (cs, konzervativní) → čistý text. POZOR na klíčový fakt: Anthropic/Claude NEMÁ speech-to-text — potřebujete SAMOSTATNÝ STT klíč (OpenAI gpt-4o-transcribe / Groq whisper-large-v3-turbo / ElevenLabs Scribe / Speechmatics) NAD RÁMEC Claude klíče, který dodáváte. Provider držte za adaptérem, ať se dá vyměnit po krátkém cs bake-offu. Web Speech API použijte NANEJVÝŠ jako volitelný zdarma „živý náhled\" na Chrome (interim results), ale finální text ať vždy dělá server, aby byl konzistentní všude. Push-to-talk (drž/klikni → nahraj celý klip → přepiš) stačí pro MVP; streamované průběžné výsledky (živý text jako Wispr) je v2 vylepšení. Effort: čistý „diktát do textového pole\" (mikrofon v composerech + QuickAdd) = M, pár dní. Diktát jako AI příkaz (→ úkoly/sumář/rozdělení lidem) = L, ale ~80 % je Watson AI příkazová vrstva (režim B z konceptu radaru), která se plánuje samostatně; hlas je nad ní tenká nadstavba → přírůstkově S, jakmile ta vrstva existuje. Vše je online-only, což sedí do CLAUDE.md (AI a hlasovky jsou explicitně online-only, offline degraduje). getUserMedia vyžaduje HTTPS (v PWA/produkci ok, localhost ok v devu).",
+        "steps": [
+          {
+            "title": "Backend: Hono endpoint /api/voice/transcribe (multipart audio → text)",
+            "detail": "Nový soubor apps/api/src/voice.ts exportující voiceRoutes (vzor jako powersync.ts/push.ts), zapojený v index.ts přes app.route(\"/\", voiceRoutes). Přijme multipart audio (c.req.parseBody / formData — Hono to umí nativně), zavolá STT provider adaptér, vrátí { rawText }. Klíče přidat do apps/api/src/env.ts (STT_PROVIDER + STT_API_KEY + ANTHROPIC_API_KEY) stejným vzorem jako googleEnabled/pushEnabled/emailEnabled (funkce voiceEnabled = Boolean klíčů). Přidat rate-limit (app.use na /api/voice/*) a strop délky audia (např. 60–120 s) proti nákladům. Chráněné session-em jako /api/me.",
+            "touchesFiles": [
+              "apps/api/src/voice.ts",
+              "apps/api/src/index.ts",
+              "apps/api/src/env.ts"
+            ]
+          },
+          {
+            "title": "Backend: STT provider adaptér + Claude „cleanup\" pass (Wispr kouzlo)",
+            "detail": "Za jedním rozhraním transcribe(audio, lang=\"cs\") přepínat providera (start s jedním: gpt-4o-transcribe NEBO Groq whisper-large-v3-turbo pro cenu/rychlost; pro nejlepší cs zvážit ElevenLabs Scribe / Speechmatics). Po přepisu VOLITELNÝ cleanup: poslat surový text Claudu (přidat @anthropic-ai/sdk do apps/api — dnes 0 anthropic deps) se stručným cs promptem „doplň interpunkci a odstavce, odstraň vatu, NEMĚŇ význam, vrať jen text\". Vracet OBOJÍ (raw + clean), ať jde ukázat/undo. Toto je jádro „Wispr kvality\", které Web Speech nedá.",
+            "touchesFiles": [
+              "apps/api/src/voice.ts",
+              "apps/api/package.json"
+            ]
+          },
+          {
+            "title": "Frontend: sdílený useDictation hook + MicButton komponenta",
+            "detail": "Nový hook (apps/web/src/lib/useDictation.ts): getUserMedia({audio}) → MediaRecorder → stav idle/recording/transcribing, na stop POST na /api/voice/transcribe, callback s čistým textem. Řešit iOS Safari mime (feature-detect: preferovat audio/mp4/m4a když webm/opus není podporován), mikrofon permission a viditelný indikátor nahrávání. MicButton (apps/web/src/components/MicButton.tsx) v brand tokenech (brass akcent), tři stavy, klik = toggle nahrávání. Online-only guard (degradace offline).",
+            "touchesFiles": [
+              "apps/web/src/lib/useDictation.ts",
+              "apps/web/src/components/MicButton.tsx"
+            ]
+          },
+          {
+            "title": "Frontend: zapojit mikrofon do VŠECH 3 composerů + QuickAdd s vložením na kurzor",
+            "detail": "MicButton + insertace na pozici kurzoru do: (1) NewMessage.tsx body <textarea> (ř.518–521) — splice value na selectionStart, pak setBody; (2) MailThread.tsx contentEditable RTE (rteRef, ř.258/3648) — vložit do aktuálního Range; (3) PeekPanel.tsx MailPeek <textarea> (ř.859). Plus QuickAdd.tsx <input> (inputRef, setRaw) — hlasový text projde stejným parseQuick jako psaný. Tři vkládací adaptéry (textarea/contentEditable/input), jinak stejný hook. Tím je „všude stejně\" splněno.",
+            "touchesFiles": [
+              "apps/web/src/mail/NewMessage.tsx",
+              "apps/web/src/mail/MailThread.tsx",
+              "apps/web/src/components/PeekPanel.tsx",
+              "apps/web/src/components/QuickAdd.tsx"
+            ]
+          },
+          {
+            "title": "Frontend: mikrofon ve Watson kartě + diktát jako AI příkaz (human-in-the-loop)",
+            "detail": "V nové vycentrované Watson kartě (dnes drawer WatsonPanel.tsx + mount v lib/watson.tsx) přidat MicButton. Tady přepis NEjde do textového pole, ale do AI příkazové roury: transcript → Claude (tool-use) → STRUKTUROVANÝ NÁVRH (vytvoř úkoly / přiřaď lidem dle memberships.areas / sumář / drafty) → uživatel SCHVÁLÍ před side-effekty. Dodržet AI pravidla z CLAUDE.md: „navrhnout → AISuggestion → schválit\", vždy undo, audit, tiché hodiny, AI nikdy nemaže/nepíše externím. Voice je jen vstup do této vrstvy (režim B konceptu radaru) — 80 % práce je ta AI vrstva, hlas je tenká nadstavba.",
+            "touchesFiles": [
+              "apps/web/src/components/WatsonPanel.tsx",
+              "apps/web/src/lib/watson.tsx",
+              "apps/api/src/voice.ts"
+            ]
+          },
+          {
+            "title": "Feature flag, offline degradace a náklady/UX guardraily",
+            "detail": "Feature-flag celý hlas (zap až jsou klíče, viz voiceEnabled). Skrýt/disable MicButton offline (hlas je online-only per CLAUDE.md). Viditelný rec indikátor + auto-stop na max délce. U Claude cleanup zachovat surový přepis a nabídnout undo/diff (riziko, že LLM změní význam). EU data-residency: audio ať jde na EU-region provider nebo self-host, Watson je EU-region.",
+            "touchesFiles": [
+              "apps/web/src/components/MicButton.tsx",
+              "apps/api/src/voice.ts"
+            ]
+          }
+        ],
+        "effort": "L",
+        "dependencies": [
+          "SAMOSTATNÝ STT provider klíč — Anthropic/Claude NEMÁ speech-to-text; potřeba OpenAI (gpt-4o-transcribe) / Groq (whisper-large-v3-turbo) / ElevenLabs (Scribe, silné cs) / Speechmatics (silné cs, EU) NAD RÁMEC Claude klíče",
+          "Claude/Anthropic API klíč (dodává uživatel) — pro Wispr-styl cleanup přepisu a pro AI příkazovou vrstvu (diktát → úkoly/sumář/rozdělení lidem)",
+          "@anthropic-ai/sdk přidat do apps/api (dnes 0 anthropic deps ověřeno)",
+          "Prohlížečové getUserMedia + MediaRecorder (nativní) — vyžadují HTTPS (PWA/produkce ok, localhost ok); iOS Safari mime fallback (mp4/m4a)",
+          "Hono multipart/formData handling (nativní přes c.req.parseBody) — nová route apps/api/src/voice.ts zapojená do index.ts",
+          "Watson AI příkazová vrstva (režim B konceptu radaru, files/WATSON_koncept_radar_2026-07-12.md) — pro diktát-jako-příkaz je hlas jen vstup nad touto vrstvou"
+        ],
+        "risks": [
+          "placeholder"
+        ],
+        "needsClaudeKey": true,
+        "openQuestions": [
+          "Který STT provider pro nejlepší poměr cena/čeština? Krátký bake-off na reálných cs nahrávkách: ElevenLabs Scribe / Speechmatics (kvalita cs) vs Groq Whisper / OpenAI gpt-4o-transcribe (cena/rychlost). Držet za swappable adaptérem.",
+          "EU data-residency pro audio — vyžaduje to DPA / EU endpoint / self-host Whisper? Watson je deklarovaně EU-region.",
+          "Push-to-talk batch (jednoduché, MVP) vs streamované průběžné výsledky (živý text jako Wispr, v2)?",
+          "Chceme volitelně Web Speech API jako zdarma „živý náhled\" na Chrome, nebo jednu serverovou cestu všude kvůli konzistenci napříč prohlížeči?",
+          "Kde přesně žije mikrofon ve Watson kartě vs. v composerech — sdílet jednu MicButton komponentu, ale dvě chování (vložit text vs. spustit AI příkaz)?"
+        ]
+      },
+      {
+        "domain": "AI command layer (Claude tool-use) — new Hono endpoint POST /api/watson/command that returns human-in-the-loop action PROPOSALS from a command + client-supplied mail/task context, using memberships.areas for \"who to route to\". Server has zero side effects; all mutations run through the existing authenticated PowerSync write-path only after the user approves.",
+        "recommendedApproach": "Add one authenticated Hono endpoint `POST /api/watson/command` (new file `apps/api/src/watson.ts`) that: (1) verifies the better-auth session and the caller's membership of the requested workspace exactly like existing endpoints; (2) loads the AUTHORITATIVE roster (userId + name + areas + bio) from Postgres for routing; (3) accepts mail/task context in the request body because mail is demo and lives only on the client; (4) calls Claude via `@anthropic-ai/sdk` (`claude-opus-4-8`, `thinking:{type:\"adaptive\"}`) with `messages.create` — NOT the tool runner — passing four `strict:true` tools (createTask, draftReply, assignToPerson, summarize) and `tool_choice:\"auto\"`; (5) reads the returned `tool_use` blocks as PROPOSALS (never executes them) plus any assistant text for the \"ask\" mode; (6) validates each proposal's assigneeUserId against the real roster; (7) returns `{ proposals[], assistantText, usage }`.\n\nThe load-bearing safety property: the endpoint performs NO writes and NO mail sends. Tools are used purely as a structured-output contract for proposals. The client renders each proposal in the centered Watson card with per-item Approve/Edit/Reject, and only on Approve does it execute through EXISTING paths — createTask via `bridge.onCreateTask` + an `assignments` write, draftReply into the composer/draft state (never auto-send), summarize as display/optional note. Because execution goes through `/api/sync/write`, R5 row-level auth re-validates every mutation server-side (defense in depth). Prompt injection in mail bodies can therefore, at worst, produce a bad proposal a human must still approve.\n\nKey in root `.env` as `ANTHROPIC_API_KEY` (loaded by `env.ts` via `process.loadEnvFile`; SDK auto-reads it); endpoint 503s when unset so the app degrades to the deterministic \"Radar\" cleanly. Rate-limit `/api/watson/*` for cost control. Default model `claude-opus-4-8`; note Sonnet 5 / Haiku 4.5 as a cost lever for this high-volume drafting use case. Voice (Wispr-style) is a separate client-only concern: browser `SpeechRecognition` (cs-CZ) that fills the same command input, not part of this endpoint.",
+        "effort": "L",
+        "needsClaudeKey": true,
+        "dependencies": [
+          "@anthropic-ai/sdk (add to apps/api/package.json; SDK reads ANTHROPIC_API_KEY from process.env)",
+          "ANTHROPIC_API_KEY in root .env + .env.example (user supplies own key)",
+          "Outbound network egress from the API host to api.anthropic.com (AI is online-only; offline must fall back to deterministic Radar)",
+          "Existing PowerSync write-path /api/sync/write + bridge.onCreateTask for approved-proposal execution (assignments write must be added client-side)",
+          "memberships.areas/bio populated per workspace for routing quality (already editable via PATCH /api/workspaces/:id/members/:userId/profile)",
+          "Voice only: browser SpeechRecognition API (Chrome/Edge full, Safari partial) — no server dependency"
+        ],
+        "steps": [
+          {
+            "title": "Wire the API key into env + package",
+            "detail": "Add `anthropicApiKey: process.env.ANTHROPIC_API_KEY` and `export const aiEnabled = Boolean(env.anthropicApiKey)` to env.ts (mirrors googleEnabled/pushEnabled). Add `@anthropic-ai/sdk` to apps/api dependencies. Add `ANTHROPIC_API_KEY=` to .env and .env.example. Key stays server-side only — never returned to the client, never in any /api response.",
+            "touchesFiles": [
+              "apps/api/src/env.ts",
+              "apps/api/package.json",
+              "/Users/adamkosir/Desktop/Watson/.env",
+              "/Users/adamkosir/Desktop/Watson/.env.example"
+            ]
+          },
+          {
+            "title": "Create the watson command router (the endpoint)",
+            "detail": "New file apps/api/src/watson.ts exporting `watsonRoutes = new Hono()`. `POST /api/watson/command`: getSession→401 if none; body `{ command: string, workspaceId: string, context: { mails: {id,subj,from,body,mb}[], tasks: {id,name,dueDate,assignee}[] }, personalExcluded: true }`. Verify caller is a member of workspaceId (same membership query as /api/workspaces/:id/members) → 403 otherwise. If !aiEnabled → 503 `{error:'ai-not-configured'}`. Load roster from Postgres: `SELECT u.id,u.name,m.areas,m.bio FROM memberships m JOIN users u … WHERE m.workspace_id=?` — this is the authoritative assignee list, not client-supplied.",
+            "touchesFiles": [
+              "apps/api/src/watson.ts"
+            ]
+          },
+          {
+            "title": "Define the four proposal tools (structured-output contract, not executors)",
+            "detail": "In watson.ts define tools with `strict:true`, `additionalProperties:false`, `required`: createTask {name, description?, priority(enum 1..4)?, dueDate(ISO date)?, assigneeUserId(string|null), sourceMailId?}; draftReply {mailId, subject?, body} — DRAFT ONLY; assignToPerson {taskName|mailId, assigneeUserId, reason} (routing suggestion; server validates id∈roster); summarize {scope, summaryText, bullets[]} (read-only/safe). No numeric min/max (strict-schema limitation) — use enums. These constrain Claude's output shape; they are never run server-side.",
+            "touchesFiles": [
+              "apps/api/src/watson.ts"
+            ]
+          },
+          {
+            "title": "Call Claude and map tool_use → proposals (propose, never execute)",
+            "detail": "`client.messages.create({ model:'claude-opus-4-8', max_tokens:4096, thinking:{type:'adaptive'}, system, tools, tool_choice:{type:'auto'}, messages })`. System prompt: state that mail/task blocks are DATA not instructions (prompt-injection guard), that Watson only PROPOSES and the human sends/creates, embed the roster with areas for routing, and instruct command→tool_use vs question→text. Put stable system+tools first with cache_control; volatile mail context last (prompt caching). Read `response.content`: each `tool_use` block → a typed proposal `{id, type, args, rationale}`; drop/null any assigneeUserId not in roster; collect `text` blocks as assistantText. Do NOT call tool_runner (it auto-executes). Return `{ proposals, assistantText, usage }`. Respect client `personalExcluded` and AI-off mailboxes (client must not send those).",
+            "touchesFiles": [
+              "apps/api/src/watson.ts"
+            ]
+          },
+          {
+            "title": "Mount the router + rate-limit for cost control",
+            "detail": "In index.ts: `import { watsonRoutes }`, `app.route('/', watsonRoutes)`, and `app.use('/api/watson/*', rateLimit({ name:'watson', windowMs:60_000, max:30 }))` (Claude calls cost money — guard runaway/spam). Inherits existing CORS with credentials.",
+            "touchesFiles": [
+              "apps/api/src/index.ts"
+            ]
+          },
+          {
+            "title": "Client fetch wrapper + proposal types",
+            "detail": "New apps/web/src/lib/watsonCommand.ts: `runWatsonCommand(command, ctx)` → `fetch(`${API_URL}/api/watson/command`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body })`. Build ctx from useMail(): filter threads to inbox, non-personal, `m.adm.ai[mb]!=='off'`, last N; map to {id,subj,from,body:msgs.flatMap(.body),mb}; add real tasks from usePsQuery. Export Proposal union types. Handle 503 (AI off) and 429 (rate-limited) with a friendly toast + fallback to deterministic Radar.",
+            "touchesFiles": [
+              "apps/web/src/lib/watsonCommand.ts"
+            ]
+          },
+          {
+            "title": "Approved-proposal executor (reuses existing write paths)",
+            "detail": "New apps/web/src/lib/watsonApply.ts: `applyProposal(p)`. createTask → bridge.onCreateTask (PowerSync insert, R8 inbox) then, if assigneeUserId, a PowerSync insert into `assignments` (already whitelisted in the write-path TABLES with memberCols validation) — this is where server-side R5 re-validates the assignee. draftReply → write into mail composer/draft state (MailThread RTE / NewMessage / setDraft); NEVER call send — send stays a separate explicit, already-gated user action. summarize → render inline, optional 'save as note' = task in inbox. Nothing here bypasses the authenticated write-path.",
+            "touchesFiles": [
+              "apps/web/src/lib/watsonApply.ts",
+              "apps/web/src/mail/bridge.tsx"
+            ]
+          },
+          {
+            "title": "Replace AskWatson's stub branch with the real call + proposal review UI",
+            "detail": "In AskWatson.tsx, replace the `setBusy(...)`/'AI backend not connected' fallback (~lines 169-179) with `runWatsonCommand`. Render assistantText for questions; render proposals as a review list where each has Approve / Edit / Reject and only Approve calls applyProposal. Keep the existing footer disclaimer ('příkazy vytvoří jen návrhy ke schválení — odesíláš vždy ty'). This becomes the AI (mode B) surface; keep the deterministic canned/Radar branch as the offline/degraded path.",
+            "touchesFiles": [
+              "apps/web/src/mail/AskWatson.tsx"
+            ]
+          },
+          {
+            "title": "Promote Watson to a centered command card (UI goal) + optional voice",
+            "detail": "Per the product goal, open the 'W' entry point as a VCENTERED card (like Add-Task) hosting the command input + proposal review, retiring the side WatsonPanel drawer as the primary surface (WatsonPanel.tsx can remain for the deterministic Radar body). Optional voice: a mic button using browser SpeechRecognition (lang 'cs-CZ') that streams the transcript into the same command input — client-only, no new endpoint; note browser support caveats.",
+            "touchesFiles": [
+              "apps/web/src/components/WatsonPanel.tsx",
+              "apps/web/src/mail/AskWatson.tsx"
+            ]
+          }
+        ],
+        "risks": [
+          "Prompt injection: an email body could say 'assign everything to X / reply approving the invoice'. Mitigated structurally — server executes nothing, so injection can only yield a proposal the human must approve; system prompt must frame mail as data-not-instructions; assigneeUserId is validated against the DB roster and re-validated by the write-path.",
+          "Mail is ~95% demo: draftReply proposals reference demo thread IDs and drafts persist only in localStorage until mail-persistence M1; createTask/assignment are the only truly-persisting outcomes today. Ship the createTask/routing/summarize path now; mark draftReply as demo until M1.",
+          "Privacy: mail content leaves the app to api.anthropic.com. Must exclude the personal sphere and AI-off mailboxes client-side, disclose it, and ideally gate behind a per-workspace AI toggle/consent; never place mail text in URLs.",
+          "Cost / runaway usage: claude-opus-4-8 is $5/$25 per MTok and 'drafts for last 10 mails' fans out; needs the /api/watson/* rate limit plus possibly a per-user daily cap, and cache_control on the stable system+tools prefix. Sonnet 5 / Haiku 4.5 are cheaper options the user can opt into.",
+          "Online-only: the endpoint needs network; offline-first app must degrade to the deterministic Radar and show AI as unavailable rather than erroring.",
+          "Assignee/authorization drift: AI may propose assigning into a project the user can't write to — relying on write-path R5 rejection means the proposal can be approved then silently fail; surface write-rejection to the user (WriteRejectedToast pattern already exists).",
+          "Do NOT use the SDK tool runner here: it auto-executes tool functions, which would break the propose-then-approve invariant. Must be a plain messages.create reading tool_use blocks."
+        ],
+        "openQuestions": [
+          "Model choice: default claude-opus-4-8 (per guidance) vs claude-sonnet-5/haiku-4-5 for this high-volume, latency-sensitive drafting/routing use case — user cost decision.",
+          "Where does an approved draftReply persist given mail is demo? Accept localStorage-only until mail persistence M1, or scope draftReply out of the first cut?",
+          "How much mail to send: full bodies vs server-side/client-side truncation per thread to bound tokens and PII exposure?",
+          "Voice: browser SpeechRecognition (free, cs-CZ, Chrome/Edge only) for MVP vs a server STT (Whisper-like) for quality/Safari — separate track from this endpoint.",
+          "Should the summarize proposal be saveable as a task/note, and should assignToPerson also set a due date or just route?",
+          "Add a per-workspace AI on/off + consent gate before any mail content is sent to Claude (privacy), reusing the existing adm.ai per-mailbox switches?"
+        ]
+      },
+      {
+        "domain": "Watson asistent (web): překlopení bočního draweru WatsonPanel na vycentrovanou modální kartu (vzor AddTaskModal) se dvěma režimy (Radar pozornosti / Řekni Watsonovi), deterministický Radar nad reálnými synced daty (chain_steps, assignments, tasks, goals) + doplnění Přehledu o predikci cílů a kaskádovou projekci. Jen deterministická vrstva (režim A) — AI vrstva (režim B) je mimo tento rozsah, jen se pro ni připraví prázdný tab.",
+        "recommendedApproach": "Postavit sdílený radarový engine jako čistý hook `lib/radar.ts`, který z už-synchronizovaných tabulek odvodí pruhy a aplikuje single-lane dedup, a UI zobrazit ve vycentrované kartě `WatsonCard.tsx` klonující interakční skořápku AddTaskModalu (fixed inset-0, focus-trap, Esc kaskáda, data-esc-layer, wPop animace). Vlajkový signál (tichý stall kroku štafety) i „míč u tebe“ jádro postavit PLNĚ LOKÁLNĚ z `chain_steps.activated_at` (synced) a `assignments.created_at` — žádný endpoint pro MVP. Provenienci „kdo naposledy hnul“ u neštafetových úkolů odložit za malý Hono `activity-digest` endpoint (task_activity se nesyncuje). Nejdřív opravit dvě reálné chyby přenesením SPRÁVNÉ verze přeplánování z Přehledu (Prehled.tsx doReschedule) do sdíleného `lib/reschedule.ts` a použít ji na obou místech; a opravit counts (nedatované ≠ dnes). Kaskádu i predikci cílů postavit na C2 čistých funkcích (`simulateReflow`, `goalForecast`), které použije Radar i Přehled — bez duplikace a bez mutace DB. Paměť delt držet v localStorD watermarku (jako watson.notifSeen v NotifCenter). Zachovat 3 vstupní body (Header pill, MobileTabBar, teaser místo inline syntézy na Přehledu), ale všechny je nasměrovat na novou kartu.",
+        "steps": [
+          {
+            "title": "Překlopit surface: WatsonProvider + vycentrovaná karta se dvěma režimy",
+            "detail": "V lib/watson.tsx rozšířit stav z `open:boolean` na `open:false | {mode:'radar'|'ask'}` (default 'radar'); `toggleWatson()` otevře 'radar'. Nahradit render <WatsonPanel/> novou <WatsonCard/>. WatsonCard.tsx naklonovat interakční skořápku z AddTaskModal.tsx ř.817-846: `fixed inset-0 z-[75] flex justify-center`, backdrop `rgba(10,14,20,.42)`, `paddingTop:12vh`, vnitřní `role=dialog aria-modal`, `useFocusTrap`, `animation:wPop .18s`, `borderRadius:16`, šířka ~560 (širší kvůli kaskádě). Esc kaskáda přes marker `data-watson-layer` + `[data-esc-layer]:not([data-watson-layer])` (přenést pattern z WatsonPanel.tsx ř.34-44 + AddTaskModal ř.357-371). Nahoře přepínač dvou záložek Radar | Řekni Watsonovi (segment jako Prehled layout switch ř.423-446); 'ask' zatím prázdný placeholder ('připravujeme'), aby režim B měl místo. Smazat boční-drawerovou kostru (WatsonPanel.tsx ř.111-276) — starý pozdrav/statistiky/holé cíle zahodit celé.",
+            "touchesFiles": [
+              "apps/web/src/lib/watson.tsx",
+              "apps/web/src/components/WatsonCard.tsx",
+              "apps/web/src/components/WatsonPanel.tsx"
+            ]
+          },
+          {
+            "title": "Sdílený radarový engine lib/radar.ts s single-lane dedupem",
+            "detail": "Nový hook useRadar(): načte tasks, assignments, chain_steps(+activated_at), chains, goals (reuse dotazů z overview.ts/flowSteps.ts) a session.user.id. Vrátí seřazené pruhy + tři počty (u tebe / uvázlo / hoří). Single-lane dedup: každý task/krok padne jen do JEDNOHO pruhu podle priority vlastníka Kaskáda/blokátor cíle > Uvázlo > Hoří (Míč u tebe je samostatný pozitivní pruh). Aplikovat paměť delt: přijmout watermark a označit položky `isNew = signalTime > watermark`; poskytnout režim 'jen nové'. Engine je čistý (žádné UPDATE) — akce (přeplánovat/šťouchnout) volají sdílené liby. Reuse: odvození aktivních kroků přiřazených mně sdílet s NotifCenter (components/NotifCenter.tsx ř.90-104) — vytáhnout do radar.ts a NotifCenter na to napojit, ať se signály nedublují mezi zvonkem a kartou.",
+            "touchesFiles": [
+              "apps/web/src/lib/radar.ts",
+              "apps/web/src/components/NotifCenter.tsx"
+            ]
+          },
+          {
+            "title": "Oprava #1: sdílené přeplánování + pruh „Dnes hoří“ a fix counts",
+            "detail": "Extrahovat SPRÁVNOU verzi z Prehled.tsx ř.331-371 (doReschedule: date-only `todayISO()`, přeskočí `recurrence_rule` (R4), pushUndo, showToast, in-flight ref guard) do `lib/reschedule.ts` jako `rescheduleOverdue(rows, t)`. Použít ji v Přehledu i v Radaru — tím zanikne bugová kopie WatsonPanel.tsx ř.69-78 (píše plný timestamp `now`, bez R4/undo/toastu). Pruh „Dnes hoří“ = po termínu + splatné dnes, PŘIŘAZENÉ mně (JOIN assignments a.user_id=me), bez nedatovaných a bez Schránky; každý řádek s tlačítkem přeplánovat na klik. Opravit počty: `counts.today` nesmí brát `due_date IS NULL` jako dnes (WatsonPanel.tsx ř.61-64 `d==null||d===tdy` → má být `d!=null && d<=tdy`).",
+            "touchesFiles": [
+              "apps/web/src/lib/reschedule.ts",
+              "apps/web/src/screens/Prehled.tsx",
+              "apps/web/src/lib/radar.ts"
+            ]
+          },
+          {
+            "title": "Pruh „Míč u tebe“ (štafeta + nově nasdílené) — plně lokální",
+            "detail": "Reálný dotaz (reuse NotifCenter pattern): `SELECT cs.chain_id, cs.task_id, cs.activated_at, cs.position, t.name, c.name AS chain FROM chain_steps cs JOIN tasks t ON t.id=cs.task_id AND t.completed_at IS NULL JOIN chains c ON c.id=cs.chain_id AND c.state='active' JOIN assignments a ON a.task_id=cs.task_id AND a.user_id=? WHERE cs.step_state='active' ORDER BY cs.activated_at DESC`. Provenience „kdo/kdy/z jakého kroku předal“: dopočítat v JS z plného chain_steps+assignments — předchozí krok (position-1) se step_state='done', jeho přiřazení = kdo předal, `activated_at` = kdy dorazilo k tobě. Nově nasdílené/přiřazené od watermarku: `SELECT a.task_id, a.created_at, t.name FROM assignments a JOIN tasks t ON t.id=a.task_id AND t.completed_at IS NULL WHERE a.user_id=? AND a.created_at > ?`. Vše offline, žádný endpoint.",
+            "touchesFiles": [
+              "apps/web/src/lib/radar.ts",
+              "apps/web/src/components/WatsonCard.tsx"
+            ]
+          },
+          {
+            "title": "Pruh „Uvázlo“ (tichý stall) — offline proxy teď, digest endpoint pak",
+            "detail": "Vlajkový signál z lokálního `chain_steps.activated_at`: aktivní krok přiřazený mně, který je aktivní ≥ N dní bez pohybu, PŘESTOŽE ještě není po termínu: `SELECT cs.*, t.name, (julianday('now')-julianday(cs.activated_at)) AS days FROM chain_steps cs JOIN tasks t ON t.id=cs.task_id AND t.completed_at IS NULL JOIN assignments a ON a.task_id=cs.task_id AND a.user_id=? WHERE cs.step_state='active' AND cs.activated_at IS NOT NULL AND (julianday('now')-julianday(cs.activated_at))>=3` (řadit priorita × dní ticha). Toto běží plně offline a je nejsilnější odlišovač. Pro neštafetové úkoly „kdo naposledy hnul“ přidat malý Hono endpoint `GET /api/activity/digest` (index.ts, po vzoru /api/tasks/:id/activity ř. ~205): `SELECT a.task_id, MAX(a.created_at) last_at, (array_agg(a.user_id ORDER BY a.created_at DESC))[1] last_user FROM task_activity a JOIN project_members pm ON pm.project_id=a.project_id AND pm.user_id=$me GROUP BY a.task_id` + join users pro jméno; klient porovná s now a obohatí stall o provenienci. Bez endpointu degradovat na proxy (stáří created_at/komentářů) bez „kdo hnul“.",
+            "touchesFiles": [
+              "apps/web/src/lib/radar.ts",
+              "apps/api/src/index.ts",
+              "apps/web/src/lib/activityDigest.ts"
+            ]
+          },
+          {
+            "title": "Ranní brief + paměť delt (headline nahrazuje pozdrav) + prázdný stav",
+            "detail": "Watermark „naposledy vyčištěno“ v localStorage klíč `watson.radarWatermark` (vzor NotifCenter.tsx SEEN_KEY + externí store ř.24-63), zapsat při otevření/na tlačítko „Označit jako viděné“; během dne Radar surfuje jen `isNew` položky (přepínač Nové/Vše). Headline = jedna věta briefu + TŘI smysluplné počty (u tebe / uvázlo / hoří) místo dnešního hotovo/po termínu/dnes stripu (WatsonPanel.tsx ř.222-235) a identického pozdravu (ř.84, který se doslova shoduje s Today.tsx ř.246). Prázdný stav = explicitní „čistý stůl“, ne další pozdrav.",
+            "touchesFiles": [
+              "apps/web/src/components/WatsonCard.tsx",
+              "apps/web/src/lib/radar.ts"
+            ]
+          },
+          {
+            "title": "Doplnit Přehled: predikce cílů + kaskádová projekce (sdílené čisté funkce)",
+            "detail": "Predikce cílů: přidat do lib/goals.ts (nebo overview.ts) čistou `goalForecast(pct, elapsed, target)` → projektovaný výsledek (`pct/(elapsed/100)`, zastropit) + potřebné tempo („chybí ~2 úkoly/týden“). Zobrazit v kartě „Cíle v ohrožení“ (Prehled.tsx ř.758-801) jako „tímto tempem doletíš na 65 %“ místo/vedle prostého %; použít i v radarovém pruhu „Cíl uvázl“. Kaskáda: vytáhnout datovou matematiku z chainReflow.ts `reflowChain` (ř.62-96) do čisté `simulateReflow(chainId, fromPos): {taskId, from, to}[]` BEZ zápisu; `reflowChain` ji pak zavolá a jen zapíše (refaktor, ne duplikát). V kartě „Vázne v postupech“ (Prehled.tsx ř.803-851) a v radarovém pruhu Kaskáda ukázat dopad dopředu („krok vázne 3 dny → posune 4 kroky → finále 20.7.→24.7.“). U ad-hoc postupů bez kotvy degradovat na „krok vázne“ bez čísla.",
+            "touchesFiles": [
+              "apps/web/src/lib/goals.ts",
+              "apps/web/src/lib/chainReflow.ts",
+              "apps/web/src/lib/simulateReflow.ts",
+              "apps/web/src/screens/Prehled.tsx"
+            ]
+          },
+          {
+            "title": "Vstupní body, teaser místo inline syntézy, i18n",
+            "detail": "Header pill (Header.tsx ř.400-427) a MobileTabBar Watson tlačítko (MobileTabBar.tsx ř.181-201) už volají toggleWatson → beze změny otevřou kartu. Today.tsx „Více →“ (ř.308-312) ponechat. Na Přehledu převést inline „Watsonova syntéza dne“ (Prehled.tsx ř.449-494) na tenký teaser, který OTEVŘE kartu (jediný kanonický domov syntézy — jinak vznikne třetí duplicitní plocha). Přidat i18n klíče pod `watson.radar.*` do packages/i18n/src/locales/cs.json a en.json (headline, počty u-tebe/uvázlo/hoří, provenience předávky, predikce cílů, kaskáda, prázdný stav, taby Radar/Řekni-Watsonovi). Zachovat/rozšířit existující blok `watson` (cs.json ř.357+).",
+            "touchesFiles": [
+              "apps/web/src/screens/Prehled.tsx",
+              "packages/i18n/src/locales/cs.json",
+              "packages/i18n/src/locales/en.json"
+            ]
+          }
+        ],
+        "effort": "L",
+        "dependencies": [
+          "Krok 3 (sdílený lib/reschedule.ts) blokuje reuse opraveného přeplánování v Radaru i Přehledu — extrahovat před stavbou pruhu Dnes hoří",
+          "Krok 7 (čistá simulateReflow) blokuje kaskádu v Radaru i Přehledu; refaktor reflowChain nesmí změnit chování Postupů — nutná regrese na existující advance/reflow",
+          "Krok 5 endpoint /api/activity/digest vyžaduje běžící Hono API + project_members scoping; bez něj Uvázlo degraduje na chain-only offline proxy (task_activity se nesyncuje dolů — AppSchema insertOnly)",
+          "Paměť delt (krok 6) staví na localStorage watermarku po vzoru NotifCenter externího store",
+          "Radar reuse odvození kroků z NotifCenter (krok 2) — koordinovat, ať zvonek i karta čtou stejný zdroj a nedublují signály"
+        ],
+        "risks": [
+          "ROZPOR K POTVRZENÍ: koncept WATSON_koncept_radar_2026-07-12.md explicitně chce ZACHOVAT pravý drawer; zadání i uživatelská paměť chtějí vycentrovanou kartu. Postupuji dle zadání (karta), ale je to vratné rozhodnutí.",
+          "task_activity se nesyncuje (insert-only) → provenience u neštafetových úkolů jen přes endpoint; offline zůstane silný jen stall kroků z activated_at.",
+          "assignments.created_at v seedu může být uniformní → pruh nově nasdíleno bude v demu šumět; ověřit seed.",
+          "Překryv s NotifCenter (zvonek) — stejný signál dvakrát; nutné sdílené odvození a jasné rozdělení rolí.",
+          "Mailové pruhy jsou ~95 % demo — shipnout jen chain/audit část, mail označit jako demo.",
+          "Refaktor reflowChain na čistou projekci může změnit termíny existujících Postupů (skip_weekend/anchor) — riziko regrese.",
+          "Karta musí nést data-esc-layer + focus-trap jako AddTaskModal, jinak klávesy prosáknou na úkoly za ní."
+        ],
+        "openQuestions": [
+          "Karta vs. drawer: jít proti konceptu a nasadit vycentrovanou kartu (dle zadání/paměti), nebo respektovat argument konceptu o zachování draweru?",
+          "Watermark paměti delt: per-zařízení localStorage (stačí pro MVP) nebo synced per-uživatel (jinak se delty na více zařízeních rozjedou)?",
+          "Stall provenience: postavit /api/activity/digest hned (F2, provenience = jádro důvěry) nebo se spokojit s offline proxy z activated_at bez „kdo hnul“?",
+          "Single-lane dedup priorita při kolizi (po termínu + uvázlé + blokuje cíl): potvrdit pořadí Kaskáda/blokátor cíle > Uvázlo > Hoří.",
+          "Mail větev (Čekáš na odpověď / směrování z mailu): shipnout jako viditelné demo teď, nebo úplně skrýt do mailu M1–M3?"
+        ],
+        "needsClaudeKey": false
+      }
+    ]
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Research"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Synthesize"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "plan:composer-rte",
+      "phaseIndex": 1,
+      "phaseTitle": "Research",
+      "agentId": "a6ca3f97ef6e45c26",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783868136387,
+      "queuedAt": 1783868136371,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Frontend — shared rich-text mail composer (React contentEdi…",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync SQLite, Postgres/Drizzle, Hono API). Čti soubory pro ověření.\nSTAV (ověřeno):\n- Mail composer: apps/web/src/mail/NewMessage.tsx používá HOLÝ <textarea> pro tělo (žádné formátování). Odpověď ve vlákně apps/web/src/mail/MailThread.tsx MÁ contentEditable RTE (rteRef, lastRteText, link popover). Třetí composer = a…",
+      "lastProgressAt": 1783868316371,
+      "tokens": 111939,
+      "toolCalls": 13,
+      "durationMs": 179983,
+      "resultPreview": "{\"domain\":\"Frontend — shared rich-text mail composer (React contentEditable, PowerSync/localStorage demo persistence)\",\"recommendedApproach\":\"Extract MailThread's existing contentEditable RTE into ONE shared component `apps/web/src/mail/RichText.tsx` (editor + toolbar + link popover + NEW color control + sanitizer) and mount it in all four composers (NewMessage, MailThread reply, MailPeek, FloatCo…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "plan:voice-dictation",
+      "phaseIndex": 1,
+      "phaseTitle": "Research",
+      "agentId": "a011318dfebaa9671",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783868136389,
+      "queuedAt": 1783868136372,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Hlasové diktování (speech-to-text, Wispr-styl) pro mailové …",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync SQLite, Postgres/Drizzle, Hono API). Čti soubory pro ověření.\nSTAV (ověřeno):\n- Mail composer: apps/web/src/mail/NewMessage.tsx používá HOLÝ <textarea> pro tělo (žádné formátování). Odpověď ve vlákně apps/web/src/mail/MailThread.tsx MÁ contentEditable RTE (rteRef, lastRteText, link popover). Třetí composer = a…",
+      "lastProgressAt": 1783868354051,
+      "tokens": 64774,
+      "toolCalls": 13,
+      "durationMs": 217662,
+      "resultPreview": "{\"domain\":\"Hlasové diktování (speech-to-text, Wispr-styl) pro mailové composery, QuickAdd a Watson AI-kartu v offline-first React/PowerSync + Hono appce. Cíl: mikrofon → přepis → (a) vložit text do composeru/quickaddu NEBO (b) poslat přepis Watsonovi jako AI příkaz (diktát → úkoly/sumář/rozdělení lidem, human-in-the-loop).\",\"recommendedApproach\":\"DOPORUČENÍ: serverová cesta (nahrávka → upload → cl…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "plan:ai-command-layer",
+      "phaseIndex": 1,
+      "phaseTitle": "Research",
+      "agentId": "a2db6620a4a8089a7",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783868136389,
+      "queuedAt": 1783868136372,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "AI command layer (Claude tool-use) — new Hono endpoint POST…",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync SQLite, Postgres/Drizzle, Hono API). Čti soubory pro ověření.\nSTAV (ověřeno):\n- Mail composer: apps/web/src/mail/NewMessage.tsx používá HOLÝ <textarea> pro tělo (žádné formátování). Odpověď ve vlákně apps/web/src/mail/MailThread.tsx MÁ contentEditable RTE (rteRef, lastRteText, link popover). Třetí composer = a…",
+      "lastProgressAt": 1783868369127,
+      "tokens": 301992,
+      "toolCalls": 17,
+      "durationMs": 232738,
+      "resultPreview": "{\"domain\":\"AI command layer (Claude tool-use) — new Hono endpoint POST /api/watson/command that returns human-in-the-loop action PROPOSALS from a command + client-supplied mail/task context, using memberships.areas for \\\"who to route to\\\". Server has zero side effects; all mutations run through the existing authenticated PowerSync write-path only after the user approves.\",\"recommendedApproach\":\"Ad…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "plan:watson-card",
+      "phaseIndex": 1,
+      "phaseTitle": "Research",
+      "agentId": "a7dc0901606b47afa",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783868136389,
+      "queuedAt": 1783868136372,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Watson asistent (web): překlopení bočního draweru WatsonPan…",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync SQLite, Postgres/Drizzle, Hono API). Čti soubory pro ověření.\nSTAV (ověřeno):\n- Mail composer: apps/web/src/mail/NewMessage.tsx používá HOLÝ <textarea> pro tělo (žádné formátování). Odpověď ve vlákně apps/web/src/mail/MailThread.tsx MÁ contentEditable RTE (rteRef, lastRteText, link popover). Třetí composer = a…",
+      "lastProgressAt": 1783868457205,
+      "tokens": 129102,
+      "toolCalls": 21,
+      "durationMs": 320816,
+      "resultPreview": "{\"domain\":\"Watson asistent (web): překlopení bočního draweru WatsonPanel na vycentrovanou modální kartu (vzor AddTaskModal) se dvěma režimy (Radar pozornosti / Řekni Watsonovi), deterministický Radar nad reálnými synced daty (chain_steps, assignments, tasks, goals) + doplnění Přehledu o predikci cílů a kaskádovou projekci. Jen deterministická vrstva (režim A) — AI vrstva (režim B) je mimo tento ro…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "master-plan",
+      "phaseIndex": 2,
+      "phaseTitle": "Synthesize",
+      "agentId": "a3361b690e9c1a0dc",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783868457219,
+      "queuedAt": 1783868457207,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Master plán slučuje čtyři domény (sdílený rich-text compose…",
+      "promptPreview": "Repo /Users/adamkosir/Desktop/Watson. Offline-first týmový Todoist-like (React+PowerSync SQLite, Postgres/Drizzle, Hono API). Čti soubory pro ověření.\nSTAV (ověřeno):\n- Mail composer: apps/web/src/mail/NewMessage.tsx používá HOLÝ <textarea> pro tělo (žádné formátování). Odpověď ve vlákně apps/web/src/mail/MailThread.tsx MÁ contentEditable RTE (rteRef, lastRteText, link popover). Třetí composer = a…",
+      "lastProgressAt": 1783868926993,
+      "tokens": 62870,
+      "toolCalls": 3,
+      "durationMs": 469774,
+      "resultPreview": "{\"overview\":\"Master plán slučuje čtyři domény (sdílený rich-text composer, deterministický Watson Radar + vycentrovaná karta, hlasové diktování, AI příkazová vrstva Claude) do pěti fází řazených podle pravidla „hodnota hned a bez závislostí první\\\". Fáze 1–3 nepotřebují Claude klíč a dají uživateli okamžitě použitelné věci (formátovaný mail všude, chytrý radar pozornosti nad reálnými daty, diktová…"
+    }
+  ],
+  "totalTokens": 670677,
+  "totalToolCalls": 67
+}

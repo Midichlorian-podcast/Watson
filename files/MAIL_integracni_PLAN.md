@@ -1,5 +1,15 @@
 # MAIL / IDENTITA / PŘÍSTUPY / ADMIN — INTEGRAČNÍ PLÁN
 
+> ⚠️ **REVIDOVÁNO 2026-07-08 — čti napřed.** Aktuální zdroj pravdy pro mail =
+> **`design/BRIEF_mail_moduly_2026-07-08.md`** (funkční popis modulů) + **`files/MAIL_moduly_audit_2026-07-08.md`**
+> (feasibility + fázování). Kde se tento dokument liší, **platí ty novější.** Klíčové změny:
+> - **Mail má DVĚ sféry:** týmová (řízená) + **osobní (soukromá, šifrovaná at-rest klíčem uživatele,
+>   bez AI, mimo admin dohled)**. Kde se zde píše **„mail = jen týmová sféra"** / **`CHECK is_personal=false`**,
+>   je to **nahrazeno** — osobní schránky mají `isPersonal=true` a jsou **vyjmuté** ze všech týmových
+>   mechanismů (granty, dispečink, chat, AI, admin matice). Hranice sfér je nově app-logika + krypta, ne CHECK.
+> - **Nové moduly:** „Dění" (aktivita/feed napříč Watsonem) a systém urgence (P1–P4 + SLA + eskalace; P1/P2→úkol).
+> - **Fázování + co chybí v infra** (realtime pro collision, fronty+pracovní kalendář pro SLA) viz audit.
+
 > **Co to je:** systematický plán, jak vetkat mailovou vrstvu (spec
 > `WATSON_MAIL_KONSOLIDOVANY_SPEC.md`) do existujícího Watson core. Plán pro **Claude Code**.
 > Design track viz [`design/BRIEF_mail.md`](../design/BRIEF_mail.md).

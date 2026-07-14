@@ -40,6 +40,14 @@ export const env = {
 	anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 	/** Model pro AI extrakci — default Opus, přepnutelný přes .env kvůli ceně. */
 	anthropicModel: process.env.ANTHROPIC_MODEL ?? "claude-opus-4-8",
+	/**
+	 * LuckyOS employee API (zaměstnanecký modul). Broker `employee.ts` volá tuto base URL
+	 * server-to-server s bridge-tokenem. `mock=1` = dev bez reálného LuckyOS (canned data).
+	 */
+	luckyOs: {
+		baseUrl: process.env.LUCKYOS_BASE_URL,
+		mock: process.env.LUCKYOS_MOCK === "1",
+	},
 };
 
 /** Google login se zapne sám, jakmile jsou v .env oba klíče. */
@@ -56,3 +64,6 @@ export const emailEnabled = Boolean(env.resendApiKey);
 /** AI vrstva (Claude) se zapne, jakmile je v .env ANTHROPIC_API_KEY. Bez něj běží
  *  modul Mítingy v „mock" režimu (deterministická ukázková extrakce). */
 export const aiEnabled = Boolean(env.anthropicApiKey);
+
+/** Zaměstnanecký modul (most na LuckyOS) — zapnut, když je base URL, nebo dev mock. */
+export const luckyOsEnabled = Boolean(env.luckyOs.baseUrl) || env.luckyOs.mock;

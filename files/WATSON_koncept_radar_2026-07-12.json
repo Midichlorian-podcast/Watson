@@ -1,0 +1,732 @@
+{
+  "summary": "Navrhni, čím má být modul „Watson“ (dnes slabý přehledový drawer) — diferenciační, postavené na reálných datech appky",
+  "agentCount": 13,
+  "logs": [
+    "parallel[2] failed: agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output"
+  ],
+  "result": {
+    "recommendation": {
+      "recommendedName": "Watson — Radar pozornosti (ranní brief)",
+      "positioning": "Watson je jediná per-uživatelská seřazená fronta „co teď vyžaduje MOJI akci“ napříč úkoly, štafetami Postupů, cíli a mailem — odvozená z auditní historie a předávek, doručená jako ranní brief s pamětí delt („od posledního vyčištění“) a s jedním tapnutím na vyřešení; ne pasivní zrcadlo Přehledu, ale akční triáž se slovesem první a pravidlem single-lane.",
+      "whyItDifferentiates": "Stojí na TŘECH signálech, které Todoist/Asana/ClickUp/Motion/Sunsama nemají jako first-class data a nikdo je nesyntetizuje do fronty „udělej teď“: (1) TICHÝ STALL PŘED TERMÍNEM — z append-only per-field auditu (task_activity) odvodí, že se úkolem nikdo N dní nehnul, PŘESTOŽE ještě není po termínu; konkurence umí jen „červené po termínu“, tohle je rozklad ohlášený dřív. Toto je nejsilnější odlišovač celé appky. (2) MÍČ ŠTAFETY — z chain_steps + assignments pozná, že se řetěz právě posunul na krok přidělený mně (předchozí done → můj active), s proveniencí „kdo/kdy/z jakého kroku předal“; žádný single-user nástroj neví, že „štafeta právě dorazila k tobě“. (3) KASKÁDOVÁ PROJEKCE — simulací reflow nad chain_steps vyčíslí dopad dopředu („krok vázne 3 dny → posune 4 kroky → finále 20.7.→24.7.“); nikdo z konkurence nemodeluje řetězené závislosti, takže je to strukturálně nedosažitelné. K tomu dvě odlišující rámování: cíl jako PREDIKCE výsledku (ne „jsi na 40 %“, ale „tímhle tempem doletíš na 65 %, chybí ~2 úkoly/týden“) a paměť delt, takže radar během dne surfuje jen NOVÉ/změněné položky místo opakování včerejška. Vše deterministicky, offline-first; AI je jen volitelná jazyková/fuzzy vrstva s degradací na deterministickou verzi. Zásadní kontrast vůči Přehledu/Velínu: ty ukazují „co se stalo“ jako dashboard, Watson ukazuje „co udělat teď“ jako frontu s jednou akcí na položku a striktním single-lane dedup (každá položka jen v jednom pruhu), aby se nestal třetí duplicitní přehledovou plochou.",
+      "whatChangesForUser": "DNES: uživatel otevře 384px drawer a vidí zopakovaný pozdrav (znak po znaku shodný s Watson stripem na Dnes), tři statistiky hotovo/po termínu/dnes, dvě natvrdo šablonované „insighty“ a holý výpis cílů bez progresu — vše je bohatěji jinde (Přehled/Velín/Cíle) a jediná akce (přeplánovat zpožděné) je nejchybovější kopie v appce (plný timestamp, bez undo/toastu, bez R4 guardu, počítá i nedatované jako „dnes“). POTOM: otevře týž drawer a dostane jednu větu briefu + tři SMYSLUPLNÉ počty (u tebe / uvázlo / hoří), pod tím max 3–5 akčních položek řazených podle naléhavosti, každá se slovesem, s řádkem „proč je tady“ (z auditu/štafety) a jedním tapnutím = vyřešeno. Během dne vidí jen to, co je NOVÉ od posledního vyčištění, ne pořád totéž. Prázdný stav je explicitní „čistý stůl“ místo dalšího pozdravu. Konkrétně získá: (a) upozornění na úkol, který hnije, DŘÍV než je po termínu; (b) „štafeta právě dorazila k tobě, předala Petra v úterý z kroku X“; (c) vyčíslený dopad zaseknutého kroku na finále Postupu; (d) cíl jako predikci („doletíš na 65 %“) s konkrétním blokujícím úkolem; (e) opravené přeplánování (date-only, R4 guard, undo, toast) místo dnešní buggy verze. Modul funguje pro každého člena a i v osobní sféře (je per-user, nevyžaduje R5), takže „Watson konečně něco přináší“ platí pro všechny, ne jen pro vedení.",
+      "sections": [
+        {
+          "title": "Ranní brief + paměť delt (headline, nahrazuje pozdrav)",
+          "whatItShows": "Při prvním otevření dne jedna věta syntézy + TŘI počty, které mají smysl — u tebe / uvázlo / hoří (ne hotovo/dnes). Uloží localStorage watermark „naposledy vyčištěno“; během dne surfuje jen položky nové/změněné od té značky (režim delt). Prázdný stav = explicitní čistý stůl. Nahrazuje identický pozdrav (WatsonPanel.tsx ř.84 = Today.tsx ř.246) a statistický strip.",
+          "dataSources": [
+            "localStorage watermark (naposledy vyčištěno)",
+            "agregace pruhů níže",
+            "request.user_id() scope na mě přes assignments (R2)"
+          ],
+          "priority": "P0"
+        },
+        {
+          "title": "Míč je u tebe (štafeta + nově nasdílené)",
+          "whatItShows": "Kroky Postupů, které se právě posunuly na krok přidělený mně (předchozí krok done → můj krok active), + úkoly nově přidělené/nasdílené mně od posledního vyčištění. U každé provenience: kdo předal, kdy, z jakého kroku; jedno tapnutí otevřít/začínám. Plně lokální.",
+          "dataSources": [
+            "chain_steps (step_state=active, activated_at, position) + předchozí krok done",
+            "assignments.user_id = já (R2 single i shared)",
+            "tasks (name, project_id, priority=barva)",
+            "useAllMembers pro jména (REST cache); offline fallback chains.name+position"
+          ],
+          "priority": "P0"
+        },
+        {
+          "title": "Dnes to hoří (po termínu + dnes, opravená triáž)",
+          "whatItShows": "Po termínu + dnes splatné úkoly přiřazené mně, seskupené podle projektu/cíle, deadline vs due, každý se SPRÁVNÝM přeplánováním na jeden klik (date-only, přeskočí opakované R4, undo + toast). Vyloučí nedatované (srovná s rozdělením Dnes/Zásobník). Nahrazuje nejhorší duplicitu modulu — buggy rescheduleOverdue a chybu counts.today (WatsonPanel.tsx ř.61,69).",
+          "dataSources": [
+            "tasks (due_date, deadline, completed_at, recurrence_rule, assignment_mode)",
+            "assignments.user_id = já",
+            "reuse lib/reschedule.ts (rescheduleDate/RESCHEDULE_OPTIONS) + lib/undo + lib/toast"
+          ],
+          "priority": "P0"
+        },
+        {
+          "title": "Uvázlo (tichý stall — vlajkový signál)",
+          "whatItShows": "Otevřené položky, které tiše hnijou — krok štafety aktivní N dní bez pohybu nebo můj otevřený/po termínu úkol bez editace — řazené podle priorita × dní ticha. Odlišné od „po termínu“: hlásí rozklad DŘÍV, než úkol dozraje k deadline. Jedno tapnutí: šťouchnout/přeplánovat/přesměrovat. Offline běží z proxy, online z auditu obohatí o „kdo naposledy hnul“.",
+          "dataSources": [
+            "OFFLINE proxy: stáří chain_steps.activated_at, stáří tasks.due_date/deadline, MAX(comments.created_at) per task (POZOR: tasks nemá lokální updated_at)",
+            "ONLINE obohacení: nový Hono digest endpoint GET /api/workspaces/:id/activity-digest → MAX(task_activity.created_at) + poslední aktér per task_id (task_activity se NEsyncuje, sync-config.yaml ř.41)"
+          ],
+          "priority": "P0"
+        },
+        {
+          "title": "Kaskáda: řetěz se trhá (dopředná projekce)",
+          "whatItShows": "Aktivní kroky Postupů, které váznou, a hlavně jejich DOPAD DOPŘEDU: simulací reflow spočítá, kolik navazujících kroků se posune a o kolik dní spadne finále („krok vázne 3 dny → posune 4 kroky → finále 20.7.→24.7.; drží Petr“). U ad-hoc Postupů bez kotvy degraduje na „krok vázne“ bez čísla. Jedno tapnutí: přeplánovat krok / pobídnout držitele.",
+          "dataSources": [
+            "chains (anchor_date, sched_mode, skip_weekend) + chain_steps (step_state, position, gap_days, anchor_offset, activated_at)",
+            "POTŘEBA: čistá PROJEKČNÍ varianta reflowChain (dnešní reflowChain/shiftChain v lib/chainReflow.ts MUTUJÍ DB — nutný dry-run simulate)",
+            "reuse useFlowsOverview (stuck/nowWho)"
+          ],
+          "priority": "P1"
+        },
+        {
+          "title": "Cíl uvázl (drift → konkrétní blokátor)",
+          "whatItShows": "Cíle, které vlastním a u nichž % uplynulého času předbíhá % postupu, jako PREDIKCE výsledku („tempem doletíš na 65 %, chybí ~2 úkoly/týden“) — plus konkrétní uvázlý úkol, který je táhne dolů, vytažený křížením se signálem Uvázlo. Jedno tapnutí na cíl nebo blokující úkol.",
+          "dataSources": [
+            "useGoalsOverview (goals, goal_projects, goal_milestones → pct, stav, elapsed)",
+            "tasks.completed_at v období (period_start→due_date) pro tempo/projekci",
+            "goal_projects→tasks pro blokátor"
+          ],
+          "priority": "P1"
+        },
+        {
+          "title": "Čekáš na odpověď (waiting-for)",
+          "whatItShows": "Kde je míč u někoho jiného a mám urgovat: kroky štafety, které jsem dokončil a jejich následující cizí krok stojí; úkoly předané, jejichž nástupce se nehýbe; úkoly napojené na mail, kde čekám na reply. Seskupené podle osoby, jedno tapnutí šťouchnout/otevřít vlákno. Chain-větev lokální; mail-větev poctivě označit jako demo.",
+          "dataSources": [
+            "chain_steps (můj done krok → další active krok cizí, activated_at staré)",
+            "tasks.mail_th link na vlákno + comments (poslední příchozí jako proxy)",
+            "POZOR: mailový korpus je ~95 % demo (m.threads/DENI_SEED); reálná kotva je link mail_th↔úkol"
+          ],
+          "priority": "P1"
+        },
+        {
+          "title": "Jeden další krok + volitelné směrování „komu to dát“",
+          "whatItShows": "Z celé fronty vybere PRÁVĚ JEDNU nejdůležitější bezpečnou akci teď jako jedno tlačítko (odpovědět / přeplánovat / posunout štafetu / přesměrovat). U uvázlé/nepřiřazené položky nabídne návrh vlastníka podle shody textu úkolu s oblastmi odpovědnosti. Deterministické jádro (keyword match); AI volitelně pro fuzzy shodu a NL formulaci briefu — degraduje na deterministickou verzi.",
+          "dataSources": [
+            "skóre z pruhů výše (single-lane dedup)",
+            "memberships.areas+bio přes REST GET /api/workspaces/:id/members (ř.264) + contacts.areas (lokální)",
+            "směrování jen v týmové sféře (R8) a dle R5; v osobní sféře skryto",
+            "AI vrstva za feature-flag (@anthropic zatím není v apps/api)"
+          ],
+          "priority": "P2"
+        }
+      ],
+      "buildPlan": {
+        "surface": "Zůstává PRAVÝ DRAWER (per-user companion dostupný odkudkoli), NE nová položka navigace — to je jeho strukturální výhoda proti Přehledu/Velínu (obrazovky). Zachovat 3 vstupní body (Header pill desktop, MobileTabBar mobil, „Více →“ na Dnes stripu). Tělo draweru přestavět z pasivního přehledu na akční radar; na desktopu volitelně širší (dnes 384px) pro kaskádu. KRITICKÉ proti duplicitě: „Watsonova syntéza dne“ strip na Přehledu (Prehled.tsx ř.449–494) se změní na tenký teaser, který OTEVŘE drawer — drawer je kanonický domov syntézy, aby nevznikla třetí plocha.",
+        "components": [
+          "WatsonRadar (kontejner, nahrazuje tělo WatsonPanel.tsx)",
+          "useWatsonRadar (agregační hook: sesbírá pruhy, aplikuje single-lane dedup + skóre)",
+          "BriefHeadline (jedna věta + 3 počty u tebe/uvázlo/hoří)",
+          "useDeltaWatermark (localStorage „naposledy vyčištěno“, režim delt)",
+          "RadarLane komponenty: BallInCourt, Stalled, OnFire, Cascade, GoalDrift, WaitingOn",
+          "RadarItem (sloveso první + řádek „proč je tady“ + jedna one-tap akce; default sbalený top-N)",
+          "reuse RescheduleMenu, peek panely, chipy",
+          "SERVER: activity-digest endpoint v Hono (MAX(created_at)+poslední aktér per task_id)",
+          "chainProjection: čistá simulate varianta nad lib/chainReflow (dry-run, bez zápisu)"
+        ],
+        "dataQueries": [
+          "Scope na mě: SELECT t.* FROM tasks t JOIN assignments a ON a.task_id=t.id WHERE a.user_id=? (R2 single i shared)",
+          "Míč u tebe: chain_steps WHERE step_state=active AND assignee=me AND prev_step.step_state=done, ORDER BY activated_at",
+          "Dnes hoří: tasks WHERE assignee=me AND completed_at IS NULL AND (due_date<=today OR deadline<=today) AND due_date IS NOT NULL, guard recurrence_rule",
+          "Stall proxy (offline): per task MAX(comments.created_at), chain_steps.activated_at, age(due_date/deadline) — bez updated_at (nesyncuje se)",
+          "Stall obohacení (online): GET /api/workspaces/:id/activity-digest → { task_id, last_activity_at, last_actor }",
+          "Kaskáda: chains+chain_steps → simulateReflow(chainId) → { finaleSlipDays, blockedSteps }",
+          "Cíl drift: useGoalsOverview + SELECT completed_at FROM tasks kde goal_projects v období → projected pct",
+          "Směrování: GET /api/workspaces/:id/members (areas,bio) + contacts.areas, keyword match vs task name/project/description"
+        ],
+        "phases": [
+          "F0 — Scaffold radaru + dedup engine + BriefHeadline + paměť delt; přestavět tělo WatsonPanel; smazat duplicitní pozdrav/statistiky",
+          "F1 — „Dnes hoří“ s opravou (rescheduleDate+R4 guard+undo+toast) a fix counts.today; „Míč u tebe“ (plně lokální)",
+          "F2 — „Uvázlo“ offline proxy; pak Hono activity-digest endpoint pro provenienci + „kdo naposledy hnul“",
+          "F3 — Kaskáda (dry-run simulate varianta chainReflow) + „Cíl uvázl“ predikce + „Čekáš na odpověď“ (chain větev)",
+          "F4 — Teaser na Přehledu → drawer (odstranit třetí syntézu); volitelné směrování „komu to dát“ (R5/R8 gate) + AI vrstva za feature-flag (NL brief, fuzzy match, mail větev až s mailem M1–M3)"
+        ]
+      },
+      "openQuestions": [
+        "task_activity se nesyncuje (insert-only) — postavit malý Hono activity-digest endpoint pro provenienci stallu, nebo se spokojit s offline proxy (activated_at/comments/due age) bez „kdo naposledy hnul“? Doporučeno endpoint ve F2, protože provenience je jádro důvěry.",
+        "dedup single-lane: když je položka zároveň po termínu + uvázlá + blokuje cíl, které pravidlo vlastníka vyhrává? Návrh priority: Kaskáda/blokátor cíle > Uvázlo > Hoří (nejvyšší downstream dopad první).",
+        "Mail větev („Čekáš na odpověď“, směrování z mailu) běží na ~95 % demo korpusu — shippnout jen chain/audit část teď a mail explicitně označit jako demo do M1–M3?",
+        "reflowChain dnes mutuje DB — postavit sdílenou čistou projekční funkci a refaktorovat i existující reflow na ni, nebo duplikovat výpočet jen pro radar? Doporučeno sdílet.",
+        "Kde přesně žije watermark „naposledy vyčištěno“ — per zařízení (localStorage) nebo per uživatel sync? localStorage stačí pro MVP, ale na více zařízeních se delty rozjedou."
+      ]
+    },
+    "conceptCount": 6,
+    "concepts": [
+      {
+        "name": "Watson — Radar pozornosti (Ranní brief)",
+        "oneLiner": "Watson přestane být zmenšeninou Přehledu a stane se jedinou seřazenou frontou „co vyžaduje MOJI akci teď“ napříč úkoly, mailem, cíli a štafetami — z auditní historie odvodí, co uvázlo, co je po termínu a co čeká na odpověď, a jednou denně to složí do ranního briefu.",
+        "angle": "Proaktivní radar pozornosti místo pasivního přehledu: ne čísla „hotovo/dnes“, ale triáž akcí. Deterministicky z reálných dat odvozuje tři věci, které jinde v appce ani u konkurence nikdo nesyntetizuje do „udělej teď“: (1) míč štafety právě dorazil ke mně / čekám na kolegu, (2) tichý stall (úkol hnije dřív, než je vůbec po termínu), (3) kdo mi dluží odpověď. Frame je ranní brief s pamětí „od posledního vyčištění“, takže během dne radar ukazuje jen delty, ne pořád totéž. Každá položka nese „proč je tady“ odvozené z auditního logu a jednu akci na jedno kliknutí.",
+        "cards": [
+          {
+            "title": "Ranní brief (frame + paměť delt)",
+            "whatItShows": "Při prvním otevření dne složí jednu větu syntézy a TŘI počty, které mají smysl — u tebe / uvázlo / hoří (ne hotovo/dnes). Uloží časovou značku naposledy vyčištěno; během dne radar surfuje jen položky NOVÉ nebo změněné od té značky (režim delt), takže nečteš pořád včerejšek. Prázdný stav = explicitní čistý stůl, nic nevyžaduje tvůj zásah — místo opakovaného pozdravu.",
+            "dataSource": "Agreguje čtyři pruhy níže; delta = porovnání časů položek (chain_steps.activated_at, tasks.completed_at/due_date, comments.created_at, online i task_activity.created_at) proti localStorage značce naposledy vyčištěno. Scope na mě přes assignments.user_id (R2) + request.user_id() v parameter query.",
+            "whyValuable": "Dnešní drawer opakuje identický pozdrav při každém otevření (Today.tsx ř.246 je znak po znaku shodný s WatsonPanel.tsx ř.84) a nemá pojem už jsem viděl. Brief + paměť delt z něj dělá jednou denně rituál triáže, ne statické zrcadlo dostupné jinde."
+          },
+          {
+            "title": "Míč je u tebe",
+            "whatItShows": "Kroky štafety, které se právě posunuly na krok přidělený mně (předchozí krok = done → můj krok = active), plus úkoly nově přidělené/nasdílené mně od posledního vyčištění. U každé položky provenience: kdo předal, kdy a z jakého kroku, a jedno tapnutí otevřít / začínám.",
+            "dataSource": "chain_steps (step_state='active', activated_at) + předchozí krok step_state='done'; assignments.user_id = já (R2 single i shared_all); tasks (name, project_id, priority, color=priorita). Provenience z task_activity (field='completed_at'/assignment, user_id, created_at) online; offline fallback = chains.name + chain_steps.position.",
+            "whyValuable": "Předání štafety je Watsonův podpisový signál (Postupy/chains) — žádný konkurent nespočítá, že „štafeta právě dorazila k tobě, předala ti ji Petra v úterý“. Todoist/Asana dají jen per-úkol notifikaci o přiřazení, ne chain-aware handoff s historií."
+          },
+          {
+            "title": "Uvázlo (tichý stall)",
+            "whatItShows": "Otevřené položky, které tiše hnijou — krok štafety aktivní N dní bez pohybu, nebo můj otevřený/po termínu úkol bez jediné editace — seřazené podle priorita × dní ticha. Odlišné od „po termínu“: hlásí rozklad dřív, než úkol vůbec dozraje k deadline. Jedno tapnutí: šťouchnout řešitele, bezpečně přeplánovat, nebo přesměrovat podle oblasti.",
+            "dataSource": "OFFLINE proxy = stáří chain_steps.activated_at (aktivní kroky), stáří tasks.due_date/deadline, poslední comments.created_at per task_id, nevystřelené reminders. ONLINE obohacení = task_activity MAX(created_at) per task_id přes API digest → 0 editací za 6 dní + jméno posledního aktéra. Návrh přesměrování z contacts.areas / memberships.areas + bio.",
+            "whyValuable": "Stall odvozený z append-only auditu je unikát — právě per-field log dovoluje říct „nikdo tím 6 dní nehnul, přestože to ještě není po termínu“. Todoist/Asana/ClickUp/Motion ukazují deadliny, ne pre-due rozklad. Toto je nejsilnější odlišovač celého modulu."
+          },
+          {
+            "title": "Čekáš na odpověď",
+            "whatItShows": "Kde je míč u někoho jiného a mám urgovat: kroky štafety, které jsem dokončil a jejichž následující (cizí) krok stojí; úkoly, které jsem předal a jejich nástupce se nehýbe; úkoly napojené na mail, kde čekám na reply. Seskupené podle osoby, s jedním tapnutím šťouchnout / otevřít vlákno.",
+            "dataSource": "chain_steps (můj done krok → další active krok assignments.user_id = cizí, activated_at staré); tasks.mail_th/mail_label link na mailové vlákno + comments (poslední příchozí jako proxy pro reply); task_activity poslední dotek nástupce (online). POZOR: mailová vrstva je z ~95 % demo, takže mail-větev běží na demo vláknech — deterministická kotva je propojení mail_th↔úkol + chybějící reply komentář.",
+            "whyValuable": "„Kdo dluží mně“ odvozené automaticky ze štafety + auditu + mail-linku, místo ručně udržovaných waiting-for štítků, které si lidé v Todoistu/Asaně dělají sami. Uzavírá smyčku, kterou konkurence ignoruje."
+          },
+          {
+            "title": "Dnes to hoří (po termínu + dnes, triáž)",
+            "whatItShows": "Po termínu + dnes splatné úkoly přiřazené mně, seskupené podle projektu/cíle, s rozlišením deadline vs. due, každý se SPRÁVNÝM přeplánováním na jedno kliknutí (date-only, přeskočí opakované R4, undo + toast) — nahrazuje rozbité rescheduleOverdue v dnešním panelu.",
+            "dataSource": "tasks (due_date, deadline, completed_at, recurrence_rule pro R4, assignment_mode) + assignments.user_id = já; znovupoužije lib/reschedule.ts + lib/undo + lib/toast. Vyloučí nedatované (srovná s rozdělením Dnes/Zásobník, čímž opraví chybu counts.today ve WatsonPanel.tsx ř.61).",
+            "whyValuable": "Stejný základní signál co má každý nástroj, ale opravený (R4 guard, undo, toast) a složený do jedné seřazené akce místo syrového čísla. Table stakes udělané správně — a zároveň to odstraní nejhorší duplicitu modulu (buggy kopii přeplánování)."
+          },
+          {
+            "title": "Cíl uvázl (drift → konkrétní blokátor)",
+            "whatItShows": "Cíle, které vlastním a u nichž % uplynulého času předbíhá % postupu (za tempem) nebo jsou po termínu — plus konkrétní uvázlý úkol, který je táhne dolů, vytažený rovnou dovnitř. Jedno tapnutí na cíl nebo na blokující úkol.",
+            "dataSource": "useGoalsOverview (goals, goal_projects, goal_milestones → pct, stav risk/over, elapsed) + otevřené úkoly daného cíle přes goal_projects→tasks; blokátor pojmenován křížením se signálem stall (karta Uvázlo).",
+            "whyValuable": "Napojí riziko cíle na konkrétní, z auditu odvozený blokátor — cíl přestává být pasivní ostrov s holým „cíl {target}“ (dnešní panel, WatsonPanel.tsx ř.237–271). Motion/Sunsama ukážou progres cíle, ale neukážou ten jeden uvázlý úkol, který drift způsobuje."
+          }
+        ],
+        "differentiator": "Todoist/Asana/ClickUp ukazují seznamy filtrované podle termínu a přiřazení; Motion auto-plánuje kalendář; Sunsama je ruční denní plánovací rituál. Nikdo z nich neodvozuje frontu „co vyžaduje MOJI akci teď“ z append-only per-field auditního logu zkříženého s předáváním štafet. Watsonova hrana stojí na třech signálech, které konkurence nemá jako first-class data: (1) předání v Postupech/štafetách → „míč právě dorazil k tobě / čekáš na X“; (2) task_activity audit overlay → tichý stall (rozklad dřív, než je úkol vůbec po termínu) a provenience „kdo tím naposledy hnul“; (3) směrování podle contacts.areas/memberships.areas+bio → „komu to dát“. Je to proaktivní radar s ranním briefem a pamětí „od posledního vyčištění“, ne pasivní zrcadlo počtů, které jsou stejně vidět na Přehledu i ve Velíně.",
+        "offlineFeasible": "Z větší části ano, deterministicky z lokální PowerSync SQLite: assignments, tasks (due_date/deadline/completed_at/recurrence_rule/assignment_mode/mail_th), chain_steps (step_state/activated_at), comments (poslední aktivita), goals/goal_projects/goal_milestones (useGoalsOverview), contacts.areas, reminders. Paměť delt / „naposledy vyčištěno“ je localStorage. DVĚ poctivé mezery: (a) task_activity je insertOnly a čte se on-demand přes API — NEsyncuje se do lokální SQLite (hlavní scaling strop appky) — takže bohatý stall + provenience (0 editací za 6 dní, „naposledy Petra“) potřebuje malý serverový digest endpoint v Hono, nebo odlehčený lokální mirror; offline se degraduje na proxy časy (activated_at, stáří due_date, poslední comment), které stall pořád oznámí, jen bez „kdo“. Pozn.: tasks nemá lokální updated_at, takže „poslední dotek“ nelze číst z řádku úkolu — proto ten proxy z activated_at/comments/deadline. (b) Mail je ~95 % demo, takže mailová větev běží na demo vláknech; reálná kotva je link mail_th↔úkol, plná hodnota dozraje s mailem M1–M3.",
+        "aiNeeded": "Pro shippable MVP žádná — každý pruh je deterministické řazení nad existujícími tabulkami (žádný @anthropic v apps/api není potřeba). AI je jasně VOLITELNÁ obohacovací vrstva, která degraduje graceful na deterministickou verzi, když je vypnutá/offline: (1) formulace jednovětého ranního briefu přirozeným jazykem; (2) chytřejší směrování „komu to dát“ fuzzy-matchem úkolu na areas+bio člověka; (3) doladění/ deduplikace řazení napříč pruhy (kdy je „uvázlo“ důležitější než „hoří“); (4) jednořádkové shrnutí uvázlého mailového vlákna nebo dlouhého řetězce komentářů. Jádro „radaru“ (detekce stallu, štafety, po termínu, cíl-drift) běží bez AI.",
+        "risks": [
+          "task_activity není lokální (insertOnly, čte se přes API) — hlavní architektonický blokátor vlajkového signálu stall+provenience; bez digest endpointu se offline degraduje na proxy (activated_at/comments/due_date) a ztratí „kdo“.",
+          "Dedup napříč pruhy: jedna položka může být zároveň po termínu, uvázlá i blokující cíl — nutné pravidlo jednoho vlastníka (single lane), jinak radar zní repetitivně = přesně ten hřích současného panelu.",
+          "Mailová větev se opírá o demo data; přeslibit ji riskuje dutou funkci, dokud nedozraje mail M1–M3.",
+          "Důvěra v řazení: když radar vypíchne špatné „teď“, uživatel mu přestane věřit — proto per-položku transparentní „proč je to tady“ (což audit log pohodlně dodá).",
+          "Scope creep vůči Přehledu/Velínu: musí zůstat AKČNÍ fronta (sloveso první, jedno tapnutí = vyřešeno) a nesmí se znovu stát dashboardem, jinak obnoví právě řešenou duplicitu."
+        ]
+      },
+      {
+        "name": "Watson jako týmový dispečer (zůstává „Watson“, nový mandát = směrování a vyvažování práce)",
+        "oneLiner": "Watson přestane být pasivní přehled a stane se dispečerem: ví, kdo co v týmu řeší (oblasti odpovědnosti), kdo je přetížený a kdo má rezervu, a proaktivně navrhuje, komu nový nebo zpožděný úkol předat — na jeden klik, offline, se záznamem kdo přeřadil.",
+        "angle": "Delegace a směrování práce v malém týmu. Jádro: registr memberships.areas+bio („granty = Adéla, právo = Marek“) appka poprvé promění v akci — spáruje ho s reálnou zátěží (assignments + tasks.duration_min + deadline) a se štafetou v Postupech (chains). Watson neukazuje jen „co mám já dnes“, ale „tohle patří Adéle“, „Marek je přetížený, přehoď mu to na Terezu“, „štafeta stojí u tebe“. To je přesně rozměr, který single-user nástroje strukturálně nemají a který dnešní drawer i Přehled/Velín jen naznačují, ale nikdo z toho nedělá akci na jeden klik.",
+        "cards": [
+          {
+            "title": "Komu to patří (chytré směrování)",
+            "whatItShows": "Nepřiřazené a nově vzniklé úkoly — včetně těch „Z mailu“ — které nemají vlastníka. U každého Watson navrhne konkrétního člověka podle shody klíčových slov názvu/projektu/popisu úkolu s jeho oblastmi odpovědnosti: „Vyúčtovat grant MŠMT → Adéla (granty)“, „Nafotit produkty na IG → Tereza (sociální sítě)“. Jeden klik přiřadí; když oblast nesedí nikomu, tiše nabídne jen doplnění oblastí adminovi.",
+            "dataSource": "tasks (úkoly bez řádku v assignments; mail_th/mail_label pro původ „Z mailu“; project_id, description, created_by) × assignments (kdo už je přiřazen) × memberships.areas + memberships.bio (přes REST GET /api/workspaces/:id/members — endpoint je už dnes vrací, apps/api/src/index.ts:264–265, jen je useAllMembers zatím nečte) + contacts.areas pro externí tip. Zápis přiřazení = INSERT INTO assignments (offline fronta PowerSync).",
+            "whyValuable": "Registr „kdo co dělá“ se poprvé mění v akci. Appka sama ví, že granty/účetnictví/sociální sítě patří konkrétnímu člověku, a nabídne ho ve chvíli, kdy úkol vznikne (i z mailu). Nikdo si nemusí pamatovat, komu co dát — nejčastější tření v malém týmu, kde se role překrývají."
+          },
+          {
+            "title": "Zátěž a rezerva",
+            "whatItShows": "Per-osoba: otevřené přiřazené úkoly, z toho po termínu, a hlavně zabookované hodiny na příštích 7 dní (součet tasks.duration_min podle due_date/deadline). Barevně přetížený vs. má rezervu. Řadí od nejvytíženějšího. Kde chybí odhad duration_min, spadne na počet úkolů.",
+            "dataSource": "assignments (user_id — kdo je přiřazen) × tasks (completed_at, due_date, deadline, duration_min, priority). Obě tabulky se syncují do klienta (sync-config user_projects) → 100 % lokální výpočet. Nadstavba nad Velín kartu „Zátěž lidí“ (Velin.tsx ř. 167–188), ale místo hrubého open×12 % reálné hodiny + tlak deadline.",
+            "whyValuable": "Single-user nástroje pojem týmové zátěže nemají vůbec. Tohle zviditelní přetížení dřív, než se z něj stane zmeškaný termín, a zároveň ukáže, kdo může vzít víc — vstup pro kartu Návrhy přesměrování."
+          },
+          {
+            "title": "Návrhy přesměrování",
+            "whatItShows": "Konkrétní tahy: vezme zpožděné/rizikové úkoly přetíženého člověka a navrhne kolegu, který (a) sedí oblastí odpovědnosti a (b) má rezervu z karty Zátěž. „Marek má 6 po termínu → ‚Revize smlouvy‘ na Adélu (právo, má rezervu).“ Jeden klik přeřadí a zaznamená, kdo přeřadil. U shared úkolů (R2) nepřepisuje spoluúčast, jen navrhne přidat/nahradit.",
+            "dataSource": "assignments + tasks (přetížení a po termínu = kombinace karet 1+2) × memberships.areas/bio (schopnostní shoda). Zápis = DELETE + INSERT INTO assignments (vzor z TaskDetailPanel.tsx ř. 476–479, BulkBar.tsx) + logActivity() do task_activity (audit kdo/kdy přeřadil, lib/activity.ts). Vše přes offline frontu PowerSync.",
+            "whyValuable": "Skutečná delegační superschopnost — spojí nerovnováhu zátěže se schopnostní shodou, což žádná Workload view v Asaně/ClickUpu nedělá (tam pořád přiřazuješ ručně). Deterministické skóre, člověk jen potvrdí; každé přeřazení je dohledatelné, takže nikdo o práci „nezmizí“."
+          },
+          {
+            "title": "Čekám / čeká se na mě (radar štafet)",
+            "whatItShows": "Z Postupů (štafet): aktivní kroky, kde držím štafetu já (= čeká se na mě), a kroky navazující na můj právě dokončený krok u kolegů (= na koho čekám). Zaseknuté kroky (aktivní krok po termínu) se jménem vlastníka → pošťouchni nebo předej štafetu dál.",
+            "dataSource": "chains + chain_steps (step_state='active', gate, position — sync-config user_projects ř. 44–50) × tasks (due_date pro „zaseknuto“) × assignments (kdo drží aktivní krok = pole nowWho). Logika už existuje v lib/overview.ts useFlowsOverview (stuck/nowName/nowWho) → 100 % lokální, jen se přeorientuje z pohledu firmy na pohled „já“.",
+            "whyValuable": "Viditelnost předávek je unikátní pro řetězenou práci — žádný single-user nástroj neumí „štafeta je u Adély a je 2 dny po termínu“. Z Postupů se stává radar odpovědnosti: kdo na koho čeká je nejčastější skryté zdržení v týmu."
+          },
+          {
+            "title": "Kdo to reálně táhne (volitelné, vyžaduje server)",
+            "whatItShows": "U sdílených úkolů (assignment_mode shared_any/shared_all) porovná, KDO se úkolu reálně dotýká (z historie změn), s tím, kdo je nominálně přiřazen — odhalí „přiřazeni 3, hýbe jen Adéla“ a bus-factor (celý projekt táhne jediný člověk).",
+            "dataSource": "task_activity (user_id, field, created_at) × assignments (assignment_mode, kdo je nominálně přiřazen). POZOR: task_activity se ZÁMĚRNĚ nesyncuje do klienta (insert-only, sync-config.yaml ř. 41–42), čte se přes server → tato karta vyžaduje nový agregační endpoint GET /api/workspaces/:id/activity-summary; offline nedostupná (degraduje na skryté).",
+            "whyValuable": "Reálný vlastník vs. papírový + bus-factor — pohled, který konkurence nemá, protože nemá append-only audit KDO co změnil. Pro majitele/admina je to varování „tady visí celá firma na jednom člověku“."
+          }
+        ],
+        "differentiator": "Todoist/Things/TickTick/Sunsama/Motion jsou personal-first: nemají pojem týmové kapability ani zátěže; Motion rozvrhne TVÉ úkoly, ne „kdo to má vzít“. Asana/ClickUp/monday sice mají Workload/Capacity view, ale (1) kapacitu musíš nastavit ručně, (2) neumí sémantické „tohle patří X podle oblasti odpovědnosti“ — přiřazuješ pořád ručně, (3) je to reportovací pohled, ne proaktivní „naroutuj tohle + přehoď tamto na jeden klik“, a (4) není offline. Watsonův rozdíl je fúze čtyř věcí, kterou v segmentu malých týmů (studio/nezisk) nikdo neposkládal: udržovaný registr oblastí (memberships.areas+bio) × real-time zátěž z reálných dat (assignments + duration_min + deadline) × štafeta v řetězcích (chains) × jednoklik přeřazení offline s auditem (task_activity). „Kapability-aware auto-routing + load-aware rebalancing pro malý tým, offline-first.“",
+        "offlineFeasible": "Karty 2 (Zátěž) a 4 (Radar štafet) jsou 100 % offline — počítají jen ze synchronizovaných tabulek (tasks, assignments, chains, chain_steps; logika už žije v lib/overview.ts). Karty 1 (Směrování) a 3 (Přesměrování) jsou offline pro veškerou matematiku nad tasks/assignments i pro samotný ZÁPIS přeřazení (INSERT/DELETE assignments jde přes offline frontu PowerSync, audit do task_activity je upload-only). Jediný nesynchronizovaný vstup jsou oblasti/bio členů — ty jdou přes REST /api/workspaces/:id/members (react-query cache → online se obnoví, offline běží z poslední cache). Výjimka je karta 5 (Kdo to reálně táhne): task_activity se záměrně nesyncuje (insert-only), takže týmový přehled aktivity potřebuje nový server endpoint a offline je nedostupný.",
+        "aiNeeded": "Jádro nepotřebuje AI. Routing i rebalancing jde deterministicky: překryv tokenů/klíčových slov mezi názvem+projektem+popisem úkolu a areas/bio, skóre, tie-break podle zátěže. AI je pouze volitelná vrstva, jasně oddělená: (1) sémantická shoda, kde doslovný překryv selže — „dotace“ ≈ „granty“, „reel“ ≈ „sociální sítě“ (nejdřív stačí lokální slovník synonym, AI až potom); (2) přirozený jazyk zdůvodnění návrhu („Navrhuji Adélu: řeší granty a má tento týden jen 4 h zabookováno“) a parse rozházeného volnotextového areas/bio do strukturovaných tagů; (3) shrnutí vzorců aktivity na kartě 5. Ani jedna z těchto vrstev není podmínkou funkčnosti — v1 běží čistě lokálně a deterministicky.",
+        "risks": [
+          "areas/bio jsou volitelné a admin je nemusí vyplnit → bez registru se routing (karty 1 a 3) degraduje na load-only. Mitigace: prázdné oblasti ⇒ karta tiše skryje návrh vlastníka a místo toho vyzve admina doplnit oblasti, zátěž (karta 2) funguje dál.",
+          "Keyword shoda dělá false-positives → nikdy neděl auto-přiřazení, vždy jen NÁVRH, který člověk potvrdí; nikdy nepřeřazuj tiše.",
+          "R2/shared: u shared_all/shared_any nesmí jednoklik přepsat spoluúčast kolegů — jednoklik mění jen jasně vlastněné single úkoly, u shared nabídne „přidat/nahradit“ s potvrzením.",
+          "Zátěž z duration_min je jen tak přesná, jak lidé odhad vyplňují → fallback na počet otevřených úkolů, když duration_min chybí, ať bar nelže nulou.",
+          "task_activity se nesyncuje → karta 5 potřebuje nový agregační server endpoint a offline je nedostupná; nestav na ní kritickou hodnotu modulu.",
+          "Oprávnění/R5: návrhy přeřazení a týmovou zátěž smí vidět a provádět jen workspace role admin/manager (nebo owner), ne member/guest — jinak leak citlivého pohledu na vytížení a výkon kolegů.",
+          "Osobní sféra (workspace.isPersonal / R8): celý dispečink se musí vypnout v osobním prostoru — směrování a zátěž dávají smysl jen v týmovém workspace, jinak Watson v soukromí navrhuje delegaci sám sobě."
+        ]
+      },
+      {
+        "name": "Watson — „Situace dne“ (jméno Watson zůstává; z pasivního draweru děláme vypravěče dne)",
+        "oneLiner": "Jediné místo, kde se mail, úkol, postup, cíl a člověk potkají v jednom příběhu: Watson dnešek nevypíše jako seznam, ale odvypráví jako řetěz příčin a následků — „tohle urgentní vlákno drží úkol, který je aktivním krokem postupu, který táhne cíl s termínem za 5 dní, a čeká se na tebe“.",
+        "angle": "Průřezová syntéza místo čtyř oddělených obrazovek. Dnešní appka žije v listech: Dnes = úkoly, Pošta = vlákna, Cíle = %, Velín = lidé. Nikdo je nespojí do jedné věty. Watson staví nad LOKÁLNÍMI daty orientovaný graf hran, které v datech reálně existují (tasks.mail_th, chain_steps, goal_projects, assignments, task_activity), a z nejzávažnější cesty tímto grafem složí „situaci dne“ jako vyprávění s prokliknutelnými uzly. Ne další dashboard — kauzální příběh, který ukáže PROČ na něčem záleží a KDE v řetězu jsi ty. Tím se panel přestává překrývat s Přehledem/Velínem (ty ukazují CO) a začíná dělat to jediné, co nikde jinde není: PROPOJENÍ a POŘADÍ.",
+        "cards": [
+          {
+            "title": "Situace dne (headline příběh)",
+            "whatItShows": "2–4 věty, ne seznam. Watson vezme jedinou nejzávažnější kauzální cestu dne a odvypráví ji s inline chipy: „Vlákno »Faktura EDC« (p1, bez odpovědi 2 dny) drží úkol »Schválit rozpočet«, který je aktivním krokem postupu »Uzávěrka Q3« → táhne cíl »Zavřít Q3« (40 %, termín za 5 dní). Držíš to ty.“ Když hrany chybí (úkol bez mailu/postupu), příběh se řízeně degraduje na to, co existuje. Jeden explicitní řádek „proč je tohle první“ (skóre = urgence mailu × blízkost termínu cíle × jsi-blokér).",
+            "dataSource": "Mail state (flag p1–p4, pin, unread, grp) → tasks.mail_th/mail_label → chain_steps.step_state='active' + assignments (jsi-blokér) → goal_projects → goals (metric/target/due_date). Skládá se z existujících hooků useMailDigest + useFlowsOverview + useGoalsOverview.",
+            "whyValuable": "Přesně ta chybějící „přidaná hodnota“: z pěti signálů složí jednu větu, kterou by si člověk jinak musel sesbírat ze čtyř obrazovek. Nahrazuje dnešní prázdný pozdrav + statistiky skutečným úsudkem „na čem dnes záleží nejvíc a proč“."
+          },
+          {
+            "title": "Rodokmen: mail → úkol → cíl (klikatelný řetěz)",
+            "whatItShows": "Pod headlinem 2–3 nejsilnější položky jako VIZUÁLNÍ linie propojených uzlů, ne jako plochý seznam: uzel mailu (odesílatel, flag, „bez odpovědi N dní“) — šipka — uzel úkolu (termín/deadline, kdo je přiřazen) — šipka — uzel kroku postupu (pozice X/Y, stav) — šipka — uzel cíle (% + zbývá dní). Každý uzel je proklik na svůj domov (vlákno / detail úkolu / Postup / Cíl). Když někde chybí článek, linie to ukáže jako „chybějící spoj“ (např. urgentní mail bez založeného úkolu → nabídne 1-klik »Založit úkol z vlákna«, reuse tasks.mail_th).",
+            "dataSource": "tasks.mail_th + tasks.mail_label (reálná hrana mail↔úkol, už existuje) + mail taskLinks (thread→tasks) + assignments + chain_steps (position/step_state) + goal_projects + goals. Vše lokální kromě mail korpusu.",
+            "whyValuable": "Tohle je doslova zadané „propojí mail→úkol→cíl“. Uživatel poprvé vidí CELOU kauzální linii na jednom místě a může skočit na kterýkoli článek. Konkurence tyhle čtyři vrstvy drží ve čtyřech nesouvisejících obrazovkách."
+          },
+          {
+            "title": "Kdo koho brzdí (štafeta + směrování)",
+            "whatItShows": "Lidská dimenze grafu ve dvou směrech. (a) »Čekáš na«: aktivní kroky postupů přiřazené někomu jinému, které gatují tvůj další krok — se jménem a „vázne N dní“. (b) »Čeká se na tebe«: aktivní kroky přiřazené tobě, které blokují někoho po proudu. Plus mailová vlákna v Dispečinku/Gatekeeperu bez vlastníka → návrh »komu to dát« podle oblastí odpovědnosti. Ne statistika zátěže (to má Velín) — konkrétní seznam „odblokuj tyhle lidi teď“.",
+            "dataSource": "chain_steps.step_state='active' + gate + assignments + useAllMembers (jména) pro směr štafety; mail grp='gatekeeper'/'dispečink' pro nesměrovaná vlákna; contacts.areas (lokální) + memberships.areas (server) pro návrh vlastníka podle oblasti. Volitelně task_activity pro „naposledy se dotkl“.",
+            "whyValuable": "Řetězené Postupy jsou nejsilnější odlišující signál appky a dnes je nikde nikdo neshrne do „koho čekám / kdo čeká mě“. Převádí graf štafety na jasnou akci odblokování — čistě unikátní datový signál."
+          },
+          {
+            "title": "Co se pohnulo od tvého posledního pohledu",
+            "whatItShows": "Delta jako vyprávění, ne počet. Od posledního otevření Watsona: „Marek dokončil krok »Podklady« → aktivoval se tvůj krok »Schválit«; přišla 2 urgentní vlákna do schránky ekonomika@; cíl »Zavřít Q3« spadl pod plán.“ Spojuje pohyby napříč mail+úkoly+postupy+cíli do jednoho odstavce se skoky na dotčené uzly.",
+            "dataSource": "task_activity (append-only audit KDO/co/kdy, created_at > lastSeen) — append-only, čte se on-demand z API; mailová osa „Dění“ (co se v týmové poště stalo); nové mail flagy p1/p2. Lokální watermark „naposledy otevřeno“ + vlastní mutace fungují offline; cizí změny z auditu potřebují online čtení API.",
+            "whyValuable": "Žádný to-do nástroj neumí „co se změnilo, když ses nedíval“ napříč poštou, úkoly, štafetou i cíli. Dělá z Watsona proaktivní vrstvu, ne pasivní přehled — přesně to, co uživatel chce."
+          },
+          {
+            "title": "Jeden další krok (rozhodnutí, ne seznam insightů)",
+            "whatItShows": "Z celého grafu vybere PRÁVĚ JEDNU nejdůležitější bezpečnou akci teď a nabídne ji jako jedno tlačítko: odpovědět na vlákno / přeplánovat zpožděný úkol (date-only, s R4 guardem na opakované) / posunout štafetu / předat vlákno navrženému vlastníkovi / založit úkol z mailu. Deterministické pořadí; po akci se příběh přepočítá. Nahrazuje dnešní dvě natvrdo šablonované „insighty“.",
+            "dataSource": "Reuse existující bezpečné akce: lib/reschedule (date-only, přeskočí recurrence_rule, pushUndo + toast), tasks.mail_th (založení úkolu z vlákna), chain_steps advance (server-authored). Vstup = skóre z karty 1.",
+            "whyValuable": "Uzavírá smyčku: syntéza → jeden bezpečný klik. Odstraňuje nejchybovější duplicitu v appce (buggy rescheduleOverdue v draweru bez undo/toastu) a nahrazuje ji jedinou správnou, auditovanou akcí."
+          }
+        ],
+        "differentiator": "Todoist/Asana/ClickUp/Motion/Sunsama plánují DEN z úkolů (± kalendář). Žádný z nich nemodeluje řetězené „Postupy“ jako štafetu s vlastníkem každého kroku, nikdo neváže mailové vlákno jako PŮVOD úkolu a nestopuje ho až k cíli, a nikdo nevypráví „kdo koho brzdí“. Motion auto-plánuje čas, Sunsama je ruční denní rituál — oba zůstávají u seznamu úkolů. Watsonova výhoda je jediný join graf, který v appce už fyzicky existuje: tasks.mail_th (mail↔úkol) + chain_steps (štafeta) + goal_projects/goals (cíl) + assignments/areas (lidé) + task_activity (delta). Z toho složí kauzální příběh dne napříč mailem, úkoly, cíli a lidmi — vrstva PROPOJENÍ a POŘADÍ, ne další seznam. To konkurence nedělá, protože nemá mail, štafetu a cíle pod jednou střechou.",
+        "offlineFeasible": "Z drtivé většiny ano. Skóre závažnosti, stavba rodokmenu mail→úkol→cíl, graf štafety i výběr „jednoho dalšího kroku“ jsou čisté deterministické funkce nad lokálními PowerSync/SQLite řádky (tasks, assignments, chain_steps, goals, goal_projects, contacts) plus klientský mail state. Dvě výjimky: (1) task_activity je insert-only a NEsyncuje se dolů — „delta od posledního pohledu“ pro CIZÍ změny vyžaduje on-demand čtení z API (offline ukáže jen vlastní mutace + lokální watermark); (2) bohatší směrování „komu to dát“ přes memberships.areas je server-side (contacts.areas funguje lokálně). Nic z toho neblokuje jádro — offline degraduje řízeně, ne pádem.",
+        "aiNeeded": "Pro v1 NENÍ potřeba. Příběh je deterministické skládání šablon nad join grafem (jako dnešní „Watsonova syntéza dne“, ale reálně vícehopová a datově podložená), takže je offline, auditovatelné a levné. AI je VOLITELNÁ nadstavba, výhradně v TÝMOVÉ sféře: (a) plynulejší přirozený jazyk headline věty, (b) chytřejší návrh „komu dát“ z volného textu vlákna + oblastí, (c) shrnutí dlouhého vlákna do úkolu. Klíčový invariant: OSOBNÍ sféra je „šifrováno · bez AI“ — v ní AI nikdy neběží a její obsah se nemíchá do týmového příběhu. Všechny AKČNÍ prvky zůstávají deterministické, aby fungovaly bez AI i offline.",
+        "risks": [
+          "Mail je dnes z 95 % demo/klientský — hrana mail→úkol (tasks.mail_th) je reálná, ale mailový korpus je seed. Plná hodnota karet 1–2 přijde až s reálným sync mailu a mapováním schránka→firma (MBF, zmíněno v kódu). Doporučení: stavět strukturu teď, ostře odlišit demo vs. reálná vlákna.",
+          "task_activity se nesyncuje dolů → 'delta od posledního pohledu' pro cizí změny je online-only; offline ukáže jen vlastní mutace + watermark. Nesmí budit dojem úplnosti, když je zařízení offline.",
+          "Vyprávění může působit jako trik, když přeceňuje kauzalitu. Šablony musí řízeně degradovat, když hrany chybí (spousta úkolů nemá mail_th ani postup), a nikdy nefabulovat spoj, který v datech není.",
+          "Skóre závažnosti je heuristika; špatné pořadí ničí důvěru. Držet řádek 'proč je tohle první' vždy viditelný a vysvětlitelný.",
+          "Riziko TŘETÍ syntézy: Přehled už má 'Watsonovu syntézu dne'. Tenhle koncept musí tu strip nahradit/absorbovat a zrušit slabý drawer, ne přidat další překrývající se plochu.",
+          "Dvousférový invariant: nikdy nespouštět AI ani nemíchat obsah osobní sféry do týmového příběhu; osobní zůstává lokální a šifrovaná."
+        ]
+      },
+      {
+        "name": "Watson — Radar (Co je v ohrožení). Jméno „Watson\" zůstává, jen se z pasivního přehledu stává předvídavý radar rizik; podtitul modulu „Na co doplatíme, když nic neuděláme\".",
+        "oneLiner": "Watson přestane být zmenšený Přehled a stane se radarem rizik: deterministicky z lokálních dat počítá, na co tým DOPLATÍ, když teď nic neudělá (skluzy termínů, trhající se řetězy Postupů, čekající rozhodnutí, zamrzlé úkoly, cíle mimo trajektorii) — každou expozici vyčíslí a nabídne jeden další krok.",
+        "angle": "Úhel = předvídání, ne přehled. Dnešní drawer i Přehled/Velín jsou REAKTIVNÍ a zpětné („tohle je po termínu\", „tento cíl je v riziku\") — ukazují stav, který už nastal. Watson-radar je DOPŘEDNÝ: bere existující signály (deadline, stav, závislosti kroků Postupů, per-osoba assignments, audit log tempa) a promítá je do budoucna — „co se rozbije, když se nezasáhne\". Jádro je jedna seřazená „kniha expozic\": každá položka = riziko + jeho VYČÍSLENÝ následek (o kolik dní spadne finále Postupu, kolik kroků/lidí se za tím zablokuje, na jaké % doletí cíl, který firemní cíl/klient to zasáhne) + jeden konkrétní zásah (přeplánovat / předat dle oblasti / odblokovat). Skóre expozice = blízkost termínu × fan-out závislostí (kolik je za tím) × napojení na cíl/klienta × stáří bez pohybu. Nahoře drawer řekne JEDNU větu „Na co doplatíme, když nic neuděláme\" + jednu akci — tím nahradí jedinou dosud unikátní (a nejchybovější) akci draweru „přeplánovat zpožděné\". Karty pod tím jsou rozpad té věty. Watson tím poprvé v appce dělá práci, kterou Přehled ani Velín nedělají: neříká „co se stalo\", ale „co se STANE a komu to ublíží\".",
+        "cards": [
+          {
+            "title": "Kaskáda: řetěz se trhá",
+            "whatItShows": "Aktivní kroky Postupů, které váznou (úkol kroku po termínu nebo aktivovaný dávno bez dokončení), a hlavně jejich DOPAD DOPŘEDU: simulací reflow spočítá, kolik navazujících (dormant) kroků se posune a o kolik dní spadne finální termín/kotva celého Postupu. Např. „Krok 'Schválit vizuál' vázne 3 dny → posune 4 kroky → premiéra 20.7. → 24.7.; drží Petr.\" Jeden zásah: přeplánovat aktivní krok / pobídnout držitele.",
+            "dataSource": "chains (anchor_date, sched_mode, skip_weekend, state), chain_steps (step_state dormant/active/done, position, gate, gap_days, anchor_offset, activated_at), tasks (due_date, completed_at, name), assignments (kdo krok drží → nowWho). Reuse: lib/overview.useFlowsOverview (stuck/hasNow/nowWho) + lib/chainReflow pro projekci dat.",
+            "whyValuable": "Jediná vrstva appky, která zná ZÁVISLOSTI mezi úkoly. Ukáže neviditelný dopad jednoho zpoždění na celý řetěz a finální termín — ne jen 'něco je po termínu'. Přesně 'na co doplatíme, když ten krok neodblokujeme'."
+          },
+          {
+            "title": "Čeká na rozhodnutí / štafeta na tobě",
+            "whatItShows": "Dvě kolonky. „Ostatní čekají na tebe\" = aktivní kroky Postupů a shared_all úkoly, kde CHYBÍ tvoje completed_at a blokují postup/kolegy. „Čekáš na druhé\" = symetricky tam, kde chybí completed_at někoho jiného. U shared_all vypíše stav štafety: „2 ze 3 hotovo, čeká se na Petra.\" Řazeno dle blízkosti termínu a fan-outu (kolik práce/lidí je za tím zablokováno).",
+            "dataSource": "tasks (assignment_mode = shared_all/shared_any), assignments (user_id, completed_at — per-osoba R2), chain_steps (gate=after_previous, step_state=active — gatuje downstream), memberships (jméno/role), request.user_id() pro rozlišení „na tebe\" vs „na druhé\". Momentum přes task_activity (od kdy se nehnulo).",
+            "whyValuable": "Převádí strukturu závislostí na jasné „kdo koho brzdí\". Čekající rozhodnutí a štafety nikde jinde v appce nejsou vidět jako čekající — Přehled/Velín ukazují jen souhrnná čísla, ne konkrétní 'ty držíš X, tým čeká'."
+          },
+          {
+            "title": "Zamrzlo",
+            "whatItShows": "Otevřené úkoly (completed_at NULL), které mají termín/deadline nebo jsou v Postupu či napojené na cíl, ale X dní se NEHNULY — poslední stopa pohybu = MAX(task_activity.created_at), fallback updated_at/created_at, plus datum posledního komentáře. Rozliší „zamrzlé s blížícím se termínem\" (nebezpečné) od starého zásobníku (neškodné). U kroků Postupu bere activated_at jako start měření.",
+            "dataSource": "task_activity (created_at, field — append-only 'kdo kdy co', zdroj pravdy o tempu), tasks (updated_at, created_at, due_date, deadline, completed_at, status_id), comments (created_at), chain_steps (activated_at, step_state=active).",
+            "whyValuable": "Poprvé využije audit log jako signál TEMPA, ne jen historii. 'Mrtvé, ale důležité' úkoly (blízký termín + nula pohybu) jsou přesně to, na co se doplácí a co v běžném seznamu zapadne mezi ostatní."
+          },
+          {
+            "title": "Termín, který nestihneš",
+            "whatItShows": "Úkoly s tvrdým deadline (tasks.deadline, odlišný od due_date), kde zbytek práce vs. zbývající čas NESEDÍ: porovná počet zbývajících podúkolů (parent_id), duration_min a rozsah days proti dnům do deadline a proti stavu (status_id ≠ Hotovo, completed_at NULL). Označí „hrozí skluz\" DŘÍV, než nastane, a pojmenuje napojený cíl/klienta/firmu, na kterou se to podepíše.",
+            "dataSource": "tasks (deadline, due_date, duration_min, days, status_id, completed_at, priority, parent_id → zbývající podúkoly), goal_projects + goals (na co je úkol navázán), projects/workspaces (firma, sféra isPersonal vs týmová).",
+            "whyValuable": "Deadline je v appce podceněný, samostatný signál (odlišný od due_date). Radar z něj dělá včasné varování 'tohle se nestihne', ne až červený úkol den po termínu, kdy je pozdě."
+          },
+          {
+            "title": "Cíl mimo trajektorii",
+            "whatItShows": "Cíle, které při SOUČASNÉM tempu nedoletí: k pct/elapsed/status z useGoalsOverview přidá projekci — potřebné tempo vs. skutečné tempo z časů completed_at v období (period_start → due_date) a promítne odhad finiše: „tempo stačí na 65 %, termín 30.9.; chybí ~2 úkoly/týden.\" Milníky (goal_milestones.done) slouží jako kontrolní body trajektorie.",
+            "dataSource": "goals (target, metric, period_start, due_date, scope), goal_projects, tasks (completed_at v období = měřené tempo), goal_milestones (done). Reuse: lib/overview.useGoalsOverview + lib/goals (goalProgress/goalStatus/goalElapsed).",
+            "whyValuable": "Posouvá existující 'Cíle v ohrožení' ze stavu NA PREDIKCI výsledku — místo 'jsi na 40 %' řekne 'takhle skončíš na 65 %, tady je co dohnat'. Ukáže výsledek dřív, než je pozdě zasáhnout."
+          }
+        ],
+        "differentiator": "Todoist/Asana/ClickUp/Motion/Sunsama jsou buď reaktivní (ukážou co UŽ je po termínu + skóre/karma), nebo optimalizují JEN tvůj den (Motion auto-plánuje kalendář na deadliny, ale nemodeluje týmové řetězce ani 'čekáš na druhé'), nebo jsou ručním rituálem (Sunsama). Asana 'project health' je pravidlový status, ne predikce dopadu. NIKDO z nich: (1) nepočítá KASKÁDOVÉ riziko napříč řetězenými úkoly ('o kolik spadne finále, kolik kroků/lidí se zablokuje'), protože nemají model závislostí typu Postupy/chain_steps; (2) neukazuje 'na co doplatíme, když nic neuděláme' jako vyčíslený následek; (3) nedělá z per-osoba shared assignments jasné 'kdo koho brzdí'; (4) neproměňuje append-only audit log v osobní radar zamrzlých, ale důležitých úkolů. A hlavně: Watson to všechno počítá LOKÁLNĚ/offline a deterministicky nad daty, která konkurence ani nemá (chains, shared_all assignments, task_activity). To je odlišení: dopředná EXPOZICE, ne zpětný souhrn.",
+        "offlineFeasible": "Ano, celé jádro běží offline-first, čistě nad lokálními PowerSync SQLite tabulkami, bez serveru a bez AI. Vše je deterministická aritmetika: rozdíly dat (deadline/due_date vs dnes), počítání zbývajících podúkolů a duration_min, per-osoba stav assignments, MAX(task_activity.created_at) pro tempo, lineární projekce cíle z časů completed_at a projekce řetězu přes už existující lib/chainReflow (respektuje sched_mode/gap_days/anchor_offset/skip_weekend). Znovupoužije se hotová vrstva lib/overview (useFlowsOverview, useGoalsOverview, useAllMembers), takže agregace i logika 'stuck' už existují. Kde offline nestačí: (a) čtení volného textu — implicitní rozhodnutí/otázky/blokery skryté v comments.body, tasks.description nebo mailových vláknech (mail_th) deterministika nezachytí, umí jen strukturální čekání (shared_all částečně hotové, gate aktivního kroku); (b) 'komu to dát' přes memberships.areas/bio + contacts.areas — offline zvládne keyword/substring match, sémantické párování ne; (c) plynulá lidská věta 'na co doplatíme' — offline ji poskládá ze šablony, ne přirozeně. Push připomínky rizik jsou server-side (reminders worker), ale výpočet i UI radaru fungují plně lokálně.",
+        "aiNeeded": "AI NENÍ potřeba pro žádnou z 5 karet — všechny stojí na deterministickém jádru (v appce navíc @anthropic zatím vůbec není napojený, takže MVP musí být bez AI). AI je čistě VOLITELNÁ nadstavba, kterou označit jako fázi 2: (1) Extrakce implicitních rozhodnutí/blokerů z volného textu (comments.body, description, mailová vlákna mail_th) — obohatí kartu 'Čeká na rozhodnutí' o 'kdo rozhodne o rozpočtu?' nad rámec strukturálního čekání. (2) Návrh směrování 'komu to předat' sémantickým párováním úkolu na memberships.areas+bio a contacts.areas (deterministika jen keyword-matchuje). (3) Přepis vyčíslené expozice do jedné přirozené věty 'na co doplatíme' a krátké 'proč to vázne'. (4) Kalibrace prahů/řazení, aby radar nebyl otravný. Každou AI vrstvu jasně odlišit: běží nad TÝMIŽ lokálními daty, jen dělá fuzzy/jazykovou práci, kterou deterministika neumí — a při výpadku AI se karta degraduje na deterministickou verzi, ne že zmizí.",
+        "risks": [
+          "task_activity je append-only a existuje až od zavedení — starší úkoly mají řídkou/žádnou historii, takže karta 'Zamrzlo' potřebuje fallback na updated_at/created_at a caveat 'měřeno od začátku logování', jinak vypadají buď falešně čerstvě, nebo falešně mrtvě.",
+          "Pole tasks.deadline je v reálných datech často prázdné (podceněné) — karta 'Termín, který nestihneš' je jen tak dobrá jako datová hygiena; fallback na due_date, ale držet oddělenou sémantiku, aby se neslila s běžným 'po termínu'.",
+          "Predikce mohou působit jako nagging / falešné poplachy — nutné prahy, transparentní 'proč' u každé položky, snooze/ztlumit a přísné DEDUPE proti už existujícím 'Cíle v ohrožení' (Přehled/Velín) a 'Vázne v postupech', jinak vznikne třetí duplicitní plocha.",
+          "Kaskádová projekce předpokládá správně nastavené sched_mode/gap_days/anchor_offset — ad-hoc Postupy bez kotvy dají slabou nebo zavádějící projekci; u nich degradovat na 'krok vázne' bez čísla o kolik spadne finále.",
+          "Sféry a role: shared assignments, memberships.areas a chain kroky přesahují workspace i sféry (osobní isPersonal vs týmová) — radar musí respektovat izolaci sfér a R5 role, aby neprosáklo týmové riziko do osobního prostoru (a naopak) a aby host neviděl interní expozice.",
+          "Riziko přebujení: 5 karet v úzkém 384px draweru se snadno zahltí — držet default sbalený (jen top-N expozic + 1 věta + 1 akce), zbytek 'rozbalit', jinak radar zopakuje chybu původního panelu (moc bloků, málo akce)."
+        ]
+      },
+      {
+        "name": "Watson (podtitul „Puls týmu“). Přejmenování není nutné — modul zůstává Watson, jen se mění z pasivního pozdravu na tep týmu pro vedení.",
+        "oneLiner": "Watson jako tep týmu pro vedení: kdo je vytížený, kde se práce hromadí, jak rychle tým dokončuje a zda kvůli kapacitě neváznou cíle — zakončeno jedním navrženým přesunem, který zátěž vyváží. Deterministicky z reálných dat, bez timesheetů a mikromanagementu.",
+        "angle": "Puls týmu / vyvážení zátěže — pohled vedení bez mikromanagementu. Místo per-minutového feedu „kdo co dělal“ ukazuje Watson agregovaný zdravotní tep: vytížení a rezervu lidí, místa kde se práce kupí, tempo dokončování v čase a zdraví cílů propojené s kapacitou — a končí JEDNÍM navrženým přesunem, který zátěž vyváží. Odpovídá na otázku „je tým OK a kam dát další věc?“, ne „kontroluj každého“. Přístup jen pro Vlastníka/Admina (jako Velín).",
+        "cards": [
+          {
+            "title": "Tep týmu (heartbeat)",
+            "whatItShows": "Jeden „tep“ nahoře místo pozdravu: otevřené celkem, % po termínu, tempo dokončení tento týden vs. minulý (šipka trendu), počet cílů v riziku a počet váznoucích postupů. Barva a šipka dají stav týmu na první pohled.",
+            "dataSource": "tasks (completed_at, due_date), assignments; useGoalsOverview() nad goals/goal_projects/projects; useFlowsOverview() nad chains/chain_steps (lib/overview.ts). Vše lokální/synced.",
+            "whyValuable": "Vedení za 2 s vidí „je tým OK?“ bez otevírání pěti obrazovek. Nahrazuje prázdný pozdrav draweru skutečným, jednotícím pulzem a dává důvod jít hlouběji na příčinu."
+          },
+          {
+            "title": "Vytížení a rezerva (kdo je přetížený)",
+            "whatItShows": "Per člověk: otevřené / po termínu + NOVĚ „rezerva“ = otevřené úkoly ÷ vlastní týdenní tempo = kolik týdnů práce má člověk před sebou. Řadí od přetížených (backlog roste rychleji, než stíhá) po lidi s rezervou (lehčí a rychlí).",
+            "dataSource": "assignments (task_id, user_id) × tasks (completed_at → tempo za poslední 4 týdny, due_date → po termínu); memberships.areas jako kontext oblasti. Plně lokální.",
+            "whyValuable": "„Kdo je přetížený“ v jednotkách reálné propustnosti, ne v naivním open×12 % baru dnešního Velína (Velin.tsx ř. 167). Klíčové: ukazuje i toho, kdo má KAPACITU — palivo pro vyvážení v kartě 6."
+          },
+          {
+            "title": "Kde se hromadí práce (hotspoty)",
+            "whatItShows": "Ne člověk, ale MÍSTO: podle projektu/prostoru čistý tok za týden = přibylo (created_at / nová přiřazení) − ubylo (completed_at). Projekty s přítokem > odtokem bublají nahoru; přidány konkrétní váznoucí postupy (aktivní krok po termínu).",
+            "dataSource": "tasks (created_at, completed_at, due_date, project_id) × projects (workspace_id) × assignments; useFlowsOverview() (chains/chain_steps, příznak stuck). Lokální.",
+            "whyValuable": "Ukáže, KDE se práce kupí, ne jen kdo za to může — kam přidat ruce nebo co rozseknout. Deterministicky z toho, co appka už zapisuje; nic z toho dnes žádná obrazovka nesyntetizuje."
+          },
+          {
+            "title": "Tempo dokončování (throughput v čase)",
+            "whatItShows": "Propustnost týmu i per člověk v čase (sparkline posledních 6–8 týdnů), tento týden vs. 4týdenní průměr. Detekce zpomalení (tempo klesá + backlog roste = varování) bez obviňování jednotlivce.",
+            "dataSource": "Přesně: task_activity (field='completed', user_id, created_at) přes serverový agregát — skutečný aktér. Offline fallback: tasks.completed_at + assignments (atribuce na řešitele). Volitelně z task_activity i „přehazování/přepis“ (churn).",
+            "whyValuable": "Jediný signál, kterým appka měří RYCHLOST týmu, ne jen počty. Trend odhalí vyhořívající tým dřív než po termínu; task_activity přidá churn (přehazování úkolů), který nikde jinde není."
+          },
+          {
+            "title": "Zdraví cílů × kapacita",
+            "whatItShows": "Cíle s % / stavem (risk/over) a uplynulým časem, PROPOJENÉ s tím, kdo nese jejich úkoly a jestli je zrovna přetížený. Věta typu: „Cíl vázne A jeho nositel je přetížený → blokátor je kapacita, ne cíl.“",
+            "dataSource": "useGoalsOverview() (goals, goal_projects, tasks, projects, assignments; goalStatus/goalProgress z lib/goals) × per-person rezerva z karty 2. Lokální.",
+            "whyValuable": "Spojí zdraví cíle s PŘÍČINOU (kapacita). Přehled i Velín dnes ukážou jen červený progres bar; Watson řekne proč a koho to táhne dolů."
+          },
+          {
+            "title": "Vyvážení: doporučený přesun",
+            "whatItShows": "U přetíženého člověka vezme nezapočatý úkol a navrhne nejlehčího kolegu, který drží danou OBLAST (shoda memberships.areas/bio × text úkolu) a má rezervu. Jedno klepnutí přeřadí (assignments, R2 single/shared), s undo + zápisem do task_activity.",
+            "dataSource": "assignments × tasks (name, completed_at → rezerva) × memberships.areas+bio; zápis do assignments + audit task_activity. Shoda klíčovými slovy lokální; AI volitelně pro fuzzy shodu.",
+            "whyValuable": "Mění pozorování v AKCI „vyvážení zátěže“ — přesně sloveso z tohoto úhlu. Směrování podle oblastí odpovědnosti (areas/bio) nedělá žádný z konkurentů; tady je to jedno klepnutí."
+          }
+        ],
+        "differentiator": "Nula konfigurace vs. celý trh. Todoist team-load pohled vůbec nemá. Asana Workload existuje jen v drahém Enterprise, vyžaduje ruční „effort“/kapacitu na každém úkolu a vyznívá jako sledování vytíženosti. ClickUp Workload je pověstně přeplácaný a stojí na časových odhadech, které nikdo neudržuje. Motion auto-plánuje jednotlivce, žádný týmový tep pro vedení. Sunsama je čistě osobní denní plánovač. Watson-Puls: (1) vše odvozuje z dat, co v appce UŽ jsou (assignments, completed_at, due_date, chains, memberships.areas) — žádné timesheety ani kapacitní čísla k údržbě; (2) je to PULS + trend, ne statický dashboard; (3) přidává směrování dle oblastí odpovědnosti (areas/bio) a končí jedním přesunem — nikdo z konkurence neproměňuje „kdo je přetížený“ v „dej další věc Y, který tu oblast drží a má rezervu“ jedním klepnutím; (4) explicitně anti-mikromanagement: agregáty + jedna akce, ne feed aktivity po minutách.",
+        "offlineFeasible": "Jádro je plně offline-first ze synced tabulek, bez AI: vytížení a rezerva (assignments × tasks.completed_at/due_date), hotspoty čistého toku (tasks.created_at/completed_at/due_date × projects), váznoucí postupy (chains/chain_steps/assignments přes useFlowsOverview), zdraví cílů (useGoalsOverview) i doporučený přesun přes shodu klíčových slov (memberships.areas × tasks.name). Kde offline NEjde přesně: skutečný aktér a churn v tempu — task_activity se NEsyncuje do klienta (apps/api/src/index.ts ř. 204: čte se on-demand z Postgresu), takže actor-accurate tempo/přehazování potřebuje malý serverový agregační endpoint (obdoba /api/tasks/:id/activity, ale org-level). Offline fallback: throughput z tasks.completed_at je pořád správný v počtu, jen připíše dokončení řešiteli místo skutečnému aktérovi. Pozor i na PowerSync gotchu: sloupce areas/bio (migrace 0019) musí být v sync-config.yaml, jinak přijdou null.",
+        "aiNeeded": "Pro jádro AI NENÍ potřeba — všech 6 karet je deterministických z reálných signálů (a @anthropic zatím stejně není v apps/api napojený). AI jako VOLITELNÁ vrstva navrch: (a) jednoodstavcové „co se změnilo a co s tím“ shrnutí pulzu místo holých čísel; (b) chytřejší vyvážení, když shoda text úkolu ↔ oblast/bio je slabá — sémantická (embedding) shoda místo klíčových slov; (c) formulace anomálií trendu („tempo v Grafice padá třetí týden, backlog roste“). Vše jasně za feature-flagem a s lokálním fallbackem, aby modul plně fungoval i bez AI.",
+        "risks": [
+          "Vjem sledování/mikromanagementu: musí zůstat u agregátů + trendu + jedné akce; žádný per-minutový feed aktivity, žádné timesheety. Viditelné jen Vlastníkovi/Adminovi (jako Velín).",
+          "task_activity se nesyncuje do klienta → karta Tempo v přesné (actor) variantě vyžaduje serverový agregát; offline musí degradovat na tasks.completed_at, ne spadnout.",
+          "Malé týmy (1–3 lidé): tempo i čistý tok jsou šumové → potřeba prahů a skrývání karet, když je N moc malé, jinak falešná varování.",
+          "Překryv s Velínovou kartou „Zátěž lidí“ (Velin.tsx ř. 167): Watson-Puls ji musí NAHRADIT/absorbovat, ne vytvořit třetí duplicitní plochu — jinak opakujeme přesně chybu dnešního draweru.",
+          "R2 shared assignment: úkol přiřazený více lidem se počítá každému → riziko dvojího započtení zátěže; rozhodnout (dělit vs. počítat jednou) a držet konzistentně napříč kartami.",
+          "Atribuce dokončení: offline tasks.completed_at připíše hotovo řešiteli, ne skutečnému dokončiteli — mírná nepřesnost tempa, kterou dorovná až serverový task_activity."
+        ]
+      },
+      {
+        "name": "Watson — kouč fokusu (Plán dne)",
+        "oneLiner": "Watson přestává být zmenšeným zrcadlem Přehledu a stává se koučem dne: z reálné kapacity spočítá, co dnes stihneš, dá ti jeden další nejlepší krok, sestaví plán dne kolem pevných časů a aktivně tě chrání před roztříštěností.",
+        "angle": "Osobní kouč fokusu: jeden další nejlepší krok, denní plán z reálné kapacity, ochrana před roztříštěností, „co dnes reálně stihnu“. Návaznost na priority (1–4), pracovní termín (due_date), tvrdý deadline a osobní připomínky (reminders).",
+        "cards": [
+          {
+            "title": "Další nejlepší krok",
+            "whatItShows": "Jedna karta = jeden úkol, který má teď smysl dělat, + jednou větou proč: „tvrdý deadline zítra“, „blokuješ Petru ve štafetě“, „rychlá výhra 15 min“, „za 30 min ti běží připomínka“. Deterministické skóre kombinuje blízkost deadline/termínu, prioritu, zda krok blokuje řetěz (aktivní chain_step s gate), fixní čas připomínky a délku (rychlá výhra). Akce: Hotovo / Začít / Odložit s undo.",
+            "dataSource": "tasks (priority 1–4, due_date, deadline, duration_min, status_id, completed_at, assignment_mode) + reminders (remind_at, offset_min) + chain_steps (step_state='active', gate) spárováno přes assignments (kdo) + task_occurrence_overrides; expanze rekurence přes lib/occurrences.ts.",
+            "whyValuable": "Odstraňuje paralýzu z dlouhého seznamu — appka vybere JEDEN krok a řekne proč. Přehled/Velín/Dnes ukazují jen seznamy; „řekni mi jednu věc a proč“ v appce dnes nikde není."
+          },
+          {
+            "title": "Reálná kapacita dne",
+            "whatItShows": "Pruh: součet odhadů (duration_min) úkolů naplánovaných na dnes vs. volný fokus-čas dne (délka pracovního okna minus fixní bloky z připomínek s konkrétním časem). Ukáže např. „naplánováno 6 h do 4 h okna → přetížení o 2 h“ a navrhne, co posunout na zítra, aby se den vešel.",
+            "dataSource": "tasks.duration_min (odhad, který uživatel zadává už v QuickAddu: „60 min / půl hodiny / 2 hod“), fallback sloupec tasks.days; reminders.remind_at jako obsazená kapacita; množina due_date=dnes vč. rekurenčních výskytů (lib/occurrences.ts).",
+            "whyValuable": "Odpovídá na „co dnes reálně stihnu“ číslem, ne pocitem. Todoist/Asana/ClickUp kapacitu vůbec neřeší — tady ji počítáme z dat, která tým už dnes zadává."
+          },
+          {
+            "title": "Plán dne (timeboxing)",
+            "whatItShows": "Dnešní úkoly seřazené do návrhu časové osy: fixní připomínky (remind_at) jsou kotvy, kolem nich se skládají úkoly podle deadline → priority → délky tak, aby se vešly do kapacity; přebytek označen „na zítra“. Jedním klikem přijmout, přetáhnout nebo přeskočit.",
+            "dataSource": "tasks (due_date, duration_min, priority, deadline) + reminders.remind_at (kotvy) + lib/occurrences.ts (rekurence) + lib/reschedule.ts (posun přebytku na tomorrow/weekend/inWeek).",
+            "whyValuable": "Z plochého seznamu „na dnes“ udělá reálný průběh dne s respektem k pevným časům — to, co dělá Sunsama/Motion, ale lokálně, offline a bez placeného předplatného."
+          },
+          {
+            "title": "Radar termínů",
+            "whatItShows": "Úkoly, jejichž tvrdý deadline (sloupec deadline, odlišný od pracovního due_date) padne do X dní, ale ještě nejsou naplánované na dnes/brzy — „připomene se ti dřív, než čekáš“. Řazeno dle času do deadline; jedním klikem naplánovat na dnes/zítra a přidat připomínku.",
+            "dataSource": "tasks.deadline vs tasks.due_date, completed_at IS NULL; existence/absence záznamu v reminders. Sloupec deadline je dnes v appce podvyužitý.",
+            "whyValuable": "Rozlišuje „kdy na tom pracuju“ (due_date) od „dokdy to musí být“ (deadline) — většina nástrojů má jen jedno datum. Chrání před tím, aby tě termín překvapil, i když úkol není na dnešku."
+          },
+          {
+            "title": "Chraň si fokus",
+            "whatItShows": "Detekce roztříštěnosti: (a) přeplánováno víc, než je kapacita (z karty 2); (b) dnešek rozházený přes moc projektů → návrh sbatchovat nebo „vyber si dnes 3“; (c) volitelně úkol, který pořád odkládáš (opakované změny due_date). Nabídne: nechat 3 klíčové, zbytek odložit; přepnout do „režimu fokusu“ (skrýt zbytek).",
+            "dataSource": "tasks naplánované na dnes seskupené dle project_id + jejich duration_min; reminders (počet fixních vyrušení). VOLITELNĚ task_activity (field='due_date', opakované změny) pro signál „pořád odkládáš“ — task_activity se ale nesyncuje na klienta, čte se serverově přes GET /api/tasks/:id/activity.",
+            "whyValuable": "Aktivně brání přetížení místo pasivního výčtu. „Vyber si 3“ a churn-detekce jsou coaching, ne dashboard — přesně to, co dnešní slabý drawer nedělá."
+          }
+        ],
+        "differentiator": "Todoist/Asana/ClickUp = seznamy + priority + termín, ale bez odhadu délky, bez kapacity a bez plánu dne. Motion/Sunsama daily-planning a timeboxing umí, jenže jsou cloud-only, placené, musíš žít v jejich nástroji a Motion tlačí AI. Watson to dělá jinak: (1) lokálně/offline-first a deterministicky — plán se počítá na zařízení z dat, co už máš, funguje bez sítě, nic neodchází ven, nevyžaduje AI ani předplatné; (2) z týmových signálů, které osobní plánovače neznají — tvůj úkol může blokovat kolegu ve štafetě (chain_steps.gate + assignments), sdílené přiřazení (assignment_mode) a tvrdý deadline oddělený od pracovního due_date; (3) jako coaching vrstva uvnitř týmového nástroje, ne samostatná appka — „další nejlepší krok“ váží i to, co odblokuje ostatní. A jako pevné kotvy dne používá reminders.remind_at, ne externí kalendář, takže funguje bez napojení na Google/Outlook.",
+        "offlineFeasible": "Ano pro karty 1–4 a jádro karty 5 — vše z tabulek už syncovaných na zařízení (tasks, reminders, chains, chain_steps, assignments, task_occurrence_overrides, goals) a spočítané čistými funkcemi; rekurenci expanduje existující lib/occurrences.ts, posuny řeší lib/reschedule.ts. Jediná výjimka: churn-signál „úkol, který pořád odkládáš“ v kartě 5 čerpá z task_activity, který se ZÁMĚRNĚ nesyncuje (jinak roste do stovek MB/zařízení) a čte se serverově přes GET /api/tasks/:id/activity — buď online-only, nebo přidat malý lokální čítač změn due_date. Vše ostatní plně offline.",
+        "aiNeeded": "Není nutná pro v1 — skóre „dalšího kroku“, výpočet kapacity i timeboxing jsou plně deterministické a AI zatím v appce ani není napojená (žádný @anthropic v apps/api). AI je volitelná aditivní vrstva: (a) přirozenější formulace „proč právě tento krok“ a večerní reflexe dne; (b) odhad délky, když duration_min chybí (predikce z podobných dokončených úkolů). Napojení gateovat přes už existující tabulku ai_policies (capability/level='suggest'), aby AI jen navrhovala a nikdy tiše nepřeplánovala.",
+        "risks": [
+          "duration_min bývá řídce vyplněný → slabá kapacitní matematika. Mitigace: fallback na sloupec days, defaultní odhad podle priority, inline dotaz „kolik ti to zabere?“ a degradace na počet úkolů, když odhady chybí.",
+          "Riziko třetí „Watson“ plochy vedle „Watsonovy syntézy“ v Přehledu. Tento kouč má nahradit obsah pasivního draweru (příp. sloučit reschedule-kartu z Přehledu), ne přidat další overview.",
+          "task_activity není na zařízení → churn-detekce v kartě 5 vyžaduje server nebo malý lokální čítač; drž ji jako volitelnou.",
+          "Expanze rekurence na klientu (occurrences.ts) přes celý horizont může být drahá; počítej kapacitu jen pro okno dnes/zítra.",
+          "Přílišná preskripce — auto-plán může působit direktivně. Drž návrhy s jednoklikovým přijetím a undo, nikdy tiše nepřesouvej termíny bez souhlasu (v souladu s kulturou autosave+undo appky)."
+        ]
+      }
+    ]
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Understand"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Ideate"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 3,
+      "title": "Judge"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 4,
+      "title": "Synthesize"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "current-watson",
+      "phaseIndex": 1,
+      "phaseTitle": "Understand",
+      "agentId": "a7f6b206e40cf6be1",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783864410258,
+      "queuedAt": 1783864410237,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Modul „Watson\" je pravý zásuvný panel (drawer) o šířce 384 …",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783864690140,
+      "tokens": 97792,
+      "toolCalls": 14,
+      "durationMs": 279882,
+      "resultPreview": "{\"summary\":\"Modul „Watson\\\" je pravý zásuvný panel (drawer) o šířce 384 px (apps/web/src/components/WatsonPanel.tsx), který ukazuje jen 4 primitivní bloky: pozdrav s počty na dnes/po termínu, dvě napevno šablonované „insighty\\\" (přeplánovat zpožděné / otevřít nadcházející), pruh tří statistik (hotovo/po termínu/dnes) a holý výpis cílů (jen název + „cíl {target}\\\", BEZ progresu). Otevírá se ze tří …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "data-signals",
+      "phaseIndex": 1,
+      "phaseTitle": "Understand",
+      "agentId": "abc1e29d0d57762c0",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783864410259,
+      "queuedAt": 1783864410237,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "test",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783864830955,
+      "tokens": 91442,
+      "toolCalls": 21,
+      "durationMs": 420695,
+      "resultPreview": "{\"summary\":\"test\",\"keyFindings\":[\"a\",\"b\",\"c\"]}"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "competitors",
+      "phaseIndex": 1,
+      "phaseTitle": "Understand",
+      "agentId": "a5cfb052e81c66ac0",
+      "model": "claude-opus-4-8",
+      "state": "error",
+      "startedAt": 1783864410260,
+      "queuedAt": 1783864410237,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Konkurenční home/assistant/AI vrstvy (Todoist Assist, Motio…",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783865010362,
+      "error": "agent({schema}): StructuredOutput retry cap (5) exceeded — 5 failed calls with no valid output",
+      "tokens": 91391,
+      "toolCalls": 21,
+      "durationMs": 600102
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "concept:attention-radar",
+      "phaseIndex": 2,
+      "phaseTitle": "Ideate",
+      "agentId": "a95314cba48566dc5",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783865010389,
+      "queuedAt": 1783865010371,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Watson — Radar pozornosti (Ranní brief)",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783865709404,
+      "tokens": 69798,
+      "toolCalls": 14,
+      "durationMs": 699015,
+      "resultPreview": "{\"name\":\"Watson — Radar pozornosti (Ranní brief)\",\"oneLiner\":\"Watson přestane být zmenšeninou Přehledu a stane se jedinou seřazenou frontou „co vyžaduje MOJI akci teď“ napříč úkoly, mailem, cíli a štafetami — z auditní historie odvodí, co uvázlo, co je po termínu a co čeká na odpověď, a jednou denně to složí do ranního briefu.\",\"angle\":\"Proaktivní radar pozornosti místo pasivního přehledu: ne čísl…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "concept:delegation-routing",
+      "phaseIndex": 2,
+      "phaseTitle": "Ideate",
+      "agentId": "ae125959ecbf0fcdb",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783865010390,
+      "queuedAt": 1783865010371,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Watson jako týmový dispečer (zůstává „Watson“, nový mandát …",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783865398276,
+      "tokens": 83531,
+      "toolCalls": 22,
+      "durationMs": 387886,
+      "resultPreview": "{\"name\":\"Watson jako týmový dispečer (zůstává „Watson“, nový mandát = směrování a vyvažování práce)\",\"oneLiner\":\"Watson přestane být pasivní přehled a stane se dispečerem: ví, kdo co v týmu řeší (oblasti odpovědnosti), kdo je přetížený a kdo má rezervu, a proaktivně navrhuje, komu nový nebo zpožděný úkol předat — na jeden klik, offline, se záznamem kdo přeřadil.\",\"angle\":\"Delegace a směrování prác…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 6,
+      "label": "concept:cross-domain-synthesis",
+      "phaseIndex": 2,
+      "phaseTitle": "Ideate",
+      "agentId": "a58d0260c97ce9962",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783865010390,
+      "queuedAt": 1783865010372,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Watson — „Situace dne“ (jméno Watson zůstává; z pasivního d…",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783865452488,
+      "tokens": 66523,
+      "toolCalls": 11,
+      "durationMs": 442098,
+      "resultPreview": "{\"name\":\"Watson — „Situace dne“ (jméno Watson zůstává; z pasivního draweru děláme vypravěče dne)\",\"oneLiner\":\"Jediné místo, kde se mail, úkol, postup, cíl a člověk potkají v jednom příběhu: Watson dnešek nevypíše jako seznam, ale odvypráví jako řetěz příčin a následků — „tohle urgentní vlákno drží úkol, který je aktivním krokem postupu, který táhne cíl s termínem za 5 dní, a čeká se na tebe“.\",\"an…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 7,
+      "label": "concept:risk-foresight",
+      "phaseIndex": 2,
+      "phaseTitle": "Ideate",
+      "agentId": "a5c19db3eec2feff6",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783865010391,
+      "queuedAt": 1783865010372,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Watson — Radar (Co je v ohrožení). Jméno „Watson\" zůstává, …",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783865405767,
+      "tokens": 71918,
+      "toolCalls": 12,
+      "durationMs": 395376,
+      "resultPreview": "{\"name\":\"Watson — Radar (Co je v ohrožení). Jméno „Watson\\\" zůstává, jen se z pasivního přehledu stává předvídavý radar rizik; podtitul modulu „Na co doplatíme, když nic neuděláme\\\".\",\"oneLiner\":\"Watson přestane být zmenšený Přehled a stane se radarem rizik: deterministicky z lokálních dat počítá, na co tým DOPLATÍ, když teď nic neudělá (skluzy termínů, trhající se řetězy Postupů, čekající rozhodn…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 8,
+      "label": "concept:team-pulse",
+      "phaseIndex": 2,
+      "phaseTitle": "Ideate",
+      "agentId": "aa3712fb51cc242b1",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783865010391,
+      "queuedAt": 1783865010372,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Watson (podtitul „Puls týmu“). Přejmenování není nutné — mo…",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783865655658,
+      "tokens": 70434,
+      "toolCalls": 18,
+      "durationMs": 645267,
+      "resultPreview": "{\"name\":\"Watson (podtitul „Puls týmu“). Přejmenování není nutné — modul zůstává Watson, jen se mění z pasivního pozdravu na tep týmu pro vedení.\",\"oneLiner\":\"Watson jako tep týmu pro vedení: kdo je vytížený, kde se práce hromadí, jak rychle tým dokončuje a zda kvůli kapacitě neváznou cíle — zakončeno jedním navrženým přesunem, který zátěž vyváží. Deterministicky z reálných dat, bez timesheetů a mi…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 9,
+      "label": "concept:focus-coach",
+      "phaseIndex": 2,
+      "phaseTitle": "Ideate",
+      "agentId": "aeaaab3f98d15c306",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783865010391,
+      "queuedAt": 1783865010372,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Watson — kouč fokusu (Plán dne)",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783865234488,
+      "tokens": 57546,
+      "toolCalls": 10,
+      "durationMs": 224097,
+      "resultPreview": "{\"name\":\"Watson — kouč fokusu (Plán dne)\",\"oneLiner\":\"Watson přestává být zmenšeným zrcadlem Přehledu a stává se koučem dne: z reálné kapacity spočítá, co dnes stihneš, dá ti jeden další nejlepší krok, sestaví plán dne kolem pevných časů a aktivně tě chrání před roztříštěností.\",\"angle\":\"Osobní kouč fokusu: jeden další nejlepší krok, denní plán z reálné kapacity, ochrana před roztříštěností, „co d…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 10,
+      "label": "judge:produktová hodno",
+      "phaseIndex": 3,
+      "phaseTitle": "Judge",
+      "agentId": "a7aececbb57cc3568",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783865709427,
+      "queuedAt": 1783865709411,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783865843035,
+      "tokens": 72474,
+      "toolCalls": 3,
+      "durationMs": 133607,
+      "resultPreview": "{\"judgments\":[{\"conceptName\":\"Watson — Radar pozornosti (Ranní brief)\",\"scores\":{\"differentiation\":8,\"value\":9,\"feasibility\":7,\"fit\":9},\"verdict\":\"Strongest all-around fit for the actual problem. It replaces the passive drawer with a single triaged 'needs MY action now' queue — exactly the added value the user is asking for — and keeps the module per-user, so it works for every team member and eve…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 11,
+      "label": "judge:proveditelnost s",
+      "phaseIndex": 3,
+      "phaseTitle": "Judge",
+      "agentId": "abe7281fd994346d9",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783865709436,
+      "queuedAt": 1783865709411,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783866022940,
+      "tokens": 91470,
+      "toolCalls": 11,
+      "durationMs": 313504,
+      "resultPreview": "{\"judgments\":[{\"conceptName\":\"Watson — Radar pozornosti (Ranní brief)\",\"scores\":{\"differentiation\":9,\"feasibility\":7,\"value\":8,\"fit\":9},\"verdict\":\"Nejlepší FIT k zadání: přímo řeší stížnost „pasivní zrcadlo Přehledu\\\" a opravuje reálné bugy draweru (identický pozdrav, counts.today počítá i nedatované, žádné scope-na-mě). Odlišení stojí na Watson-unikátních signálech (štafeta chain_steps, stall, ma…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 12,
+      "label": "judge:diferenciace vs",
+      "phaseIndex": 3,
+      "phaseTitle": "Judge",
+      "agentId": "a56879d40f3cbf6e0",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783865709442,
+      "queuedAt": 1783865709412,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783865903195,
+      "tokens": 69715,
+      "toolCalls": 4,
+      "durationMs": 193753,
+      "resultPreview": "{\"judgments\":[{\"conceptName\":\"Watson — Radar pozornosti (Ranní brief)\",\"scores\":{\"differentiation\":9,\"feasibility\":7,\"value\":8,\"fit\":9},\"verdict\":\"Nejlepší soulad s mandátem: explicitně staví AKČNÍ frontu (sloveso první, jeden tap = vyřešeno) s pravidlem single-lane dedup, takže nerecykluje Přehled/Velín — přesně opak hříchu dnešního draweru. Diferenciace (9) stojí na třech signálech, které konkur…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 13,
+      "label": "synthesis",
+      "phaseIndex": 4,
+      "phaseTitle": "Synthesize",
+      "agentId": "a11d1096c332e6d6b",
+      "model": "claude-opus-4-8",
+      "state": "done",
+      "startedAt": 1783866022978,
+      "queuedAt": 1783866022945,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "Watson — Radar pozornosti (ranní brief)",
+      "promptPreview": "Kontext appky Watson (čti soubory v /Users/adamkosir/Desktop/Watson pro ověření):\n- Offline-first týmový Todoist-like nástroj (React+PowerSync SQLite, Postgres, Hono). Malé týmy (studio/nezisk).\n- Modul „Watson“ = DNES slabý drawer přilepený vpravo (apps/web/src/components/WatsonPanel.tsx, lib/watson.tsx): pozdrav + „Co dnes řešit“ + statistiky hotovo/po termínu/dnes + cíle týdne. Uživatel: „prakt…",
+      "lastProgressAt": 1783866532077,
+      "tokens": 93936,
+      "toolCalls": 7,
+      "durationMs": 509099,
+      "resultPreview": "{\"recommendedName\":\"Watson — Radar pozornosti (ranní brief)\",\"positioning\":\"Watson je jediná per-uživatelská seřazená fronta „co teď vyžaduje MOJI akci“ napříč úkoly, štafetami Postupů, cíli a mailem — odvozená z auditní historie a předávek, doručená jako ranní brief s pamětí delt („od posledního vyčištění“) a s jedním tapnutím na vyřešení; ne pasivní zrcadlo Přehledu, ale akční triáž se slovesem …"
+    }
+  ],
+  "totalTokens": 1027970,
+  "totalToolCalls": 168
+}

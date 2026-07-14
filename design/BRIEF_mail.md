@@ -1,5 +1,14 @@
 # Brief pro Claude Design — Mail / Schránka / Thread workspace
 
+> ⚠️ **NAHRAZENO 2026-07-08 — čti napřed.** Kompletní, aktuální brief = **`design/BRIEF_mail_moduly_2026-07-08.md`**
+> (15 modulů + průřezové; feasibility `files/MAIL_moduly_audit_2026-07-08.md`). Tento starší brief drž jen
+> jako doplněk; kde se liší, **platí nový.** Konkrétní opravy tohoto souboru:
+> - **„Osobní sféra: bez schránek" NEPLATÍ** — osobní sféra nově **má vlastní soukromé schránky**
+>   (šifrované at-rest, bez AI, mimo admin). Dvě sféry: týmová + osobní.
+> - **„Barva ≠ priorita (R6)" je ZASTARALÉ** — platí revidované **R6: barva = priorita** (P1 červená /
+>   P2 žlutá / P3 modrá / P4 šedá); v mailu navíc „barva = význam" (viz nový brief).
+> - `files/WATSON_MAIL_KONSOLIDOVANY_SPEC.md` **neexistuje** (visící odkaz) — ignoruj.
+
 > **Jak to použít:** zkopíruj do **Claude Design** (plocha na claude.ai, ne Claude Code). Iteruj,
 > dokud nebudou obrazovky hezké. **Navazuje na `BRIEF_claude_design.md`** — používá tytéž barvy,
 > typografii, komponenty a pravidla (zde jen nové mailové části). Logika a datový model:

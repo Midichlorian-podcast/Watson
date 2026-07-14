@@ -1,5 +1,11 @@
 # Mail — handoff pro Claude Design (aktuální stav Watsonu)
 
+> ⚠️ **REVIDOVÁNO 2026-07-08 — čti napřed.** Aktuální funkční popis mailu pro design =
+> **`design/BRIEF_mail_moduly_2026-07-08.md`** (+ feasibility `files/MAIL_moduly_audit_2026-07-08.md`).
+> Kde tento handoff říká **„mail jen v týmové sféře"** / **„osobní sféra a Host bez mailu"**, platí novější:
+> mail má **DVĚ sféry** — týmová + **osobní (soukromá, šifrovaná at-rest, bez AI, mimo admin)**. Host = bez mailu.
+> Nové: modul „Dění" (aktivita/feed) a systém urgence (P1–P4 + SLA + eskalace, P1/P2→úkol).
+
 > **Účel:** stručný, AKTUÁLNÍ obraz stavu appky pro tým, který přidává mailový klient.
 > Navazuje na dva existující (a stále platné) dokumenty:
 > - **`design/BRIEF_mail.md`** — brief obrazovek pro Claude Design (thread workspace = vlajka).

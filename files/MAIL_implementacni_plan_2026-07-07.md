@@ -1,5 +1,18 @@
 # MAIL — IMPLEMENTAČNÍ PLÁN (kód, 2026-07-07)
 
+> ⚠️ **REVIDOVÁNO 2026-07-08 — čti napřed.** Nadřazený zdroj = **`design/BRIEF_mail_moduly_2026-07-08.md`**
+> + **`files/MAIL_moduly_audit_2026-07-08.md`**. Konkrétní dopady na tento kódový plán:
+> - **`mail_accounts` / `mail_threads` `CHECK is_personal=false` NEPLATÍ v původní podobě** — mail má nově
+>   i **osobní sféru** (`isPersonal=true`). CHECK omezuje jen **týmové** schránky; osobní jsou povolené,
+>   ale strukturálně/logicky **vyjmuté** z `mailbox_grants`, dispečinku, `thread_chat`, `ai_policies` a
+>   admin matice. (Enforcement přes trigger/diskriminátor, ne prostý CHECK — `is_personal` je na `workspaces`.)
+> - **Osobní sféra = šifrování at-rest** (klíč uživatele; provoz nepřečte uložené; ne plné E2E; bez AI).
+> - **Přibývá:** modul „Dění" (read-model nad `audit_events` — pozor: `audit_events` má zatím 0 zápisů,
+>   nutná instrumentace), systém urgence (P1/P2→úkol + SLA — pozor: BullMQ/Redis a pracovní kalendář
+>   zatím NEexistují), collision detection (nutná NOVÁ realtime infra — dnes žádná).
+> - **Fázování** (Blok 0 → M1 týmové jádro → M2 spolupráce+urgence+collision → M3 AI; osobní sféra
+>   samostatně) viz audit.
+
 > Navazuje na `MAIL_integracni_PLAN.md` (strategie, architektura A — potvrzeno) a
 > `MAIL_handoff_pro_design.md`. Tenhle dokument je **konkrétní, kódová dekompozice**: Drizzle tabulky,
 > záznamy do write-path registru, sync buckety, struktura služeb, API a pořadí úkolů. Přednost:

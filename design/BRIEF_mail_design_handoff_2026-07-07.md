@@ -1,5 +1,11 @@
 # Watson Mail — Design Handoff (pokyny pro Claude Design)
 
+> ⚠️ **REVIDOVÁNO 2026-07-08 — čti napřed.** Aktuální a podrobnější zdroj = **`design/BRIEF_mail_moduly_2026-07-08.md`**
+> (+ feasibility `files/MAIL_moduly_audit_2026-07-08.md`). Kde tento handoff říká **„mail jen v týmové
+> sféře"** / **„osobní prostor a Host bez mailu"**, platí novější: mail má **DVĚ sféry** — týmová +
+> **osobní (soukromá, šifrovaná at-rest, bez AI, mimo admin)**; Host = bez mailu. Nové: modul „Dění" a
+> systém urgence (P1–P4 + SLA + eskalace, P1/P2→úkol).
+
 > **Účel:** pokyny, aby Claude Design mohl **začít navrhovat mailové obrazovky** Watsonu.
 > Aktuální kód, schéma a stav si Claude Design načte z GitHubu — tento dokument dodává **záměr, funkce,
 > cíle, guardraily a seznam obrazovek k návrhu.** Zaměřeno na **co mail umí, jak je napojen na Watson,
