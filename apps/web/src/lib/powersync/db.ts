@@ -117,6 +117,11 @@ export function initPowerSyncForUser(userId: string): Promise<void> {
 		});
 		powerSync = db;
 		currentHash = h;
+		// Dev-only handle pro ladění/verifikaci z konzole (dynamický import ve Vite
+		// vyrábí druhou instanci modulu, takže live-binding z konzole nejde použít).
+		if (import.meta.env.DEV) {
+			(window as unknown as { __watsonDb?: PowerSyncDatabase }).__watsonDb = db;
+		}
 		await db.connect(new WatsonConnector());
 	});
 }

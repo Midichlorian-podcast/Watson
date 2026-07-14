@@ -366,6 +366,33 @@ const meetings = new Table(
 	},
 );
 
+/**
+ * CC-P0-04 — trvale odmítnuté sync operace (Centrum problémů se synchronizací).
+ * LOCAL-ONLY: nesyncuje se, žije v per-user DB → přežije reload i re-login
+ * stejného účtu a jiný účet ji nevidí. Zapisuje connector PŘED dokončením
+ * upload transakce; UI v Nastavení umí zobrazit / exportovat / zahodit.
+ */
+const local_rejected_ops = new Table(
+	{
+		created_at: column.text,
+		table_name: column.text,
+		/** PUT | PATCH | DELETE */
+		op: column.text,
+		/** id dotčeného řádku */
+		row_id: column.text,
+		/** JSON zamýšlené změny — data uživatele, zůstávají jen na zařízení */
+		payload: column.text,
+		http_code: column.integer,
+		/** bezpečný kód ze serveru (forbidden / write_failed / SQLSTATE…) */
+		server_code: column.text,
+		/** korelace se serverovým logem (X-Request-Id) */
+		request_id: column.text,
+		/** open | discarded */
+		status: column.text,
+	},
+	{ localOnly: true },
+);
+
 export const AppSchema = new Schema({
 	tasks,
 	projects,
@@ -376,6 +403,7 @@ export const AppSchema = new Schema({
 	comments,
 	task_occurrence_overrides,
 	task_user_colors,
+	local_rejected_ops,
 	reminders,
 	task_activity,
 	chains,
@@ -414,3 +442,4 @@ export type ListItemRow = Database["list_items"];
 export type ContactRow = Database["contacts"];
 export type ListTemplateRow = Database["list_templates"];
 export type EntityLinkRow = Database["entity_links"];
+export type RejectedOpRow = Database["local_rejected_ops"];

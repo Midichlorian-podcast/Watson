@@ -9,6 +9,7 @@ import { downloadBackup } from "../lib/backup";
 import { AdminScreen } from "../mail/AdminScreen";
 import { MailDemoBanner } from "../mail/DemoBanner";
 import { NastaveniScreen as MailSettings } from "../mail/NastaveniScreen";
+import { SyncProblems } from "../components/SyncProblems";
 import { initials } from "../lib/format";
 import { shutdownPowerSync } from "../lib/powersync/db";
 import { showToast } from "../lib/toast";
@@ -460,6 +461,9 @@ export function Nastaveni() {
 					</button>
 				</div>
 			</div>
+
+			{/* CC-P0-04 — Centrum problémů se synchronizací (jen když je co řešit) */}
+			<SyncProblems />
 
 			{/* ZÁLOHY A PŘIPOJENÍ — lokální stažení funguje hned; Google je volitelná nadstavba */}
 			<div className="font-display" style={{ ...SECTION_LABEL, marginTop: 22 }}>

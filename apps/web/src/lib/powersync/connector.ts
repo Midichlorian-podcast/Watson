@@ -67,7 +67,35 @@ export class WatsonConnector implements PowerSyncBackendConnector {
 			if (res.ok) continue;
 			const code = String(res.status);
 			if (isPermanent(code)) {
-				console.error("[powersync] zahozuji nevratnou operaci", op, code);
+				// CC-P0-04: PŘED dokončením transakce ulož odmítnutou operaci do
+				// local-only tabulky (Centrum problémů) — uživatelův záměr nesmí
+				// zmizet jen s 6s toastem. Payload zůstává jen na zařízení.
+				let server: { error?: string; code?: string | null; requestId?: string | null } = {};
+				try {
+					server = (await res.json()) as typeof server;
+				} catch {
+					/* prázdné/textové tělo */
+				}
+				console.error("[powersync] trvale odmítnutá operace", op, code, server);
+				try {
+					await database.execute(
+						`INSERT INTO local_rejected_ops
+						 (id, created_at, table_name, op, row_id, payload, http_code, server_code, request_id, status)
+						 VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, 'open')`,
+						[
+							new Date().toISOString(),
+							op.table,
+							String(op.op),
+							op.id,
+							JSON.stringify(op.opData ?? {}),
+							res.status,
+							server.code ?? server.error ?? null,
+							server.requestId ?? null,
+						],
+					);
+				} catch (recErr) {
+					console.error("[powersync] zápis do local_rejected_ops selhal", recErr);
+				}
 				// S3 — op se zahodí (další sync vrátí lokální optimistickou změnu); upozorni uživatele.
 				if (typeof window !== "undefined") {
 					window.dispatchEvent(

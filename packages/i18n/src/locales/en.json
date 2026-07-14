@@ -65,7 +65,13 @@
 		"personAmbiguous": "@{{q}} · multiple matches, pick one"
 	},
 	"sync": {
-		"writeRejected": "Change not saved — you didn't have permission. Reverted."
+		"writeRejected": "The server rejected this change and it was reverted. See Settings → Sync problems for details.",
+		"problemsTitle": "Sync problems",
+		"problemsDesc": "The server permanently rejected these changes (permissions or validation) and they were reverted in the app. Nothing is lost — copy the details or discard the record. Fix & resubmit arrives in a future version.",
+		"problemCopy": "Copy",
+		"problemCopied": "Details copied to clipboard.",
+		"problemCopyFailed": "Copy failed — try again.",
+		"problemDiscard": "Discard"
 	},
 	"detail": {
 		"properties": "Properties",

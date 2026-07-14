@@ -67,7 +67,13 @@
 		"personAmbiguous": "@{{q}} · více osob, vyber z nabídky"
 	},
 	"sync": {
-		"writeRejected": "Změna se neuložila — neměl(a) jsi oprávnění. Vrácena zpět."
+		"writeRejected": "Server změnu odmítl a byla vrácena zpět. Detail najdeš v Nastavení → Problémy se synchronizací.",
+		"problemsTitle": "Problémy se synchronizací",
+		"problemsDesc": "Tyhle změny server trvale odmítl (oprávnění nebo validace) a v aplikaci se vrátily zpět. Nic z toho se neztratilo — můžeš si detail zkopírovat, nebo záznam zahodit. Oprava a nové odeslání přijdou v další verzi.",
+		"problemCopy": "Kopírovat",
+		"problemCopied": "Detail zkopírován do schránky.",
+		"problemCopyFailed": "Kopírování se nepovedlo — zkus to znovu.",
+		"problemDiscard": "Zahodit"
 	},
 	"detail": {
 		"properties": "Vlastnosti",
