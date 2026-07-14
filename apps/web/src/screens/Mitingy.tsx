@@ -15,11 +15,12 @@ import { pillStyle } from "../components/filterUi";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { logTaskActivity } from "../lib/activity";
-import { initials } from "../lib/format";
+import { initials, shortDayLabel } from "../lib/format";
 import { useAllMembers } from "../lib/overview";
 import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useTaskDetail } from "../lib/taskDetail";
+import { MeetDetail } from "./MeetDetail";
 import { todayISO } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { useWorkspace } from "../lib/workspace";
@@ -111,16 +112,8 @@ function meetState(m: HubMeet, today: string): { label: string; kind: "brass" | 
 	return { label: "naplánováno", kind: "muted" };
 }
 
-/** Lidský nadpis dne pro řádek meetu („po 14. 7.") — jazyk dle i18n, ne natvrdo cs. */
-function dayLabel(iso: string): string {
-	const [y, mo, d] = iso.split("-").map(Number);
-	if (!y || !mo || !d) return iso;
-	return new Intl.DateTimeFormat(i18n.language, {
-		weekday: "short",
-		day: "numeric",
-		month: "numeric",
-	}).format(new Date(y, mo - 1, d));
-}
+/** Lidský nadpis dne pro řádek meetu — sdílený formátovač (lib/format). */
+const dayLabel = (iso: string) => shortDayLabel(iso, i18n.language);
 
 export function Mitingy() {
 	const { activeWs } = useWorkspace();
@@ -139,6 +132,8 @@ export function Mitingy() {
 	const inbox = projects.find((p) => p.name !== "Doručené" && p.name !== "Inbox") ?? projects[0];
 
 	const [mode, setMode] = useState<"list" | "plan" | "new" | "review">("list");
+	// Detail meetu (záložky Přehled/Příprava/Přepis/Řetěz) — overlay nad přehledem.
+	const [detail, setDetail] = useState<{ meetingId: string; hubId: string } | null>(null);
 	const [title, setTitle] = useState("");
 	const [transcript, setTranscript] = useState("");
 	const [proposals, setProposals] = useState<Editable[]>([]);
@@ -484,7 +479,11 @@ export function Mitingy() {
 											<button
 												key={m.id}
 												type="button"
-												onClick={() => openTask(m.id)}
+												onClick={() =>
+													m.meeting_id
+														? setDetail({ meetingId: m.meeting_id, hubId: m.id })
+														: openTask(m.id)
+												}
 												className="hover:bg-panel-2"
 												style={{
 													display: "flex",
@@ -886,6 +885,14 @@ export function Mitingy() {
 						</button>
 					</div>
 				</div>
+			)}
+			{detail && (
+				<MeetDetail
+					meetingId={detail.meetingId}
+					hubId={detail.hubId}
+					onClose={() => setDetail(null)}
+					onOpenMeet={(mid, hid) => setDetail({ meetingId: mid, hubId: hid })}
+				/>
 			)}
 		</div>
 	);

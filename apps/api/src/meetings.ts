@@ -9,7 +9,7 @@
  * celý tok testovatelný i bez klíče. Přepis se do promptu vkládá jako DATA, ne instrukce.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { and, eq, getDb, meetings, memberships, users } from "@watson/db";
+import { and, eq, entityLinks, getDb, meetings, memberships, sql, users } from "@watson/db";
 import { Hono } from "hono";
 import { auth } from "./auth";
 import { aiEnabled, env } from "./env";
@@ -52,7 +52,10 @@ function mockExtract(transcript: string, roster: RosterRow[]): TaskProposal[] {
 	for (const raw of lines) {
 		const isBullet = /^[-•*·]/.test(raw);
 		if (!isBullet && !ACTION.test(raw)) continue;
-		const title = raw.replace(/^[-•*·]\s*/, "").replace(/\s+/g, " ").slice(0, 200);
+		const title = raw
+			.replace(/^[-•*·]\s*/, "")
+			.replace(/\s+/g, " ")
+			.slice(0, 200);
 		if (title.length < 5) continue;
 		const low = title.toLowerCase();
 		const who = roster.find((r) => {
@@ -83,7 +86,10 @@ async function claudeExtract(
 ): Promise<TaskProposal[]> {
 	const client = new Anthropic({ apiKey: env.anthropicApiKey });
 	const rosterText = roster
-		.map((r) => `- ${r.name ?? "?"} (id: ${r.id})${r.areas ? ` — oblasti: ${r.areas}` : ""}${r.bio ? `; ${r.bio}` : ""}`)
+		.map(
+			(r) =>
+				`- ${r.name ?? "?"} (id: ${r.id})${r.areas ? ` — oblasti: ${r.areas}` : ""}${r.bio ? `; ${r.bio}` : ""}`,
+		)
 		.join("\n");
 
 	const tool: Anthropic.Tool = {
@@ -106,7 +112,10 @@ async function claudeExtract(
 								type: "string",
 								description: "id řešitele z rosteru, nebo vynech, když není jasné.",
 							},
-							assigneeHint: { type: "string", description: "Jméno navrženého řešitele (k zobrazení)." },
+							assigneeHint: {
+								type: "string",
+								description: "Jméno navrženého řešitele (k zobrazení).",
+							},
 							priority: { type: "integer", description: "1–4 (1 nejvyšší), nebo vynech." },
 							due: { type: "string", description: "Termín YYYY-MM-DD, nebo vynech." },
 							projectHint: { type: "string", description: "Název projektu/oblasti, nebo vynech." },
@@ -153,8 +162,10 @@ function sanitizeProposals(raw: TaskProposal[], rosterIds: Set<string>): TaskPro
 		.filter((p) => p && typeof p.title === "string" && p.title.trim().length > 0)
 		.slice(0, 60)
 		.map((p, _i, arr) => {
-			const assignee = p.assigneeUserId && rosterIds.has(p.assigneeUserId) ? p.assigneeUserId : null;
-			const pr = typeof p.priority === "number" && p.priority >= 1 && p.priority <= 4 ? p.priority : null;
+			const assignee =
+				p.assigneeUserId && rosterIds.has(p.assigneeUserId) ? p.assigneeUserId : null;
+			const pr =
+				typeof p.priority === "number" && p.priority >= 1 && p.priority <= 4 ? p.priority : null;
 			const due = typeof p.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.due) ? p.due : null;
 			const parent =
 				typeof p.parentIndex === "number" && p.parentIndex >= 0 && p.parentIndex < arr.length
@@ -188,26 +199,50 @@ async function myWorkspaceRole(
 	return r?.role ?? null;
 }
 
+/** Ne-guest člen prostoru (CC-P0-13: host nemá obsah porad ani extract/commit). */
+async function memberNotGuest(
+	db: ReturnType<typeof getDb>,
+	workspaceId: string,
+	userId: string,
+): Promise<boolean> {
+	const role = await myWorkspaceRole(db, workspaceId, userId);
+	return !!role && role !== "guest";
+}
+
 /**
  * Vytvoř míting z přepisu a rovnou z něj vytáhni návrhy úkolů (create + extract v jednom
  * kroku — bez závislosti na PowerSync sync latenci). Vrací návrhy k revizi na klientu.
+ * S `meetingId` NEzakládá nový záznam, ale doplní přepis+návrhy k EXISTUJÍCÍ (naplánované)
+ * poradě — audit Fáze 1: dřív vznikal duplikát a hub zůstal navěky „čeká na zápis".
  */
 meetingsRoutes.post("/api/meetings/extract", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	const body = (await c.req.json().catch(() => ({}))) as {
 		workspaceId?: string;
+		meetingId?: string;
 		title?: string;
 		transcript?: string;
 	};
-	const workspaceId = body.workspaceId;
 	const transcript = (body.transcript ?? "").trim();
-	if (!workspaceId) return c.json({ error: "missing workspaceId" }, 400);
 	if (transcript.length < 10) return c.json({ error: "empty transcript" }, 400);
 
 	const db = getDb();
-	if (!(await myWorkspaceRole(db, workspaceId, session.user.id)))
+	// Existující porada: workspace se bere z JEJÍHO řádku (ne z klienta — anti-spoof).
+	let existing: typeof meetings.$inferSelect | undefined;
+	if (body.meetingId) {
+		existing = (await db.select().from(meetings).where(eq(meetings.id, body.meetingId)))[0];
+		if (!existing) return c.json({ error: "not found" }, 404);
+	}
+	const workspaceId = existing?.workspaceId ?? body.workspaceId;
+	if (!workspaceId) return c.json({ error: "missing workspaceId" }, 400);
+	// CC-P0-13 — host obsah porad nevytváří ani nečte; extract navíc volá AI (náklady).
+	if (!(await memberNotGuest(db, workspaceId, session.user.id)))
 		return c.json({ error: "forbidden" }, 403);
+	// Už zpracovaná porada se nesmí tiše přepsat (audit F2-4: destruktivní overwrite
+	// + regres statusu; verze/soubeh řeší až Conflict Inbox — CC-P0-04/07).
+	if (existing && existing.status === "committed")
+		return c.json({ error: "already committed" }, 409);
 
 	const roster: RosterRow[] = await db
 		.select({ id: users.id, name: users.name, areas: memberships.areas, bio: memberships.bio })
@@ -227,6 +262,20 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 		return c.json({ error: "extraction failed" }, 502);
 	}
 	const clean = sanitizeProposals(proposals, rosterIds);
+
+	if (existing) {
+		// Doplň přepis+návrhy k naplánované poradě (žádný duplikát).
+		await db
+			.update(meetings)
+			.set({
+				transcript: transcript.slice(0, 100000),
+				extraction: clean,
+				status: "extracted",
+				updatedAt: new Date(),
+			})
+			.where(eq(meetings.id, existing.id));
+		return c.json({ ok: true, meetingId: existing.id, proposals: clean, mock: !aiEnabled });
+	}
 
 	const inserted = (
 		await db
@@ -281,25 +330,84 @@ meetingsRoutes.get("/api/meetings/:id", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	const db = getDb();
-	const m = (await db.select().from(meetings).where(eq(meetings.id, c.req.param("id"))))[0];
+	const m = (
+		await db
+			.select()
+			.from(meetings)
+			.where(eq(meetings.id, c.req.param("id")))
+	)[0];
 	if (!m) return c.json({ error: "not found" }, 404);
-	if (!(await myWorkspaceRole(db, m.workspaceId, session.user.id)))
+	// CC-P0-13 — přepis je obsah: host ho nedostane (plné participant ACL = follow-up).
+	if (!(await memberNotGuest(db, m.workspaceId, session.user.id)))
 		return c.json({ error: "forbidden" }, 403);
 	return c.json({ meeting: m });
 });
 
-/** Označ míting jako zpracovaný (úkoly vytvořeny na klientu přes write-path). */
+/**
+ * Označ míting jako zpracovaný (úkoly vytvořeny na klientu přes write-path).
+ * `taskIds` = založené akční body → server zapíše lineage do entity_links
+ * (relation 'derived_from'; klient entity_links psát nesmí — audit Fáze 1).
+ * Idempotentní: existující dvojice (meeting, task) se nezdvojí.
+ */
 meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const body = (await c.req.json().catch(() => ({}))) as { taskIds?: string[] };
 	const db = getDb();
-	const m = (await db.select().from(meetings).where(eq(meetings.id, c.req.param("id"))))[0];
+	const m = (
+		await db
+			.select()
+			.from(meetings)
+			.where(eq(meetings.id, c.req.param("id")))
+	)[0];
 	if (!m) return c.json({ error: "not found" }, 404);
-	if (!(await myWorkspaceRole(db, m.workspaceId, session.user.id)))
+	if (!(await memberNotGuest(db, m.workspaceId, session.user.id)))
 		return c.json({ error: "forbidden" }, 403);
-	await db
-		.update(meetings)
-		.set({ status: "committed", updatedAt: new Date() })
-		.where(eq(meetings.id, m.id));
-	return c.json({ ok: true });
+
+	const candidates = (Array.isArray(body.taskIds) ? body.taskIds : [])
+		.filter((x) => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x))
+		.slice(0, 100);
+	// Anti cross-tenant (S7/CC-P0-15): existující úkol MUSÍ patřit do workspace porady;
+	// úkol, který ještě nedorazil sync frontou, projde (soft-pending, jako refProjectCols).
+	const taskIds: string[] = [];
+	for (const tid of candidates) {
+		const row = (
+			await db.execute(
+				sql`SELECT p.workspace_id AS ws FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ${tid} LIMIT 1`,
+			)
+		)[0] as { ws?: string } | undefined;
+		if (!row || row.ws === m.workspaceId) taskIds.push(tid);
+	}
+	await db.transaction(async (tx) => {
+		for (const tid of taskIds) {
+			const dup = (
+				await tx
+					.select({ id: entityLinks.id })
+					.from(entityLinks)
+					.where(
+						and(
+							eq(entityLinks.fromType, "meeting"),
+							eq(entityLinks.fromId, m.id),
+							eq(entityLinks.toType, "task"),
+							eq(entityLinks.toId, tid),
+						),
+					)
+			)[0];
+			if (dup) continue;
+			await tx.insert(entityLinks).values({
+				workspaceId: m.workspaceId,
+				fromType: "meeting",
+				fromId: m.id,
+				toType: "task",
+				toId: tid,
+				relation: "derived_from",
+				sourceSystem: "meets",
+			});
+		}
+		await tx
+			.update(meetings)
+			.set({ status: "committed", updatedAt: new Date() })
+			.where(eq(meetings.id, m.id));
+	});
+	return c.json({ ok: true, linked: taskIds.length });
 });

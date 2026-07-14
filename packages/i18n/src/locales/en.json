@@ -713,6 +713,7 @@
 		"revert": "Reopen"
 	},
 	"notif": {
+		"meetUpcoming": "Meeting",
 		"markAll": "mark all as seen",
 		"quickTitle": "Open quick card (handle it here)",
 		"moduleTitle": "Go to module",

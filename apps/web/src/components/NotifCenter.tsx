@@ -20,6 +20,13 @@ import { useTaskDetail } from "../lib/taskDetail";
 import { NOT_MEETING, todayISO } from "../lib/tasks";
 import { PeekPanel, type PeekTarget } from "./PeekPanel";
 
+/** Zítřek YYYY-MM-DD (lokálně) — pro okno „porada dnes/zítra". */
+const tomorrowISO = () => {
+	const d = new Date();
+	d.setDate(d.getDate() + 1);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 /* ── „viděno" — localStorage + externí store (Header badge ↔ panel ve shodě) ── */
 
 const SEEN_KEY = "watson.notifSeen";
@@ -67,8 +74,8 @@ export function markSeen(keys: string[]) {
 
 export interface NotifItem {
 	key: string;
-	/** flow = štafeta (brass) · task = po termínu (červená) · mail = pošta. */
-	kind: "flow" | "task" | "mail";
+	/** flow = štafeta (brass) · task = po termínu (červená) · mail = pošta · meet = porada. */
+	kind: "flow" | "task" | "mail" | "meet";
 	title: string;
 	sub?: string;
 	time?: string;
@@ -114,7 +121,35 @@ export function useNotifItems(): { items: NotifItem[]; unseen: number } {
 		[todayISO()],
 	);
 
+	// Nadcházející porady, kde jsem účastník (dnes/zítra) — „termín se ukáže lidem"
+	// (Meets Fáze 3). Řízeno malou tabulkou meetings, ne skenem tasks dle kind.
+	const { data: meets } = usePsQuery<{
+		id: string;
+		name: string | null;
+		due_date: string | null;
+		start_date: string | null;
+	}>(
+		`SELECT t.id, t.name, t.due_date, t.start_date
+		 FROM meetings m
+		 JOIN tasks t ON t.id = m.hub_task_id AND t.completed_at IS NULL
+		 JOIN assignments a ON a.task_id = t.id AND a.user_id = ?
+		 WHERE substr(t.due_date, 1, 10) IN (?, ?)
+		 ORDER BY t.due_date, t.start_date`,
+		[myId, todayISO(), tomorrowISO()],
+	);
+
 	const items: NotifItem[] = [];
+	for (const mt of meets ?? []) {
+		const day = (mt.due_date ?? "").slice(0, 10);
+		const hm = mt.start_date && mt.start_date.length >= 16 ? mt.start_date.slice(11, 16) : "";
+		items.push({
+			key: `meet:${mt.id}:${day}`,
+			kind: "meet",
+			title: mt.name ?? "",
+			sub: `${t("notif.meetUpcoming")} ${day === todayISO() ? t("today.todayLower") : t("today.tomorrowLower")}${hm && hm !== "00:00" ? ` · ${hm}` : ""}`,
+			action: { type: "task", taskId: mt.id },
+		});
+	}
 	for (const h of handoffs ?? []) {
 		items.push({
 			key: `flow:${h.chain_id}`,
@@ -192,6 +227,7 @@ const DOT: Record<NotifItem["kind"], string> = {
 	flow: "var(--w-brass)",
 	task: "var(--w-overdue)",
 	mail: "var(--w-avatar)",
+	meet: "var(--w-brass)",
 };
 
 export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => void }) {

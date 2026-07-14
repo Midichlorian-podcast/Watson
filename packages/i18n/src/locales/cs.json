@@ -726,6 +726,7 @@
 		"revert": "Vrátit"
 	},
 	"notif": {
+		"meetUpcoming": "Porada",
 		"markAll": "označit vše jako viděné",
 		"quickTitle": "Otevřít rychlou kartu (vyřídíš tady)",
 		"moduleTitle": "Přejít do modulu",
