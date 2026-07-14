@@ -294,6 +294,38 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 	return c.json({ ok: true, meetingId: inserted?.id, proposals: clean, mock: !aiEnabled });
 });
 
+/**
+ * Ulož zápis BEZ AI extrakce (board: „Uložit zápis"). Status new/scheduled → 'transcribed';
+ * extracted zůstává (návrhy na řádku platí). Committed poradu nelze přepsat (409).
+ */
+meetingsRoutes.post("/api/meetings/:id/transcript", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const body = (await c.req.json().catch(() => ({}))) as { transcript?: string };
+	const transcript = (body.transcript ?? "").trim();
+	if (!transcript) return c.json({ error: "empty transcript" }, 400);
+	const db = getDb();
+	const m = (
+		await db
+			.select()
+			.from(meetings)
+			.where(eq(meetings.id, c.req.param("id")))
+	)[0];
+	if (!m) return c.json({ error: "not found" }, 404);
+	if (!(await memberNotGuest(db, m.workspaceId, session.user.id)))
+		return c.json({ error: "forbidden" }, 403);
+	if (m.status === "committed") return c.json({ error: "already committed" }, 409);
+	await db
+		.update(meetings)
+		.set({
+			transcript: transcript.slice(0, 100000),
+			status: m.status === "extracted" ? "extracted" : "transcribed",
+			updatedAt: new Date(),
+		})
+		.where(eq(meetings.id, m.id));
+	return c.json({ ok: true });
+});
+
 /** Seznam mítingů prostoru (nejnovější první). */
 meetingsRoutes.get("/api/meetings", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });

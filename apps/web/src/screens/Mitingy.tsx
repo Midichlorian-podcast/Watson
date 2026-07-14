@@ -20,7 +20,8 @@ import { useAllMembers } from "../lib/overview";
 import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useTaskDetail } from "../lib/taskDetail";
-import { MeetDetail } from "./MeetDetail";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { MeetBoard } from "./MeetBoard";
 import { todayISO } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { useWorkspace } from "../lib/workspace";
@@ -132,12 +133,12 @@ export function Mitingy() {
 	const inbox = projects.find((p) => p.name !== "Doručené" && p.name !== "Inbox") ?? projects[0];
 
 	const [mode, setMode] = useState<"list" | "pick" | "plan" | "new" | "review">("list");
-	// Detail meetu (záložky Přehled/Příprava/Přepis/Řetěz) — overlay nad přehledem.
-	const [detail, setDetail] = useState<{
-		meetingId: string;
-		hubId: string;
-		tab?: "prehled" | "priprava" | "prepis" | "retez";
-	} | null>(null);
+	// Board porady = celostránkový detail řízený URL (?meet=…&focus=zapis) — deep-link,
+	// zpět tlačítkem prohlížeče, žádné vrstvení overlayů.
+	const navigate = useNavigate();
+	const search = useSearch({ from: "/meets" });
+	const openBoard = (meetingId: string, focus?: "zapis") =>
+		void navigate({ to: "/meets", search: { meet: meetingId, focus } });
 	const [title, setTitle] = useState("");
 	const [transcript, setTranscript] = useState("");
 	const [proposals, setProposals] = useState<Editable[]>([]);
@@ -424,6 +425,20 @@ export function Mitingy() {
 	}
 
 	const keepCount = proposals.filter((p) => p.keep).length;
+
+	// ?meet= → celostránkový board porady místo přehledu (mockup „jedna obrazovka").
+	if (search.meet) {
+		return (
+			<MeetBoard
+				// key = remount při přepnutí porady (řetěz) — jinak by přežil stav zápisu/návrhů
+				key={search.meet}
+				meetingId={search.meet}
+				focusZapis={search.focus === "zapis"}
+				onBack={() => void navigate({ to: "/meets", search: {} })}
+				onOpenMeet={(mid) => openBoard(mid)}
+			/>
+		);
+	}
 	const hasAny = (hubMeets ?? []).length > 0 || (detachedMeets ?? []).length > 0;
 
 	return (
@@ -498,11 +513,7 @@ export function Mitingy() {
 											<button
 												key={m.id}
 												type="button"
-												onClick={() =>
-													m.meeting_id
-														? setDetail({ meetingId: m.meeting_id, hubId: m.id })
-														: openTask(m.id)
-												}
+												onClick={() => (m.meeting_id ? openBoard(m.meeting_id) : openTask(m.id))}
 												className="hover:bg-panel-2"
 												style={{
 													display: "flex",
@@ -669,7 +680,7 @@ export function Mitingy() {
 									type="button"
 									onClick={() => {
 										if (m.meeting_id) {
-											setDetail({ meetingId: m.meeting_id, hubId: m.id, tab: "prepis" });
+											openBoard(m.meeting_id, "zapis");
 											setMode("list");
 										}
 									}}
@@ -984,15 +995,6 @@ export function Mitingy() {
 						</button>
 					</div>
 				</div>
-			)}
-			{detail && (
-				<MeetDetail
-					meetingId={detail.meetingId}
-					hubId={detail.hubId}
-					initialTab={detail.tab}
-					onClose={() => setDetail(null)}
-					onOpenMeet={(mid, hid) => setDetail({ meetingId: mid, hubId: hid })}
-				/>
 			)}
 		</div>
 	);

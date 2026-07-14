@@ -54,6 +54,11 @@ const mailRoute = createRoute({
 const mitingyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/meets",
+	// ?meet= otevře board porady (deep-link); ?focus=zapis skočí na vkládání zápisu.
+	validateSearch: (s: Record<string, unknown>): { meet?: string; focus?: "zapis" } => ({
+		meet: typeof s.meet === "string" ? s.meet : undefined,
+		focus: s.focus === "zapis" ? "zapis" : undefined,
+	}),
 	component: Mitingy,
 });
 // „/" = domovská routa sloučeného modulu Úkoly → záložka Dnes (zachovává landing redirect
