@@ -274,6 +274,7 @@
 		"daysUnit": "days",
 		"nextWeekLower": "next week",
 		"handedOff": "→ Came to you",
+		"fromMeetingChip": "from meeting",
 		"meetingChip": "Meeting",
 		"assignAllPill": "Each separately",
 		"weekend": "Weekend",
@@ -356,7 +357,10 @@
 		"cancel": "Cancel",
 		"done": "Done",
 		"signOut": "Sign out",
-		"close": "Close"
+		"close": "Close",
+		"loadingData": "Loading data…",
+		"offlineDataAsOf": "⚠ offline · data as of {{time}}",
+		"offlineDataHint": "You are offline — numbers reflect the last sync, not the present."
 	},
 	"watson": {
 		"title": "Watson",

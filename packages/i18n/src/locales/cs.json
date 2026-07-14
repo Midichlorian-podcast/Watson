@@ -279,6 +279,7 @@
 		"daysUnit": "dní",
 		"nextWeekLower": "příští týden",
 		"handedOff": "→ Přišlo na tebe",
+		"fromMeetingChip": "z porady",
 		"meetingChip": "Porada",
 		"assignAllPill": "Každý zvlášť",
 		"weekend": "Víkend",
@@ -364,7 +365,10 @@
 		"cancel": "Zrušit",
 		"done": "Hotovo",
 		"signOut": "Odhlásit",
-		"close": "Zavřít"
+		"close": "Zavřít",
+		"loadingData": "Načítám data…",
+		"offlineDataAsOf": "⚠ offline · data k {{time}}",
+		"offlineDataHint": "Jsi offline — čísla odpovídají poslední synchronizaci, ne současnosti."
 	},
 	"watson": {
 		"title": "Watson",

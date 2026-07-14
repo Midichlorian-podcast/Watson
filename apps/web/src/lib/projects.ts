@@ -5,11 +5,16 @@ import type { ProjectRow, SectionRow, StatusRow } from "./powersync/AppSchema";
  * Projekty jako jednotný offline-first zdroj z PowerSync (ne přes API).
  * Barva projektu = tělo karet úkolů (R6).
  */
-export function useProjects() {
-	const { data } = usePsQuery<ProjectRow>(
+/** Varianta s readiness — CC-P0-01: KPI obrazovky potřebují vědět, zda dotaz doběhl. */
+export function useProjectsWithState() {
+	const { data, isLoading } = usePsQuery<ProjectRow>(
 		"SELECT * FROM projects WHERE status != 'archive' OR status IS NULL ORDER BY name",
 	);
-	return data ?? [];
+	return { projects: data ?? [], isLoading };
+}
+
+export function useProjects() {
+	return useProjectsWithState().projects;
 }
 
 export function useProject(id: string | undefined) {

@@ -8,7 +8,8 @@ import { initials } from "../lib/format";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import { useAllMembers, useFlowsOverview, useGoalsOverview } from "../lib/overview";
 import type { TaskRow } from "../lib/powersync/AppSchema";
-import { useProjects } from "../lib/projects";
+import { kpi, useAllReady } from "../lib/dataState";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { todayISO } from "../lib/tasks";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
@@ -86,7 +87,7 @@ export function Velin() {
 	const { data: session } = useSession();
 	const { data: workspaces } = useWorkspaces();
 	const { setActiveWs } = useWorkspace();
-	const projects = useProjects();
+	const { projects, isLoading: projLoading } = useProjectsWithState();
 	const goalsAll = useGoalsOverview(t);
 	const flowsAll = useFlowsOverview();
 	const members = useAllMembers();
@@ -117,11 +118,15 @@ export function Velin() {
 	}, []);
 
 	// kind IS NOT 'meeting' — Velín měří práci týmu; porady nezkreslují čísla
-	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks WHERE kind IS NOT 'meeting'");
-	const { data: assignments } = usePsQuery<{
+	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
+		"SELECT * FROM tasks WHERE kind IS NOT 'meeting'",
+	);
+	const { data: assignments, isLoading: asgLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
+	// CC-P0-01: KPI se smí tvrdit až po doběhnutí dotazů (0 ≠ „ještě nevím").
+	const ready = useAllReady(projLoading, tasksLoading, asgLoading);
 
 	const leadership = isLeadership(workspaces);
 	// memoizace — firmsWs je dependency těžkého view memo níž; nová identita
@@ -423,10 +428,10 @@ export function Velin() {
 				style={{ gap: 14, marginBottom: 14, fontSize: 11.5 }}
 			>
 				<span>
-					{t("velin.kpiOpen")}: <b className="font-display">{view.kOpen}</b>
+					{t("velin.kpiOpen")}: <b className="font-display">{kpi(ready, view.kOpen)}</b>
 				</span>
 				<span style={{ color: "var(--w-overdue)" }}>
-					{t("velin.kpiOverdue")}: <b className="font-display">{view.kOv}</b>
+					{t("velin.kpiOverdue")}: <b className="font-display">{kpi(ready, view.kOv)}</b>
 				</span>
 				<span>
 					{t("velin.kpiUnread")}: <b className="font-display">{digest ? digest.unread : "–"}</b>
@@ -435,7 +440,7 @@ export function Velin() {
 					{t("velin.kpiUrgent")}: <b className="font-display">{digest ? urgMails.length : "–"}</b>
 				</span>
 				<span>
-					{t("velin.kpiRisk")}: <b className="font-display">{view.kRisk}</b>
+					{t("velin.kpiRisk")}: <b className="font-display">{kpi(ready, view.kRisk)}</b>
 				</span>
 			</div>
 

@@ -11,7 +11,8 @@ import { useAllMembers, useFlowsOverview, useGoalsOverview } from "../lib/overvi
 import type { ListItemRow, ListRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useMailDigest, useOpenMailThread } from "../mail/state";
 import { powerSync } from "../lib/powersync/db";
-import { useProjects } from "../lib/projects";
+import { LoadingNote, SyncStamp, useAllReady } from "../lib/dataState";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { todayISO, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
@@ -78,7 +79,7 @@ export function Prehled() {
 	const { open } = useTaskDetail();
 	const { data: session } = useSession();
 	const { data: workspaces } = useWorkspaces();
-	const projects = useProjects();
+	const { projects, isLoading: projLoading } = useProjectsWithState();
 	const flowSteps = useFlowSteps();
 	const goalsAll = useGoalsOverview(t);
 	const flowsAll = useFlowsOverview();
@@ -100,19 +101,24 @@ export function Prehled() {
 	};
 
 	// kind IS NOT 'meeting' — KPI/přehled počítá úkoly; porady nezkreslují čísla
-	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks WHERE kind IS NOT 'meeting'");
+	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
+		"SELECT * FROM tasks WHERE kind IS NOT 'meeting'",
+	);
 	// Seznamy (checklisty) — karta „Nejbližší akce" (prototyp akce, ř. 3863).
-	const { data: allLists } = usePsQuery<ListRow>(
+	const { data: allLists, isLoading: listsLoading } = usePsQuery<ListRow>(
 		"SELECT * FROM lists WHERE archived = 0 OR archived IS NULL ORDER BY created_at DESC",
 	);
-	const { data: allListItems } = usePsQuery<ListItemRow>(
+	const { data: allListItems, isLoading: itemsLoading } = usePsQuery<ListItemRow>(
 		"SELECT id, list_id, done FROM list_items",
 	);
 	// pro feed „kdo dokončil" — první přiřazený, fallback tvůrce (jako Velín)
-	const { data: assignments } = usePsQuery<{
+	const { data: assignments, isLoading: asgLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
+	// CC-P0-01: 0 / „vše odbaveno" se smí tvrdit až po doběhnutí všech dotazů —
+	// undefined běžícího dotazu není autoritativní prázdno.
+	const ready = useAllReady(projLoading, tasksLoading, listsLoading, itemsLoading, asgLoading);
 
 	const projById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 	const wsOfTask = (tk: TaskRow) =>
@@ -468,15 +474,15 @@ export function Prehled() {
 						className="font-display font-bold text-brass-text uppercase"
 						style={{ fontSize: 10.5, letterSpacing: ".07em", marginBottom: 4 }}
 					>
-						{t("prehled.synTitle")} · {todayLabel}
+						{t("prehled.synTitle")} · {todayLabel} <SyncStamp />
 					</div>
 					<div
 						className="font-body text-ink"
 						style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "82ch" }}
 					>
-						{view.syn}
+						{ready ? view.syn : t("common.loadingData")}
 					</div>
-					{synActions.length > 0 && (
+					{ready && synActions.length > 0 && (
 						<div className="flex flex-wrap" style={{ gap: 8, marginTop: 11 }}>
 							{synActions.map((a) => (
 								<button
@@ -526,7 +532,8 @@ export function Prehled() {
 						}
 						onFoot={() => void navigate({ to: "/" })}
 					/>
-					{view.dnes.length === 0 && (
+					{!ready && <LoadingNote />}
+					{ready && view.dnes.length === 0 && (
 						<div
 							className="font-body text-ink-3"
 							style={{ padding: "8px 16px 16px", fontSize: 12.5 }}
@@ -858,7 +865,8 @@ export function Prehled() {
 						footLabel={t("prehled.openReports")}
 						onFoot={() => void navigate({ to: "/reporty" })}
 					/>
-					{view.feed.length === 0 && (
+					{!ready && <LoadingNote />}
+					{ready && view.feed.length === 0 && (
 						<div
 							className="font-body text-ink-3"
 							style={{ padding: "8px 16px 16px", fontSize: 12.5 }}
