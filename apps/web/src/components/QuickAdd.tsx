@@ -5,6 +5,7 @@ import { useSession } from "../lib/auth-client";
 import { powerSync } from "../lib/powersync/db";
 import type { Highlight, RecurrenceRule } from "../lib/quickadd";
 import { parseQuick } from "../lib/quickadd";
+import { buildQuickAddTaskRow, quickAddInsertSql } from "../lib/quickadd/insert";
 import { todayISO } from "../lib/tasks";
 
 type Project = { id: string; name: string };
@@ -56,6 +57,8 @@ export function QuickAdd({
 	// In-flight guard: bez něj rychlé 2× Enter (async okno před vyčištěním inputu) vloží úkol dvakrát.
 	const submittingRef = useRef(false);
 	const [submitting, setSubmitting] = useState(false);
+	// CC-P0-02: selhání lokální transakce NESMÍ být tiché a input se NESMÍ vyčistit.
+	const [saveError, setSaveError] = useState(false);
 	useEffect(() => {
 		if (autoFocus) inputRef.current?.focus();
 	}, [autoFocus]);
@@ -141,15 +144,8 @@ export function QuickAdd({
 		if (submittingRef.current) return;
 		submittingRef.current = true;
 		setSubmitting(true);
+		setSaveError(false);
 		try {
-			// start_date = termín (nebo dnes) + čas dne, pokud parser rozpoznal čas.
-			let startDate: string | null = null;
-			if (parsed.startMin != null) {
-				const base = parsed.due ?? todayISO();
-				const hh = String(Math.floor(parsed.startMin / 60)).padStart(2, "0");
-				const mm = String(parsed.startMin % 60).padStart(2, "0");
-				startDate = `${base}T${hh}:${mm}:00`;
-			}
 			const taskId = crypto.randomUUID();
 			const now = new Date().toISOString();
 			const projId = pickedProj?.id ?? parsed.projectId ?? inboxId;
@@ -168,38 +164,38 @@ export function QuickAdd({
 				return true;
 			});
 			const assignmentMode = uniqueAssignees.length >= 2 ? "shared_all" : "single";
-			await powerSync.execute(
-				"INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, deadline, duration_min, recurrence, recurrence_rule, recurrence_basis, assignment_mode, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-				[
-					taskId,
-					projId,
-					name,
-					parsed.priority ?? 2,
-					parsed.due ?? null,
-					startDate,
-					parsed.deadline ?? null,
-					parsed.durationMin ?? null,
-					parsed.recurrence?.label ?? null,
-					parsed.recurrence ? JSON.stringify(parsed.recurrence) : null,
-					parsed.recurrence ? "due_date" : null,
-					assignmentMode,
-					session?.user?.id ?? null,
-					now,
-				],
-			);
-			for (const person of uniqueAssignees) {
-				// project_id je NUTNÝ — sync bucket assignments je per projekt; bez něj se řádek nikdy
-				// nesyncne (kolegům se přiřazení nezobrazí, po resyncu zmizí i autorovi).
-				await powerSync.execute(
-					"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
-					[taskId, projId, person.id, now],
-				);
-			}
+			// CC-P0-02: recurrence_basis nikdy NULL + days se ukládá (builder), úkol a přiřazení
+			// v JEDNÉ lokální transakci — pád uprostřed nesmí nechat úkol bez assignments.
+			const row = buildQuickAddTaskRow({
+				parsed,
+				taskId,
+				projectId: projId,
+				name,
+				assignmentMode,
+				userId: session?.user?.id ?? null,
+				today: todayISO(),
+				now,
+			});
+			await powerSync.writeTransaction(async (tx) => {
+				await tx.execute(quickAddInsertSql(row), row.values);
+				for (const person of uniqueAssignees) {
+					// project_id je NUTNÝ — sync bucket assignments je per projekt; bez něj se řádek nikdy
+					// nesyncne (kolegům se přiřazení nezobrazí, po resyncu zmizí i autorovi).
+					await tx.execute(
+						"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
+						[taskId, projId, person.id, now],
+					);
+				}
+			});
 			setRaw("");
 			setSugIdx(0);
 			setPickedProj(null);
 			setPickedPeople([]);
 			onDone?.();
+		} catch (err) {
+			// Input zůstává (uživatel o text nepřijde); chybu ukážeme inline, ne tiše.
+			console.error("[quickadd] lokální insert selhal", err);
+			setSaveError(true);
 		} finally {
 			submittingRef.current = false;
 			setSubmitting(false);
@@ -365,6 +361,13 @@ export function QuickAdd({
 						</li>
 					))}
 				</ul>
+			)}
+
+			{/* selhání lokálního uložení — input zůstal, uživatel může zkusit znovu */}
+			{saveError && (
+				<p role="alert" className="mt-1.5 text-overdue text-xs">
+					{t("quickadd.saveFailed")}
+				</p>
 			)}
 
 			{/* pilulky rozpoznaných atributů */}
