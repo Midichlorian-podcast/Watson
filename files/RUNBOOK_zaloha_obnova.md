@@ -28,4 +28,4 @@
 - WAL archiving / PITR zatím nezapnuté — RPO drží frekvence pg_dump, ne kontinuální archiv. Pro pilot do 20 lidí dostačující, pro produkci ne.
 - Restore wizard pro per-user export (dry-run, dedup, mapping) neexistuje — obnova zatím jen celé DB.
 - Zálohy jsou nešifrované na lokálním disku — pro produkci šifrovat a ukládat mimo stroj.
-- **Pozor na port:** `localhost:5432` drží SSH tunel LuckyOS; Watson běží na **5433** (host) — nikdy nespouštět watson migrace proti 5432.
+- **Pozor na porty:** `5432` drží LuckyOS tunel a `127.0.0.1:5433` RUBENS dev server — obě CIZÍ databáze, které ochotně přijmou spojení. Watson běží na **5435** (host). drizzle.config od 2026-07-14 načítá .env a bez DATABASE_URL odmítne běžet (žádný fallback).
