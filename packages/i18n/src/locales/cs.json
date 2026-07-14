@@ -293,6 +293,9 @@
 		"backlogCta": "Projít zásobník"
 	},
 	"settings": {
+		"signOutWipe": "Odhlásit a smazat data",
+		"signOutWipeHint": "Odstraní z tohohle zařízení lokální databázi i rozepsané koncepty. Pro sdílené nebo cizí zařízení.",
+		"signOutWipeConfirm": "Odhlásit a odstranit všechna lokální data z tohohle zařízení? Nasyncovaná data zůstávají na serveru; nerozesynchronizované změny se ztratí.",
 		"appearance": "Vzhled",
 		"darkMode": "Tmavý režim",
 		"darkModeDesc": "Přepne celé rozhraní na tmavé.",

@@ -285,6 +285,9 @@
 		"backlogCta": "Review the backlog"
 	},
 	"settings": {
+		"signOutWipe": "Sign out & wipe data",
+		"signOutWipeHint": "Removes the local database and drafts from this device. For shared or borrowed devices.",
+		"signOutWipeConfirm": "Sign out and remove all local data from this device? Synced data stays on the server; unsynced changes will be lost.",
 		"appearance": "Appearance",
 		"darkMode": "Dark mode",
 		"darkModeDesc": "Switches the whole interface to dark.",

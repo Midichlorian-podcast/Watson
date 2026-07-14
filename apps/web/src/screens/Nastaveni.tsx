@@ -10,7 +10,7 @@ import { AdminScreen } from "../mail/AdminScreen";
 import { MailDemoBanner } from "../mail/DemoBanner";
 import { NastaveniScreen as MailSettings } from "../mail/NastaveniScreen";
 import { initials } from "../lib/format";
-import { disconnectPowerSync } from "../lib/powersync/db";
+import { shutdownPowerSync } from "../lib/powersync/db";
 import { showToast } from "../lib/toast";
 import {
 	type Accent,
@@ -217,7 +217,15 @@ export function Nastaveni() {
 	});
 
 	const onSignOut = async () => {
-		await disconnectPowerSync();
+		await shutdownPowerSync();
+		await signOut();
+	};
+
+	// CC-P0-03 — „odhlásit a odstranit data ze zařízení": smaže lokální DB obsah
+	// i citlivé localStorage klíče. Pro sdílené/cizí zařízení.
+	const onSignOutWipe = async () => {
+		if (!window.confirm(t("settings.signOutWipeConfirm"))) return;
+		await shutdownPowerSync({ removeLocalData: true });
 		await signOut();
 	};
 
@@ -414,23 +422,43 @@ export function Nastaveni() {
 						{accountWsName ? ` · ${accountWsName}` : ""}
 					</div>
 				</div>
-				<button
-					type="button"
-					onClick={onSignOut}
-					className="font-display hover:border-brass"
-					style={{
-						fontWeight: 600,
-						fontSize: 12.5,
-						color: "var(--w-ink-2)",
-						border: "1px solid var(--w-line)",
-						borderRadius: 9,
-						padding: "7px 13px",
-						background: "transparent",
-						cursor: "pointer",
-					}}
-				>
-					{t("common.signOut")}
-				</button>
+				<div style={{ display: "flex", gap: 8, flex: "none", alignItems: "center" }}>
+					<button
+						type="button"
+						onClick={onSignOutWipe}
+						title={t("settings.signOutWipeHint")}
+						className="font-display hover:border-overdue"
+						style={{
+							fontWeight: 600,
+							fontSize: 12.5,
+							color: "var(--w-ink-3)",
+							border: "1px solid var(--w-line)",
+							borderRadius: 9,
+							padding: "7px 13px",
+							background: "transparent",
+							cursor: "pointer",
+						}}
+					>
+						{t("settings.signOutWipe")}
+					</button>
+					<button
+						type="button"
+						onClick={onSignOut}
+						className="font-display hover:border-brass"
+						style={{
+							fontWeight: 600,
+							fontSize: 12.5,
+							color: "var(--w-ink-2)",
+							border: "1px solid var(--w-line)",
+							borderRadius: 9,
+							padding: "7px 13px",
+							background: "transparent",
+							cursor: "pointer",
+						}}
+					>
+						{t("common.signOut")}
+					</button>
+				</div>
 			</div>
 
 			{/* ZÁLOHY A PŘIPOJENÍ — lokální stažení funguje hned; Google je volitelná nadstavba */}
