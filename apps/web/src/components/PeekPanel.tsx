@@ -469,17 +469,9 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 		}
 	}, [sentCount, onClose, t, undoBack]);
 
-	if (!th) return null;
-	// urgence z eff() — respektuje ov overrides i mapování prop→p2 (audit S3)
-	const flag = m.eff(th).flag;
-	const sla = flag !== "none" ? SLA[flag] : undefined;
-	const hasTask = (m.taskLinks[id] ?? []).length > 0;
-	// explicitní „nikdo" (ov.owner === null) NESMÍ spadnout na seed vlastníka
-	const ovOwner = m.ovOf(id).owner;
-	const ownerKey = ovOwner !== undefined ? ovOwner : (th.owner ?? null);
-	// vlastníka lze předat jen lidem s přístupem ke schránce (audit S2, jako vlákno)
-	const people = !th.personal && th.mb ? (MB[th.mb]?.people ?? []) : [];
-	const draftText = m.drafts[id]?.text ?? (th.draft ?? []).join("\n");
+	// Hooks MUSÍ být před early returnem (React hook order) — draftText je proto
+	// null-safe přes th?.draft.
+	const draftText = m.drafts[id]?.text ?? (th?.draft ?? []).join("\n");
 	// Rich-text most: koncept vlákna je PROSTÝ TEXT (sdílený s MailThread), ale editor
 	// je společný RichText (HTML). Držíme lokální HTML, do konceptu ukládáme plain text.
 	const [replyHtml, setReplyHtml] = useState(() =>
@@ -490,6 +482,17 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 	useEffect(() => {
 		setReplyHtml(draftText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>"));
 	}, [id]);
+
+	if (!th) return null;
+	// urgence z eff() — respektuje ov overrides i mapování prop→p2 (audit S3)
+	const flag = m.eff(th).flag;
+	const sla = flag !== "none" ? SLA[flag] : undefined;
+	const hasTask = (m.taskLinks[id] ?? []).length > 0;
+	// explicitní „nikdo" (ov.owner === null) NESMÍ spadnout na seed vlastníka
+	const ovOwner = m.ovOf(id).owner;
+	const ownerKey = ovOwner !== undefined ? ovOwner : (th.owner ?? null);
+	// vlastníka lze předat jen lidem s přístupem ke schránce (audit S2, jako vlákno)
+	const people = !th.personal && th.mb ? (MB[th.mb]?.people ?? []) : [];
 	const htmlToPlain = (html: string): string =>
 		html
 			.replace(/<br\s*\/?>/gi, "\n")

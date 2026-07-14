@@ -109,3 +109,44 @@ body {
 		animation-duration: 2s;
 	}
 }
+
+/* ── CC-P0-17: TaskCard na telefonu (≤480 px) — dva řádky místo jedné řady ──
+   Desktop: .w-taskmeta je display:contents → flex layout řádku je 1:1 beze změny.
+   Mobil: metadata (termín, deadline, P-odznak, status, avatary…) se zalomí na
+   vlastní řádek pod název; nic nesmí zvětšit šířku viewportu. */
+.w-taskmeta {
+	display: contents;
+}
+@media (max-width: 480px) {
+	.w-taskcard {
+		flex-wrap: wrap;
+	}
+	.w-taskmeta {
+		display: flex;
+		flex-basis: 100%;
+		min-width: 0;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px 8px;
+		margin: 2px 0 0 37px;
+	}
+	/* hover-only rychlé přeplánování na dotyku neexistuje — jen by kradlo šířku */
+	.w-taskmeta [data-qsched] {
+		display: none;
+	}
+	/* podřádek (projekt, chip postupu, checklist…) se smí zalomit, ne přetéct */
+	.w-tasksub {
+		flex-wrap: wrap;
+		row-gap: 2px;
+	}
+	/* skrytý hover-checkbox hromadného výběru by na dotyku jen zabíral 27 px šířky */
+	.w-taskselbox[aria-pressed="false"] {
+		display: none;
+	}
+	/* 44×44 dotyková plocha zaškrtávátka (vizuál zůstává 18 px) */
+	.w-taskcheck::after {
+		content: "";
+		position: absolute;
+		inset: -13px;
+	}
+}

@@ -1782,6 +1782,7 @@ export function AddTaskModal({
 							className="flex-1 font-body text-ink-3"
 							style={{ fontSize: 11.5, lineHeight: 1.5 }}
 							// Nápověda parseru s tučnými tokeny (statický lokalizovaný HTML z locales).
+							// biome-ignore lint/security/noDangerouslySetInnerHtml: statický string z vlastních locales, ne user input
 							dangerouslySetInnerHTML={{ __html: t("addmodal.hint") }}
 						/>
 					)}

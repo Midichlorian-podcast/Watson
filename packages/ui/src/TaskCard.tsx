@@ -142,7 +142,8 @@ export function TaskCard({
 		<div
 			onClick={onOpen}
 			className={cn(
-				"group flex cursor-pointer items-center rounded-[10px] border border-line transition-shadow",
+				// w-taskcard: na ≤480 px se metadata zalomí pod název (CC-P0-17, index.css)
+				"group w-taskcard flex cursor-pointer items-center rounded-[10px] border border-line transition-shadow",
 				!rowBg && "hover:bg-panel-2",
 				"hover:shadow-md",
 			)}
@@ -169,7 +170,7 @@ export function TaskCard({
 					title={sel.title}
 					aria-pressed={sel.on}
 					className={cn(
-						"grid shrink-0 place-items-center border-[1.6px] border-line transition-opacity hover:border-brass",
+						"w-taskselbox grid shrink-0 place-items-center border-[1.6px] border-line transition-opacity hover:border-brass",
 						// skrytý checkbox nesmí být klikatelný (opacity-0 na dotyku =
 						// neviditelný cíl) → pointer-events-none; hover/focus/vybraný vrací auto
 						sel.on
@@ -200,7 +201,8 @@ export function TaskCard({
 				}}
 				aria-label={done ? doneLabel : undoneLabel}
 				className={cn(
-					"grid shrink-0 place-items-center rounded-full",
+					// w-taskcheck: na dotyku dostává 44px hit-area přes ::after (index.css)
+					"w-taskcheck relative grid shrink-0 place-items-center rounded-full",
 					!done && "hover:border-brass",
 				)}
 				style={{
@@ -247,7 +249,10 @@ export function TaskCard({
 					{name}
 				</div>
 				{hasSub && (
-					<div className="flex items-center" style={{ gap: 10, marginTop: 1, lineHeight: 1.2 }}>
+					<div
+						className="w-tasksub flex items-center"
+						style={{ gap: 10, marginTop: 1, lineHeight: 1.2 }}
+					>
 						{parentName && (
 							<span
 								className="min-w-0 truncate font-body text-ink-3"
@@ -362,6 +367,9 @@ export function TaskCard({
 				)}
 			</div>
 
+			{/* Pravostranná metadata: na desktopu display:contents (layout 1:1 beze změny),
+			    na ≤480 px vlastní zalomený řádek pod názvem (CC-P0-17). */}
+			<span className="w-taskmeta">
 			{/* rychlé přeplánování — jen na hover (prototyp data-qsched) */}
 			{sched && !done && (
 				<span
@@ -520,6 +528,7 @@ export function TaskCard({
 					))}
 				</span>
 			)}
+			</span>
 		</div>
 	);
 }
