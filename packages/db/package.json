@@ -10,7 +10,7 @@
 		"./schema": "./src/schema/index.ts"
 	},
 	"scripts": {
-		"lint": "echo \"(lint: TODO)\"",
+		"lint": "biome lint .",
 		"typecheck": "tsc --noEmit",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",

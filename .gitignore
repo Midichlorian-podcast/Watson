@@ -34,3 +34,7 @@ pnpm-debug.log*
 
 # test / coverage
 coverage/
+
+# lokální pracovní artefakty (screenshoty, design zipy)
+PRNTSCRNS/
+*.zip

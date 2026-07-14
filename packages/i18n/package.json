@@ -10,7 +10,7 @@
 		"./locales/*": "./src/locales/*"
 	},
 	"scripts": {
-		"lint": "echo \"(lint: TODO)\"",
+		"lint": "biome lint .",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

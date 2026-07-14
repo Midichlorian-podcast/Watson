@@ -7,9 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "echo \"(lint: TODO)\"",
+    "lint": "biome lint .",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/lib/runOccurrences.ts",
+    "test": "tsx src/lib/runOccurrences.ts && tsx src/lib/quickadd/runInsertTests.ts && tsx src/mail/runClaimsTest.ts",
     "test:corpus": "tsx src/lib/quickadd/runCorpus.ts"
   },
   "dependencies": {

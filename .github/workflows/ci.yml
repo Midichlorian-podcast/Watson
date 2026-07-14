@@ -1,0 +1,63 @@
+# F1 (CC-P0-18) — blokující brána: typecheck, reálný lint, testy, build, audit.
+# Druhý job zvedne ephemeral PostgreSQL, aplikuje migrace a pustí contract test
+# (registr ↔ schéma ↔ sync rules) + drizzle smoke. verify:reminders a verify:rbac
+# potřebují seed/běžící API — zůstávají lokální (pnpm verify:db / verify:rbac).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm --filter @watson/web test:corpus
+      - run: pnpm build
+      # produkční závislosti bez known high/critical (F0 gate; moderate zatím tolerujeme)
+      - run: pnpm audit --prod --audit-level high
+
+  db-contract:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: watson
+          POSTGRES_PASSWORD: watson
+          POSTGRES_DB: watson
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U watson"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://watson:watson@localhost:5432/watson
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @watson/db db:migrate
+      - run: pnpm --filter @watson/api verify:contract
+      - run: pnpm --filter @watson/api verify:drizzle

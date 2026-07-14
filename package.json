@@ -13,11 +13,14 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "gate": "pnpm typecheck && pnpm lint && pnpm test && pnpm --filter @watson/web test:corpus && pnpm build",
+    "verify:db": "pnpm --filter @watson/api verify:contract && pnpm --filter @watson/api verify:drizzle && pnpm --filter @watson/api verify:reminders",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\""
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.3",
     "@types/node": "^22.10.5",
     "prettier": "^3.4.2",
     "tsx": "^4.22.4",

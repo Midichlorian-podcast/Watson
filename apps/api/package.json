@@ -7,8 +7,12 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "lint": "echo \"(lint: TODO)\"",
-    "typecheck": "tsc --noEmit"
+    "lint": "biome lint .",
+    "typecheck": "tsc --noEmit",
+    "verify:reminders": "tsx verify-reminders.ts",
+    "verify:contract": "tsx verify-contract.ts",
+    "verify:drizzle": "tsx verify-drizzle-smoke.ts",
+    "verify:rbac": "tsx verify-rbac.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

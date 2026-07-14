@@ -9,7 +9,7 @@
 		".": "./src/index.ts"
 	},
 	"scripts": {
-		"lint": "echo \"(lint: TODO)\"",
+		"lint": "biome lint .",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
