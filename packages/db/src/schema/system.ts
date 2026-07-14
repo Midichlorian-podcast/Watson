@@ -104,6 +104,10 @@ export const auditEvents = pgTable(
 		entityId: uuid("entity_id"),
 		action: varchar("action", { length: 64 }).notNull(),
 		diff: jsonb("diff"),
+		/** CC-P0-10: snapshot řádku PŘED mutací (PATCH/DELETE) — bez něj není delete vysvětlitelný ani obnovitelný. */
+		before: jsonb("before"),
+		/** CC-P0-10: korelace s API logem a klientským Centrem problémů (X-Request-Id). */
+		requestId: varchar("request_id", { length: 16 }),
 		createdAt: createdAt(),
 	},
 	(t) => [

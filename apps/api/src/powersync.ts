@@ -652,7 +652,7 @@ async function isWorkspaceGuest(db: Db, projectId: string, userId: string): Prom
 
 /** Generický zápis dle registru (INSERT … ON CONFLICT / UPDATE / DELETE). */
 async function applyWrite(
-	db: Db,
+	db: Db | DbTx,
 	table: string,
 	def: TableDef,
 	op: Op,
@@ -700,33 +700,44 @@ async function applyWrite(
 	);
 }
 
+/** Transakční kontext (drizzle) — applyWrite/audit běží nad db i tx. */
+type DbTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 /**
- * Generický audit log — KAŽDÁ úspěšná mutace přes write-path se zapíše do
- * audit_events (dřív mrtvá tabulka). Základ pro „o nic nepřijít": neobejitelný
- * server-side záznam s aktérem + diffem, oddělený od task_activity (jen úkoly,
- * insert-only overlay). Best-effort — selhání auditu nesmí shodit vlastní zápis.
+ * CC-P0-10 — mutace + audit v JEDNÉ transakci: selhání audit insertu vrátí
+ * i hlavní zápis (audit je záruka, ne best-effort log). Zapisuje se:
+ * workspace odvozený SERVEREM (ne z klientských dat), actor, before snapshot
+ * pro PATCH/DELETE (jinak není delete vysvětlitelný ani obnovitelný), diff
+ * a request ID pro korelaci s API logem i klientským Centrem problémů.
  */
-async function auditLog(
+async function auditedWrite(
 	db: Db,
 	table: string,
+	def: TableDef,
 	op: Op,
 	id: string,
 	data: Record<string, unknown>,
 	userId: string,
+	ctx: { workspaceId: string | null; requestId: string | null },
 ): Promise<void> {
-	// task_activity JE už audit (per-úkol historie) — neaudituj audit, jen šum.
-	if (table === "task_activity") return;
-	try {
+	await db.transaction(async (tx) => {
+		const before =
+			op === "PUT"
+				? null
+				: (((await tx.execute(
+						sql`SELECT * FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
+					)) as Rows)[0] ?? null);
+		await applyWrite(tx, table, def, op, id, data, userId);
+		// task_activity JE už audit (per-úkol historie) — neaudituj audit, jen šum.
+		if (table === "task_activity") return;
 		const action = op === "PUT" ? "put" : op === "PATCH" ? "patch" : "delete";
-		const ws = typeof data.workspace_id === "string" ? (data.workspace_id as string) : null;
 		const diff = op === "DELETE" ? null : sql`${JSON.stringify(data)}::jsonb`;
-		await db.execute(sql`
-      INSERT INTO audit_events (id, workspace_id, actor_type, actor_user_id, entity, entity_id, action, diff, created_at)
-      VALUES (${crypto.randomUUID()}, ${ws}, 'user', ${userId}, ${table}, ${id}, ${action}, ${diff}, now())
+		const beforeJson = before ? sql`${JSON.stringify(before)}::jsonb` : null;
+		await tx.execute(sql`
+      INSERT INTO audit_events (id, workspace_id, actor_type, actor_user_id, entity, entity_id, action, diff, before, request_id, created_at)
+      VALUES (${crypto.randomUUID()}, ${ctx.workspaceId}, 'user', ${userId}, ${table}, ${id}, ${action}, ${diff}, ${beforeJson}, ${ctx.requestId}, now())
     `);
-	} catch (err) {
-		console.warn("[watson-api] audit_events insert selhal:", err);
-	}
+	});
 }
 
 /**
@@ -818,8 +829,10 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 					if (!ok) return c.json({ error: "author-only" }, 403);
 				}
 			}
-			await applyWrite(db, body.table, def, body.op, body.id, data, userId);
-			await auditLog(db, body.table, body.op, body.id, data, userId);
+			await auditedWrite(db, body.table, def, body.op, body.id, data, userId, {
+				workspaceId: rowWs,
+				requestId: c.get("requestId") ?? null,
+			});
 		} catch (err) {
 			console.error(`[watson-api][req:${c.get("requestId") ?? "-"}] write selhal:`, err);
 			return c.json(
@@ -898,8 +911,12 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 			}
 		}
 
-		await applyWrite(db, body.table, def, body.op, body.id, data, userId);
-		await auditLog(db, body.table, body.op, body.id, data, userId);
+		const auditWs =
+			need.size > 0 ? await workspaceOfRow(db, "projects", [...need][0] as string) : null;
+		await auditedWrite(db, body.table, def, body.op, body.id, data, userId, {
+			workspaceId: auditWs,
+			requestId: c.get("requestId") ?? null,
+		});
 	} catch (err) {
 		console.error(`[watson-api][req:${c.get("requestId") ?? "-"}] write selhal:`, err);
 		return c.json(
