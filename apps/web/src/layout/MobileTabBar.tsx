@@ -1,9 +1,10 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon, type IconName } from "@watson/ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "../lib/focusTrap";
 import { useWatson } from "../lib/watson";
-import { isLeadership, useWorkspaces } from "../lib/workspace";
+import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
 
 /** Hlavní taby = nejdůležitější moduly Watsonu: Přehled, Úkoly (sloučený modul — otevře
@@ -25,6 +26,8 @@ const TABS: {
 /** Sekce dostupné přes „Více" (na mobilu není sidebar → jinak nedosažitelné). „Úkoly" už není
  * zde — je hlavní tab; do modulu (Vše/Zásobník) se vstupuje záložkami uvnitř. */
 const MORE: { to: string; icon: IconName; labelKey: string }[] = [
+	// P1-13: Meets byl na mobilu nedosažitelný (jen v desktop sidebaru)
+	{ to: "/meets", icon: "tym", labelKey: "nav.meetings" },
 	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
@@ -44,7 +47,11 @@ export function MobileTabBar() {
 	const path = useRouterState({ select: (s) => s.location.pathname });
 	const [moreOpen, setMoreOpen] = useState(false);
 	const { data: workspaces } = useWorkspaces();
+	const { activeWs, setActiveWs } = useWorkspace();
 	const mailUnread = useMailUnread();
+	// P1-08: sheet je dialog — past na fokus + návrat fokusu na tlačítko „Více"
+	const sheetRef = useRef<HTMLDivElement | null>(null);
+	useFocusTrap(moreOpen, sheetRef);
 
 	// Esc zavírá sheet „Více" (nese data-esc-layer → ostatní vrstvy mu ustupují)
 	useEffect(() => {
@@ -77,6 +84,10 @@ export function MobileTabBar() {
 					data-esc-layer
 				>
 					<div
+						ref={sheetRef}
+						role="dialog"
+						aria-modal="true"
+						aria-label={t("nav.more")}
 						className="fixed right-0 bottom-0 left-0 rounded-t-2xl border-line border-t bg-card"
 						style={{ paddingBottom: "calc(58px + env(safe-area-inset-bottom))" }}
 						onClick={(e) => e.stopPropagation()}
@@ -85,6 +96,34 @@ export function MobileTabBar() {
 							className="mx-auto my-2 rounded-full"
 							style={{ width: 40, height: 4, background: "var(--w-line)" }}
 						/>
+						{/* P1-13: přepínač prostorů — na mobilu jinak nedosažitelný (žije v sidebaru) */}
+						{(workspaces ?? []).length > 1 && (
+							<div
+								className="flex flex-wrap"
+								style={{ gap: 6, padding: "4px 12px 2px" }}
+								role="group"
+								aria-label={t("nav.workspaces")}
+							>
+								{(workspaces ?? []).map((w) => (
+									<button
+										key={w.id}
+										type="button"
+										onClick={() => setActiveWs(w.id)}
+										aria-pressed={activeWs === w.id}
+										className="rounded-full border font-display font-semibold"
+										style={{
+											fontSize: 11.5,
+											padding: "5px 11px",
+											borderColor: activeWs === w.id ? "var(--w-brass)" : "var(--w-line)",
+											color: activeWs === w.id ? "var(--w-brass-text)" : "var(--w-ink-2)",
+											background: activeWs === w.id ? "var(--w-brass-soft)" : "transparent",
+										}}
+									>
+										{w.name}
+									</button>
+								))}
+							</div>
+						)}
 						<nav className="grid grid-cols-2 gap-1 p-3">
 							{more.map((m) => {
 								const active = path.startsWith(m.to);

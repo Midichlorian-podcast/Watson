@@ -11,7 +11,8 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useFocusTrap } from "../lib/focusTrap";
 import { createPortal } from "react-dom";
 import { P, SLA } from "../mail/data";
 import { useMail } from "../mail/state";
@@ -321,6 +322,10 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 		[navigate, onClose, m],
 	);
 
+	// P1-08: past na fokus + návrat fokusu na zvonek — hooks PŘED early returnem
+	const panelRef = useRef<HTMLDivElement | null>(null);
+	useFocusTrap(open, panelRef);
+
 	if (!open) return null;
 
 	// Panel se hlásí jako aktivní esc-vrstva (kbNav/BulkBar/keyboard pak seznam
@@ -338,7 +343,9 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 				style={{ position: "fixed", inset: 0, zIndex: 64 }}
 			/>
 			<div
+				ref={panelRef}
 				role="dialog"
+				aria-modal="true"
 				aria-label={t("shell.notifTitle")}
 				data-esc-layer={escLayer}
 				data-notif-layer={escLayer}

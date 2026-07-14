@@ -437,6 +437,7 @@ export function Header() {
 				<button
 					type="button"
 					onClick={() => openAdd()}
+					aria-label={t("shell.addTask")}
 					className="flex h-[34px] items-center rounded-[9px] font-display font-bold text-white hover:brightness-105"
 					style={{
 						gap: 6,
