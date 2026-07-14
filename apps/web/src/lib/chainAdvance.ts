@@ -234,11 +234,16 @@ export async function advanceChainForTask(taskId: string, nowDone: boolean): Pro
 			const priorDone = steps.slice(0, i).every(isClosed);
 			if (!priorDone) break;
 			if (st.step_state === "dormant") {
-				// zjednodušeno (varianta B): všechny brány = auto (i legacy manual)
-				await activateRun(steps, i);
-				// „Předáno → X" + kaskádové přitažení zpožděného kroku (prototyp ř. 2482–2483)
-				void handoffName(st.task_id).then((who) => showToast(`${i18n.t("flows.handedTo")} ${who}`));
-				await cascadePull(me.chain_id, st);
+				if (st.gate === "manual") {
+					// P1-01: manual brána se NIKDY neaktivuje automaticky — krok čeká
+					// na explicitní activateStepManually (tlačítko v Postupech).
+					showToast(i18n.t("flows.waitingManual"));
+				} else {
+					await activateRun(steps, i);
+					// „Předáno → X" + kaskádové přitažení zpožděného kroku (prototyp ř. 2482–2483)
+					void handoffName(st.task_id).then((who) => showToast(`${i18n.t("flows.handedTo")} ${who}`));
+					await cascadePull(me.chain_id, st);
+				}
 			}
 			break;
 		}
@@ -257,15 +262,16 @@ export async function advanceChainForTask(taskId: string, nowDone: boolean): Pro
  * = `active` (+ souvislý with_previous běh), zbytek `dormant`. NEmodifikuje úkoly (jen step_state).
  * Deterministické → dva klienti dopočítají STEJNÝ stav (konvergence přes LWW).
  */
-export async function repairChain(chainId: string): Promise<void> {
-	const steps = await powerSync.getAll<ChainStepLite & { completed: number }>(
-		`SELECT cs.id, cs.chain_id, cs.task_id, cs.position, cs.gate, cs.step_state,
-            (t.completed_at IS NOT NULL) AS completed
-     FROM chain_steps cs LEFT JOIN tasks t ON t.id = cs.task_id
-     WHERE cs.chain_id = ? ORDER BY cs.position`,
-		[chainId],
-	);
-	if (steps.length === 0) return;
+/**
+ * Čistý výpočet cílových stavů kroků (testovatelné bez DB). Pravidla:
+ * done ⇔ úkol hotový; skipped se drží; první neuzavřený krok s uzavřenými
+ * předchozími = active (+ souvislý with_previous běh) — POKUD nemá gate
+ * 'manual': ten čeká na explicitní ruční aktivaci a repair/advance ho nesmí
+ * spustit (P1-01). Už ručně aktivovaný manual krok zůstává active.
+ */
+export function computeChainStates(
+	steps: (ChainStepLite & { completed: number })[],
+): Map<string, string> {
 	const desired = new Map<string, string>();
 	const closed = (s: ChainStepLite & { completed: number }) =>
 		s.step_state === "skipped" || desired.get(s.id) === "done";
@@ -279,8 +285,10 @@ export async function repairChain(chainId: string): Promise<void> {
 		if (!s || desired.get(s.id) === "done" || s.step_state === "skipped") continue;
 		const priorClosed = steps.slice(0, i).every((p) => closed(p));
 		if (priorClosed && !activated) {
-			desired.set(s.id, "active");
 			activated = true;
+			// P1-01: manual brána — bez dřívější ruční aktivace zůstává dormant
+			if (s.gate === "manual" && s.step_state !== "active") break;
+			desired.set(s.id, "active");
 			for (let j = i + 1; j < steps.length; j++) {
 				const st = steps[j];
 				if (!st || st.gate !== "with_previous" || closed(st)) break;
@@ -289,6 +297,19 @@ export async function repairChain(chainId: string): Promise<void> {
 		}
 	}
 	for (const s of steps) if (!desired.has(s.id)) desired.set(s.id, "dormant");
+	return desired;
+}
+
+export async function repairChain(chainId: string): Promise<void> {
+	const steps = await powerSync.getAll<ChainStepLite & { completed: number }>(
+		`SELECT cs.id, cs.chain_id, cs.task_id, cs.position, cs.gate, cs.step_state,
+            (t.completed_at IS NOT NULL) AS completed
+     FROM chain_steps cs LEFT JOIN tasks t ON t.id = cs.task_id
+     WHERE cs.chain_id = ? ORDER BY cs.position`,
+		[chainId],
+	);
+	if (steps.length === 0) return;
+	const desired = computeChainStates(steps);
 	const changes = steps.filter((s) => desired.get(s.id) !== s.step_state);
 	if (changes.length > 0) {
 		await powerSync.writeTransaction(async (tx) => {

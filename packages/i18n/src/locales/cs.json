@@ -694,7 +694,8 @@
 		"roleGrafik": "Grafik",
 		"roleProdukce": "Produkce",
 		"roleUcetni": "Účetní",
-		"roleVedouci": "Vedoucí"
+		"roleVedouci": "Vedoucí",
+		"waitingManual": "Další krok má ruční bránu — aktivuj ho v Postupech."
 	},
 	"mail": {
 		"demoBadge": "DEMO",

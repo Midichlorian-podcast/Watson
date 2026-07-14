@@ -683,7 +683,8 @@
 		"roleGrafik": "Designer",
 		"roleProdukce": "Production",
 		"roleUcetni": "Accountant",
-		"roleVedouci": "Manager"
+		"roleVedouci": "Manager",
+		"waitingManual": "The next step has a manual gate — activate it in Flows."
 	},
 	"mail": {
 		"demoBadge": "DEMO",
