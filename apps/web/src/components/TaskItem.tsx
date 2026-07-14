@@ -281,6 +281,14 @@ export function TaskItem({
 					handedOffLabel={t("today.handedOff")}
 					meeting={task.kind === "meeting"}
 					meetingLabel={t("today.meetingChip")}
+					fromMeeting={
+						task.meeting_id && task.kind !== "meeting"
+							? {
+									label: t("today.fromMeetingChip"),
+									onClick: () => void navigate({ to: "/meets", search: { meet: task.meeting_id ?? undefined } }),
+								}
+							: undefined
+					}
 					doneLabel={t("detail.ariaMarkUndone")}
 					undoneLabel={t("detail.ariaComplete")}
 					checklist={meta.checklist}

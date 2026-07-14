@@ -35,6 +35,10 @@ interface Proposal {
 	due?: string | null;
 	projectHint?: string | null;
 	parentIndex?: number | null;
+	/** Přihrádka extrakce: action = závazek · unclear = k dořešení · decision = rozhodnutí. */
+	kind?: "action" | "unclear" | "decision" | null;
+	/** Doslovná citace pasáže zápisu (ukotvení návrhu). */
+	evidence?: string | null;
 }
 interface Editable extends Proposal {
 	keep: boolean;
@@ -159,6 +163,12 @@ export function Mitingy() {
 		if (inbox && !projectId) setProjectId(inbox.id);
 		// pProject se nastavuje v openPlan (reset per prostor — audit Fáze 1)
 	}, [inbox?.id, projectId, pProject]);
+	// Přepnutí prostoru = reset cílového projektu revize; stale ID projektu jiného
+	// workspace by zapsalo úkoly mimo poradu (audit v2 — M4).
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset jen na změnu prostoru
+	useEffect(() => {
+		setProjectId("");
+	}, [activeWs]);
 
 	// ── Přehled dle termínů — LOKÁLNÍ read model (offline; P1-04 pryč) ──
 	// Dotazy ŘÍDÍ malá tabulka meetings (index by_workspace) → žádný full-scan tasks
@@ -187,10 +197,12 @@ export function Mitingy() {
 		[activeWs ?? ""],
 	);
 	// Progres přípravy (podúkoly hubů) + účastníci — scoped přes meetings, ne celá DB.
+	// meeting_id IS NULL: akční body porady nejsou příprava (board je dělí stejně).
 	const { data: subRows } = usePsQuery<{ parent_id: string; n: number; d: number }>(
 		`SELECT parent_id, COUNT(*) AS n, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS d
 		 FROM tasks
 		 WHERE parent_id IN (SELECT hub_task_id FROM meetings WHERE workspace_id = ? AND hub_task_id IS NOT NULL)
+		   AND meeting_id IS NULL
 		 GROUP BY parent_id`,
 		[activeWs ?? ""],
 	);
@@ -347,7 +359,13 @@ export function Mitingy() {
 			});
 			if (!r.ok) throw new Error("extract");
 			const j = await r.json();
-			setProposals((j.proposals ?? []).map((p: Proposal) => ({ ...p, keep: true })));
+			// Úkol vznikne jen ze zaškrtnutého — nejasnosti a rozhodnutí nechat na člověku.
+			setProposals(
+				(j.proposals ?? []).map((p: Proposal) => ({
+					...p,
+					keep: p.kind !== "unclear" && p.kind !== "decision",
+				})),
+			);
 			setMeetingId(j.meetingId ?? null);
 			setWasMock(!!j.mock);
 			setMode("review");
@@ -901,7 +919,10 @@ export function Mitingy() {
 								onChange={(e) => setProjectId(e.target.value)}
 								style={{ ...INPUT, ...INPUT_SM }}
 							>
-								{(projects ?? []).map((p) => (
+								{!editableProjects.some((p) => p.id === projectId) && (
+									<option value={projectId}>— vyber projekt —</option>
+								)}
+								{editableProjects.map((p) => (
 									<option key={p.id} value={p.id}>
 										{p.name}
 									</option>
@@ -972,6 +993,17 @@ export function Mitingy() {
 										style={{ ...INPUT, ...INPUT_SM }}
 									/>
 								</div>
+								{(p.kind === "unclear" || p.kind === "decision") && (
+									<div
+										className="font-body"
+										style={{ fontSize: 11, color: "var(--w-ink-3)", fontStyle: "italic" }}
+									>
+										{p.kind === "unclear"
+											? "K dořešení — ze zápisu není jasný závazek; zaškrtni jen, pokud to úkol je."
+											: "Rozhodnutí porady — obvykle není úkol; zaškrtni jen, pokud z něj má vzniknout práce."}
+										{p.evidence ? ` „${p.evidence}"` : ""}
+									</div>
+								)}
 								{p.assigneeHint && !p.assigneeUserId && (
 									<div className="font-body" style={{ fontSize: 11, color: "var(--w-ink-3)" }}>
 										AI navrhla: {p.assigneeHint} (nenalezen v týmu — vyber ručně)
@@ -988,7 +1020,9 @@ export function Mitingy() {
 							disabled={busy || keepCount === 0}
 							onClick={() => void commit()}
 						>
-							{busy ? "Vytvářím…" : `Vytvořit ${keepCount} úkolů`}
+							{busy
+								? "Vytvářím…"
+								: `Vytvořit ${keepCount} ${keepCount === 1 ? "úkol" : keepCount < 5 ? "úkoly" : "úkolů"}`}
 						</button>
 						<button type="button" style={BTN_GHOST} onClick={() => setMode("new")}>
 							Zpět k přepisu

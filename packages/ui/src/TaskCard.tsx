@@ -50,6 +50,8 @@ export interface TaskCardProps {
 	parentName?: string;
 	/** Meets — řádek je PORADA (kind='meeting'): brass levý okraj + chip místo P-odznaku. */
 	meeting?: boolean;
+	/** Úkol VZEŠLÝ z porady — chip „⌁ z porady" v podřádku; klik otevře board porady. */
+	fromMeeting?: { label: string; onClick?: () => void };
 	/** Popisek chipu porady („Porada"). Lokalizuje konzument. */
 	meetingLabel?: string;
 	done?: boolean;
@@ -111,6 +113,7 @@ export function TaskCard({
 	parentName,
 	meeting,
 	meetingLabel = "Meeting",
+	fromMeeting,
 	done,
 	sel,
 	sched,
@@ -132,6 +135,7 @@ export function TaskCard({
 		!!projectName ||
 		!!parentName ||
 		!!flow ||
+		!!fromMeeting ||
 		handedOff ||
 		!!checklist ||
 		recurring ||
@@ -280,6 +284,26 @@ export function TaskCard({
 							</span>
 						)}
 						{flow && <FlowChip flow={flow} />}
+						{fromMeeting && (
+							<button
+								type="button"
+								onClick={(e) => {
+									e.stopPropagation();
+									fromMeeting.onClick?.();
+								}}
+								className="inline-flex shrink-0 cursor-pointer items-center border-none font-display font-semibold"
+								style={{
+									gap: 4,
+									fontSize: 10.5,
+									padding: "2px 8px",
+									borderRadius: 999,
+									background: "var(--w-brass-soft)",
+									color: "var(--w-brass-text)",
+								}}
+							>
+								⌁ {fromMeeting.label}
+							</button>
+						)}
 						{handedOff && (
 							<span
 								className="inline-flex shrink-0 items-center font-display font-semibold"
@@ -370,164 +394,164 @@ export function TaskCard({
 			{/* Pravostranná metadata: na desktopu display:contents (layout 1:1 beze změny),
 			    na ≤480 px vlastní zalomený řádek pod názvem (CC-P0-17). */}
 			<span className="w-taskmeta">
-			{/* rychlé přeplánování — jen na hover (prototyp data-qsched) */}
-			{sched && !done && (
-				<span
-					data-qsched
-					className="hidden shrink-0 items-center group-hover:inline-flex"
-					style={{ gap: 3 }}
-				>
-					{sched.items.map((it) => (
-						<button
-							key={it.key}
-							type="button"
-							onClick={(e) => {
-								e.stopPropagation();
-								sched.onShift(it.key);
-							}}
-							className="cursor-pointer whitespace-nowrap rounded-md border border-line bg-card font-mono text-ink-3 hover:border-brass hover:text-brass-text"
-							style={{ fontSize: 9.5, padding: "2px 6px" }}
-						>
-							{it.label}
-						</button>
-					))}
-				</span>
-			)}
-
-			{/* termín (mono) */}
-			{due && (
-				<span
-					className="shrink-0 font-mono"
-					style={{
-						fontSize: 12,
-						color: due.overdue ? "var(--w-overdue)" : "var(--w-ink-2)",
-					}}
-				>
-					{due.label}
-				</span>
-			)}
-
-			{/* deadline vlaječka */}
-			{deadline && (
-				<span
-					className="inline-flex shrink-0 items-center font-mono"
-					style={{
-						gap: 3,
-						fontSize: 11,
-						color: "var(--w-overdue)",
-						background: "var(--w-overdue-soft)",
-						padding: "2px 7px",
-						borderRadius: 999,
-					}}
-				>
-					<svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
-						<path
-							d="M3 1.5 V10.5 M3 2 H9 L7.4 4 L9 6 H3"
-							stroke="currentColor"
-							strokeWidth="1.2"
-							fill="none"
-							strokeLinejoin="round"
-						/>
-					</svg>
-					{deadline}
-				</span>
-			)}
-
-			{/* prioritní odznak — NEUTRÁLNÍ pill (barva priority je jen levý okraj);
-			    u PORADY místo něj brass chip „Porada" (priorita je u schůzky šum) */}
-			{meeting ? (
-				<span
-					className="inline-flex shrink-0 items-center font-display font-semibold"
-					style={{
-						gap: 4,
-						fontSize: 10.5,
-						padding: "2px 9px",
-						borderRadius: 999,
-						background: "var(--w-brass-soft)",
-						border: "1px solid var(--w-brass)",
-						color: "var(--w-brass-text)",
-					}}
-				>
-					{/* sdílená ikona lidí z registru ICONS (žádný druhý bespoke glyf) */}
-					<Icon name="tym" size={11} />
-					{meetingLabel}
-				</span>
-			) : (
-				<span
-					className="shrink-0 font-display font-semibold"
-					style={{
-						fontSize: 11,
-						padding: "2px 8px",
-						borderRadius: 999,
-						background: "var(--w-card)",
-						border: `1px solid ${priority === 1 ? "var(--w-ink-3)" : "var(--w-line)"}`,
-						color:
-							priority === 1
-								? "var(--w-ink)"
-								: priority === 4
-									? "var(--w-ink-3)"
-									: "var(--w-ink-2)",
-					}}
-				>
-					P{priority}
-				</span>
-			)}
-
-			{/* status (volitelný) */}
-			{status && (
-				<span
-					className="shrink-0 font-display font-semibold"
-					style={{
-						fontSize: 11,
-						padding: "3px 9px",
-						borderRadius: 999,
-						background: status.kind === "success" ? "var(--w-success-soft)" : "var(--w-panel-2)",
-						color: status.kind === "success" ? "var(--w-success-ink)" : "var(--w-ink-2)",
-					}}
-				>
-					{status.label}
-				</span>
-			)}
-
-			{/* „Každý zvlášť · N/M" + avatary / jen avatary */}
-			{assignAll && (
-				<span
-					className="shrink-0 font-display font-semibold"
-					style={{
-						fontSize: 11,
-						padding: "3px 9px",
-						borderRadius: 999,
-						background: "var(--w-panel-2)",
-						color: "var(--w-ink-2)",
-					}}
-				>
-					{assignAll.label} ·{" "}
-					<span className="font-mono">
-						{assignAll.done}/{assignAll.total}
+				{/* rychlé přeplánování — jen na hover (prototyp data-qsched) */}
+				{sched && !done && (
+					<span
+						data-qsched
+						className="hidden shrink-0 items-center group-hover:inline-flex"
+						style={{ gap: 3 }}
+					>
+						{sched.items.map((it) => (
+							<button
+								key={it.key}
+								type="button"
+								onClick={(e) => {
+									e.stopPropagation();
+									sched.onShift(it.key);
+								}}
+								className="cursor-pointer whitespace-nowrap rounded-md border border-line bg-card font-mono text-ink-3 hover:border-brass hover:text-brass-text"
+								style={{ fontSize: 9.5, padding: "2px 6px" }}
+							>
+								{it.label}
+							</button>
+						))}
 					</span>
-				</span>
-			)}
-			{avatars && avatars.length > 0 && (
-				<span className="inline-flex shrink-0 items-center">
-					{avatars.map((a, i) => (
-						<span
-							key={`${a.initials}-${i}`}
-							className="flex items-center justify-center rounded-full font-display font-semibold"
-							style={{
-								width: 22,
-								height: 22,
-								color: "#fff",
-								fontSize: 10,
-								background: a.brass ? "var(--w-brass)" : "var(--w-avatar)",
-								boxShadow: "0 0 0 2px var(--w-card)",
-								marginLeft: i > 0 ? -6 : 0,
-							}}
-						>
-							{a.initials}
+				)}
+
+				{/* termín (mono) */}
+				{due && (
+					<span
+						className="shrink-0 font-mono"
+						style={{
+							fontSize: 12,
+							color: due.overdue ? "var(--w-overdue)" : "var(--w-ink-2)",
+						}}
+					>
+						{due.label}
+					</span>
+				)}
+
+				{/* deadline vlaječka */}
+				{deadline && (
+					<span
+						className="inline-flex shrink-0 items-center font-mono"
+						style={{
+							gap: 3,
+							fontSize: 11,
+							color: "var(--w-overdue)",
+							background: "var(--w-overdue-soft)",
+							padding: "2px 7px",
+							borderRadius: 999,
+						}}
+					>
+						<svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+							<path
+								d="M3 1.5 V10.5 M3 2 H9 L7.4 4 L9 6 H3"
+								stroke="currentColor"
+								strokeWidth="1.2"
+								fill="none"
+								strokeLinejoin="round"
+							/>
+						</svg>
+						{deadline}
+					</span>
+				)}
+
+				{/* prioritní odznak — NEUTRÁLNÍ pill (barva priority je jen levý okraj);
+			    u PORADY místo něj brass chip „Porada" (priorita je u schůzky šum) */}
+				{meeting ? (
+					<span
+						className="inline-flex shrink-0 items-center font-display font-semibold"
+						style={{
+							gap: 4,
+							fontSize: 10.5,
+							padding: "2px 9px",
+							borderRadius: 999,
+							background: "var(--w-brass-soft)",
+							border: "1px solid var(--w-brass)",
+							color: "var(--w-brass-text)",
+						}}
+					>
+						{/* sdílená ikona lidí z registru ICONS (žádný druhý bespoke glyf) */}
+						<Icon name="tym" size={11} />
+						{meetingLabel}
+					</span>
+				) : (
+					<span
+						className="shrink-0 font-display font-semibold"
+						style={{
+							fontSize: 11,
+							padding: "2px 8px",
+							borderRadius: 999,
+							background: "var(--w-card)",
+							border: `1px solid ${priority === 1 ? "var(--w-ink-3)" : "var(--w-line)"}`,
+							color:
+								priority === 1
+									? "var(--w-ink)"
+									: priority === 4
+										? "var(--w-ink-3)"
+										: "var(--w-ink-2)",
+						}}
+					>
+						P{priority}
+					</span>
+				)}
+
+				{/* status (volitelný) */}
+				{status && (
+					<span
+						className="shrink-0 font-display font-semibold"
+						style={{
+							fontSize: 11,
+							padding: "3px 9px",
+							borderRadius: 999,
+							background: status.kind === "success" ? "var(--w-success-soft)" : "var(--w-panel-2)",
+							color: status.kind === "success" ? "var(--w-success-ink)" : "var(--w-ink-2)",
+						}}
+					>
+						{status.label}
+					</span>
+				)}
+
+				{/* „Každý zvlášť · N/M" + avatary / jen avatary */}
+				{assignAll && (
+					<span
+						className="shrink-0 font-display font-semibold"
+						style={{
+							fontSize: 11,
+							padding: "3px 9px",
+							borderRadius: 999,
+							background: "var(--w-panel-2)",
+							color: "var(--w-ink-2)",
+						}}
+					>
+						{assignAll.label} ·{" "}
+						<span className="font-mono">
+							{assignAll.done}/{assignAll.total}
 						</span>
-					))}
-				</span>
-			)}
+					</span>
+				)}
+				{avatars && avatars.length > 0 && (
+					<span className="inline-flex shrink-0 items-center">
+						{avatars.map((a, i) => (
+							<span
+								key={`${a.initials}-${i}`}
+								className="flex items-center justify-center rounded-full font-display font-semibold"
+								style={{
+									width: 22,
+									height: 22,
+									color: "#fff",
+									fontSize: 10,
+									background: a.brass ? "var(--w-brass)" : "var(--w-avatar)",
+									boxShadow: "0 0 0 2px var(--w-card)",
+									marginLeft: i > 0 ? -6 : 0,
+								}}
+							>
+								{a.initials}
+							</span>
+						))}
+					</span>
+				)}
 			</span>
 		</div>
 	);

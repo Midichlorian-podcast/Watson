@@ -25,14 +25,24 @@ import { showToast } from "../lib/toast";
 
 interface Proposal {
 	title: string;
+	note?: string | null;
 	assigneeUserId?: string | null;
 	assigneeHint?: string | null;
 	priority?: number | null;
 	due?: string | null;
+	/** Přihrádka extrakce: action = závazek · unclear = k dořešení · decision = rozhodnutí. */
+	kind?: "action" | "unclear" | "decision" | null;
+	/** Doslovná citace pasáže zápisu — ukotvení návrhu (nic se nedomýšlí). */
+	evidence?: string | null;
 }
 interface Editable extends Proposal {
 	keep: boolean;
+	/** Cílový projekt bodu — akční body smí mířit i mimo projekt porady. */
+	projectId: string;
 }
+/** Přihrádka s tolerancí ke starým/mock datům bez `kind`. */
+const kindOf = (p: Proposal) =>
+	p.kind === "unclear" || p.kind === "decision" ? p.kind : ("action" as const);
 type MeetingMeta = {
 	id: string;
 	workspace_id: string | null;
@@ -59,6 +69,15 @@ const INPUT: CSSProperties = {
 	border: "1px solid var(--w-line)",
 	borderRadius: 8,
 	padding: "7px 10px",
+};
+const SELECT: CSSProperties = {
+	fontSize: 11.5,
+	color: "var(--w-ink-2)",
+	background: "var(--w-panel-2)",
+	border: "1px solid var(--w-line)",
+	borderRadius: 7,
+	padding: "4px 8px",
+	maxWidth: 175,
 };
 const BTN: CSSProperties = {
 	fontFamily: "var(--w-font-display)",
@@ -92,6 +111,9 @@ const secStyle = (tone: "hot" | "dim" | "base"): CSSProperties => ({
 });
 
 const dayLbl = (iso: string) => shortDayLabel(iso, i18n.language);
+/** Český plurál: 1 bod / 2–4 body / 5+ bodů. */
+const plural = (n: number, one: string, few: string, many: string) =>
+	n === 1 ? one : n >= 2 && n <= 4 ? few : many;
 
 /** Board porady — celostránkový detail uvnitř modulu Meets (`?meet=`). */
 export function MeetBoard({
@@ -133,15 +155,22 @@ export function MeetBoard({
 		[meetingId],
 	);
 	const derived = useMemo(() => new Set((linkRows ?? []).map((l) => l.to_id)), [linkRows]);
-	const prep = (subRows ?? []).filter((s) => !derived.has(s.id));
-	// Akční body DLE LINEAGE — bod přesunutý carryoverem zůstává v historii porady.
-	const { data: actionRows, isLoading: actLoading } = usePsQuery<TaskRow>(
-		`SELECT t.* FROM entity_links el JOIN tasks t ON t.id = el.to_id
-		 WHERE el.from_type = 'meeting' AND el.from_id = ? AND el.relation = 'derived_from'
+	// Příprava = podúkoly hubu BEZ akčních bodů (lineage NEBO meeting_id — čerstvě
+	// založený bod nesmí do dojezdu linku problikávat v Přípravě; audit v2).
+	const prep = (subRows ?? []).filter((s) => !derived.has(s.id) && !s.meeting_id);
+	// Akční body: lineage ∪ tasks.meeting_id — fallback kryje selhání /commit (offline,
+	// spadlé spojení): body jsou vidět hned a `_linked` řídí tlačítko „Propojit znovu"
+	// i po reloadu (audit v2 — pendingLink v paměti nestačil, CC-P0-04).
+	const { data: actionRows, isLoading: actLoading } = usePsQuery<TaskRow & { _linked: number }>(
+		`SELECT t.*, el.id IS NOT NULL AS _linked FROM tasks t
+		 LEFT JOIN entity_links el ON el.to_id = t.id AND el.from_type = 'meeting'
+		   AND el.from_id = ? AND el.relation = 'derived_from'
+		 WHERE el.id IS NOT NULL OR (t.meeting_id = ? AND t.kind IS NOT 'meeting')
 		 ORDER BY t.completed_at IS NOT NULL, t.created_at`,
-		[meetingId],
+		[meetingId, meetingId],
 	);
 	const actions = actionRows ?? [];
+	const unlinked = actions.filter((a) => !a._linked).map((a) => a.id);
 	const { data: whoRows, isLoading: whoLoading } = usePsQuery<{ user_id: string }>(
 		"SELECT user_id FROM assignments WHERE task_id = ?",
 		[hubId],
@@ -166,12 +195,52 @@ export function MeetBoard({
 			m.set(r.task_id, [...(m.get(r.task_id) ?? []), members.get(r.user_id) ?? "?"]);
 		return m;
 	}, [subAsgRows, members]);
-	// Členové projektu hubu — validace řešitelů akčních bodů (R5).
-	const { data: pmRows } = usePsQuery<{ user_id: string }>(
-		"SELECT user_id FROM project_members WHERE project_id = ?",
-		[hub?.project_id ?? ""],
+	// Projekty prostoru + moje role — akční bod smí mířit do JINÉHO projektu, ale jen
+	// tam, kde jsem editor+ (server by commenterovi insert odmítl — poctivost 0.4).
+	const { data: wsProjRows } = usePsQuery<{ id: string; name: string; role: string | null }>(
+		`SELECT p.id, p.name, pm.role FROM projects p
+		 LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = ?
+		 WHERE p.workspace_id = ? ORDER BY p.name COLLATE NOCASE`,
+		[uid ?? "", meta?.workspace_id ?? ""],
 	);
-	const projMembers = useMemo(() => new Set((pmRows ?? []).map((r) => r.user_id)), [pmRows]);
+	const editableProjects = useMemo(
+		() => (wsProjRows ?? []).filter((p) => p.role === "editor" || p.role === "manager"),
+		[wsProjRows],
+	);
+	const projNames = useMemo(
+		() => new Map((wsProjRows ?? []).map((p) => [p.id, p.name])),
+		[wsProjRows],
+	);
+	// Členství VŠECH projektů prostoru — R5 validace řešitele proti cílovému projektu
+	// + kandidáti řešitelů. Pozn.: sync doručí jen členy MÝCH projektů, takže „kdokoli
+	// z prostoru" ≈ lidé sdílející se mnou aspoň jeden projekt (pilotní aproximace).
+	const { data: allPmRows, isLoading: allPmLoading } = usePsQuery<{
+		project_id: string;
+		user_id: string;
+	}>(
+		`SELECT pm.project_id, pm.user_id FROM project_members pm
+		 JOIN projects p ON p.id = pm.project_id WHERE p.workspace_id = ?`,
+		[meta?.workspace_id ?? ""],
+	);
+	const pmByProject = useMemo(() => {
+		const m = new Map<string, Set<string>>();
+		for (const r of allPmRows ?? []) {
+			const s = m.get(r.project_id) ?? new Set<string>();
+			s.add(r.user_id);
+			m.set(r.project_id, s);
+		}
+		return m;
+	}, [allPmRows]);
+	const wsPeople = useMemo(() => {
+		const seen = new Set<string>();
+		const out: { id: string; name: string }[] = [];
+		for (const r of allPmRows ?? [])
+			if (!seen.has(r.user_id)) {
+				seen.add(r.user_id);
+				out.push({ id: r.user_id, name: members.get(r.user_id) ?? "…" });
+			}
+		return out.sort((a, b) => a.name.localeCompare(b.name, "cs"));
+	}, [allPmRows, members]);
 	// Řetěz — porady stejné série + huby kvůli termínům.
 	const seriesKey = meta?.series_id ?? meetingId;
 	const { data: chainRows } = usePsQuery<
@@ -183,6 +252,15 @@ export function MeetBoard({
 		 WHERE m.series_id = ? OR m.id = ?
 		 ORDER BY t.due_date IS NULL, t.due_date, m.created_at`,
 		[seriesKey, seriesKey],
+	);
+	// Huby řetězu — chip „přeneseno dál" jen pro SKUTEČNÝ carryover (rodič = hub jiné
+	// porady série), ne pro libovolné ruční přeparentování (audit v2).
+	const chainHubs = useMemo(
+		() =>
+			new Set(
+				(chainRows ?? []).map((m) => m.hub_task_id).filter((x): x is string => !!x && x !== hubId),
+			),
+		[chainRows, hubId],
 	);
 
 	// ── příprava ──
@@ -208,26 +286,69 @@ export function MeetBoard({
 	const [serverLoaded, setServerLoaded] = useState<"idle" | "ok" | "offline">("idle");
 	const [proposals, setProposals] = useState<Editable[] | null>(null);
 	const [wasMock, setWasMock] = useState(false);
+	const [showUnclear, setShowUnclear] = useState(false);
+	// „Zahodit návrhy" = vědomé rozhodnutí — bez flagu by je rehydratace hned vrátila.
+	const [dismissed, setDismissed] = useState(false);
+	// Uložená extrakce ze serveru (rehydratace po reloadu — bez ní by krok „Návrhy AI ✓"
+	// ukazoval na nic a jediná cesta byla další placený AI call; audit v2).
+	const [serverProposals, setServerProposals] = useState<Proposal[] | null>(null);
+	const upd = (i: number, patch: Partial<Editable>) =>
+		setProposals((ps) => (ps ?? []).map((x, xi) => (xi === i ? { ...x, ...patch } : x)));
+	/** Vlastní bod nad rámec návrhů AI — porady neříkají všechno explicitně. */
+	const addManual = () =>
+		setProposals((ps) => [
+			...(ps ?? []),
+			{ title: "", keep: true, kind: "action", evidence: null, projectId: hub?.project_id ?? "" },
+		]);
 	useEffect(() => {
 		let live = true;
 		(async () => {
-			try {
-				const r = await fetch(`${API_URL}/api/meetings/${meetingId}`, { credentials: "include" });
-				if (!r.ok) throw new Error("meeting");
-				const j = await r.json();
-				if (!live) return;
-				// server plní jen autoritativní kopii; rozepsaný draft zůstává nedotčený
-				if (typeof j.meeting?.transcript === "string" && j.meeting.transcript)
-					setSaved(j.meeting.transcript);
-				setServerLoaded("ok");
-			} catch {
-				if (live) setServerLoaded("offline");
+			// Retry s backoffem — studený page-load burst umí shodit první request
+			// (přechodné síťové/DB chyby); teprve po vyčerpání pokusů hlásíme offline.
+			for (let attempt = 0; attempt < 3; attempt++) {
+				try {
+					const r = await fetch(`${API_URL}/api/meetings/${meetingId}`, {
+						credentials: "include",
+					});
+					if (r.status === 401 || r.status === 403 || r.status === 404) break; // ne-přechodné
+					if (!r.ok) throw new Error("meeting");
+					const j = await r.json();
+					if (!live) return;
+					// server plní jen autoritativní kopii; rozepsaný draft zůstává nedotčený
+					if (typeof j.meeting?.transcript === "string" && j.meeting.transcript)
+						setSaved(j.meeting.transcript);
+					if (
+						j.meeting?.status === "extracted" &&
+						Array.isArray(j.meeting?.extraction) &&
+						j.meeting.extraction.length > 0
+					)
+						setServerProposals(j.meeting.extraction as Proposal[]);
+					setServerLoaded("ok");
+					return;
+				} catch {
+					await new Promise((res) => setTimeout(res, 700 * (attempt + 1)));
+					if (!live) return;
+				}
 			}
+			if (live) setServerLoaded("offline");
 		})();
 		return () => {
 			live = false;
 		};
 	}, [meetingId]);
+
+	// Rehydratace uložené extrakce: čeká na hub (výchozí cílový projekt) a respektuje
+	// „Zahodit návrhy" i rozběhlou revizi.
+	useEffect(() => {
+		if (!serverProposals || proposals || dismissed || !hub) return;
+		setProposals(
+			serverProposals.map((p) => ({
+				...p,
+				keep: kindOf(p) !== "unclear",
+				projectId: hub.project_id ?? "",
+			})),
+		);
+	}, [serverProposals, proposals, dismissed, hub]);
 
 	async function extractHere() {
 		const text = (editing ? draft : saved).trim();
@@ -242,7 +363,14 @@ export function MeetBoard({
 			});
 			if (!r.ok) throw new Error("extract");
 			const j = await r.json();
-			setProposals((j.proposals ?? []).map((p: Proposal) => ({ ...p, keep: true })));
+			// unclear = nezaškrtnuté (rozpočet hluku), ale VIDITELNÉ — nic se neztrácí.
+			setProposals(
+				(j.proposals ?? []).map((p: Proposal) => ({
+					...p,
+					keep: kindOf(p) !== "unclear",
+					projectId: hub?.project_id ?? "",
+				})),
+			);
 			setWasMock(!!j.mock);
 			setSaved(text); // extrakce zápis ukládá na server → povýšit na autoritativní
 			setEditing(false);
@@ -276,8 +404,7 @@ export function MeetBoard({
 		}
 	}
 
-	// Nepropojené akční body (commit lineage selhal/offline) — retry přes server (idempotentní).
-	const [pendingLink, setPendingLink] = useState<string[] | null>(null);
+	// Nepropojené akční body se odvozují z dotazu (`unlinked` — přežije reload; audit v2).
 	async function linkToServer(taskIds: string[]): Promise<boolean> {
 		try {
 			const r = await fetch(`${API_URL}/api/meetings/${meetingId}/commit`, {
@@ -292,47 +419,128 @@ export function MeetBoard({
 		}
 	}
 
-	/** Akční body = PODÚKOLY hubu; lineage (entity_links) zapisuje server v /commit. */
+	/**
+	 * Založí schválené akční body. Stejný projekt = PODÚKOL hubu; jiný projekt =
+	 * samostatný úkol v cílovém projektu (podúkol musí být same-project — DB invariant),
+	 * lineage přes entity_links + meeting_id nese oba případy. Rozhodnutí a nepřevzaté
+	 * body „k dořešení" se uloží do popisu hubu — žádná informace se neztrácí.
+	 */
 	async function commitActions() {
-		if (!proposals || !hub || !uid) return;
-		const chosen = proposals.filter((p) => p.keep && p.title.trim());
-		if (chosen.length === 0) return;
+		if (!proposals || !uid) return;
+		if (!hub) {
+			showToast("Porada se ještě načítá — zkus to za chvíli.");
+			return;
+		}
+		// R5 mapa členství se ještě načítá → commit by TIŠE zahodil platné řešitele.
+		if (allPmLoading) {
+			showToast("Načítám členství projektů — zkus to za chvíli.");
+			return;
+		}
+		const chosen = proposals.filter((p) => kindOf(p) === "action" && p.keep && p.title.trim());
+		const decisions = proposals.filter((p) => kindOf(p) === "decision" && p.keep && p.title.trim());
+		const leftovers = proposals.filter((p) => kindOf(p) === "unclear" && p.title.trim());
+		if (chosen.length === 0 && decisions.length === 0 && leftovers.length === 0) {
+			showToast("Není co založit — zaškrtni bod nebo doplň název.");
+			return;
+		}
+		// Poctivost 0.4: bez role editor+ v cílovém projektu by server insert odmítl.
+		const badTarget = chosen.filter((p) => !editableProjects.some((e) => e.id === p.projectId));
+		if (badTarget.length > 0) {
+			showToast("U některých bodů chybí cílový projekt (potřebuješ roli editor+) — vyber ho.");
+			return;
+		}
+		// Popis hubu (rozhodnutí/k dořešení) je PATCH úkolu → server chce editor+ v projektu
+		// porady; bez role by lokální zápis prošel, server ho vrátil a toast lhal (audit v2).
+		const hubEditable = editableProjects.some((e) => e.id === hub.project_id);
+		if ((decisions.length > 0 || leftovers.length > 0) && !hubEditable) {
+			showToast(
+				"Rozhodnutí a nedořešené body se ukládají k poradě — potřebuješ roli editor+ v jejím projektu.",
+			);
+			return;
+		}
 		setBusy(true);
 		try {
 			const now = new Date().toISOString();
 			const taskIds: string[] = [];
+			const made: { tid: string; pid: string }[] = [];
 			await powerSync.writeTransaction(async (tx) => {
 				for (const p of chosen) {
 					const tid = crypto.randomUUID();
+					const pid = p.projectId;
 					taskIds.push(tid);
+					made.push({ tid, pid });
 					await tx.execute(
-						`INSERT INTO tasks (id, project_id, parent_id, name, priority, due_date, assignment_mode, created_by, created_at)
-						 VALUES (?, ?, ?, ?, ?, ?, 'single', ?, ?)`,
-						[tid, hub.project_id, hubId, p.title.trim(), p.priority ?? 3, p.due ?? null, uid, now],
+						`INSERT INTO tasks (id, project_id, parent_id, name, description, priority, due_date,
+						   assignment_mode, meeting_id, created_by, created_at)
+						 VALUES (?, ?, ?, ?, ?, ?, ?, 'single', ?, ?, ?)`,
+						[
+							tid,
+							pid,
+							pid === hub.project_id ? hubId : null,
+							p.title.trim(),
+							p.note?.trim() || null,
+							p.priority ?? 3,
+							p.due ?? null,
+							meetingId,
+							uid,
+							now,
+						],
 					);
-					// R5 — řešitel jen člen projektu hubu; jiného vynech (doplní člověk v detailu).
-					if (p.assigneeUserId && projMembers.has(p.assigneeUserId)) {
+					// R5 — řešitel jen člen CÍLOVÉHO projektu (UI to hlídá varováním předem).
+					if (p.assigneeUserId && pmByProject.get(pid)?.has(p.assigneeUserId)) {
 						await tx.execute(
 							"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
-							[tid, hub.project_id, p.assigneeUserId, now],
+							[tid, pid, p.assigneeUserId, now],
 						);
 					}
 				}
+				// Rozhodnutí + nepřevzaté „k dořešení" → popis hubu (trvalá stopa porady).
+				const blocks: string[] = [];
+				if (decisions.length)
+					blocks.push(
+						`Rozhodnutí z porady:\n${decisions.map((d) => `• ${d.title.trim()}`).join("\n")}`,
+					);
+				if (leftovers.length)
+					blocks.push(
+						`K dořešení (nepřevzato jako úkol):\n${leftovers.map((d) => `• ${d.title.trim()}`).join("\n")}`,
+					);
+				if (blocks.length) {
+					const block = blocks.join("\n\n");
+					await tx.execute(
+						`UPDATE tasks SET description = CASE WHEN description IS NULL OR description = ''
+						   THEN ? ELSE description || char(10) || char(10) || ? END WHERE id = ?`,
+						[block, block, hubId],
+					);
+				}
 			});
-			for (const tid of taskIds)
-				void logTaskActivity(tid, hub.project_id, uid, "created", null, "meet");
+			for (const m of made) void logTaskActivity(m.tid, m.pid, uid, "created", null, "meet");
+			const crossCount = made.filter((m) => m.pid !== hub.project_id).length;
+			const savedNote =
+				decisions.length || leftovers.length
+					? ` Rozhodnutí a nedořešené body uloženy k poradě.`
+					: "";
 			// Poctivě (0.4): úspěch hlásíme jen po OK; jinak nabídneme retry — nic „samo".
+			// I s 0 body se volá server — uzavře poradu (status committed); porada jen
+			// s rozhodnutími jinak neměla cestu k dokončení (audit v2).
 			const linked = await linkToServer(taskIds);
+			const nTxt = `${taskIds.length} ${plural(taskIds.length, "akční bod", "akční body", "akčních bodů")}`;
 			if (linked) {
-				showToast(`Založeno ${taskIds.length} akčních bodů porady.`);
-				setPendingLink(null);
-			} else {
-				setPendingLink(taskIds);
 				showToast(
-					`Akční body (${taskIds.length}) založeny, ale propojení s poradou selhalo — zkus „Propojit znovu" při připojení.`,
+					taskIds.length === 0
+						? `Revize uložena — porada uzavřena.${savedNote}`
+						: `Založeno ${nTxt}${crossCount ? ` (${crossCount} v jiných projektech)` : ""}.${savedNote}`,
+				);
+			} else {
+				showToast(
+					taskIds.length === 0
+						? `Revize uložena lokálně, ale uzavření porady selhalo — zkus „Propojit znovu" při připojení.${savedNote}`
+						: `Akční body (${taskIds.length}) založeny, ale propojení s poradou selhalo — zkus „Propojit znovu" při připojení.`,
 				);
 			}
 			setProposals(null);
+			setDismissed(true); // revize proběhla — rehydratace už nemá co vracet
+		} catch {
+			showToast("Založení akčních bodů selhalo — nic se nezměnilo, zkus to znovu.");
 		} finally {
 			setBusy(false);
 		}
@@ -341,6 +549,11 @@ export function MeetBoard({
 	// ── řetěz: navazující meet + carryover = PŘESUN nedodělků ──
 	async function followUp() {
 		if (!hub || !uid || !meta?.workspace_id) return;
+		// Poctivost 0.4: bez editor+ v projektu porady by server nový hub odmítl.
+		if (!editableProjects.some((e) => e.id === hub.project_id)) {
+			showToast("Navazující poradu může založit jen editor projektu porady.");
+			return;
+		}
 		setBusy(true);
 		try {
 			const newMeetId = crypto.randomUUID();
@@ -420,6 +633,11 @@ export function MeetBoard({
 		},
 	];
 	const currentStep = steps.findIndex((s) => !s.done);
+	// Revizní přihrádky s PŮVODNÍM indexem (upd/promote pracují nad jedním polem).
+	const idxd = (proposals ?? []).map((p, i) => ({ p, i }));
+	const nActions = idxd.filter(
+		({ p }) => kindOf(p) === "action" && p.keep && p.title.trim(),
+	).length;
 
 	const time = (() => {
 		if (!hub) return "";
@@ -638,96 +856,352 @@ export function MeetBoard({
 								</span>
 							)}
 						</div>
-						{/* AI revize návrhů — objeví se tady po extrakci (mockup: „návrhy vlevo") */}
+						{/* AI revize návrhů — tři přihrádky: akční body / k dořešení / rozhodnutí.
+						    Plná editace (řešitel kdokoli z prostoru, termín, priorita, CÍLOVÝ projekt)
+						    + vlastní body. Nic se neztrácí: nepřevzaté jde do popisu porady. */}
 						{proposals && (
-							<div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 10 }}>
+							<div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
 								<div className="font-body" style={{ fontSize: 12, color: "var(--w-ink-3)" }}>
 									Návrhy ze zápisu{wasMock ? " · ukázkový režim (bez AI klíče)" : ""} — uprav,
-									odškrtni nechtěné a založ:
+									přiřaď a založ. Každý bod nese citaci zápisu (❞).
 								</div>
-								{proposals.map((p, i) => (
+								{idxd
+									.filter(({ p }) => kindOf(p) === "action")
+									.map(({ p, i }) => {
+										const target = pmByProject.get(p.projectId);
+										// Během načítání členství nevaruj — falešné ⚠ (audit v2).
+										const badAssignee =
+											!allPmLoading &&
+											!!p.assigneeUserId &&
+											!!p.projectId &&
+											!target?.has(p.assigneeUserId);
+										const suggest = badAssignee
+											? editableProjects.find((e) =>
+													pmByProject.get(e.id)?.has(p.assigneeUserId ?? ""),
+												)
+											: undefined;
+										const badTarget = !editableProjects.some((e) => e.id === p.projectId);
+										return (
+											<div
+												// biome-ignore lint/suspicious/noArrayIndexKey: stabilní v rámci revize
+												key={i}
+												style={{
+													border: "1px solid var(--w-line)",
+													borderRadius: 10,
+													padding: "8px 10px",
+													opacity: p.keep ? 1 : 0.55,
+													display: "flex",
+													flexDirection: "column",
+													gap: 6,
+												}}
+											>
+												<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+													<input
+														type="checkbox"
+														checked={p.keep}
+														onChange={(e) => upd(i, { keep: e.target.checked })}
+														style={{ accentColor: "var(--w-brass)", flex: "none" }}
+														aria-label="Založit tento akční bod"
+													/>
+													<input
+														value={p.title}
+														onChange={(e) => upd(i, { title: e.target.value })}
+														placeholder="Co se má udělat…"
+														style={{ ...INPUT, fontWeight: 600 }}
+													/>
+													{p.evidence && (
+														<span
+															title={`Ze zápisu: „${p.evidence}"`}
+															className="font-display"
+															style={{
+																flex: "none",
+																fontSize: 14,
+																color: "var(--w-brass-text)",
+																cursor: "help",
+															}}
+														>
+															❞
+														</span>
+													)}
+												</div>
+												{p.keep && (
+													<div
+														style={{
+															display: "flex",
+															gap: 6,
+															flexWrap: "wrap",
+															alignItems: "center",
+															paddingLeft: 21,
+														}}
+													>
+														<select
+															value={p.assigneeUserId ?? ""}
+															onChange={(e) => upd(i, { assigneeUserId: e.target.value || null })}
+															style={SELECT}
+															aria-label="Řešitel"
+														>
+															<option value="">
+																{p.assigneeHint ? `? ${p.assigneeHint}` : "— bez řešitele —"}
+															</option>
+															{wsPeople.map((m) => (
+																<option key={m.id} value={m.id}>
+																	{m.name}
+																</option>
+															))}
+														</select>
+														<select
+															value={p.projectId}
+															onChange={(e) => upd(i, { projectId: e.target.value })}
+															style={{
+																...SELECT,
+																borderColor: badTarget ? "var(--w-overdue)" : "var(--w-line)",
+															}}
+															aria-label="Cílový projekt"
+														>
+															{badTarget && <option value={p.projectId}>— vyber projekt —</option>}
+															{editableProjects.map((e) => (
+																<option key={e.id} value={e.id}>
+																	{e.id === hub?.project_id ? `${e.name} (porada)` : e.name}
+																</option>
+															))}
+														</select>
+														<input
+															type="date"
+															value={p.due ?? ""}
+															onChange={(e) => upd(i, { due: e.target.value || null })}
+															style={{ ...SELECT, width: 130 }}
+															aria-label="Termín"
+														/>
+														<select
+															value={String(p.priority ?? 3)}
+															onChange={(e) => upd(i, { priority: Number(e.target.value) })}
+															style={SELECT}
+															aria-label="Priorita"
+														>
+															<option value="1">P1</option>
+															<option value="2">P2</option>
+															<option value="3">P3</option>
+															<option value="4">P4</option>
+														</select>
+													</div>
+												)}
+												{p.keep && badAssignee && (
+													<div
+														className="font-body"
+														style={{
+															fontSize: 11,
+															color: "var(--w-overdue)",
+															paddingLeft: 21,
+															display: "flex",
+															gap: 8,
+															alignItems: "center",
+															flexWrap: "wrap",
+														}}
+													>
+														⚠ {members.get(p.assigneeUserId ?? "") ?? "Řešitel"} není člen projektu
+														„{projNames.get(p.projectId) ?? "?"}" — bod se založí bez řešitele.
+														{suggest && (
+															<button
+																type="button"
+																onClick={() => upd(i, { projectId: suggest.id })}
+																className="font-display"
+																style={{
+																	fontWeight: 600,
+																	fontSize: 11,
+																	color: "var(--w-brass-text)",
+																	background: "none",
+																	border: "none",
+																	padding: 0,
+																	cursor: "pointer",
+																}}
+															>
+																Přesunout do „{suggest.name}" →
+															</button>
+														)}
+													</div>
+												)}
+											</div>
+										);
+									})}
+								<button
+									type="button"
+									style={{ ...BTN_GHOST, alignSelf: "flex-start", padding: "6px 11px" }}
+									onClick={() => addManual()}
+								>
+									+ Přidat vlastní bod
+								</button>
+								{idxd.some(({ p }) => kindOf(p) === "unclear") && (
 									<div
-										// biome-ignore lint/suspicious/noArrayIndexKey: stabilní v rámci revize
-										key={i}
 										style={{
-											display: "flex",
-											gap: 8,
-											alignItems: "center",
-											opacity: p.keep ? 1 : 0.5,
+											border: "1px dashed var(--w-line)",
+											borderRadius: 10,
+											padding: "8px 10px",
 										}}
 									>
-										<input
-											type="checkbox"
-											checked={p.keep}
-											onChange={(e) =>
-												setProposals((ps) =>
-													(ps ?? []).map((x, xi) =>
-														xi === i ? { ...x, keep: e.target.checked } : x,
-													),
-												)
-											}
-											style={{ accentColor: "var(--w-brass)", flex: "none" }}
-											aria-label="Založit tento akční bod"
-										/>
-										<input
-											value={p.title}
-											onChange={(e) =>
-												setProposals((ps) =>
-													(ps ?? []).map((x, xi) =>
-														xi === i ? { ...x, title: e.target.value } : x,
-													),
-												)
-											}
-											style={{ ...INPUT, fontWeight: 600 }}
-										/>
-										<span
-											className="font-body"
+										<button
+											type="button"
+											onClick={() => setShowUnclear((v) => !v)}
+											className="font-display"
 											style={{
-												fontSize: 11,
-												color: "var(--w-ink-3)",
-												flex: "none",
-												width: 105,
-												overflow: "hidden",
-												textOverflow: "ellipsis",
-												whiteSpace: "nowrap",
+												fontWeight: 700,
+												fontSize: 12,
+												color: "var(--w-ink-2)",
+												background: "none",
+												border: "none",
+												padding: 0,
+												cursor: "pointer",
 											}}
-											title={
-												p.assigneeUserId
-													? (members.get(p.assigneeUserId) ?? "")
-													: (p.assigneeHint ?? "")
-											}
 										>
-											{p.assigneeUserId
-												? (members.get(p.assigneeUserId) ?? "—")
-												: (p.assigneeHint ?? "— nikdo —")}
-										</span>
+											K dořešení · {idxd.filter(({ p }) => kindOf(p) === "unclear").length}{" "}
+											{showUnclear ? "▴" : "▾"}
+										</button>
+										<div
+											className="font-body"
+											style={{ fontSize: 11, color: "var(--w-ink-3)", marginTop: 2 }}
+										>
+											Nejasné či implicitní zmínky ze zápisu — AI nic nedomýšlí. Převezmi, co je
+											úkol; zbytek se uloží k poradě.
+										</div>
+										{showUnclear &&
+											idxd
+												.filter(({ p }) => kindOf(p) === "unclear")
+												.map(({ p, i }) => (
+													<div
+														// biome-ignore lint/suspicious/noArrayIndexKey: stabilní v rámci revize
+														key={i}
+														style={{
+															marginTop: 8,
+															paddingTop: 8,
+															borderTop: "1px solid var(--w-line)",
+														}}
+													>
+														<div
+															className="font-display"
+															style={{ fontWeight: 600, fontSize: 12.5, color: "var(--w-ink)" }}
+														>
+															{p.title}
+														</div>
+														{p.evidence && (
+															<div
+																className="font-body"
+																style={{
+																	fontSize: 11.5,
+																	color: "var(--w-ink-3)",
+																	fontStyle: "italic",
+																	marginTop: 2,
+																}}
+															>
+																„{p.evidence}"
+															</div>
+														)}
+														<button
+															type="button"
+															onClick={() => upd(i, { kind: "action", keep: true })}
+															className="font-display"
+															style={{
+																fontWeight: 600,
+																fontSize: 11.5,
+																color: "var(--w-brass-text)",
+																background: "none",
+																border: "none",
+																padding: 0,
+																marginTop: 4,
+																cursor: "pointer",
+															}}
+														>
+															Převzít jako akční bod ↑
+														</button>
+													</div>
+												))}
 									</div>
-								))}
-								<div style={{ display: "flex", gap: 8 }}>
+								)}
+								{idxd.some(({ p }) => kindOf(p) === "decision") && (
+									<div
+										style={{
+											border: "1px solid var(--w-line)",
+											borderRadius: 10,
+											padding: "8px 10px",
+										}}
+									>
+										<div style={{ ...LABEL, marginBottom: 2 }}>Rozhodnutí — uloží se k poradě</div>
+										<div
+											className="font-body"
+											style={{ fontSize: 11, color: "var(--w-ink-3)", marginBottom: 5 }}
+										>
+											Odškrtnutá rozhodnutí se neuloží (zůstávají jen v zápisu).
+										</div>
+										{idxd
+											.filter(({ p }) => kindOf(p) === "decision")
+											.map(({ p, i }) => (
+												<label
+													// biome-ignore lint/suspicious/noArrayIndexKey: stabilní v rámci revize
+													key={i}
+													className="font-body"
+													style={{
+														display: "flex",
+														gap: 8,
+														alignItems: "center",
+														fontSize: 12.5,
+														color: "var(--w-ink-2)",
+														padding: "2px 0",
+														cursor: "pointer",
+													}}
+												>
+													<input
+														type="checkbox"
+														checked={p.keep}
+														onChange={(e) => upd(i, { keep: e.target.checked })}
+														style={{ accentColor: "var(--w-brass)", flex: "none" }}
+													/>
+													<span style={{ minWidth: 0 }}>{p.title}</span>
+													{p.evidence && (
+														<span
+															title={`Ze zápisu: „${p.evidence}"`}
+															style={{
+																flex: "none",
+																color: "var(--w-brass-text)",
+																cursor: "help",
+															}}
+														>
+															❞
+														</span>
+													)}
+												</label>
+											))}
+									</div>
+								)}
+								<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
 									<button
 										type="button"
 										style={{ ...BTN_PRIMARY, opacity: busy ? 0.6 : 1 }}
 										disabled={busy}
 										onClick={() => void commitActions()}
 									>
-										Založit {proposals.filter((p) => p.keep && p.title.trim()).length} akčních bodů
+										{nActions > 0
+											? `Založit ${nActions} ${plural(nActions, "akční bod", "akční body", "akčních bodů")}`
+											: "Uložit revizi"}
 									</button>
-									<button type="button" style={BTN_GHOST} onClick={() => setProposals(null)}>
+									<button
+										type="button"
+										style={BTN_GHOST}
+										onClick={() => {
+											setProposals(null);
+											setDismissed(true);
+										}}
+									>
 										Zahodit návrhy
 									</button>
 								</div>
 							</div>
 						)}
-						{pendingLink && (
+						{unlinked.length > 0 && !proposals && (
 							<button
 								type="button"
 								style={{ ...BTN_GHOST, color: "var(--w-brass-text)", marginBottom: 8 }}
 								onClick={() =>
-									void linkToServer(pendingLink).then((ok) => {
-										if (ok) {
-											setPendingLink(null);
-											showToast("Akční body propojeny s poradou.");
-										} else showToast("Propojení zatím selhalo — zkus to při připojení.");
+									void linkToServer(unlinked).then((ok) => {
+										if (ok) showToast("Akční body propojeny s poradou.");
+										else showToast("Propojení zatím selhalo — zkus to při připojení.");
 									})
 								}
 							>
@@ -744,7 +1218,21 @@ export function MeetBoard({
 							<SubRow
 								key={s.id}
 								t={s}
-								moved={s.parent_id !== hubId}
+								chip={
+									s.parent_id === hubId
+										? undefined
+										: s.parent_id && chainHubs.has(s.parent_id)
+											? {
+													label: "→ přeneseno dál",
+													title: "Nedodělek přesunutý do navazující porady",
+												}
+											: s.project_id !== hub?.project_id
+												? {
+														label: projNames.get(s.project_id ?? "") ?? "jiný projekt",
+														title: "Akční bod založený v jiném projektu",
+													}
+												: undefined
+								}
 								names={subNames.get(s.id) ?? []}
 								onToggle={() => void toggleTask(s, uid)}
 								onOpen={() => openTask(s.id)}
@@ -946,14 +1434,14 @@ export function MeetBoard({
 function SubRow({
 	t,
 	names: nameList,
-	moved,
+	chip,
 	onToggle,
 	onOpen,
 }: {
 	t: TaskRow;
 	names: string[];
-	/** Bod už žije pod navazující poradou (carryover) — informační chip. */
-	moved?: boolean;
+	/** Informační chip — carryover („přeneseno dál") nebo cizí projekt (název). */
+	chip?: { label: string; title: string };
 	onToggle: () => void;
 	onOpen: () => void;
 }) {
@@ -1010,10 +1498,10 @@ function SubRow({
 					{dayLbl(t.due_date)}
 				</span>
 			)}
-			{moved && (
+			{chip && (
 				<span
 					className="font-mono"
-					title="Nedodělek přesunutý do navazující porady"
+					title={chip.title}
 					style={{
 						fontSize: 9.5,
 						color: "var(--w-brass-text)",
@@ -1021,9 +1509,13 @@ function SubRow({
 						borderRadius: 999,
 						padding: "2px 8px",
 						flex: "none",
+						maxWidth: 120,
+						overflow: "hidden",
+						textOverflow: "ellipsis",
+						whiteSpace: "nowrap",
 					}}
 				>
-					→ přeneseno dál
+					{chip.label}
 				</span>
 			)}
 			{names && (
