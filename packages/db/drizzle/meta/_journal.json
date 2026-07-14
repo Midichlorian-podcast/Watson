@@ -169,6 +169,13 @@
       "when": 1784043372045,
       "tag": "0023_stormy_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784060882260,
+      "tag": "0024_wild_war_machine",
+      "breakpoints": true
     }
   ]
 }

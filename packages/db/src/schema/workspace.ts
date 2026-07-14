@@ -116,15 +116,22 @@ export const projectMembers = pgTable(
 	],
 );
 
-export const sections = pgTable("sections", {
-	id: pk(),
-	projectId: uuid("project_id")
-		.notNull()
-		.references(() => projects.id, { onDelete: "cascade" }),
-	name: varchar("name", { length: 200 }).notNull(),
-	position: integer("position").notNull().default(0),
-	createdAt: createdAt(),
-});
+export const sections = pgTable(
+	"sections",
+	{
+		id: pk(),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		name: varchar("name", { length: 200 }).notNull(),
+		position: integer("position").notNull().default(0),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		// CC-P0-15: cíl composite FK z tasks (section musí patřit do stejného projektu)
+		uniqueIndex("sections_id_project_uq").on(t.id, t.projectId),
+	],
+);
 
 /**
  * Statusy — jednoduché per projekt (default), volitelně per workspace.

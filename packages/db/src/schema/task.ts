@@ -9,6 +9,7 @@ import {
 	type AnyPgColumn,
 	boolean,
 	check,
+	foreignKey,
 	index,
 	integer,
 	pgTable,
@@ -97,6 +98,20 @@ export const tasks = pgTable(
 		index("tasks_status_idx").on(t.statusId),
 		index("tasks_due_idx").on(t.dueDate),
 		index("tasks_meeting_idx").on(t.meetingId),
+		// CC-P0-15: same-project invarianty vynucuje DB, ne jen aplikační validace
+		// (ta je obejitelná jiným endpointem nebo pořadím offline uploadu). Cíl FK
+		// vyžaduje unique (id, project_id) — plyne z PK(id), PG ho ale chce explicitně.
+		uniqueIndex("tasks_id_project_uq").on(t.id, t.projectId),
+		foreignKey({
+			name: "tasks_parent_same_project_fk",
+			columns: [t.parentId, t.projectId],
+			foreignColumns: [t.id, t.projectId],
+		}).onDelete("cascade"),
+		foreignKey({
+			name: "tasks_section_same_project_fk",
+			columns: [t.sectionId, t.projectId],
+			foreignColumns: [sections.id, sections.projectId],
+		}),
 	],
 );
 
