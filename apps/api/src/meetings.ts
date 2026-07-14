@@ -9,7 +9,7 @@
  * celý tok testovatelný i bez klíče. Přepis se do promptu vkládá jako DATA, ne instrukce.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { and, eq, entityLinks, getDb, meetings, memberships, sql, users } from "@watson/db";
+import { and, eq, ne, entityLinks, getDb, meetings, memberships, sql, users } from "@watson/db";
 import { Hono } from "hono";
 import { auth } from "./auth";
 import { aiEnabled, env } from "./env";
@@ -39,6 +39,12 @@ export interface TaskProposal {
 	kind?: "action" | "unclear" | "decision" | null;
 	/** Doslovná citace pasáže přepisu, ze které položka vychází (ukotvení + audit). */
 	evidence?: string | null;
+	/** REVIZNÍ stav (autosave rozpracované revize; AI je neplní): více řešitelů. */
+	assigneeUserIds?: string[] | null;
+	/** REVIZNÍ stav: zaškrtnutí bodu. */
+	keep?: boolean | null;
+	/** REVIZNÍ stav: cílový projekt bodu. */
+	projectId?: string | null;
 }
 
 type RosterRow = { id: string; name: string | null; areas: string | null; bio: string | null };
@@ -304,16 +310,23 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 
 	if (existing) {
 		// Doplň přepis+návrhy k naplánované poradě (žádný duplikát).
+		const extractedAt = new Date();
 		await db
 			.update(meetings)
 			.set({
 				transcript: transcript.slice(0, 100000),
 				extraction: clean,
 				status: "extracted",
-				updatedAt: new Date(),
+				updatedAt: extractedAt,
 			})
 			.where(eq(meetings.id, existing.id));
-		return c.json({ ok: true, meetingId: existing.id, proposals: clean, mock: !aiEnabled });
+		return c.json({
+			ok: true,
+			meetingId: existing.id,
+			proposals: clean,
+			mock: !aiEnabled,
+			updatedAt: extractedAt.toISOString(),
+		});
 	}
 
 	const inserted = (
@@ -337,6 +350,89 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
  * Ulož zápis BEZ AI extrakce (board: „Uložit zápis"). Status new/scheduled → 'transcribed';
  * extracted zůstává (návrhy na řádku platí). Committed poradu nelze přepsat (409).
  */
+const UUID_RE = /^[0-9a-f-]{36}$/i;
+/** Sanitizace ULOŽENÉ revize (autosave) — tvar a limity, žádné domýšlení. */
+function sanitizeReview(raw: unknown): TaskProposal[] {
+	if (!Array.isArray(raw)) return [];
+	return raw
+		.filter((p): p is TaskProposal => !!p && typeof p === "object" && typeof p.title === "string")
+		.slice(0, 80)
+		.map((p, i) => ({
+			title: p.title.slice(0, 200),
+			note: typeof p.note === "string" ? p.note.slice(0, 1000) : null,
+			// Kanonické single pole drž v synchronu s vícenásobným (odebraný řešitel
+			// nesmí přežívat pro budoucí konzumenty — audit autosave).
+			assigneeUserId: Array.isArray(p.assigneeUserIds)
+				? (p.assigneeUserIds.find((x) => typeof x === "string" && UUID_RE.test(x)) ?? null)
+				: typeof p.assigneeUserId === "string" && UUID_RE.test(p.assigneeUserId)
+					? p.assigneeUserId
+					: null,
+			// Hierarchie z extrakce se autosavem nesmí ztratit; jen zpětné reference.
+			parentIndex:
+				typeof p.parentIndex === "number" && p.parentIndex >= 0 && p.parentIndex < i
+					? p.parentIndex
+					: null,
+			assigneeHint: typeof p.assigneeHint === "string" ? p.assigneeHint.slice(0, 120) : null,
+			priority:
+				typeof p.priority === "number" && p.priority >= 1 && p.priority <= 4 ? p.priority : null,
+			due: typeof p.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.due) ? p.due : null,
+			projectHint: typeof p.projectHint === "string" ? p.projectHint.slice(0, 120) : null,
+			kind:
+				p.kind === "action" || p.kind === "unclear" || p.kind === "decision" ? p.kind : "unclear",
+			evidence: typeof p.evidence === "string" ? p.evidence.slice(0, 500) : null,
+			assigneeUserIds: Array.isArray(p.assigneeUserIds)
+				? p.assigneeUserIds
+						.filter((x): x is string => typeof x === "string" && UUID_RE.test(x))
+						.slice(0, 20)
+				: null,
+			keep: typeof p.keep === "boolean" ? p.keep : null,
+			projectId: typeof p.projectId === "string" && UUID_RE.test(p.projectId) ? p.projectId : null,
+		}));
+}
+
+/**
+ * Autosave ROZPRACOVANÉ revize (úpravy titulků, řešitelé, projekty, keep, promote).
+ * Přepíše meetings.extraction — board ji při otevření rehydratuje, takže úpravy
+ * přežijí reload i přepnutí porady v řetězu. Prázdné pole = vědomé zahození návrhů.
+ */
+meetingsRoutes.post("/api/meetings/:id/extraction", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const body = (await c.req.json().catch(() => ({}))) as {
+		proposals?: unknown;
+		baseUpdatedAt?: string;
+	};
+	const db = getDb();
+	const m = (
+		await db
+			.select()
+			.from(meetings)
+			.where(eq(meetings.id, c.req.param("id")))
+	)[0];
+	if (!m) return c.json({ error: "not found" }, 404);
+	if (!(await memberNotGuest(db, m.workspaceId, session.user.id)))
+		return c.json({ error: "forbidden" }, 403);
+	if (m.status === "committed") return c.json({ error: "already committed" }, 409);
+	// Version check (rozhodnutí 15.6 — obecné LWW není řešení): klient posílá
+	// updatedAt, ze kterého revizi rozepsal; nesouhlas = souběžná revize → 409,
+	// klient nabídne načtení aktuální verze. Bez base (starší klient) neblokujeme.
+	const base = body.baseUpdatedAt ? new Date(body.baseUpdatedAt) : null;
+	if (base && !Number.isNaN(base.getTime()) && m.updatedAt.getTime() !== base.getTime())
+		return c.json({ error: "conflict", updatedAt: m.updatedAt.toISOString() }, 409);
+	const clean = sanitizeReview(body.proposals);
+	const now = new Date();
+	// Podmíněný UPDATE — commit mohl proběhnout mezi čtením a zápisem (TOCTOU).
+	// Pozn.: verzi hlídá base-check výš (getTime v ms); eq na timestamptz ve WHERE
+	// by selhal na mikrosekundách (driver vrací ms) — proto tu není.
+	const updated = await db
+		.update(meetings)
+		.set({ extraction: clean, updatedAt: now })
+		.where(and(eq(meetings.id, m.id), ne(meetings.status, "committed")))
+		.returning({ id: meetings.id });
+	if (updated.length === 0) return c.json({ error: "conflict" }, 409);
+	return c.json({ ok: true, count: clean.length, updatedAt: now.toISOString() });
+});
+
 meetingsRoutes.post("/api/meetings/:id/transcript", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
@@ -354,15 +450,16 @@ meetingsRoutes.post("/api/meetings/:id/transcript", async (c) => {
 	if (!(await memberNotGuest(db, m.workspaceId, session.user.id)))
 		return c.json({ error: "forbidden" }, 403);
 	if (m.status === "committed") return c.json({ error: "already committed" }, 409);
+	const savedAt = new Date();
 	await db
 		.update(meetings)
 		.set({
 			transcript: transcript.slice(0, 100000),
 			status: m.status === "extracted" ? "extracted" : "transcribed",
-			updatedAt: new Date(),
+			updatedAt: savedAt,
 		})
 		.where(eq(meetings.id, m.id));
-	return c.json({ ok: true });
+	return c.json({ ok: true, updatedAt: savedAt.toISOString() });
 });
 
 /** Seznam mítingů prostoru (nejnovější první). */

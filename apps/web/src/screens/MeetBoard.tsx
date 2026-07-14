@@ -11,7 +11,7 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import i18n from "@watson/i18n";
 import { AvatarGroup } from "@watson/ui";
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL } from "../lib/api";
 import { logTaskActivity } from "../lib/activity";
 import { useSession } from "../lib/auth-client";
@@ -34,12 +34,25 @@ interface Proposal {
 	kind?: "action" | "unclear" | "decision" | null;
 	/** Doslovná citace pasáže zápisu — ukotvení návrhu (nic se nedomýšlí). */
 	evidence?: string | null;
+	/** Revizní stav uložený autosavem (server je jen přenáší, AI je neplní). */
+	assigneeUserIds?: string[] | null;
+	keep?: boolean | null;
+	projectId?: string | null;
 }
 interface Editable extends Proposal {
 	keep: boolean;
 	/** Cílový projekt bodu — akční body smí mířit i mimo projekt porady. */
 	projectId: string;
+	/** Řešitelé — jako všude v aplikaci jich může být víc (assignments). */
+	assigneeUserIds: string[];
 }
+/** Uložený revizní stav → editovatelný řádek (tolerantní ke starým datům). */
+const toEditable = (p: Proposal, defaultProject: string): Editable => ({
+	...p,
+	keep: typeof p.keep === "boolean" ? p.keep : kindOf(p) !== "unclear",
+	projectId: p.projectId ?? defaultProject,
+	assigneeUserIds: p.assigneeUserIds ?? (p.assigneeUserId ? [p.assigneeUserId] : []),
+});
 /** Přihrádka s tolerancí ke starým/mock datům bez `kind`. */
 const kindOf = (p: Proposal) =>
 	p.kind === "unclear" || p.kind === "decision" ? p.kind : ("action" as const);
@@ -292,13 +305,97 @@ export function MeetBoard({
 	// Uložená extrakce ze serveru (rehydratace po reloadu — bez ní by krok „Návrhy AI ✓"
 	// ukazoval na nic a jediná cesta byla další placený AI call; audit v2).
 	const [serverProposals, setServerProposals] = useState<Proposal[] | null>(null);
+	// ── AUTOSAVE revize (jako všude v aplikaci): každá úprava se debounced ukládá na
+	// server do meetings.extraction — přepnutí porady v řetězu/reload nic neztratí.
+	// Verze (updatedAt) dle rozhodnutí 15.6: souběžnou cizí revizi nikdy tiše nepřepsat.
+	const lastSavedRef = useRef<string>("");
+	const proposalsRef = useRef<Editable[] | null>(null);
+	proposalsRef.current = proposals;
+	const reviewBaseRef = useRef<string | null>(null);
+	const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error" | "conflict">(
+		"idle",
+	);
+	async function pushReview(body: Editable[], keepaliveWanted: boolean): Promise<Response> {
+		const payload = JSON.stringify({ proposals: body, baseUpdatedAt: reviewBaseRef.current });
+		// keepalive má tvrdý limit 64 KiB — velká revize jde běžným fetchem (SPA
+		// unmount fetch neruší; keepalive je potřeba jen pro zavření/reload stránky).
+		return fetch(`${API_URL}/api/meetings/${meetingId}/extraction`, {
+			method: "POST",
+			credentials: "include",
+			headers: { "Content-Type": "application/json" },
+			body: payload,
+			keepalive: keepaliveWanted && payload.length < 60_000,
+		});
+	}
+	/** Po 409: načti aktuální revizi ze serveru (cizí úpravy nikdy tiše nepřepsat). */
+	async function reloadReview() {
+		try {
+			const r = await fetch(`${API_URL}/api/meetings/${meetingId}`, { credentials: "include" });
+			if (!r.ok) throw new Error("meeting");
+			const j = await r.json();
+			if (typeof j.meeting?.updatedAt === "string") reviewBaseRef.current = j.meeting.updatedAt;
+			const ext = Array.isArray(j.meeting?.extraction) ? (j.meeting.extraction as Proposal[]) : [];
+			const mapped = ext.map((x) => toEditable(x, hub?.project_id ?? ""));
+			lastSavedRef.current = JSON.stringify(mapped);
+			setProposals(mapped.length ? mapped : null);
+			setSaveState("idle");
+			if (j.meeting?.status === "committed") {
+				setProposals(null);
+				showToast("Poradu mezitím někdo uzavřel — akční body už jsou založené.");
+			}
+		} catch {
+			showToast("Načtení aktuální revize selhalo — zkus to při připojení.");
+		}
+	}
+	useEffect(() => {
+		if (!proposals) return;
+		const snapshot = JSON.stringify(proposals);
+		if (snapshot === lastSavedRef.current) return;
+		setSaveState("saving");
+		const t = setTimeout(async () => {
+			try {
+				const r = await pushReview(proposals, false);
+				if (r.status === 409) {
+					setSaveState("conflict"); // souběžná revize/commit — nepřepisovat, nabídnout načtení
+					return;
+				}
+				if (!r.ok) throw new Error("save");
+				const j = await r.json().catch(() => ({}));
+				if (typeof j.updatedAt === "string") reviewBaseRef.current = j.updatedAt;
+				lastSavedRef.current = snapshot;
+				setSaveState("saved");
+			} catch {
+				setSaveState("error"); // poctivě: neuloženo (offline) — úpravy drž v okně
+			}
+		}, 700);
+		// Cleanup JEN ruší debounce — flush dělá samostatný unmount effect níž
+		// (cleanup tady běží při každém úhozu → posílal by request na každé písmeno).
+		return () => clearTimeout(t);
+	}, [proposals, meetingId]);
+	// Flush při odchodu z boardu (unmount/přepnutí porady) — scénář „překlikl jsem
+	// v řetězu a ztratil úpravy". Refs nesou poslední stav bez re-runů na každou změnu.
+	useEffect(() => {
+		return () => {
+			const ps = proposalsRef.current;
+			if (ps && JSON.stringify(ps) !== lastSavedRef.current)
+				void pushReview(ps, true).catch(() => {});
+		};
+		// biome-ignore lint/correctness/useExhaustiveDependencies: flush jen při unmountu
+	}, [meetingId]);
 	const upd = (i: number, patch: Partial<Editable>) =>
 		setProposals((ps) => (ps ?? []).map((x, xi) => (xi === i ? { ...x, ...patch } : x)));
 	/** Vlastní bod nad rámec návrhů AI — porady neříkají všechno explicitně. */
 	const addManual = () =>
 		setProposals((ps) => [
 			...(ps ?? []),
-			{ title: "", keep: true, kind: "action", evidence: null, projectId: hub?.project_id ?? "" },
+			{
+				title: "",
+				keep: true,
+				kind: "action",
+				evidence: null,
+				projectId: hub?.project_id ?? "",
+				assigneeUserIds: [],
+			},
 		]);
 	useEffect(() => {
 		let live = true;
@@ -317,6 +414,7 @@ export function MeetBoard({
 					// server plní jen autoritativní kopii; rozepsaný draft zůstává nedotčený
 					if (typeof j.meeting?.transcript === "string" && j.meeting.transcript)
 						setSaved(j.meeting.transcript);
+					if (typeof j.meeting?.updatedAt === "string") reviewBaseRef.current = j.meeting.updatedAt;
 					if (
 						j.meeting?.status === "extracted" &&
 						Array.isArray(j.meeting?.extraction) &&
@@ -341,13 +439,9 @@ export function MeetBoard({
 	// „Zahodit návrhy" i rozběhlou revizi.
 	useEffect(() => {
 		if (!serverProposals || proposals || dismissed || !hub) return;
-		setProposals(
-			serverProposals.map((p) => ({
-				...p,
-				keep: kindOf(p) !== "unclear",
-				projectId: hub.project_id ?? "",
-			})),
-		);
+		const mapped = serverProposals.map((p) => toEditable(p, hub.project_id ?? ""));
+		setProposals(mapped);
+		lastSavedRef.current = JSON.stringify(mapped); // rehydratace není „změna" k uložení
 	}, [serverProposals, proposals, dismissed, hub]);
 
 	async function extractHere() {
@@ -364,14 +458,15 @@ export function MeetBoard({
 			if (!r.ok) throw new Error("extract");
 			const j = await r.json();
 			// unclear = nezaškrtnuté (rozpočet hluku), ale VIDITELNÉ — nic se neztrácí.
-			setProposals(
-				(j.proposals ?? []).map((p: Proposal) => ({
-					...p,
-					keep: kindOf(p) !== "unclear",
-					projectId: hub?.project_id ?? "",
-				})),
-			);
+			{
+				const mapped = (j.proposals ?? []).map((p: Proposal) =>
+					toEditable(p, hub?.project_id ?? ""),
+				);
+				setProposals(mapped);
+				lastSavedRef.current = JSON.stringify(mapped);
+			}
 			setWasMock(!!j.mock);
+			if (typeof j.updatedAt === "string") reviewBaseRef.current = j.updatedAt;
 			setSaved(text); // extrakce zápis ukládá na server → povýšit na autoritativní
 			setEditing(false);
 		} catch {
@@ -394,6 +489,10 @@ export function MeetBoard({
 				body: JSON.stringify({ transcript: text }),
 			});
 			if (!r.ok) throw new Error("save");
+			const j = await r.json().catch(() => ({}));
+			// uložení zápisu posouvá updatedAt — bez obnovy báze by autosave revize
+			// falešně hlásil konflikt
+			if (typeof j.updatedAt === "string") reviewBaseRef.current = j.updatedAt;
 			setSaved(text);
 			setEditing(false);
 			showToast("Zápis uložen.");
@@ -486,11 +585,13 @@ export function MeetBoard({
 							now,
 						],
 					);
-					// R5 — řešitel jen člen CÍLOVÉHO projektu (UI to hlídá varováním předem).
-					if (p.assigneeUserId && pmByProject.get(pid)?.has(p.assigneeUserId)) {
+					// R5 — řešitelé (klidně víc, jako všude) jen členové CÍLOVÉHO projektu
+					// (UI to hlídá varováním předem).
+					for (const aid of p.assigneeUserIds) {
+						if (!pmByProject.get(pid)?.has(aid)) continue;
 						await tx.execute(
 							"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (uuid(), ?, ?, ?, ?)",
-							[tid, pid, p.assigneeUserId, now],
+							[tid, pid, aid, now],
 						);
 					}
 				}
@@ -537,6 +638,7 @@ export function MeetBoard({
 						: `Akční body (${taskIds.length}) založeny, ale propojení s poradou selhalo — zkus „Propojit znovu" při připojení.`,
 				);
 			}
+			lastSavedRef.current = JSON.stringify(proposals); // ať cleanup autosave neposílá
 			setProposals(null);
 			setDismissed(true); // revize proběhla — rehydratace už nemá co vracet
 		} catch {
@@ -861,25 +963,80 @@ export function MeetBoard({
 						    + vlastní body. Nic se neztrácí: nepřevzaté jde do popisu porady. */}
 						{proposals && (
 							<div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
-								<div className="font-body" style={{ fontSize: 12, color: "var(--w-ink-3)" }}>
-									Návrhy ze zápisu{wasMock ? " · ukázkový režim (bez AI klíče)" : ""} — uprav,
-									přiřaď a založ. Každý bod nese citaci zápisu (❞).
+								<div
+									className="font-body"
+									style={{
+										fontSize: 12,
+										color: "var(--w-ink-3)",
+										display: "flex",
+										gap: 8,
+										alignItems: "baseline",
+										flexWrap: "wrap",
+									}}
+								>
+									<span style={{ minWidth: 0 }}>
+										Návrhy ze zápisu{wasMock ? " · ukázkový režim (bez AI klíče)" : ""} — uprav,
+										přiřaď a založ. Každý bod nese citaci zápisu (❞).
+									</span>
+									<span
+										className="font-mono"
+										style={{
+											fontSize: 10,
+											flex: "none",
+											marginLeft: "auto",
+											display: "inline-flex",
+											gap: 8,
+											alignItems: "baseline",
+											color:
+												saveState === "error" || saveState === "conflict"
+													? "var(--w-overdue)"
+													: "var(--w-ink-3)",
+										}}
+									>
+										{saveState === "saving"
+											? "ukládám…"
+											: saveState === "saved"
+												? "revize uložena"
+												: saveState === "error"
+													? "neuloženo — bez připojení"
+													: saveState === "conflict"
+														? "revizi souběžně upravil někdo jiný"
+														: ""}
+										{saveState === "conflict" && (
+											<button
+												type="button"
+												onClick={() => void reloadReview()}
+												className="font-display"
+												style={{
+													fontWeight: 600,
+													fontSize: 10.5,
+													color: "var(--w-brass-text)",
+													background: "none",
+													border: "none",
+													padding: 0,
+													cursor: "pointer",
+												}}
+											>
+												Načíst aktuální →
+											</button>
+										)}
+									</span>
 								</div>
 								{idxd
 									.filter(({ p }) => kindOf(p) === "action")
 									.map(({ p, i }) => {
 										const target = pmByProject.get(p.projectId);
 										// Během načítání členství nevaruj — falešné ⚠ (audit v2).
-										const badAssignee =
-											!allPmLoading &&
-											!!p.assigneeUserId &&
-											!!p.projectId &&
-											!target?.has(p.assigneeUserId);
-										const suggest = badAssignee
-											? editableProjects.find((e) =>
-													pmByProject.get(e.id)?.has(p.assigneeUserId ?? ""),
-												)
-											: undefined;
+										const badAssignees = allPmLoading
+											? []
+											: p.assigneeUserIds.filter((id) => !!p.projectId && !target?.has(id));
+										// Návrh projektu, kde jsou členy VŠICHNI zvolení řešitelé.
+										const suggest =
+											badAssignees.length > 0
+												? editableProjects.find((e) =>
+														p.assigneeUserIds.every((id) => pmByProject.get(e.id)?.has(id)),
+													)
+												: undefined;
 										const badTarget = !editableProjects.some((e) => e.id === p.projectId);
 										return (
 											<div
@@ -934,20 +1091,72 @@ export function MeetBoard({
 															paddingLeft: 21,
 														}}
 													>
+														{p.assigneeUserIds.map((id) => (
+															<span
+																key={id}
+																className="font-body"
+																style={{
+																	display: "inline-flex",
+																	alignItems: "center",
+																	gap: 5,
+																	fontSize: 11,
+																	padding: "3px 5px 3px 9px",
+																	borderRadius: 999,
+																	background: badAssignees.includes(id)
+																		? "var(--w-overdue-soft)"
+																		: "var(--w-brass-soft)",
+																	color: badAssignees.includes(id)
+																		? "var(--w-overdue)"
+																		: "var(--w-brass-text)",
+																}}
+															>
+																{members.get(id) ?? "?"}
+																<button
+																	type="button"
+																	aria-label={`Odebrat řešitele ${members.get(id) ?? ""}`}
+																	onClick={() =>
+																		upd(i, {
+																			assigneeUserIds: p.assigneeUserIds.filter((x) => x !== id),
+																		})
+																	}
+																	style={{
+																		border: "none",
+																		background: "none",
+																		color: "inherit",
+																		cursor: "pointer",
+																		padding: 0,
+																		fontSize: 12,
+																		lineHeight: 1,
+																	}}
+																>
+																	×
+																</button>
+															</span>
+														))}
 														<select
-															value={p.assigneeUserId ?? ""}
-															onChange={(e) => upd(i, { assigneeUserId: e.target.value || null })}
+															value=""
+															onChange={(e) => {
+																const id = e.target.value;
+																if (id && !p.assigneeUserIds.includes(id))
+																	upd(i, { assigneeUserIds: [...p.assigneeUserIds, id] });
+															}}
 															style={SELECT}
-															aria-label="Řešitel"
+															aria-label="Přidat řešitele"
 														>
 															<option value="">
-																{p.assigneeHint ? `? ${p.assigneeHint}` : "— bez řešitele —"}
+																{p.assigneeUserIds.length === 0
+																	? p.assigneeHint
+																		? `? ${p.assigneeHint} — přiřaď…`
+																		: "— bez řešitele · přiřaď… —"
+																	: "+ další řešitel…"}
 															</option>
-															{wsPeople.map((m) => (
-																<option key={m.id} value={m.id}>
-																	{m.name}
-																</option>
-															))}
+															{wsPeople
+																.filter((m) => !p.assigneeUserIds.includes(m.id))
+																.map((m) => (
+																	<option key={m.id} value={m.id}>
+																		{m.name}
+																	</option>
+																))}
 														</select>
 														<select
 															value={p.projectId}
@@ -985,7 +1194,7 @@ export function MeetBoard({
 														</select>
 													</div>
 												)}
-												{p.keep && badAssignee && (
+												{p.keep && badAssignees.length > 0 && (
 													<div
 														className="font-body"
 														style={{
@@ -998,8 +1207,16 @@ export function MeetBoard({
 															flexWrap: "wrap",
 														}}
 													>
-														⚠ {members.get(p.assigneeUserId ?? "") ?? "Řešitel"} není člen projektu
-														„{projNames.get(p.projectId) ?? "?"}" — bod se založí bez řešitele.
+														⚠ {badAssignees.map((id) => members.get(id) ?? "?").join(", ")}{" "}
+														{plural(
+															badAssignees.length,
+															"není členem",
+															"nejsou členy",
+															"nejsou členy",
+														)}{" "}
+														projektu „{projNames.get(p.projectId) ?? "?"}" — bod se založí bez{" "}
+														{badAssignees.length === p.assigneeUserIds.length ? "řešitelů" : "nich"}
+														.
 														{suggest && (
 															<button
 																type="button"
@@ -1185,8 +1402,19 @@ export function MeetBoard({
 										type="button"
 										style={BTN_GHOST}
 										onClick={() => {
+											// flush při unmountu porovnává poslední snapshot — srovnat PŘED
+											// vynulováním, jinak by zahozené návrhy poslal zpět na server
+											lastSavedRef.current = JSON.stringify(proposals);
 											setProposals(null);
 											setDismissed(true);
+											void pushReview([], false)
+												.then((r) => {
+													if (r.status === 409)
+														showToast(
+															"Revizi mezitím změnil někdo jiný — zahození se neuložilo, otevři poradu znovu.",
+														);
+												})
+												.catch(() => {});
 										}}
 									>
 										Zahodit návrhy
