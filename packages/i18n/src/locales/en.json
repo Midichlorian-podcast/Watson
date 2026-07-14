@@ -213,7 +213,8 @@
 		"showActive": "← Active projects",
 		"archivedEmpty": "No archived projects.",
 		"archiveAction": "Archive",
-		"unarchiveAction": "Restore from archive"
+		"unarchiveAction": "Restore from archive",
+		"saveChanges": "Save changes"
 	},
 	"calendar": {
 		"prev": "Previous",

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
 import { initials } from "../lib/format";
@@ -112,12 +112,32 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 
 	const [name, setName] = useState("");
 	const [dod, setDod] = useState("");
-	useEffect(() => {
-		if (project) {
-			setName(project.name ?? "");
-			setDod(project.definition_of_done ?? "");
-		}
+	// P1 (audit 9) — explicitní edit mode: VŠECHNY změny jdou do draftu a zapíšou
+	// se až tlačítkem Uložit; Zrušit je zahodí. Konec auto-ukládání barvy/typu/
+	// vlastníka/stavu/členů, po kterém „Zrušit" nemělo co vracet.
+	const [color, setColor] = useState<string | null>(null);
+	const [kindDraft, setKindDraft] = useState<string>("flow");
+	const [ownerId, setOwnerId] = useState<string | null>(null);
+	const [statusDraft, setStatusDraft] = useState<string>("active");
+	const [delivery, setDelivery] = useState<string>("");
+	// členové: null = nedotčeno (platí serverový stav)
+	const [memberDraft, setMemberDraft] = useState<Set<string> | null>(null);
+	const resetDraft = useCallback(() => {
+		if (!project) return;
+		setName(project.name ?? "");
+		setDod(project.definition_of_done ?? "");
+		setColor(project.color ?? null);
+		setKindDraft(project.kind ?? "flow");
+		setOwnerId(project.owner_id ?? null);
+		setStatusDraft(project.status ?? "active");
+		setDelivery(project.delivery_date ? project.delivery_date.slice(0, 10) : "");
+		setMemberDraft(null);
 	}, [project]);
+	// re-seed jen při přepnutí projektu — příchozí sync nesmí přepsat rozepsaný draft
+	// biome-ignore lint/correctness/useExhaustiveDependencies: seed jen při změně id / načtení
+	useEffect(() => {
+		resetDraft();
+	}, [id, project == null]);
 
 	if (!project) return null;
 	const total = stats?.[0]?.total ?? 0;
@@ -125,12 +145,52 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const openCount = total - done;
 	const members = team ?? [];
 	const people = roster ?? [];
-	const memberIds = new Set(members.map((m) => m.id));
-	const dot = project.color ?? "var(--w-ink-3)";
-	const kind = project.kind ?? "flow";
-	const status = project.status ?? "active";
+	const serverMemberIds = new Set(members.map((m) => m.id));
+	const memberIds = memberDraft ?? serverMemberIds;
+	const dot = color ?? "var(--w-ink-3)";
+	const kind = kindDraft;
+	const status = statusDraft;
 	const showGoal = kind === "goal" || kind === "cycle";
-	const owner = people.find((m) => m.id === project.owner_id);
+	const owner = people.find((m) => m.id === ownerId);
+	const dirty =
+		name.trim() !== (project.name ?? "") ||
+		dod !== (project.definition_of_done ?? "") ||
+		color !== (project.color ?? null) ||
+		kind !== (project.kind ?? "flow") ||
+		ownerId !== (project.owner_id ?? null) ||
+		status !== (project.status ?? "active") ||
+		delivery !== (project.delivery_date ? project.delivery_date.slice(0, 10) : "") ||
+		(memberDraft != null &&
+			(memberDraft.size !== serverMemberIds.size ||
+				[...memberDraft].some((x) => !serverMemberIds.has(x))));
+	const save = async () => {
+		if (!name.trim()) {
+			setName(project.name ?? "");
+			return;
+		}
+		const patch: Record<string, unknown> = {};
+		if (name.trim() !== (project.name ?? "")) patch.name = name.trim();
+		if (dod !== (project.definition_of_done ?? "")) patch.definition_of_done = dod || null;
+		if (color !== (project.color ?? null)) patch.color = color;
+		if (kind !== (project.kind ?? "flow")) patch.kind = kind;
+		if (ownerId !== (project.owner_id ?? null)) patch.owner_id = ownerId;
+		if (status !== (project.status ?? "active")) {
+			patch.status = status;
+			patch.archived_at = status === "archive" ? new Date().toISOString() : null;
+		}
+		if (delivery !== (project.delivery_date ? project.delivery_date.slice(0, 10) : ""))
+			patch.delivery_date = delivery || null;
+		if (Object.keys(patch).length > 0) await patchProject(id, patch);
+		if (memberDraft) {
+			for (const m of people) {
+				const want = memberDraft.has(m.id);
+				const has = serverMemberIds.has(m.id);
+				if (want !== has) await memberMut.mutateAsync({ userId: m.id, isMember: has });
+			}
+			setMemberDraft(null);
+		}
+		showToast(t("detail.saved"));
+	};
 
 	return (
 		<>
@@ -171,15 +231,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					<input
 						value={name}
 						onChange={(e) => setName(e.target.value)}
-						onBlur={() => {
-							// Prázdný název je zakázán — vrať input na uloženou hodnotu,
-							// ať nezůstane vizuálně prázdný proti DB.
-							if (!name.trim()) {
-								setName(project.name ?? "");
-								return;
-							}
-							if (name !== project.name) void patchProject(id, { name: name.trim() });
-						}}
 						className="w-full rounded-[9px] border border-line bg-panel-2 font-display font-bold text-ink outline-none focus:border-brass"
 						style={{ padding: "9px 11px", fontSize: 16 }}
 					/>
@@ -189,22 +240,22 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						<div className="flex flex-wrap gap-1.5">
 							<button
 								type="button"
-								onClick={() => void patchProject(id, { color: null })}
+								onClick={() => setColor(null)}
 								className="grid h-6 w-6 place-items-center rounded-md border border-line text-ink-3"
 								style={{ background: "var(--w-card)" }}
 								aria-label={t("projects.colorDefault")}
 							>
-								{!project.color && "✓"}
+								{!color && "✓"}
 							</button>
 							{USER_COLORS.map((c) => (
 								<button
 									key={c}
 									type="button"
-									onClick={() => void patchProject(id, { color: c })}
+									onClick={() => setColor(c)}
 									className="h-6 w-6 rounded-md"
 									style={{
 										background: c,
-										outline: project.color === c ? "2px solid var(--w-avatar)" : "none",
+										outline: color === c ? "2px solid var(--w-avatar)" : "none",
 										outlineOffset: "1px",
 									}}
 									aria-label={c}
@@ -217,7 +268,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					<Section label={t("projects.type")}>
 						<div className="inline-flex flex-wrap gap-1 rounded-lg border border-line bg-panel-2 p-[3px]">
 							{KINDS.map(([k, lbl]) => (
-								<Seg key={k} active={kind === k} onClick={() => void patchProject(id, { kind: k })}>
+								<Seg key={k} active={kind === k} onClick={() => setKindDraft(k)}>
 									{t(`projects.${lbl}`)}
 								</Seg>
 							))}
@@ -231,8 +282,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								<PersonAvatar
 									key={m.id}
 									name={m.name}
-									on={m.id === project.owner_id}
-									onClick={() => void patchProject(id, { owner_id: m.id })}
+									on={m.id === ownerId}
+									onClick={() => setOwnerId(m.id)}
 								/>
 							))}
 						</div>
@@ -242,16 +293,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					<Section label={t("projects.status")}>
 						<div className="inline-flex flex-wrap gap-1 rounded-lg border border-line bg-panel-2 p-[3px]">
 							{STATUSES.map(([s, lbl]) => (
-								<Seg
-									key={s}
-									active={status === s}
-									onClick={() =>
-										void patchProject(id, {
-											status: s,
-											archived_at: s === "archive" ? new Date().toISOString() : null,
-										})
-									}
-								>
+								<Seg key={s} active={status === s} onClick={() => setStatusDraft(s)}>
 									{t(`projects.${lbl}`)}
 								</Seg>
 							))}
@@ -264,12 +306,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							<Section label={t("projects.delivery")}>
 								<input
 									type="date"
-									value={project.delivery_date ? project.delivery_date.slice(0, 10) : ""}
-									onChange={(e) =>
-										void patchProject(id, {
-											delivery_date: e.target.value || null,
-										})
-									}
+									value={delivery}
+									onChange={(e) => setDelivery(e.target.value)}
 									className="rounded-lg border border-line bg-panel-2 px-2.5 py-2 font-mono text-ink text-xs outline-none focus:border-brass"
 								/>
 							</Section>
@@ -277,10 +315,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								<input
 									value={dod}
 									onChange={(e) => setDod(e.target.value)}
-									onBlur={() =>
-										dod !== (project.definition_of_done ?? "") &&
-										void patchProject(id, { definition_of_done: dod || null })
-									}
 									placeholder={t("projects.dodPlaceholder")}
 									className="w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-ink text-sm outline-none focus:border-brass"
 								/>
@@ -298,7 +332,14 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										key={m.id}
 										name={m.name}
 										on={isMember}
-										onClick={() => memberMut.mutate({ userId: m.id, isMember })}
+										onClick={() =>
+											setMemberDraft((prev) => {
+												const next = new Set(prev ?? serverMemberIds);
+												if (next.has(m.id)) next.delete(m.id);
+												else next.add(m.id);
+												return next;
+											})
+										}
 									/>
 								);
 							})}
@@ -316,26 +357,39 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					</div>
 				</div>
 
-				{/* patička */}
-				<div className="flex gap-2 border-line border-t bg-card px-4 py-3">
+				{/* patička — explicitní Uložit/Zrušit (P1 audit 9); úkoly projektu nad ní */}
+				<div className="border-line border-t bg-card px-4 py-3">
 					<button
 						type="button"
 						onClick={() => {
 							onClose();
 							void navigate({ to: "/ukoly", search: { projekt: id } });
 						}}
-						className="flex-1 rounded-lg px-4 py-2 font-display font-semibold text-sm text-white hover:brightness-105"
-						style={{ background: "var(--w-brass)" }}
+						className="mb-2 w-full rounded-lg border border-line px-4 py-2 font-display font-semibold text-ink text-sm hover:border-brass"
 					>
 						{t("projects.viewTasks")}
 					</button>
-					<button
-						type="button"
-						onClick={onClose}
-						className="rounded-lg border border-line px-4 py-2 font-display font-semibold text-ink text-sm hover:border-brass"
-					>
-						{t("common.cancel")}
-					</button>
+					<div className="flex gap-2">
+						<button
+							type="button"
+							disabled={!dirty}
+							onClick={() => void save()}
+							className="flex-1 rounded-lg px-4 py-2 font-display font-semibold text-sm text-white hover:brightness-105 disabled:opacity-45"
+							style={{ background: "var(--w-brass)" }}
+						>
+							{t("projects.saveChanges")}
+						</button>
+						<button
+							type="button"
+							onClick={() => {
+								resetDraft();
+								onClose();
+							}}
+							className="rounded-lg border border-line px-4 py-2 font-display font-semibold text-ink text-sm hover:border-brass"
+						>
+							{t("common.cancel")}
+						</button>
+					</div>
 				</div>
 			</aside>
 		</>

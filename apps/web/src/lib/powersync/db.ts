@@ -41,10 +41,17 @@ const COSMETIC_KEYS = new Set<string>([
 	LEGACY_WIPED_KEY,
 ]);
 
-// Živá vazba — nastaví ji initPowerSyncForUser dřív, než se vyrenderuje router.
-export let powerSync: PowerSyncDatabase;
+// HMR pojistka: re-exekuce modulu (Vite) nesmí zahodit běžící instanci — jinak
+// by konzumenti po HMR viděli powerSync undefined (pád Sidebar/useStatus).
+const hmr = globalThis as {
+	__watsonPowerSync?: PowerSyncDatabase;
+	__watsonUserHash?: string | null;
+};
 
-let currentHash: string | null = null;
+// Živá vazba — nastaví ji initPowerSyncForUser dřív, než se vyrenderuje router.
+export let powerSync: PowerSyncDatabase = hmr.__watsonPowerSync as PowerSyncDatabase;
+
+let currentHash: string | null = hmr.__watsonUserHash ?? null;
 // Jednoduchý mutex: init/shutdown se serializují (StrictMode volá efekty 2×).
 let chain: Promise<unknown> = Promise.resolve();
 const enqueue = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -117,6 +124,8 @@ export function initPowerSyncForUser(userId: string): Promise<void> {
 		});
 		powerSync = db;
 		currentHash = h;
+		hmr.__watsonPowerSync = db;
+		hmr.__watsonUserHash = h;
 		// Dev-only handle pro ladění/verifikaci z konzole (dynamický import ve Vite
 		// vyrábí druhou instanci modulu, takže live-binding z konzole nejde použít).
 		if (import.meta.env.DEV) {
@@ -148,6 +157,7 @@ export function shutdownPowerSync(opts?: { removeLocalData?: boolean }): Promise
 			localStorage.removeItem(LAST_USER_KEY);
 		}
 		currentHash = null;
+		hmr.__watsonUserHash = null;
 		// powerSync necháváme nastavené (zavřené) — App po logout renderuje SignIn,
 		// další login přes initPowerSyncForUser instanci nahradí.
 	});

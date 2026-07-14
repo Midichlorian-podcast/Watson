@@ -218,7 +218,8 @@
 		"showActive": "← Aktivní projekty",
 		"archivedEmpty": "Žádné archivované projekty.",
 		"archiveAction": "Archivovat",
-		"unarchiveAction": "Odarchivovat"
+		"unarchiveAction": "Odarchivovat",
+		"saveChanges": "Uložit změny"
 	},
 	"calendar": {
 		"prev": "Předchozí",
