@@ -38,3 +38,4 @@ coverage/
 # lokální pracovní artefakty (screenshoty, design zipy)
 PRNTSCRNS/
 *.zip
+backups/
