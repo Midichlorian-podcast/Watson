@@ -62,6 +62,7 @@
 		"repYearly": "ročně",
 		"deadlinePill": "do {{date}}",
 		"daysPill": "{{n}} dní",
+		"saveFailed": "Úkol se neuložil do zařízení. Text zůstal — zkus to znovu.",
 		"personUnknown": "@{{q}} · nikdo takový",
 		"personAmbiguous": "@{{q}} · více osob, vyber z nabídky"
 	},
@@ -272,6 +273,7 @@
 		"daysUnit": "dní",
 		"nextWeekLower": "příští týden",
 		"handedOff": "→ Přišlo na tebe",
+		"meetingChip": "Porada",
 		"assignAllPill": "Každý zvlášť",
 		"weekend": "Víkend",
 		"nextWeekBucket": "Příští týden",
@@ -682,6 +684,8 @@
 		"roleVedouci": "Vedoucí"
 	},
 	"mail": {
+		"demoBadge": "DEMO",
+		"demoBanner": "lokální simulace — zprávy neopouštějí Watson",
 		"taskCreatedToast": "Úkol z mailu přidán do Schránky — termín dnes",
 		"taskCreatedOpen": "Otevřít",
 		"taskNoInbox": "Nenašel jsem inbox projekt — úkol nezaložen"

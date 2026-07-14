@@ -156,6 +156,45 @@ export const aiPolicies = pgTable(
 	],
 );
 
+/**
+ * Polymorfní vazby mezi entitami (mail↔úkol, LuckyOS↔úkol). Stejný vzor jako
+ * `audit_events.(entity, entity_id)`. Dedup importu z cizích systémů přes
+ * (source_system, external_id, to_type). Sdíleno mailovým i zaměstnaneckým modulem.
+ * (Zaměstnanecký modul: files/ZAMESTNANEC_integracni_PLAN_2026-07-12.md §4.1.)
+ */
+export const entityLinks = pgTable(
+	"entity_links",
+	{
+		id: pk(),
+		/** Sféra / proklik (osobní sféra u zaměstnaneckých vazeb). */
+		workspaceId: uuid("workspace_id").references(() => workspaces.id, {
+			onDelete: "cascade",
+		}),
+		fromType: varchar("from_type", { length: 64 }).notNull(),
+		fromId: varchar("from_id", { length: 128 }).notNull(),
+		toType: varchar("to_type", { length: 64 }).notNull(),
+		toId: varchar("to_id", { length: 128 }).notNull(),
+		/** derived_from | references | belongs_to | mentions */
+		relation: varchar("relation", { length: 32 })
+			.notNull()
+			.default("references"),
+		/** 'luckyos' | 'mail' | null (interní vazba) */
+		sourceSystem: varchar("source_system", { length: 32 }),
+		/** = id v cizím systému (např. LuckyOS) pro dedup importu. */
+		externalId: varchar("external_id", { length: 128 }),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		index("entity_links_from_idx").on(t.fromType, t.fromId),
+		index("entity_links_to_idx").on(t.toType, t.toId),
+		uniqueIndex("entity_links_source_external_uq").on(
+			t.sourceSystem,
+			t.externalId,
+			t.toType,
+		),
+	],
+);
+
 export type Filter = typeof filters.$inferSelect;
 export type Palette = typeof palettes.$inferSelect;
 export type CalendarConnection = typeof calendarConnections.$inferSelect;
@@ -163,3 +202,4 @@ export type CalendarLink = typeof calendarLinks.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type AiSuggestion = typeof aiSuggestions.$inferSelect;
 export type AiPolicy = typeof aiPolicies.$inferSelect;
+export type EntityLink = typeof entityLinks.$inferSelect;

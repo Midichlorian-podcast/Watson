@@ -19,7 +19,7 @@ import type { ListItemRow, ListRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
-import { toggleTask, todayISO } from "../lib/tasks";
+import { NOT_MEETING, toggleTask, todayISO } from "../lib/tasks";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { showToast } from "../lib/toast";
 import { useTheme } from "../layout/useTheme";
@@ -1283,8 +1283,9 @@ function MemberPeek({ id, name }: { id: string; name: string }) {
 	const myId = session?.user?.id;
 	const projects = useProjects();
 	const { data: rows } = usePsQuery<TaskRow>(
+		// t.NOT_MEETING — peek člověka vysvětluje pracovní KPI (bez porad); denní peek porady MÁ (agenda)
 		`SELECT t.* FROM tasks t JOIN assignments a ON a.task_id = t.id
-		 WHERE a.user_id = ? AND t.completed_at IS NULL
+		 WHERE a.user_id = ? AND t.completed_at IS NULL AND t.${NOT_MEETING}
 		 ORDER BY t.due_date IS NULL, t.due_date, t.priority`,
 		[id],
 	);

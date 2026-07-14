@@ -60,6 +60,7 @@
 		"repYearly": "yearly",
 		"deadlinePill": "by {{date}}",
 		"daysPill": "{{n}} days",
+		"saveFailed": "Task wasn't saved to this device. Your text is intact — try again.",
 		"personUnknown": "@{{q}} · no match",
 		"personAmbiguous": "@{{q}} · multiple matches, pick one"
 	},
@@ -267,6 +268,7 @@
 		"daysUnit": "days",
 		"nextWeekLower": "next week",
 		"handedOff": "→ Came to you",
+		"meetingChip": "Meeting",
 		"assignAllPill": "Each separately",
 		"weekend": "Weekend",
 		"nextWeekBucket": "Next week",
@@ -671,6 +673,8 @@
 		"roleVedouci": "Manager"
 	},
 	"mail": {
+		"demoBadge": "DEMO",
+		"demoBanner": "local simulation — messages never leave Watson",
 		"taskCreatedToast": "Task from mail added to Inbox — due today",
 		"taskCreatedOpen": "Open",
 		"taskNoInbox": "No inbox project found — task not created"

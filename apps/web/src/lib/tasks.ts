@@ -17,6 +17,29 @@ export const todayISO = () => {
 export const dayOf = (x: TaskRow) => (x.due_date ? x.due_date.slice(0, 10) : null);
 
 /**
+ * SQL fragment: vynech PORADY (kind='meeting') z pracovních seznamů, počtů a statistik.
+ * Porady mají modul Meets; viditelné zůstávají jen v agendových pohledech (Dnes/Nadcházející/
+ * kalendář/Watson/denní peek). SQLite `IS NOT` pouští i NULL (čerstvé lokální řádky bez kind).
+ * JEDNO místo pravdy — nový dotaz nad tasks si sáhne sem, ne na ruční literál.
+ */
+export const NOT_MEETING = "kind IS NOT 'meeting'";
+
+/**
+ * Minuty od půlnoci ze start_date — JEDINÝ parser času úkolu (wall-clock ze STRINGU;
+ * `new Date()` by po sync round-tripu timestamptz „+00" posunul čas o zónu — P1-06).
+ * Konvence: 00:00 = bez času (kalendář kreslí all-day). Sdílí řádek, kalendář i měsíc.
+ */
+export const startMinOf = (t: Pick<TaskRow, "start_date">): number | null => {
+	const s = t.start_date;
+	if (!s || s.length < 16) return null;
+	const h = +s.slice(11, 13);
+	const m = +s.slice(14, 16);
+	if (Number.isNaN(h) || Number.isNaN(m)) return null;
+	if (h === 0 && m === 0) return null;
+	return h * 60 + m;
+};
+
+/**
  * Upsert per-výskyt výjimky (exceptions prototypu) — done/skip jednoho výskytu.
  * Zapisuje do undo zásobníku (⌘Z) — prototyp volá _pushHist před mutací exceptions
  * (skipOccurrence ř. 2477, setOccField ř. 2479).
@@ -423,8 +446,6 @@ export function dueLabel(dueRaw: string, t: (k: string) => string) {
 	};
 }
 
-const hhmm = (dt: Date) => `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-
 /** Deadline vlaječka „do pá 27. 6." (prototyp deadlineLabel, seed ř. 2158). */
 export function deadlineLabel(deadlineRaw: string | null) {
 	if (!deadlineRaw) return undefined;
@@ -444,8 +465,10 @@ export function rowDue(task: TaskRow, t: (k: string, o?: Record<string, unknown>
 	if (!dueRaw) return undefined;
 	const d = dueRaw.slice(0, 10);
 	const tdy = todayISO();
-	const start = task.start_date ? new Date(task.start_date) : null;
-	const time = start ? hhmm(start) : null;
+	// Čas ze sdíleného parseru (startMinOf) — jeden zdroj pravdy s kalendářem (P1-06).
+	const sMin = startMinOf(task);
+	const minLbl = (min: number) => `${pad(Math.floor(min / 60) % 24)}:${pad(min % 60)}`;
+	const time = sMin != null ? minLbl(sMin) : null;
 	const days = task.days ?? 1;
 
 	if (d < tdy)
@@ -459,9 +482,9 @@ export function rowDue(task: TaskRow, t: (k: string, o?: Record<string, unknown>
 			overdue: false,
 		};
 	if (d === tdy) {
-		if (start) {
-			const end = new Date(start.getTime() + (task.duration_min ?? 30) * 60_000);
-			return { label: `${hhmm(start)}–${hhmm(end)}`, overdue: false };
+		if (time != null && sMin != null) {
+			const end = sMin + (task.duration_min ?? 30);
+			return { label: `${time}–${minLbl(end)}`, overdue: false };
 		}
 		return { label: t("today.todayLower"), overdue: false };
 	}

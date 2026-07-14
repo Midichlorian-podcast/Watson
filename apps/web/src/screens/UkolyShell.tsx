@@ -40,7 +40,11 @@ function TaskViewTabs({ active }: { active: TaskTab }) {
 		project_id: string | null;
 		due_date: string | null;
 		parent_id: string | null;
-	}>("SELECT project_id, due_date, parent_id FROM tasks WHERE completed_at IS NULL");
+	}>(
+		// Dnes = denní agenda (porady ZAPOČÍTÁVÁ — seznam je ukazuje, badge musí sedět
+		// s řádky); Zásobník je nedatovaný a porady mají termín vždy → filtr netřeba.
+		"SELECT project_id, due_date, parent_id FROM tasks WHERE completed_at IS NULL",
+	);
 
 	const { dnes, zasobnik } = useMemo(() => {
 		const inbox = inboxProjectIds(projects);

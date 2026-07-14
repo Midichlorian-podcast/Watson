@@ -16,7 +16,7 @@ import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
-import { rowDue, todayISO, toggleTask } from "../lib/tasks";
+import { rowDue, startMinOf, todayISO, toggleTask } from "../lib/tasks";
 import { pushUndo } from "../lib/undo";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useUserColors } from "../lib/userColors";
@@ -69,16 +69,8 @@ const hit = (t: TaskRow, iso: string) => {
 	const e = tIsoEnd(t);
 	return !!s && !!e && s <= iso && iso <= e;
 };
-/** Minuty od půlnoci ze start_date (null = bez času; 00:00 bereme jako bez času). */
-export const startMin = (t: TaskRow): number | null => {
-	const s = t.start_date;
-	if (!s || s.length < 16) return null;
-	const h = +s.slice(11, 13);
-	const m = +s.slice(14, 16);
-	if (Number.isNaN(h) || Number.isNaN(m)) return null;
-	if (h === 0 && m === 0) return null;
-	return h * 60 + m;
-};
+/** Minuty od půlnoci ze start_date — sdílený parser (lib/tasks.startMinOf, P1-06 jeden zdroj). */
+export const startMin = (t: TaskRow): number | null => startMinOf(t);
 const endMin = (t: TaskRow): number => {
 	const s = startMin(t) ?? 0;
 	return Math.min(1440, s + (t.duration_min ?? 60));

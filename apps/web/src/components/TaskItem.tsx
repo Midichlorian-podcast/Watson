@@ -279,6 +279,8 @@ export function TaskItem({
 					}
 					handedOff={handedOff}
 					handedOffLabel={t("today.handedOff")}
+					meeting={task.kind === "meeting"}
+					meetingLabel={t("today.meetingChip")}
 					doneLabel={t("detail.ariaMarkUndone")}
 					undoneLabel={t("detail.ariaComplete")}
 					checklist={meta.checklist}

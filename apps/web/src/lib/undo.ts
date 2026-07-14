@@ -152,6 +152,10 @@ export async function deleteTasksWithUndo(taskIds: string[]): Promise<void> {
 	for (const table of CHILD_TABLES) {
 		children[table] = await snapshotRows(`SELECT * FROM ${table} WHERE task_id IN (${ph})`, ids);
 	}
+	// Meets — sidecar porady visí na hub_task_id (ne task_id): smazání kotevního úkolu musí
+	// vzít i poradu, jinak zůstane neviditelný „duch" (audit Fáze 1). Undo ji vrací s úkolem.
+	// (Server smaže sidecar jen autorovi/adminovi — cizímu se metadata vrátí syncem, bez škody.)
+	const meets = await snapshotRows(`SELECT * FROM meetings WHERE hub_task_id IN (${ph})`, ids);
 	// Lokální atomicita: smazání úkolu + všech podřízených dat v JEDNÉ transakci (pád uprostřed
 	// jinak nechá sirotky / half-deleted stav). Upload fronta to pošle jako jednu CRUD transakci.
 	const doDelete = () =>
@@ -159,6 +163,7 @@ export async function deleteTasksWithUndo(taskIds: string[]): Promise<void> {
 			for (const table of CHILD_TABLES) {
 				await tx.execute(`DELETE FROM ${table} WHERE task_id IN (${ph})`, ids);
 			}
+			await tx.execute(`DELETE FROM meetings WHERE hub_task_id IN (${ph})`, ids);
 			await tx.execute(`DELETE FROM tasks WHERE id IN (${ph})`, ids);
 		});
 	await doDelete();
@@ -169,6 +174,7 @@ export async function deleteTasksWithUndo(taskIds: string[]): Promise<void> {
 				for (const table of CHILD_TABLES) {
 					await reinsert(tx, table, children[table] ?? []);
 				}
+				await reinsert(tx, "meetings", meets);
 			}),
 		redo: doDelete,
 	});

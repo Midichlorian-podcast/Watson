@@ -19,6 +19,7 @@ import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { showToast } from "../lib/toast";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
+import { NOT_MEETING } from "../lib/tasks";
 
 type Member = { id: string; name: string; email: string; image: string | null };
 type MilestoneRow = {
@@ -145,7 +146,7 @@ export function Cile() {
 		"SELECT id, goal_id, label, done, position FROM goal_milestones ORDER BY position, created_at",
 	);
 	const { data: tasks } = usePsQuery<TaskRow>(
-		"SELECT id, name, project_id, completed_at, due_date FROM tasks",
+		`SELECT id, name, project_id, completed_at, due_date FROM tasks WHERE ${NOT_MEETING}`,
 	);
 	const { data: assignments } = usePsQuery<{
 		task_id: string | null;

@@ -28,6 +28,10 @@ const tasks = new Table(
 		/** Propojení Mail ↔ úkol — chip „Z mailu" (handoff 2026-07-10). */
 		mail_th: column.text,
 		mail_label: column.text,
+		/** Meets — 'task' (běžný) | 'meeting' (kotva porady); seznamy porady odfiltrují. */
+		kind: column.text,
+		/** Meets — backpointer hub/akčního úkolu na meetings.id (soft). */
+		meeting_id: column.text,
 		completed_at: column.text,
 		created_by: column.text,
 		created_at: column.text,
@@ -41,6 +45,7 @@ const tasks = new Table(
 			by_due: ["due_date"],
 			by_completed: ["completed_at"],
 			by_status: ["status_id"],
+			by_meeting: ["meeting_id"],
 		},
 	},
 );
@@ -324,6 +329,43 @@ const contacts = new Table(
 	{ indexes: { by_workspace: ["workspace_id"] } },
 );
 
+/** Polymorfní vazby (mail↔úkol, LuckyOS↔úkol) — dedup + proklik. Workspace-scoped. */
+const entity_links = new Table(
+	{
+		workspace_id: column.text,
+		from_type: column.text,
+		from_id: column.text,
+		to_type: column.text,
+		to_id: column.text,
+		relation: column.text,
+		source_system: column.text,
+		external_id: column.text,
+		created_at: column.text,
+	},
+	{ indexes: { by_from: ["from_type", "from_id"], by_to: ["to_type", "to_id"] } },
+);
+
+/**
+ * Meets — porada (sidecar kotevního úkolu), JEN METADATA. Přepis + AI extraction se plošně
+ * nesyncují (CC-P0-13: obsah smí jen účastník/pozvaný) — čtou se on-demand přes API; offline
+ * kopii dostane až participant-scoped bucket. Termín/příprava/účastníci žijí na hub-úkolu.
+ */
+const meetings = new Table(
+	{
+		workspace_id: column.text,
+		title: column.text,
+		status: column.text,
+		hub_task_id: column.text,
+		series_id: column.text,
+		prev_meeting_id: column.text,
+		created_by: column.text,
+		created_at: column.text,
+	},
+	{
+		indexes: { by_workspace: ["workspace_id"], by_hub: ["hub_task_id"], by_series: ["series_id"] },
+	},
+);
+
 export const AppSchema = new Schema({
 	tasks,
 	projects,
@@ -346,6 +388,8 @@ export const AppSchema = new Schema({
 	list_items,
 	list_templates,
 	contacts,
+	entity_links,
+	meetings,
 });
 
 export type Database = (typeof AppSchema)["types"];
@@ -369,3 +413,4 @@ export type ListSectionRow = Database["list_sections"];
 export type ListItemRow = Database["list_items"];
 export type ContactRow = Database["contacts"];
 export type ListTemplateRow = Database["list_templates"];
+export type EntityLinkRow = Database["entity_links"];

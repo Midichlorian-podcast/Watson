@@ -15,7 +15,7 @@ import {
 	type GoalTranslate,
 } from "./goals";
 import type { GoalRow } from "./powersync/AppSchema";
-import { todayISO } from "./tasks";
+import { NOT_MEETING, todayISO } from "./tasks";
 import { useWorkspaces } from "./workspace";
 
 /** Jména členů všech mých prostorů (userId → name) — pro agregace napříč firmami. */
@@ -78,7 +78,8 @@ export function useGoalsOverview(t?: GoalTranslate): GoalOverviewRow[] {
 		project_id: string | null;
 	}>("SELECT goal_id, project_id FROM goal_projects");
 	const { data: tasks } = usePsQuery<TaskLite>(
-		"SELECT id, name, project_id, completed_at, due_date FROM tasks",
+		// NOT_MEETING — sdílené KPI selektory; bez filtru se % cílů/postupů rozcházela s obrazovkami
+		`SELECT id, name, project_id, completed_at, due_date FROM tasks WHERE ${NOT_MEETING}`,
 	);
 	const { data: projects } = usePsQuery<{
 		id: string;
@@ -91,16 +92,11 @@ export function useGoalsOverview(t?: GoalTranslate): GoalOverviewRow[] {
 
 	return useMemo(() => {
 		const tdy = todayISO();
-		const projWs = new Map(
-			(projects ?? []).map((p) => [p.id, p.workspace_id] as const),
-		);
+		const projWs = new Map((projects ?? []).map((p) => [p.id, p.workspace_id] as const));
 		const linksByGoal = new Map<string, string[]>();
 		for (const gp of goalProjects ?? []) {
 			if (!gp.goal_id || !gp.project_id) continue;
-			linksByGoal.set(gp.goal_id, [
-				...(linksByGoal.get(gp.goal_id) ?? []),
-				gp.project_id,
-			]);
+			linksByGoal.set(gp.goal_id, [...(linksByGoal.get(gp.goal_id) ?? []), gp.project_id]);
 		}
 		const assigneesByTask = new Map<string, Set<string>>();
 		for (const a of assignments ?? []) {
@@ -113,18 +109,15 @@ export function useGoalsOverview(t?: GoalTranslate): GoalOverviewRow[] {
 		return (goals ?? []).map((g) => {
 			const links = linksByGoal.get(g.id) ?? [];
 			const linkSet = new Set(links);
-			const person =
-				g.filter_person_id || (g.scope === "person" ? g.owner_id : null);
+			const person = g.filter_person_id || (g.scope === "person" ? g.owner_id : null);
 			const kw = (g.filter_keyword ?? "").trim().toLowerCase();
 			const ps = g.period_start ? g.period_start.slice(0, 10) : null;
 			const ts = (tasks ?? []).filter((tk) => {
-				if (!tk.project_id || projWs.get(tk.project_id) !== g.workspace_id)
-					return false;
+				if (!tk.project_id || projWs.get(tk.project_id) !== g.workspace_id) return false;
 				if (links.length > 0 && !linkSet.has(tk.project_id)) return false;
 				if (person && !assigneesByTask.get(tk.id)?.has(person)) return false;
 				if (kw && !(tk.name ?? "").toLowerCase().includes(kw)) return false;
-				if (ps && tk.completed_at && tk.completed_at.slice(0, 10) < ps)
-					return false;
+				if (ps && tk.completed_at && tk.completed_at.slice(0, 10) < ps) return false;
 				return true;
 			});
 			let projectPct: { pct: number; count: number } | undefined;
@@ -140,13 +133,7 @@ export function useGoalsOverview(t?: GoalTranslate): GoalOverviewRow[] {
 				}
 				projectPct = { pct: w ? Math.round(p / w) : 0, count: links.length };
 			}
-			const pr = goalProgress(
-				g.metric ?? "completion",
-				ts,
-				g.target ?? 0,
-				projectPct,
-				t,
-			);
+			const pr = goalProgress(g.metric ?? "completion", ts, g.target ?? 0, projectPct, t);
 			const overdue = !!g.due_date && g.due_date.slice(0, 10) < tdy;
 			const elapsed = goalElapsed(g.created_at, g.due_date, tdy);
 			return {
@@ -194,7 +181,8 @@ export function useFlowsOverview(): FlowOverviewRow[] {
 		step_state: string | null;
 	}>("SELECT chain_id, task_id, position, step_state FROM chain_steps ORDER BY position");
 	const { data: tasks } = usePsQuery<TaskLite>(
-		"SELECT id, name, project_id, completed_at, due_date FROM tasks",
+		// NOT_MEETING — sdílené KPI selektory; bez filtru se % cílů/postupů rozcházela s obrazovkami
+		`SELECT id, name, project_id, completed_at, due_date FROM tasks WHERE ${NOT_MEETING}`,
 	);
 	const { data: assignments } = usePsQuery<{
 		task_id: string | null;

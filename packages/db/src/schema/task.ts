@@ -59,19 +59,23 @@ export const tasks = pgTable(
 		recurrence: text("recurrence"),
 		/** R4 — strukturované pravidlo (JSON RecurrenceRule) pro occurrence engine. */
 		recurrenceRule: text("recurrence_rule"),
-		recurrenceBasis: recurrenceBasisEnum("recurrence_basis")
-			.notNull()
-			.default("due_date"),
+		recurrenceBasis: recurrenceBasisEnum("recurrence_basis").notNull().default("due_date"),
 		/** R2 — režim přiřazení. */
-		assignmentMode: assignmentModeEnum("assignment_mode")
-			.notNull()
-			.default("single"),
+		assignmentMode: assignmentModeEnum("assignment_mode").notNull().default("single"),
 		statusId: uuid("status_id").references(() => statuses.id, {
 			onDelete: "set null",
 		}),
 		/** Propojení Mail ↔ úkol (handoff 2026-07-10): id mailového vlákna + label chipu „Z mailu". */
 		mailTh: varchar("mail_th", { length: 120 }),
 		mailLabel: varchar("mail_label", { length: 300 }),
+		/**
+		 * Meets — druh úkolu. 'task' (výchozí) = běžný úkol; 'meeting' = kotva porady
+		 * (termín=start_date+čas, příprava=podúkoly, účastníci=assignments). Běžné seznamy,
+		 * počty, statistiky a Velín porady odfiltrují (kind='task'); ukazuje je modul Meets.
+		 */
+		kind: varchar("kind", { length: 12 }).notNull().default("task"),
+		/** Meets — backpointer hub-úkolu (i akčních úkolů) na meetings.id (soft, vzor mail_th). */
+		meetingId: varchar("meeting_id", { length: 120 }),
 		createdBy: uuid("created_by").references(() => users.id, {
 			onDelete: "set null",
 		}),
@@ -86,10 +90,13 @@ export const tasks = pgTable(
 	},
 	(t) => [
 		check("tasks_priority_range", sql`${t.priority} between 1 and 4`),
+		// CC-P0-15 — kind je enum vynucený DB, ne jen UI filtrem (audit Meets Fáze 1).
+		check("tasks_kind_valid", sql`${t.kind} in ('task', 'meeting')`),
 		index("tasks_project_idx").on(t.projectId),
 		index("tasks_parent_idx").on(t.parentId),
 		index("tasks_status_idx").on(t.statusId),
 		index("tasks_due_idx").on(t.dueDate),
+		index("tasks_meeting_idx").on(t.meetingId),
 	],
 );
 

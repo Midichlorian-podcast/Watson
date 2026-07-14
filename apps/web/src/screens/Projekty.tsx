@@ -14,6 +14,7 @@ import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
+import { NOT_MEETING } from "../lib/tasks";
 
 type Member = { id: string; name: string; email: string };
 
@@ -58,7 +59,9 @@ export function Projekty() {
 		created_at: string | null;
 		due_date: string | null;
 		parent_id: string | null;
-	}>("SELECT project_id, completed_at, created_at, due_date, parent_id FROM tasks");
+	}>(
+		`SELECT project_id, completed_at, created_at, due_date, parent_id FROM tasks WHERE ${NOT_MEETING}`,
+	);
 	const inboxIds = useMemo(() => inboxProjectIds(projects), [projects]);
 	const { data: memberRows } = usePsQuery<{
 		project_id: string | null;

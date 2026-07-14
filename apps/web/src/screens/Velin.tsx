@@ -116,7 +116,8 @@ export function Velin() {
 		};
 	}, []);
 
-	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks");
+	// kind IS NOT 'meeting' — Velín měří práci týmu; porady nezkreslují čísla
+	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks WHERE kind IS NOT 'meeting'");
 	const { data: assignments } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;

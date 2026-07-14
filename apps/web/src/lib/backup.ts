@@ -31,6 +31,10 @@ const BACKUP_TABLES = [
 	"list_items",
 	"list_templates",
 	"contacts",
+	"entity_links",
+	// Meets — metadata porad (sidecar kotevních úkolů); bez nich by restore ztratil
+	// vazbu meeting_id → stav/řetěz porady (audit Fáze 1).
+	"meetings",
 ] as const;
 
 export interface BackupResult {

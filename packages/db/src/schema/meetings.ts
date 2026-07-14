@@ -23,10 +23,19 @@ export const meetings = pgTable(
 		/** Přepis / poznámky z porady — surový vstup pro extrakci. */
 		transcript: text("transcript"),
 		/**
-		 * Stav zpracování: 'new' (jen přepis) → 'extracted' (AI navrhla úkoly) →
-		 * 'committed' (úkoly potvrzeny a založeny). Řídí UI v modulu Mítingy.
+		 * Stav zpracování: 'new' → 'scheduled' (naplánováno) → 'transcribed' (vložen přepis)
+		 * → 'extracted' (AI navrhla úkoly) → 'committed' (akční body založeny). Řídí UI Meets.
 		 */
 		status: varchar("status", { length: 20 }).notNull().default("new"),
+		/**
+		 * Meets — kotevní (hub) úkol porady: tasks.kind='meeting', drží termín (start_date+čas),
+		 * účastníky (assignments) a přípravu (podúkoly). Soft odkaz (bez FK, řízený appkou).
+		 */
+		hubTaskId: uuid("hub_task_id"),
+		/** Seskupení řady opakovaných porad (weekly/1:1/…) — společné series_id. */
+		seriesId: uuid("series_id"),
+		/** Předchozí porada v řadě (příprava→navazující meet). Self-odkaz, soft (bez FK). */
+		prevMeetingId: uuid("prev_meeting_id"),
 		/**
 		 * NÁVRH úkolů od AI (jsonb) — pole položek { title, note?, assigneeHint?,
 		 * assigneeUserId?, priority?, due?, projectHint?, parentIndex? }. Kanonický
@@ -40,7 +49,11 @@ export const meetings = pgTable(
 		createdAt: createdAt(),
 		updatedAt: updatedAt(),
 	},
-	(t) => [index("meetings_workspace_idx").on(t.workspaceId)],
+	(t) => [
+		index("meetings_workspace_idx").on(t.workspaceId),
+		index("meetings_hub_task_idx").on(t.hubTaskId),
+		index("meetings_series_idx").on(t.seriesId),
+	],
 );
 
 export type Meeting = typeof meetings.$inferSelect;

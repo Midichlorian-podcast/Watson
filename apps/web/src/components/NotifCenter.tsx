@@ -17,7 +17,7 @@ import { P, SLA } from "../mail/data";
 import { useMail } from "../mail/state";
 import { useSession } from "../lib/auth-client";
 import { useTaskDetail } from "../lib/taskDetail";
-import { todayISO } from "../lib/tasks";
+import { NOT_MEETING, todayISO } from "../lib/tasks";
 import { PeekPanel, type PeekTarget } from "./PeekPanel";
 
 /* ── „viděno" — localStorage + externí store (Header badge ↔ panel ve shodě) ── */
@@ -107,8 +107,9 @@ export function useNotifItems(): { items: NotifItem[]; unseen: number } {
 		name: string | null;
 		due_date: string | null;
 	}>(
+		// NOT_MEETING — proběhlá porada není „po termínu" (audit Fáze 1); hlásí ji Meets
 		`SELECT id, name, due_date FROM tasks
-		 WHERE completed_at IS NULL AND due_date IS NOT NULL AND due_date < ?
+		 WHERE completed_at IS NULL AND due_date IS NOT NULL AND due_date < ? AND ${NOT_MEETING}
 		 ORDER BY due_date, priority LIMIT 3`,
 		[todayISO()],
 	);

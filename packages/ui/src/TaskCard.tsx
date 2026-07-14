@@ -1,6 +1,7 @@
 import type { Priority } from "@watson/shared";
 import type { CSSProperties } from "react";
 import { cn } from "./cn";
+import { Icon } from "./Icon";
 
 export type AssignmentMode = "single" | "shared_any" | "shared_all";
 
@@ -47,6 +48,10 @@ export interface TaskCardProps {
 	dormant?: boolean;
 	/** Kontext vrstveného podúkolu — „↑ {rodič}" v podřádku. */
 	parentName?: string;
+	/** Meets — řádek je PORADA (kind='meeting'): brass levý okraj + chip místo P-odznaku. */
+	meeting?: boolean;
+	/** Popisek chipu porady („Porada"). Lokalizuje konzument. */
+	meetingLabel?: string;
 	done?: boolean;
 	/**
 	 * Výběr do hromadných akcí (prototyp data-selbox, ř. 550): čtvercový checkbox
@@ -104,6 +109,8 @@ export function TaskCard({
 	avatars,
 	dormant,
 	parentName,
+	meeting,
+	meetingLabel = "Meeting",
 	done,
 	sel,
 	sched,
@@ -146,7 +153,7 @@ export function TaskCard({
 				boxShadow:
 					done || dormant
 						? "var(--w-shadow-sm)"
-						: `inset 3px 0 0 ${PRI[priority]}, var(--w-shadow-sm)`,
+						: `inset 3px 0 0 ${meeting ? "var(--w-brass)" : PRI[priority]}, var(--w-shadow-sm)`,
 				opacity: done ? 0.5 : dormant ? 0.6 : 1,
 				background: rowBg,
 			}}
@@ -418,21 +425,45 @@ export function TaskCard({
 				</span>
 			)}
 
-			{/* prioritní odznak — NEUTRÁLNÍ pill (barva priority je jen levý okraj) */}
-			<span
-				className="shrink-0 font-display font-semibold"
-				style={{
-					fontSize: 11,
-					padding: "2px 8px",
-					borderRadius: 999,
-					background: "var(--w-card)",
-					border: `1px solid ${priority === 1 ? "var(--w-ink-3)" : "var(--w-line)"}`,
-					color:
-						priority === 1 ? "var(--w-ink)" : priority === 4 ? "var(--w-ink-3)" : "var(--w-ink-2)",
-				}}
-			>
-				P{priority}
-			</span>
+			{/* prioritní odznak — NEUTRÁLNÍ pill (barva priority je jen levý okraj);
+			    u PORADY místo něj brass chip „Porada" (priorita je u schůzky šum) */}
+			{meeting ? (
+				<span
+					className="inline-flex shrink-0 items-center font-display font-semibold"
+					style={{
+						gap: 4,
+						fontSize: 10.5,
+						padding: "2px 9px",
+						borderRadius: 999,
+						background: "var(--w-brass-soft)",
+						border: "1px solid var(--w-brass)",
+						color: "var(--w-brass-text)",
+					}}
+				>
+					{/* sdílená ikona lidí z registru ICONS (žádný druhý bespoke glyf) */}
+					<Icon name="tym" size={11} />
+					{meetingLabel}
+				</span>
+			) : (
+				<span
+					className="shrink-0 font-display font-semibold"
+					style={{
+						fontSize: 11,
+						padding: "2px 8px",
+						borderRadius: 999,
+						background: "var(--w-card)",
+						border: `1px solid ${priority === 1 ? "var(--w-ink-3)" : "var(--w-line)"}`,
+						color:
+							priority === 1
+								? "var(--w-ink)"
+								: priority === 4
+									? "var(--w-ink-3)"
+									: "var(--w-ink-2)",
+					}}
+				>
+					P{priority}
+				</span>
+			)}
 
 			{/* status (volitelný) */}
 			{status && (

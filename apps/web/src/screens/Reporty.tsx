@@ -13,6 +13,7 @@ import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
+import { NOT_MEETING } from "../lib/tasks";
 
 type Member = {
 	id: string;
@@ -75,7 +76,7 @@ export function Reporty() {
 		void navigate({ to: "/reporty", search: next });
 
 	const { data: tasks } = usePsQuery<TaskRow>(
-		"SELECT id, name, project_id, priority, due_date, completed_at, assignment_mode FROM tasks",
+		`SELECT id, name, project_id, priority, due_date, completed_at, assignment_mode FROM tasks WHERE ${NOT_MEETING}`,
 	);
 	// completed_at účasti — u shared_all je dokončení PER-OSOBA (task.completed_at je odvozené až po všech).
 	const { data: assignments } = usePsQuery<{

@@ -18,6 +18,9 @@ import { auth } from "./auth";
 const KID = "watson-dev-1";
 const ALG = "RS256";
 const AUDIENCE = "powersync";
+/** Bridge-token pro LuckyOS employee API (zaměstnanecký modul). */
+const LUCKYOS_AUDIENCE = "luckyos";
+const BRIDGE_ISSUER = "watson";
 const keyDir = fileURLToPath(new URL("../.keys", import.meta.url));
 const keyFile = fileURLToPath(new URL("../.keys/powersync-key.json", import.meta.url));
 
@@ -54,6 +57,27 @@ async function issueToken(userId: string) {
 		.setAudience(AUDIENCE)
 		.setIssuedAt()
 		.setExpirationTime("10m")
+		.sign(privateKey);
+}
+
+/**
+ * Krátkodobý bridge-token pro LuckyOS employee API (server-to-server). LuckyOS ho ověří
+ * proti JWKS na `/api/powersync/jwks` (stejný keypair), zkontroluje `aud`/`iss`/`exp`
+ * a z claimu `email` dohledá osobu. Nikdy neopustí server (prohlížeč ho nevidí).
+ * Spec pro LuckyOS: files/ZAMESTNANEC_LUCKYOS_pozadavky_2026-07-12.md §1.
+ */
+export async function issueBridgeToken(claims: { email: string; personId?: string | null }) {
+	return new SignJWT({
+		email: claims.email,
+		role: "employee",
+		...(claims.personId ? { person_id: claims.personId } : {}),
+	})
+		.setProtectedHeader({ alg: ALG, kid: KID })
+		.setSubject(claims.personId ?? claims.email)
+		.setAudience(LUCKYOS_AUDIENCE)
+		.setIssuer(BRIDGE_ISSUER)
+		.setIssuedAt()
+		.setExpirationTime("5m")
 		.sign(privateKey);
 }
 
@@ -95,8 +119,11 @@ interface TableDef {
 	minRole?: "commenter" | "editor" | "manager";
 	/** Sloupce, jejichž změna vyžaduje roli „manager" (owner_id/visibility/archivace projektu). */
 	managerCols?: string[];
-	/** PATCH/DELETE smí jen autor (creatorCol) nebo manager projektu (komentáře). */
+	/** PATCH/DELETE smí jen autor (creatorCol) nebo manager projektu / admin prostoru. */
 	authorEditOnly?: boolean;
+	/** PUT je jen CREATE: konflikt existujícího id NEpřepíše řádek (ON CONFLICT DO NOTHING).
+	 *  Krok směrem k CC-P0-06 — brání přepsání cizího řádku i autora přes „create". */
+	createOnly?: boolean;
 	/** Jak zjistit project_id pro membership kontrolu (R5). `self` = řádek JE projekt (id). */
 	projectVia?: { kind: "column"; col: string } | { kind: "task"; col: string } | { kind: "self" };
 	/** Workspace-scoped tabulky (cíle): membership kontrola přes memberships.workspace_id. */
@@ -144,6 +171,8 @@ const TABLES: Record<string, TableDef> = {
 			status_id: "text",
 			mail_th: "text",
 			mail_label: "text",
+			kind: "text",
+			meeting_id: "text",
 			completed_at: "ts",
 		},
 		hasUpdatedAt: true,
@@ -354,6 +383,26 @@ const TABLES: Record<string, TableDef> = {
 		creatorCol: "created_by",
 		workspaceVia: { kind: "column", col: "workspace_id" },
 	},
+	// Meets — porada (sidecar kotevního úkolu). Klient smí ZALOŽIT metadata (title/status +
+	// soft odkazy hub/series/prev); `transcript`/`extraction` přes write-path NEjdou
+	// (CC-P0-13: obsah jen účastníkům — řeší server /api/meetings). createOnly = PUT na cizí
+	// existující id nic nepřepíše; authorEditOnly = PATCH/DELETE jen autor nebo admin prostoru
+	// (audit Fáze 1: jinak mohl kdokoli z prostoru smazat poradu VČETNĚ serverového přepisu).
+	meetings: {
+		columns: {
+			workspace_id: "text",
+			title: "text",
+			status: "text",
+			hub_task_id: "text",
+			series_id: "text",
+			prev_meeting_id: "text",
+		},
+		hasUpdatedAt: true,
+		creatorCol: "created_by",
+		createOnly: true,
+		authorEditOnly: true,
+		workspaceVia: { kind: "column", col: "workspace_id" },
+	},
 	lists: {
 		columns: {
 			workspace_id: "text",
@@ -412,6 +461,9 @@ const TABLES: Record<string, TableDef> = {
 		creatorCol: "created_by",
 		workspaceVia: { kind: "column", col: "workspace_id" },
 	},
+	// entity_links ZÁMĚRNĚ NEJSOU v klientském write-path (audit Fáze 1): zapisuje je jen
+	// server (LuckyOS broker, Meets commit) — klientský zápis by dovolil podvrhnout
+	// source_system/external_id dedup klíče a relation bez validace. Klient je jen ČTE (sync).
 };
 
 type Op = "PUT" | "PATCH" | "DELETE";
@@ -590,13 +642,18 @@ async function applyWrite(
 		const vals = [sql`${id}`, ...set.map((s) => sql`${s.val}`)];
 		const updates = set.map((s) => sql`${sql.raw(s.col)} = EXCLUDED.${sql.raw(s.col)}`);
 		if (def.hasUpdatedAt) updates.push(sql`updated_at = now()`);
+		// createOnly (CC-P0-06 krok): PUT na existující id NIC nepřepíše — žádný upsert,
+		// žádné přepsání autora. Ticho (DO NOTHING) je bezpečné: server zůstane pravdou.
+		const onConflict = def.createOnly
+			? sql`ON CONFLICT (id) DO NOTHING`
+			: sql`ON CONFLICT (id) DO UPDATE SET ${sql.join(updates, sql`, `)}`;
 		await db.execute(sql`
       INSERT INTO ${sql.raw(table)} (${sql.join(
 				cols.map((c) => sql.raw(c)),
 				sql`, `,
 			)})
       VALUES (${sql.join(vals, sql`, `)})
-      ON CONFLICT (id) DO UPDATE SET ${sql.join(updates, sql`, `)}
+      ${onConflict}
     `);
 		return;
 	}
@@ -702,8 +759,7 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 					if (!refId) continue;
 					const refWs = await workspaceOfRow(db, ref.table, refId);
 					// null = reference se ještě nenahrála (offline) → přeskoč (jako refProjectCols).
-					if (refWs && refWs !== rowWs)
-						return c.json({ error: "cross-workspace-reference" }, 403);
+					if (refWs && refWs !== rowWs) return c.json({ error: "cross-workspace-reference" }, 403);
 				}
 				// who_id apod. musí být člen workspace řádku (ne cizí/neexistující uživatel).
 				for (const col of def.memberWorkspaceCols ?? []) {
@@ -711,6 +767,20 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 					if (!uid) continue;
 					if (!(await workspaceRole(db, rowWs, uid)))
 						return c.json({ error: "assignee not a workspace member" }, 403);
+				}
+			}
+			// PATCH/DELETE author-scoped workspace řádku (porady) smí jen autor, nebo
+			// admin/manager prostoru — dřív tu check chyběl (byl jen v projektové větvi)
+			// a kdokoli z prostoru mohl smazat cizí poradu vč. serverového přepisu.
+			if (def.authorEditOnly && def.creatorCol && (body.op === "PATCH" || body.op === "DELETE")) {
+				const author = await creatorOfRow(db, body.table, def.creatorCol, body.id);
+				if (author && author !== userId) {
+					let ok = false;
+					for (const w of wsNeed) {
+						const role = await workspaceRole(db, w, userId);
+						if (role === "admin" || role === "manager") ok = true;
+					}
+					if (!ok) return c.json({ error: "author-only" }, 403);
 				}
 			}
 			await applyWrite(db, body.table, def, body.op, body.id, data, userId);

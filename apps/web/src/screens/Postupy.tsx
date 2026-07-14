@@ -13,7 +13,7 @@ import type { ChainRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
-import { toggleTask } from "../lib/tasks";
+import { NOT_MEETING, toggleTask } from "../lib/tasks";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
@@ -260,7 +260,8 @@ export function Postupy() {
 		"SELECT id, chain_id, task_id, project_id, position, gate, step_state, activated_at FROM chain_steps ORDER BY position",
 	);
 	const { data: tasks } = usePsQuery<TaskRow>(
-		"SELECT id, name, project_id, priority, due_date, completed_at, description, assignment_mode FROM tasks",
+		// NOT_MEETING — porada nesmí být krokem štafety (audit Fáze 1: chybějící filtr)
+		`SELECT id, name, project_id, priority, due_date, completed_at, description, assignment_mode FROM tasks WHERE ${NOT_MEETING}`,
 	);
 	const { data: assignments } = usePsQuery<{
 		task_id: string | null;

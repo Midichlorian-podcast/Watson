@@ -47,6 +47,8 @@ export function Header() {
 		parent_id: string | null;
 		project_id: string | null;
 	}>(
+		// Hlavička Dnes = denní AGENDA — porady ZAPOČÍTÁVÁ (seznam Dnes je zobrazuje;
+		// badge/hodiny musí sedět s viditelnými řádky). Pracovní statistiky je filtrují jinde.
 		"SELECT due_date, start_date, duration_min, parent_id, project_id FROM tasks WHERE completed_at IS NULL",
 	);
 	const { data: projRows } = usePsQuery<{ id: string; name: string | null }>(

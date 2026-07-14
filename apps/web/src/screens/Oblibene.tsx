@@ -10,6 +10,7 @@ import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
 import { useViewMode } from "../lib/viewMode";
+import { NOT_MEETING } from "../lib/tasks";
 
 /**
  * Oblíbené — rychlé filtry ze sidebaru: Priorita 1 / Přiřazeno mně (jen reálná přiřazení,
@@ -26,7 +27,7 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 	const { view } = useViewMode();
 
 	const { data: tasks } = usePsQuery<TaskRow>(
-		"SELECT * FROM tasks WHERE completed_at IS NULL ORDER BY priority, due_date IS NULL, due_date",
+		`SELECT * FROM tasks WHERE completed_at IS NULL AND ${NOT_MEETING} ORDER BY priority, due_date IS NULL, due_date`,
 	);
 	const { data: assignments } = usePsQuery<{
 		task_id: string | null;

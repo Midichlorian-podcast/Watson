@@ -99,7 +99,8 @@ export function Prehled() {
 		localStorage.setItem("watson.ovLayout", v);
 	};
 
-	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks");
+	// kind IS NOT 'meeting' — KPI/přehled počítá úkoly; porady nezkreslují čísla
+	const { data: allTasks } = usePsQuery<TaskRow>("SELECT * FROM tasks WHERE kind IS NOT 'meeting'");
 	// Seznamy (checklisty) — karta „Nejbližší akce" (prototyp akce, ř. 3863).
 	const { data: allLists } = usePsQuery<ListRow>(
 		"SELECT * FROM lists WHERE archived = 0 OR archived IS NULL ORDER BY created_at DESC",

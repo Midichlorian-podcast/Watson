@@ -6,6 +6,7 @@ import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
+import { startMinOf } from "../lib/tasks";
 import { toggleTask } from "../lib/tasks";
 // sdílené helpery rozsahu úkolu (tIso/tIsoEnd/addDaysISO) — kruhový import je bezpečný,
 // používají se až za renderu
@@ -13,14 +14,8 @@ import { addDaysISO, tIso, tIsoEnd } from "./Calendar";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const startMin = (t: TaskRow): number | null => {
-	const s = t.start_date;
-	if (!s || s.length < 16) return null;
-	const h = +s.slice(11, 13);
-	const m = +s.slice(14, 16);
-	if (Number.isNaN(h) || Number.isNaN(m) || (h === 0 && m === 0)) return null;
-	return h * 60 + m;
-};
+// sdílený parser času (lib/tasks.startMinOf) — dřív lokální kopie, P1-06 jeden zdroj pravdy
+const startMin = (t: TaskRow): number | null => startMinOf(t);
 
 /**
  * Měsíční kalendář (port buildMonth, ř. 2863–2891): pondělí-first, prázdné pozice před 1. dnem

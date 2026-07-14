@@ -27,6 +27,7 @@ import { useTaskDetail } from "../lib/taskDetail";
 import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
 import { useViewMode } from "../lib/viewMode";
+import { NOT_MEETING } from "../lib/tasks";
 
 /**
  * Vše — záložka sloučeného modulu Úkoly: inventář top-level úkolů po projektech.
@@ -56,10 +57,11 @@ export function VseTab() {
 	const flowSteps = useFlowSteps();
 
 	// Výkon: bez „Dokončené" filtruj hotové rovnou v SQL (méně řádků přes WASM bridge na každou změnu).
+	// NOT_MEETING — pracovní seznam úkolů; porady mají modul Meets + kalendář
 	const { data: allTasks } = usePsQuery<TaskRow>(
 		tb.showDone
-			? "SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date"
-			: "SELECT * FROM tasks WHERE completed_at IS NULL ORDER BY priority, due_date IS NULL, due_date",
+			? `SELECT * FROM tasks WHERE ${NOT_MEETING} ORDER BY priority, due_date IS NULL, due_date`
+			: `SELECT * FROM tasks WHERE completed_at IS NULL AND ${NOT_MEETING} ORDER BY priority, due_date IS NULL, due_date`,
 	);
 
 	const scoped = useMemo(() => {
@@ -310,7 +312,7 @@ export function ZasobnikTab() {
 	const { q: searchQ } = useListSearch();
 
 	const { data: allTasks } = usePsQuery<TaskRow>(
-		"SELECT * FROM tasks WHERE due_date IS NULL AND completed_at IS NULL ORDER BY priority, created_at",
+		`SELECT * FROM tasks WHERE due_date IS NULL AND completed_at IS NULL AND ${NOT_MEETING} ORDER BY priority, created_at`,
 	);
 
 	const shown = useMemo(() => {

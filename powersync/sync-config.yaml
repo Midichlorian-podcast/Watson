@@ -10,7 +10,7 @@ bucket_definitions:
     data:
       - SELECT id, project_id, section_id, parent_id, name, description, priority, color,
         due_date, start_date, deadline, duration_min, days, sort_order, recurrence, recurrence_rule, recurrence_basis,
-        assignment_mode, status_id, mail_th, mail_label, completed_at, created_by, created_at
+        assignment_mode, status_id, mail_th, mail_label, kind, meeting_id, completed_at, created_by, created_at
         FROM tasks
         WHERE project_id = bucket.project_id
       # Projekt sám (barva projektu = tělo karet úkolů, R6) + jeho struktura.
@@ -93,4 +93,14 @@ bucket_definitions:
       # Kontakty — reálný adresář (sféra = workspace); zdroj pro našeptávání v mailu.
       - SELECT id, workspace_id, name, email, org, role, areas, note, created_by, created_at
         FROM contacts
+        WHERE workspace_id = bucket.workspace_id
+      # Polymorfní vazby (mail↔úkol, LuckyOS↔úkol) — dedup + proklik do cizí domény.
+      - SELECT id, workspace_id, from_type, from_id, to_type, to_id, relation, source_system, external_id, created_at
+        FROM entity_links
+        WHERE workspace_id = bucket.workspace_id
+      # Meets — porada (sidecar kotevního úkolu): JEN METADATA. Přepis a AI extraction se
+      # ZÁMĚRNĚ nesyncují plošně (CC-P0-13: obsah smí jen účastník/pozvaný) — do participant
+      # ACL bucketu se čtou on-demand přes GET /api/meetings/:id.
+      - SELECT id, workspace_id, title, status, hub_task_id, series_id, prev_meeting_id, created_by, created_at
+        FROM meetings
         WHERE workspace_id = bucket.workspace_id

@@ -124,8 +124,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 		priority: number | null;
 		created_by: string | null;
 		parent_id: string | null;
+		kind: string | null;
 	}>(
-		"SELECT id, project_id, due_date, priority, created_by, parent_id FROM tasks WHERE completed_at IS NULL",
+		// `kind` se řeší per-počet níž: agendové počty (Dnes/Nadcházející) porady ZAPOČÍTÁVAJÍ
+		// (seznamy je ukazují — badge musí sedět s řádky), pracovní počty je vynechávají.
+		"SELECT id, project_id, due_date, priority, created_by, parent_id, kind FROM tasks WHERE completed_at IS NULL",
 	);
 	const { data: myAssignments } = usePsQuery<{ task_id: string | null }>(
 		"SELECT task_id FROM assignments WHERE user_id = ?",
@@ -143,11 +146,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 	const activeWsName = workspaces?.find((w) => w.id === activeWs)?.name ?? "";
 	const wsName = activeWsName || workspaces?.[0]?.name || "";
 
-	// Otevřené úkoly per projekt (pro počty u projektů v sidebaru).
+	// Otevřené úkoly per projekt (pro počty u projektů v sidebaru) — bez porad (práce, ne agenda).
 	const projOpen = useMemo<Record<string, number>>(() => {
 		const map: Record<string, number> = {};
 		for (const t of openTasks ?? [])
-			if (t.project_id) map[t.project_id] = (map[t.project_id] ?? 0) + 1;
+			if (t.project_id && t.kind !== "meeting") map[t.project_id] = (map[t.project_id] ?? 0) + 1;
 		return map;
 	}, [openTasks]);
 
@@ -163,11 +166,15 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 			!t.due_date && !!t.project_id && inbox.has(t.project_id);
 		// Stejné pravidlo viditelnosti podúkolů jako obrazovky: bez termínu žijí jen v rodiči.
 		const visible = tasks.filter((t) => (!t.parent_id || t.due_date) && !inboxTask(t));
+		// Pracovní podmnožina bez porad — pro Vše/Zásobník/oblíbené (Meets/agenda porady ukazují).
+		const visibleWork = visible.filter((t) => t.kind !== "meeting");
+		const work = tasks.filter((t) => t.kind !== "meeting");
 		return {
-			"/schranka": tasks.filter(
+			"/schranka": work.filter(
 				(t) => t.project_id && inbox.has(t.project_id) && !t.due_date && !t.parent_id,
 			).length,
-			// Dnes = denní závazek: dnes + zpožděné, BEZ nedatovaných (ty jsou v Zásobníku).
+			// Dnes = denní AGENDA (dnes + zpožděné, bez nedatovaných) — VČETNĚ porad,
+			// protože seznam Dnes porady zobrazuje a badge musí sedět s řádky.
 			"/": visible.filter((t) => {
 				const dd = day(t.due_date);
 				return dd != null && dd <= today;
@@ -178,13 +185,13 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 				const dd = day(t.due_date);
 				return dd != null && dd >= today;
 			}).length,
-			// Úkoly (Vše) skrývá podúkoly úplně — reprezentuje je ⚏ rodiče.
-			"/ukoly": tasks.filter((t) => !t.parent_id && !inboxTask(t)).length,
-			// Zásobník = nedatované (non-inbox, top-level) — akční „dluh triage".
-			zasobnik: visible.filter((t) => !t.due_date).length,
-			"/oblibene/p1": visible.filter((t) => t.priority === 1).length,
+			// Úkoly (Vše) skrývá podúkoly úplně — reprezentuje je ⚏ rodiče. Bez porad.
+			"/ukoly": work.filter((t) => !t.parent_id && !inboxTask(t)).length,
+			// Zásobník = nedatované (non-inbox, top-level) — akční „dluh triage". Bez porad.
+			zasobnik: visibleWork.filter((t) => !t.due_date).length,
+			"/oblibene/p1": visibleWork.filter((t) => t.priority === 1).length,
 			// Jen skutečně přiřazené (prototyp ř. 3150 — ne autor).
-			"/oblibene/me": visible.filter((t) => assigned.has(t.id)).length,
+			"/oblibene/me": visibleWork.filter((t) => assigned.has(t.id)).length,
 			"/seznamy": (activeLists ?? []).length,
 			"/mail": mailUnread,
 		};
