@@ -6,8 +6,11 @@ import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 import { chipStyle, FilterSectionLabel, pillStyle } from "./filterUi";
+import { SavedViewsControl } from "./SavedViewsControl";
 
 export type SortBy = "smart" | "due" | "priority" | "name" | "project" | "status";
+export type DueKey = "overdue" | "today" | "next7" | "none";
+export type GroupBy = "project" | "priority" | "status" | "none";
 /** Normalizovaný klíč stavu (prototyp filterStatus: probiha/kontrola/''/hotovo). */
 export type StatusKey = "probiha" | "kontrola" | "" | "hotovo";
 
@@ -17,9 +20,11 @@ export interface ToolbarState {
 	projects: string[];
 	/** "me" | "__none__" | "__multi__" | userId (prototyp filterPerson, ř. 3237). */
 	people: string[];
+	due: DueKey[];
 	sortBy: SortBy;
 	asc: boolean;
 	showDone: boolean;
+	groupBy: GroupBy;
 }
 
 export const DEFAULT_TOOLBAR: ToolbarState = {
@@ -27,9 +32,11 @@ export const DEFAULT_TOOLBAR: ToolbarState = {
 	statuses: [],
 	projects: [],
 	people: [],
+	due: [],
 	sortBy: "smart",
 	asc: true,
 	showDone: false,
+	groupBy: "project",
 };
 
 type TaskLike = {
@@ -155,6 +162,23 @@ export function filterTasks<T extends TaskLike>(
 		if (st.priorities.length > 0 && !st.priorities.includes(tk.priority ?? 4)) return false;
 		if (st.statuses.length > 0 && !st.statuses.includes(ctx?.statusKeyOf(tk) ?? "")) return false;
 		if (st.projects.length > 0 && !st.projects.includes(tk.project_id ?? "")) return false;
+		if (st.due.length > 0) {
+			const now = new Date();
+			const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+			const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
+			const next7 = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+			const day = tk.due_date?.slice(0, 10) ?? null;
+			const hit = st.due.some((key) =>
+				key === "none"
+					? day === null
+					: key === "today"
+						? day === today
+						: key === "overdue"
+							? !tk.completed_at && day !== null && day < today
+							: day !== null && day > today && day <= next7,
+			);
+			if (!hit) return false;
+		}
 		// Osobní (soukromý) workspace nemá sekci Osoba (showPersonFilter=false) — přetrvalý filtr
 		// z týmového ws pak ignoruj, jinak by tiše vyprázdnil osobní úkoly bez viditelného ovládání.
 		if (st.people.length > 0 && ctx?.showPersonFilter !== false) {
@@ -192,13 +216,17 @@ export function TasksToolbar({
 	state,
 	onChange,
 	ctx,
+	allowGrouping = false,
+	showSavedViews = false,
 }: {
 	state: ToolbarState;
 	onChange: (next: ToolbarState) => void;
 	ctx: ToolbarCtx;
+	allowGrouping?: boolean;
+	showSavedViews?: boolean;
 }) {
 	const { t } = useTranslation();
-	const [open, setOpen] = useState<"filter" | "sort" | null>(null);
+	const [open, setOpen] = useState<"filter" | "sort" | "group" | null>(null);
 	const [projQ, setProjQ] = useState("");
 	const [personQ, setPersonQ] = useState("");
 	const ref = useRef<HTMLDivElement>(null);
@@ -238,16 +266,33 @@ export function TasksToolbar({
 		["", t("toolbar.stNezahajeno")],
 		["hotovo", t("toolbar.stHotovo")],
 	];
+	const DUE: [DueKey, string][] = [
+		["overdue", t("toolbar.dueOverdue")],
+		["today", t("toolbar.dueToday")],
+		["next7", t("toolbar.dueNext7")],
+		["none", t("toolbar.dueNone")],
+	];
+	const GROUPS: [GroupBy, string][] = [
+		["project", t("toolbar.groupProject")],
+		["priority", t("toolbar.groupPriority")],
+		["status", t("toolbar.groupStatus")],
+		["none", t("toolbar.groupNone")],
+	];
 	const personOpts: { id: string; label: string }[] = [
 		{ id: "me", label: t("toolbar.personMe") },
 		{ id: "__none__", label: t("toolbar.personNone") },
 		{ id: "__multi__", label: t("toolbar.personMulti") },
 		...ctx.members.filter((m) => m.id !== ctx.myId).map((m) => ({ id: m.id, label: m.name })),
 	];
-	const personLabel = (id: string) => personOpts.find((o) => o.id === id)?.label ?? id;
+	const personLabel = (id: string) =>
+		personOpts.find((o) => o.id === id)?.label ?? t("toolbar.unavailablePerson");
 
 	const hasFilters =
-		state.priorities.length + state.statuses.length + state.projects.length + state.people.length >
+		state.priorities.length +
+			state.statuses.length +
+			state.projects.length +
+			state.people.length +
+			state.due.length >
 		0;
 	const clearFilters = () =>
 		onChange({
@@ -256,6 +301,7 @@ export function TasksToolbar({
 			statuses: [],
 			projects: [],
 			people: [],
+			due: [],
 		});
 
 	// Aktivní filter chipy (prototyp activeFilterChips) — každý s × pro zrušení.
@@ -272,13 +318,18 @@ export function TasksToolbar({
 		})),
 		...state.projects.map((id) => ({
 			key: `j${id}`,
-			label: ctx.projects.find((p) => p.id === id)?.name ?? id,
+			label: ctx.projects.find((p) => p.id === id)?.name ?? t("toolbar.unavailableProject"),
 			onClear: () => onChange({ ...state, projects: toggleIn(state.projects, id) }),
 		})),
 		...state.people.map((id) => ({
 			key: `o${id}`,
 			label: personLabel(id),
 			onClear: () => onChange({ ...state, people: toggleIn(state.people, id) }),
+		})),
+		...state.due.map((key) => ({
+			key: `d${key}`,
+			label: DUE.find(([value]) => value === key)?.[1] ?? key,
+			onClear: () => onChange({ ...state, due: toggleIn(state.due, key) }),
 		})),
 	];
 
@@ -288,6 +339,7 @@ export function TasksToolbar({
 			className="relative flex flex-wrap items-center"
 			style={{ gap: 8, padding: "8px 4px 2px" }}
 		>
+			{showSavedViews && <SavedViewsControl state={state} onChange={onChange} />}
 			{/* Filtr (prototyp ř. 350) */}
 			<div className="relative">
 				<button
@@ -357,6 +409,22 @@ export function TasksToolbar({
 										style={pillStyle(state.statuses.includes(k), 11.5, "4px 10px")}
 									>
 										{l}
+									</button>
+								))}
+							</div>
+						</div>
+						<div>
+							<SectionLabel>{t("toolbar.due")}</SectionLabel>
+							<div className="flex flex-wrap" style={{ gap: 5 }}>
+								{DUE.map(([key, label]) => (
+									<button
+										key={key}
+										type="button"
+										onClick={() => onChange({ ...state, due: toggleIn(state.due, key) })}
+										className="font-display font-semibold"
+										style={pillStyle(state.due.includes(key), 11.5, "4px 10px")}
+									>
+										{label}
 									</button>
 								))}
 							</div>
@@ -537,6 +605,41 @@ export function TasksToolbar({
 					</div>
 				)}
 			</div>
+
+			{/* Seskupení je skutečná součást uloženého pohledu, ne kosmetický popisek. */}
+			{allowGrouping && <div className="relative">
+				<button
+					type="button"
+					onClick={() => setOpen(open === "group" ? null : "group")}
+					className="font-display font-semibold hover:border-brass"
+					style={chipStyle(state.groupBy !== "project")}
+				>
+					{t("toolbar.group")} · {GROUPS.find(([key]) => key === state.groupBy)?.[1]}
+					<span style={{ fontSize: 10, opacity: 0.6 }}>▾</span>
+				</button>
+				{open === "group" && (
+					<div
+						data-esc-layer
+						className="absolute left-0 z-[31] flex w-44 flex-col rounded-xl border border-line bg-card p-1 shadow-lg"
+						style={{ top: 38 }}
+					>
+						{GROUPS.map(([key, label]) => (
+							<button
+								key={key}
+								type="button"
+								onClick={() => {
+									onChange({ ...state, groupBy: key });
+									setOpen(null);
+								}}
+								className="min-h-11 rounded-lg px-2.5 text-left font-display font-semibold text-ink hover:bg-panel-2"
+								style={{ fontSize: 13, background: state.groupBy === key ? "var(--w-brass-soft)" : undefined }}
+							>
+								{label}
+							</button>
+						))}
+					</div>
+				)}
+			</div>}
 
 			{/* Dokončené (prototyp ř. 390) */}
 			<button

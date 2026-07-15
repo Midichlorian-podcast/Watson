@@ -60,6 +60,7 @@ start_api 0
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:rbac
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:sync-refs
 DECISIONS_API="$API_URL" pnpm --filter @watson/api verify:comment-decisions
+SAVED_VIEWS_API="$API_URL" pnpm --filter @watson/api verify:saved-views
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:meet-acl
 MEETING_API="$API_URL" pnpm --filter @watson/api verify:meeting-commands
 AI_POLICY_API="$API_URL" pnpm --filter @watson/api verify:ai-policy

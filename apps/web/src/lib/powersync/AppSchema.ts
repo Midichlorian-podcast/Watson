@@ -443,6 +443,23 @@ const local_private_state = new Table(
 	{ localOnly: true },
 );
 
+/** Strukturované osobní a týmové pohledy úkolů; zápis probíhá CAS API commandem. */
+const filters = new Table(
+	{
+		owner_scope: column.text,
+		user_id: column.text,
+		workspace_id: column.text,
+		name: column.text,
+		query: column.text,
+		surface: column.text,
+		config: column.text,
+		version: column.integer,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{ trackPrevious: true },
+);
+
 export const AppSchema = new Schema({
 	tasks,
 	projects,
@@ -470,6 +487,7 @@ export const AppSchema = new Schema({
 	contacts,
 	entity_links,
 	meetings,
+	filters,
 });
 
 export type Database = (typeof AppSchema)["types"];
@@ -496,3 +514,4 @@ export type ListTemplateRow = Database["list_templates"];
 export type EntityLinkRow = Database["entity_links"];
 export type RejectedOpRow = Database["local_rejected_ops"];
 export type LocalPrivateStateRow = Database["local_private_state"];
+export type FilterRow = Database["filters"];

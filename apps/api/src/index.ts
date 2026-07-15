@@ -33,6 +33,7 @@ import { meetingsRoutes } from "./meetings";
 import { powersyncRoutes } from "./powersync";
 import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
+import { savedViewRoutes } from "./savedViews";
 import { taskCommandRoutes } from "./taskCommands";
 import { watsonRoutes } from "./watson";
 
@@ -306,6 +307,7 @@ app.route("/", chainCommandRoutes);
 app.route("/", meetingsRoutes);
 app.route("/", watsonRoutes);
 app.route("/", exportRoutes);
+app.route("/", savedViewRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);

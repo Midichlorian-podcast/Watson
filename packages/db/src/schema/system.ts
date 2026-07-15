@@ -15,7 +15,7 @@ import {
 	uuid,
 	varchar,
 } from "drizzle-orm/pg-core";
-import { createdAt, pk } from "./_helpers";
+import { createdAt, pk, updatedAt } from "./_helpers";
 import { users } from "./auth";
 import {
 	actorTypeEnum,
@@ -31,14 +31,36 @@ import { projects, workspaces } from "./workspace";
 export const filters = pgTable("filters", {
 	id: pk(),
 	ownerScope: ownerScopeEnum("owner_scope").notNull().default("user"),
-	userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
-	workspaceId: uuid("workspace_id").references(() => workspaces.id, {
-		onDelete: "cascade",
-	}),
+	/** Autor je povinný i u týmového pohledu; viditelnost určuje owner_scope. */
+	userId: uuid("user_id")
+		.references(() => users.id, { onDelete: "cascade" }),
+	workspaceId: uuid("workspace_id")
+		.references(() => workspaces.id, { onDelete: "cascade" }),
 	name: varchar("name", { length: 160 }).notNull(),
+	/** Legacy výraz zůstává kvůli exportům; nové pohledy používají tasks:v1 + config. */
 	query: text("query").notNull(),
+	surface: varchar("surface", { length: 32 }).notNull().default("tasks"),
+	config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+	version: integer("version").notNull().default(1),
 	createdAt: createdAt(),
-});
+	updatedAt: updatedAt(),
+}, (t) => [
+	check("filters_surface_valid", sql`${t.surface} in ('tasks')`),
+	check("filters_config_object", sql`jsonb_typeof(${t.config}) = 'object'`),
+	check("filters_version_positive", sql`${t.version} > 0`),
+	/** Legacy C5 řádky smějí zůstat; strukturovaný v1 pohled musí mít jednoznačný tenant i autora. */
+	check(
+		"filters_tasks_v1_owner",
+		sql`${t.query} <> 'tasks:v1' OR (${t.workspaceId} IS NOT NULL AND ${t.userId} IS NOT NULL)`,
+	),
+	uniqueIndex("filters_personal_name_uq")
+		.on(t.workspaceId, t.userId, t.surface, sql`lower(${t.name})`)
+		.where(sql`${t.ownerScope} = 'user'`),
+	uniqueIndex("filters_team_name_uq")
+		.on(t.workspaceId, t.surface, sql`lower(${t.name})`)
+		.where(sql`${t.ownerScope} = 'workspace'`),
+	index("filters_workspace_scope_idx").on(t.workspaceId, t.ownerScope, t.surface),
+]);
 
 /** A8 — barevné palety (kurátorské + vlastní hex), oddělené od priority (R6). */
 export const palettes = pgTable("palettes", {

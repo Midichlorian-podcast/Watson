@@ -94,24 +94,54 @@ export function VseTab() {
 	const groups = useMemo(() => {
 		const m = new Map<string, TaskRow[]>();
 		for (const tk of shown) {
-			const k = tk.project_id ?? "—";
+			const k =
+				tb.groupBy === "none"
+					? "__all__"
+					: tb.groupBy === "priority"
+						? `p${tk.priority ?? 4}`
+						: tb.groupBy === "status"
+							? `s:${tbCtx.statusKeyOf(tk)}`
+							: (tk.project_id ?? "—");
 			const arr = m.get(k);
 			if (arr) arr.push(tk);
 			else m.set(k, [tk]);
 		}
 		// Stabilní pořadí sekcí = pořadí projektů, ne pořadí seřazených úkolů (prototyp ř. 3040).
-		const order = new Map(projects.map((p, i) => [p.id, i] as const));
+		const projectOrder = new Map(projects.map((p, i) => [p.id, i] as const));
+		const statusOrder = new Map(["probiha", "kontrola", "", "hotovo"].map((key, i) => [`s:${key}`, i]));
+		const rank = (key: string) =>
+			tb.groupBy === "priority"
+				? Number(key.slice(1))
+				: tb.groupBy === "status"
+					? (statusOrder.get(key) ?? 99)
+					: (projectOrder.get(key) ?? 999);
 		return (
 			[...m.entries()]
-				.sort(([a], [b]) => (order.get(a) ?? 999) - (order.get(b) ?? 999))
+				.sort(([a], [b]) => rank(a) - rank(b))
 				// total = počet aktuálně zobrazených položek sekce (respektuje Dokončené/filtry/hledání),
 				// ať číslo v hlavičce sedí s vypsanými řádky (dřív se počítalo z nefiltrovaného základu).
 				.map(([pid, list]) => ({ pid, list, total: list.length }))
 		);
-	}, [shown, projects]);
+	}, [shown, projects, tb.groupBy, tbCtx]);
 
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 	const projName = (id: string) => projMap.get(id)?.name ?? "—";
+	const groupName = (key: string) => {
+		if (tb.groupBy === "priority") return `P${key.slice(1)}`;
+		if (tb.groupBy === "status") {
+			const status = key.slice(2);
+			return t(
+				status === "probiha"
+					? "toolbar.stProbiha"
+					: status === "kontrola"
+						? "toolbar.stKontrola"
+						: status === "hotovo"
+							? "toolbar.stHotovo"
+							: "toolbar.stNezahajeno",
+			);
+		}
+		return projName(key);
+	};
 	const activeProject = projektId ? projMap.get(projektId) : undefined;
 
 	// Výkon: „Úkoly" je jediná obrazovka renderující VŠECHNY otevřené úkoly najednou. Nad prahem
@@ -150,8 +180,11 @@ export function VseTab() {
 	// (capped) seznam = přesně to, co je vykreslené v DOM, aby j/k a Space/⌫ nemířily
 	// na neviditelné řádky nad capem.
 	const visualList = useMemo(
-		() => (projektId ? shownCapped : groupsCapped.flatMap((g) => g.list)),
-		[projektId, shownCapped, groupsCapped],
+		() =>
+			projektId || tb.groupBy === "none"
+				? shownCapped
+				: groupsCapped.flatMap((g) => g.list),
+		[projektId, tb.groupBy, shownCapped, groupsCapped],
 	);
 	const { setNavIds } = useTaskDetail();
 	useEffect(() => {
@@ -194,7 +227,15 @@ export function VseTab() {
 				</div>
 			)}
 
-			{view !== "calendar" && <TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />}
+			{view !== "calendar" && (
+				<TasksToolbar
+					state={tb}
+					onChange={setTb}
+					ctx={tbCtx}
+					allowGrouping={view === "list" && !projektId}
+					showSavedViews={!projektId}
+				/>
+			)}
 
 			{projectsLoading || tasksLoading ? (
 				<DataLoading />
@@ -245,7 +286,7 @@ export function VseTab() {
 								</button>
 							</div>
 						))}
-					{projektId ? (
+					{projektId || tb.groupBy === "none" ? (
 						<ul>
 							{shownCapped.map((tk) => (
 								<KbRow key={tk.id} selected={kbSel === tk.id}>
@@ -265,7 +306,7 @@ export function VseTab() {
 									style={{ margin: "18px 0 2px", padding: "0 4px" }}
 								>
 									<span className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
-										{projName(pid)}
+										{groupName(pid)}
 									</span>
 									<span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
 										{total}

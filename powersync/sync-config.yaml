@@ -65,6 +65,10 @@ bucket_definitions:
       - SELECT id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at
         FROM reminders
         WHERE user_id = bucket.user_id
+      # Osobní uložené pohledy — pouze jejich autor.
+      - SELECT id, owner_scope, user_id, workspace_id, name, query, surface, config, version, created_at, updated_at
+        FROM filters
+        WHERE user_id = bucket.user_id AND owner_scope = 'user' AND query = 'tasks:v1'
 
   # Workspace-scoped entity (cíle) — jeden bucket na každý prostor, kde je uživatel členem.
   user_workspaces:
@@ -107,3 +111,7 @@ bucket_definitions:
       - SELECT id, workspace_id, title, status, hub_task_id, series_id, prev_meeting_id, created_by, created_at
         FROM meetings
         WHERE workspace_id = bucket.workspace_id
+      # Týmové uložené pohledy — vidí všichni členové prostoru, mění je jen vedení přes API.
+      - SELECT id, owner_scope, user_id, workspace_id, name, query, surface, config, version, created_at, updated_at
+        FROM filters
+        WHERE workspace_id = bucket.workspace_id AND owner_scope = 'workspace' AND query = 'tasks:v1'
