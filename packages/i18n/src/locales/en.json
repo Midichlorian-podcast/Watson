@@ -431,7 +431,7 @@
 	"common": {
 		"save": "Save",
 		"cancel": "Cancel",
-    "edit": "Edit",
+		"edit": "Edit",
 		"done": "Done",
 		"signOut": "Sign out",
 		"close": "Close",
@@ -461,6 +461,7 @@
 		"calendar": "Calendar",
 		"form": "Autocomplete & form",
 		"search": "Search",
+		"quickCapture": "Quick capture from anywhere",
 		"newTask": "New task",
 		"jump": "Jump to anything",
 		"goto": "Go to…",
@@ -483,7 +484,7 @@
 		"redone": "Redone",
 		"deleteFailed": "Delete failed. Your data was not changed; check your connection and permissions."
 	},
-  "palette": {
+	"palette": {
 	"placeholder": "Find a task, project, meeting, person, or command…",
 	"empty": "Nothing found",
 	"kindGoto": "Go to",
@@ -493,8 +494,9 @@
 	"kindMeeting": "Meeting",
 	"kindProject": "Project",
 	"kindPerson": "Person",
-	"kindFlow": "Flow",
-	"actionNewTask": "Add a new task",
+		"kindFlow": "Flow",
+		"actionQuickCapture": "Quick-capture a task",
+		"actionNewTask": "Add a new task",
 	"actionSearch": "Open full search"
   },
 	"inbox": {
@@ -1033,6 +1035,16 @@
 		"showAllCapped": "Showing {{shown}} of {{total}} — show all"
 	},
 	"addmodal": {
+		"dialogTitle": "Add task",
+		"captureTitle": "Quick capture",
+		"captureSubtitle": "One sentence is enough. Watson splits it into fields before saving.",
+		"capturePlaceholder": "What needs to be done? Add tomorrow, p1, #project, or @name…",
+		"captureHint": "Enter saves. Expanding loses nothing.",
+		"captureExpand": "Full form",
+		"previewTitle": "Save preview",
+		"recognizedCount": "recognized: {{count}}",
+		"previewMissingName": "The task still needs its own name",
+		"previewNoAttributes": "For now, only the name and default fields will be saved. Add a date, priority, project, or person directly in the sentence.",
 		"titlePlaceholder": "Task name — e.g. report tomorrow at 14:00 every Wednesday #Sales @Tom p1",
 		"invalidLocalTime": "This time does not exist in your configured time zone because of daylight saving time.",
 		"addDesc": "+ Add description",

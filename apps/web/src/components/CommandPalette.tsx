@@ -59,7 +59,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 	const { activeWs } = useWorkspace();
 	const { data: workspaces } = useWorkspaces();
 	const { setView } = useViewMode();
-	const { openAdd } = useAddTask();
+	const { openAdd, openCapture } = useAddTask();
 	const projectDetail = useProjectDetail();
 	const m = useMail();
 	const [q, setQ] = useState("");
@@ -116,6 +116,15 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 	const items = useMemo(() => {
 		const query = q.trim().toLowerCase();
 		const actionItems: PalItem[] = [
+			{
+				key: "a:quick-capture",
+				kind: t("palette.kindAction"),
+				label: t("palette.actionQuickCapture"),
+				run: () => {
+					onClose();
+					openCapture();
+				},
+			},
 			{
 				key: "a:new-task",
 				kind: t("palette.kindAction"),
@@ -276,6 +285,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 		setView,
 		workspaces,
 		openAdd,
+		openCapture,
 		projectDetail,
 	]);
 

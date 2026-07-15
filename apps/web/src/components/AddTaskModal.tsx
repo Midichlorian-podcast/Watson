@@ -271,6 +271,7 @@ export function AddTaskModal({
 	onClose: () => void;
 	/** Předvyplnění z kalendáře (openAddAt): datum/čas/trvání. */
 	initial?: {
+		capture?: boolean;
 		date?: string;
 		time?: string;
 		duration?: number;
@@ -338,6 +339,7 @@ export function AddTaskModal({
 		if (initial?.projectId) d.project = initial.projectId;
 		return d;
 	});
+	const [captureMode, setCaptureMode] = useState(Boolean(initial?.capture));
 	// Výchozí projekt = inbox (R8), jakmile jsou projekty načtené.
 	useEffect(() => {
 		if (!draft.project && inbox) setDraft((d) => ({ ...d, project: d.project ?? inbox.id }));
@@ -688,6 +690,20 @@ export function AddTaskModal({
 				: draft.assignMode === "all"
 					? t("addmodal.assignHintAll", { n: nAssign })
 					: t("addmodal.assignHintAny", { n: nAssign });
+	const recognizedCount = new Set(draft.highlights.map((highlight) => highlight.kind)).size;
+	const previewItems = [
+		`${t("addmodal.fieldProject")}: ${selProject?.name ?? t("addmodal.fieldProject")}`,
+		`${t("addmodal.fieldDate")}: ${termLabel}`,
+		`${t("addmodal.fieldPriority")}: P${draft.priority}`,
+		nAssign > 0 ? `${t("addmodal.fieldAssign")}: ${peopleVal}` : null,
+		draft.duration > 0 ? `${t("addmodal.fieldDuration")}: ${durFmt(draft.duration)}` : null,
+		draft.deadline
+			? `${t("addmodal.fieldDeadline")}: ${deadlineFmt(draft.deadline, today).replace("do ", "")}`
+			: null,
+		hasRep
+			? `${t("addmodal.fieldRepeat")}: ${draft.repeatLabel || repLbl[draft.repeat]}`
+			: null,
+	].filter((item): item is string => Boolean(item));
 
 	/* ── submit (submitTask prototypu → PowerSync insert) ── */
 	async function submit() {
@@ -833,7 +849,7 @@ export function AddTaskModal({
 		>
 			<button
 				type="button"
-				aria-label="Zavřít dialog"
+				aria-label={t("common.close")}
 				onClick={onClose}
 				className="absolute inset-0 cursor-default border-0 p-0"
 				style={{ background: "rgba(10,14,20,.42)" }}
@@ -843,6 +859,7 @@ export function AddTaskModal({
 				tabIndex={-1}
 				role="dialog"
 				aria-modal="true"
+				aria-label={captureMode ? t("addmodal.captureTitle") : t("addmodal.dialogTitle")}
 				className="border border-line bg-card outline-none"
 				style={{
 					position: "relative",
@@ -857,6 +874,24 @@ export function AddTaskModal({
 					padding: 18,
 				}}
 			>
+				{captureMode && (
+					<div className="mb-3 flex items-center border-line border-b pb-3" style={{ gap: 10 }}>
+						<div className="flex-1">
+							<div className="font-display font-extrabold text-ink" style={{ fontSize: 16 }}>
+								{t("addmodal.captureTitle")}
+							</div>
+							<div className="mt-0.5 font-body text-ink-3" style={{ fontSize: 11.5 }}>
+								{t("addmodal.captureSubtitle")}
+							</div>
+						</div>
+						<kbd
+							className="shrink-0 rounded-md border border-line bg-panel-2 font-mono text-ink-3"
+							style={{ fontSize: 10, padding: "3px 6px" }}
+						>
+							⌘ ⇧ Space
+						</kbd>
+					</div>
+				)}
 				{/* dílčí úkol — kontext rodiče (plné přidání podúkolu z detailu) */}
 				{initial?.parentId && (
 					<div
@@ -913,7 +948,9 @@ export function AddTaskModal({
 							onChange={(e) => onName(e.target.value)}
 							onKeyDown={onNameKey}
 							rows={1}
-							placeholder={t("addmodal.titlePlaceholder")}
+							placeholder={
+								captureMode ? t("addmodal.capturePlaceholder") : t("addmodal.titlePlaceholder")
+							}
 							className="relative block w-full resize-none overflow-hidden border-none bg-transparent text-ink outline-none"
 							style={
 								{
@@ -990,6 +1027,53 @@ export function AddTaskModal({
 					</div>
 				)}
 
+				{draft.rawName.trim() && (
+					<section
+						aria-label={t("addmodal.previewTitle")}
+						className="mt-3 rounded-xl border border-line bg-panel-2"
+						style={{ padding: "11px 12px" }}
+					>
+						<div className="flex items-center justify-between" style={{ gap: 8 }}>
+							<span
+								className="font-display font-bold text-ink-3 uppercase"
+								style={{ fontSize: 10, letterSpacing: ".06em" }}
+							>
+								{t("addmodal.previewTitle")}
+							</span>
+							<span className="font-mono text-ink-3" style={{ fontSize: 10 }}>
+								{t("addmodal.recognizedCount", { count: recognizedCount })}
+							</span>
+						</div>
+						<div
+							className="mt-1.5 font-display font-bold"
+							style={{
+								fontSize: 14,
+								color: draft.name.trim() ? "var(--w-ink)" : "var(--w-overdue)",
+							}}
+						>
+							{draft.name.trim() || t("addmodal.previewMissingName")}
+						</div>
+						<div className="mt-2 flex flex-wrap" style={{ gap: 5 }}>
+							{previewItems.map((item) => (
+								<span
+									key={item}
+									className="rounded-full border border-line bg-card font-display font-semibold text-ink-2"
+									style={{ fontSize: 10.5, padding: "4px 8px" }}
+								>
+									{item}
+								</span>
+							))}
+						</div>
+						{recognizedCount === 0 && (
+							<p className="mt-2 font-body text-ink-3" style={{ fontSize: 11.5, lineHeight: 1.45 }}>
+								{t("addmodal.previewNoAttributes")}
+							</p>
+						)}
+					</section>
+				)}
+
+				{!captureMode && (
+					<>
 				{/* popis */}
 				{draft.descOpen ? (
 					<input
@@ -1697,13 +1781,22 @@ export function AddTaskModal({
 						)}
 					</div>
 				)}
+					</>
+				)}
 
 				{/* footer */}
 				<div
-					className="flex items-center border-line border-t"
+					className="flex flex-wrap items-center border-line border-t"
 					style={{ gap: 9, marginTop: 18, paddingTop: 14 }}
 				>
-					{needsName ? (
+					{captureMode ? (
+						<span
+							className="w-full basis-full font-body text-ink-3"
+							style={{ fontSize: 11.5, lineHeight: 1.5 }}
+						>
+							{t("addmodal.captureHint")}
+						</span>
+					) : needsName ? (
 						<span
 							className="flex flex-1 items-center font-body"
 							style={{
@@ -1749,10 +1842,20 @@ export function AddTaskModal({
 							dangerouslySetInnerHTML={{ __html: t("addmodal.hint") }}
 						/>
 					)}
+					{captureMode && (
+						<button
+							type="button"
+							onClick={() => setCaptureMode(false)}
+							className="min-h-11 w-full basis-full cursor-pointer rounded-[10px] border border-line bg-card px-3 font-display font-semibold text-ink-2 hover:border-brass hover:text-brass-text"
+							style={{ fontSize: 12 }}
+						>
+							{t("addmodal.captureExpand")}
+						</button>
+					)}
 					<button
 						type="button"
 						onClick={onClose}
-						className="cursor-pointer border border-line bg-panel-2 font-display font-semibold text-ink-2"
+						className={`${captureMode ? "flex-1" : ""} min-h-11 cursor-pointer border border-line bg-panel-2 font-display font-semibold text-ink-2`}
 						style={{ fontSize: 13, borderRadius: 10, padding: "9px 14px" }}
 					>
 						{t("addmodal.cancel")}
@@ -1760,7 +1863,7 @@ export function AddTaskModal({
 					<button
 						type="button"
 						onClick={() => void submit()}
-						className="cursor-pointer border-none font-display font-bold hover:brightness-106"
+						className={`${captureMode ? "flex-1" : ""} min-h-11 cursor-pointer border-none font-display font-bold hover:brightness-106`}
 						style={{
 							fontSize: 13,
 							color: "#fff",

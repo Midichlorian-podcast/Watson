@@ -439,7 +439,7 @@
 	"common": {
 		"save": "Uložit",
 		"cancel": "Zrušit",
-    "edit": "Upravit",
+		"edit": "Upravit",
 		"done": "Hotovo",
 		"signOut": "Odhlásit",
 		"close": "Zavřít",
@@ -469,6 +469,7 @@
 		"calendar": "Kalendář",
 		"form": "Našeptávač & formulář",
 		"search": "Hledat",
+		"quickCapture": "Rychlé zachycení odkudkoli",
 		"newTask": "Nový úkol",
 		"jump": "Skok kamkoli",
 		"goto": "Přejít na…",
@@ -491,7 +492,7 @@
 		"redone": "Znovu provedeno",
 		"deleteFailed": "Smazání se nepodařilo. Data zůstala beze změny; zkontrolujte připojení a oprávnění."
 	},
-  "palette": {
+	"palette": {
 	"placeholder": "Najdi úkol, projekt, poradu, člověka nebo příkaz…",
 	"empty": "Nic nenalezeno",
 	"kindGoto": "Přejít",
@@ -501,8 +502,9 @@
 	"kindMeeting": "Porada",
 	"kindProject": "Projekt",
 	"kindPerson": "Člověk",
-	"kindFlow": "Postup",
-	"actionNewTask": "Přidat nový úkol",
+		"kindFlow": "Postup",
+		"actionQuickCapture": "Rychle zachytit úkol",
+		"actionNewTask": "Přidat nový úkol",
 	"actionSearch": "Otevřít úplné vyhledávání"
   },
 	"inbox": {
@@ -1057,6 +1059,16 @@
 		"showAllCapped": "Zobrazeno {{shown}} z {{total}} — zobrazit vše"
 	},
 	"addmodal": {
+		"dialogTitle": "Přidat úkol",
+		"captureTitle": "Rychlé zachycení",
+		"captureSubtitle": "Jedna věta stačí. Watson ji před uložením rozloží do polí.",
+		"capturePlaceholder": "Co je potřeba udělat? Přidej třeba zítra, p1, #projekt nebo @jméno…",
+		"captureHint": "Enter uloží. Rozbalení nic neztratí.",
+		"captureExpand": "Plný formulář",
+		"previewTitle": "Náhled uložení",
+		"recognizedCount": "rozpoznáno: {{count}}",
+		"previewMissingName": "Chybí vlastní název úkolu",
+		"previewNoAttributes": "Zatím ukládám jen název a výchozí pole. Datum, prioritu, projekt nebo osobu můžeš připsat rovnou do věty.",
 		"titlePlaceholder": "Název úkolu — např. report zítra v 14:00 každou středu #Obchod @Tomáš p1",
 		"invalidLocalTime": "Tento čas v nastaveném časovém pásmu neexistuje kvůli změně letního času.",
 		"addDesc": "+ Přidat popis",

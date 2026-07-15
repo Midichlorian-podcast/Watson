@@ -49,7 +49,7 @@ const G_ROUTES: Record<
  */
 export function KeyboardProvider({ children }: { children: ReactNode }) {
 	const navigate = useNavigate();
-	const { openAdd } = useAddTask();
+	const { openAdd, openCapture } = useAddTask();
 	const { setView, locked } = useViewMode();
 	const { setOpen: setSearchOpen } = useListSearch();
 	const { openId } = useTaskDetail();
@@ -87,6 +87,16 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 				e.preventDefault();
 				setCheatOpen(false);
 				setPaletteOpen((o) => !o);
+				return;
+			}
+			// Globální Quick Capture funguje na každé obrazovce včetně Mailu. Modifikovaná
+			// zkratka nekoliduje s psaním ani s mailovými single-key akcemi.
+			if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "Space") {
+				if (document.querySelector("[data-esc-layer]")) return;
+				e.preventDefault();
+				setCheatOpen(false);
+				setPaletteOpen(false);
+				openCapture();
 				return;
 			}
 			if (onMailRef.current) return;
@@ -152,7 +162,17 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-	}, [cheatOpen, paletteOpen, navigate, openAdd, setView, locked, setSearchOpen, openId]);
+	}, [
+		cheatOpen,
+		paletteOpen,
+		navigate,
+		openAdd,
+		openCapture,
+		setView,
+		locked,
+		setSearchOpen,
+		openId,
+	]);
 
 	return (
 		<>

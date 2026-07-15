@@ -10,6 +10,7 @@ export function Cheatsheet({ onClose }: { onClose: () => void }) {
 			title: t("cheat.global"),
 			rows: [
 				[t("cheat.search"), ["/"]],
+				[t("cheat.quickCapture"), ["⌘ ⇧ Space"]],
 				[t("cheat.newTask"), ["Q"]],
 				[t("cheat.jump"), ["⌘ K"]],
 				[t("cheat.goto"), ["G", "D/U/K/P/C"]],
