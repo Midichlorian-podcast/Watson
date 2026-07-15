@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { CopyLinkButton } from "./CopyLinkButton";
 import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
 import { initials } from "../lib/format";
@@ -38,8 +39,18 @@ export async function patchProject(id: string, data: Record<string, unknown>) {
 
 export function ProjectDetailPanel() {
 	const { openId, close } = useProjectDetail();
+	const navigate = useNavigate();
 	if (!openId) return null;
-	return <Panel id={openId} onClose={close} />;
+	return (
+		<Panel
+			id={openId}
+			onClose={() => {
+				close();
+				if (location.pathname === "/projekty")
+					void navigate({ to: "/projekty", search: {} });
+			}}
+		/>
+	);
 }
 
 function Panel({ id, onClose }: { id: string; onClose: () => void }) {
@@ -210,11 +221,17 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					<span className="font-display font-semibold text-ink-3 text-sm">
 						{t("projects.detailTitle")}
 					</span>
+					<CopyLinkButton
+						entity="project"
+						id={id}
+						workspaceId={project.workspace_id}
+						className="ml-auto"
+					/>
 					<button
 						type="button"
 						onClick={onClose}
 						aria-label={t("common.cancel")}
-						className="ml-auto grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
+						className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 					>
 						<Icon name="zavrit" size={16} />
 					</button>

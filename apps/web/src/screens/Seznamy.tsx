@@ -11,6 +11,7 @@ import {
 	useState,
 } from "react";
 import { type CtxItem, useContextMenu } from "../components/ContextMenu";
+import { CopyLinkButton } from "../components/CopyLinkButton";
 import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
@@ -764,6 +765,7 @@ function ListDetail({
 					{t("nav.lists")}
 				</button>
 				<div className="flex-1" />
+				<CopyLinkButton entity="list" id={list.id} workspaceId={list.workspace_id} />
 				<button
 					type="button"
 					onClick={toggleDoneSort}

@@ -12,6 +12,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import i18n from "@watson/i18n";
 import { AvatarGroup } from "@watson/ui";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CopyLinkButton } from "../components/CopyLinkButton";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { initials, shortDayLabel } from "../lib/format";
@@ -753,16 +754,20 @@ export function MeetBoard({
 	if (contentReady && !hub) {
 		return (
 			<div style={{ maxWidth: 1060, margin: "0 auto", padding: "22px 20px 60px" }}>
-				<button type="button" style={BTN_GHOST} onClick={onBack}>
-					← Meets
-				</button>
+				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<button type="button" style={BTN_GHOST} onClick={onBack}>
+						← Meets
+					</button>
+					<span style={{ flex: 1 }} />
+					<CopyLinkButton entity="meeting" id={meetingId} workspaceId={meta?.workspace_id} />
+				</div>
 				<div style={{ ...secStyle("base"), marginTop: 14 }}>
-					<div
+					<h1
 						className="font-display"
-						style={{ fontWeight: 700, fontSize: 15, color: "var(--w-ink)" }}
+						style={{ fontWeight: 700, fontSize: 15, color: "var(--w-ink)", margin: 0 }}
 					>
 						{meta?.title ?? "Porada"}
-					</div>
+					</h1>
 					<div
 						className="font-body"
 						style={{ fontSize: 12.5, color: "var(--w-ink-3)", marginTop: 4 }}
@@ -833,6 +838,7 @@ export function MeetBoard({
 								: "naplánováno"}
 				</span>
 				<span style={{ flex: 1 }} />
+				<CopyLinkButton entity="meeting" id={meetingId} workspaceId={meta?.workspace_id} />
 				<button
 					type="button"
 					style={{ ...BTN_GHOST, padding: "7px 12px" }}
@@ -867,7 +873,9 @@ export function MeetBoard({
 								letterSpacing: ".04em",
 								padding: "3px 10px",
 								borderRadius: 999,
-								border: `1px solid ${s.done ? "var(--w-brass)" : i === currentStep ? "var(--w-brass)" : "var(--w-line)"}`,
+								borderWidth: 1,
+								borderColor:
+									s.done || i === currentStep ? "var(--w-brass)" : "var(--w-line)",
 								background: s.done ? "var(--w-brass-soft)" : "transparent",
 								color: s.done
 									? "var(--w-brass-text)"

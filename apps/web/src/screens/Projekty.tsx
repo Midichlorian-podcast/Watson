@@ -1,6 +1,6 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { type MouseEvent, useEffect, useMemo, useState } from "react";
@@ -31,9 +31,13 @@ const ZERO: Counts = { open: 0, done: 0, total: 0 };
 export function Projekty() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const search = useSearch({ from: "/projekty" });
 	const cm = useContextMenu();
 	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { open } = useProjectDetail();
+	useEffect(() => {
+		if (search.projekt) open(search.projekt);
+	}, [search.projekt, open]);
 
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs } = useWorkspace();
@@ -227,14 +231,20 @@ export function Projekty() {
 									name: nameById.get(uid) ?? "?",
 									isOwner: uid === p.owner_id,
 								}))}
-								onOpen={() => open(p.id)}
+								onOpen={() =>
+									void navigate({ to: "/projekty", search: { projekt: p.id } })
+								}
 								onContextMenu={(e) =>
 									cm.open(e, [
 										{
 											label: t("projects.viewTasks"),
 											onClick: () => void navigate({ to: "/ukoly", search: { projekt: p.id } }),
 										},
-										{ label: t("projects.editProject"), onClick: () => open(p.id) },
+										{
+											label: t("projects.editProject"),
+											onClick: () =>
+												void navigate({ to: "/projekty", search: { projekt: p.id } }),
+										},
 										{ sep: true },
 										{
 											label: isArchived

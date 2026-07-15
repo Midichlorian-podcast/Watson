@@ -4,6 +4,7 @@
  * prototypu (bez scrimu), pozice clampnutá do viewportu, Esc/klik mimo zavírá.
  */
 import { useEffect } from "react";
+import { copyDeepLink } from "../lib/deepLink";
 import { showToast } from "../lib/toast";
 import { useMail } from "./state";
 
@@ -73,12 +74,13 @@ export function CtxMenu({
 	div();
 	push("Kopírovat odkaz na vlákno", () => {
 		onClose();
-		try {
-			void navigator.clipboard.writeText(`watson://mail/${id}`);
-		} catch {
-			/* clipboard nedostupný (http kontext) — toast stačí */
-		}
-		showToast("Odkaz zkopírován — otevře ho jen ten, kdo má ke schránce přístup.");
+		void copyDeepLink("mail", id).then((copied) =>
+			showToast(
+				copied
+					? "Odkaz zkopírován — otevře ho jen ten, kdo má ke schránce přístup."
+					: "Odkaz se nepodařilo zkopírovat.",
+			),
+		);
 	});
 	push("Kopírovat předmět", () => {
 		onClose();

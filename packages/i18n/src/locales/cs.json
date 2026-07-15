@@ -3,6 +3,11 @@
 		"name": "Watson",
 		"tagline": "Drží tvou práci pohromadě a ukáže, co řešit."
 	},
+	"deepLink": {
+		"copy": "Kopírovat odkaz",
+		"copied": "Odkaz zkopírován",
+		"copyFailed": "Odkaz se nepodařilo zkopírovat"
+	},
 	"nav": {
 		"overview": "Přehled",
 		"lists": "Seznamy",

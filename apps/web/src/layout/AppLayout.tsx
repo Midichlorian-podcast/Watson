@@ -20,10 +20,29 @@ import { applyTweaks } from "../lib/tweaks";
 import { useIsMobile } from "../lib/useIsMobile";
 import { ViewModeProvider } from "../lib/viewMode";
 import { WatsonProvider } from "../lib/watson";
-import { WorkspaceProvider } from "../lib/workspace";
+import { useWorkspace, useWorkspaces, WorkspaceProvider } from "../lib/workspace";
 import { Header } from "./Header";
 import { MobileTabBar } from "./MobileTabBar";
 import { Sidebar } from "./Sidebar";
+
+/** Deep-link smí přepnout jen na prostor, který server skutečně vrátil přihlášenému uživateli. */
+function WorkspaceDeepLinkSync() {
+	const targetWorkspace = useRouterState({
+		select: (state) =>
+			(state.location.search as Record<string, unknown>).prostor as string | undefined,
+	});
+	const { data: workspaces } = useWorkspaces();
+	const { activeWs, setActiveWs } = useWorkspace();
+	useEffect(() => {
+		if (
+			targetWorkspace &&
+			targetWorkspace !== activeWs &&
+			workspaces?.some((workspace) => workspace.id === targetWorkspace)
+		)
+			setActiveWs(targetWorkspace);
+	}, [targetWorkspace, activeWs, workspaces, setActiveWs]);
+	return null;
+}
 
 export function AppLayout() {
 	// Sbalení sidebaru se persistuje (prototyp toggleRail + persist, ř. 2580).
@@ -49,6 +68,7 @@ export function AppLayout() {
 	}, [collapsed]);
 	return (
 		<WorkspaceProvider>
+			<WorkspaceDeepLinkSync />
 			<RowMetaProvider>
 				<ViewModeProvider>
 					<ListSearchProvider>

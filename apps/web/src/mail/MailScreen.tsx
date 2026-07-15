@@ -14,6 +14,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { useTheme } from "../layout/useTheme";
 import "./mail.css";
 import { showToast } from "../lib/toast";
@@ -34,7 +35,17 @@ import { useMail } from "./state";
 
 export function MailScreen() {
 	const m = useMail();
+	const search = useSearch({ from: "/mail" });
 	const { theme } = useTheme();
+	const deepLinkedThread = useRef<string | null>(null);
+	useEffect(() => {
+		const id = search.vlakno;
+		if (!id || deepLinkedThread.current === id || !m.threads.some((thread) => thread.id === id))
+			return;
+		deepLinkedThread.current = id;
+		m.setScr("mail");
+		m.openThread(id);
+	}, [search.vlakno, m.threads, m.setScr, m.openThread]);
 	const [drawer, setDrawer] = useState(false);
 	// overlaye: hledání (⌘K, /), Nová zpráva (C, Napsat), tahák zkratek (?)
 	const [newOn, setNewOn] = useState(false);

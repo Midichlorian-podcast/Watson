@@ -4,6 +4,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CopyLinkButton } from "../components/CopyLinkButton";
 import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
@@ -547,6 +548,7 @@ export function Postupy() {
 					stepWho={stepWho}
 					stepAvatar={stepAvatar}
 					meId={meId}
+					workspaceId={selected.proj?.workspace_id}
 					onClose={() => void navigate({ to: "/postupy", search: {} })}
 				/>
 			)}
@@ -561,6 +563,7 @@ function FlowDetail({
 	stepWho,
 	stepAvatar,
 	meId,
+	workspaceId,
 	onClose,
 }: {
 	data: {
@@ -576,6 +579,7 @@ function FlowDetail({
 	/** Avatar kroku — iniciály / ◇ (role) / ? (nepřiřazený) — prototyp flowView. */
 	stepAvatar: (st: ChainStepLite) => string;
 	meId: string | undefined;
+	workspaceId: string | null | undefined;
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
@@ -709,11 +713,12 @@ function FlowDetail({
 						<span className="shrink-0 font-mono text-ink" style={{ fontSize: 15 }}>
 							{done}/{total}
 						</span>
+						<CopyLinkButton entity="flow" id={ch.id} workspaceId={workspaceId} />
 						<button
 							type="button"
 							onClick={onClose}
 							aria-label={t("common.cancel")}
-							className="flex shrink-0 text-ink-3 hover:text-ink"
+							className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 						>
 							<Icon name="zavrit" size={16} />
 						</button>

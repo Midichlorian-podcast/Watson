@@ -3,6 +3,11 @@
 		"name": "Watson",
 		"tagline": "Keeps your work together and shows what matters."
 	},
+	"deepLink": {
+		"copy": "Copy link",
+		"copied": "Link copied",
+		"copyFailed": "Could not copy the link"
+	},
 	"nav": {
 		"overview": "Overview",
 		"lists": "Lists",

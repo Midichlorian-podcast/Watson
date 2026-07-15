@@ -49,6 +49,7 @@ import { logTaskActivity } from "../lib/activity";
 import { deleteTaskWithUndo } from "../lib/undo";
 import { useOpenMailThread } from "../mail/state";
 import { WHY_NOW_MAX_LENGTH, type WhyNowSignal, whyNowSignals } from "../lib/whyNow";
+import { copyDeepLink } from "../lib/deepLink";
 
 type Pri = 1 | 2 | 3 | 4;
 type Member = {
@@ -611,10 +612,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		setMenuOpen(false);
 		open(nid);
 	};
-	const copyLink = () => {
-		void navigator.clipboard.writeText(`${location.origin}/ukoly?ukol=${realId}`);
+	const copyLink = async () => {
+		const copied = await copyDeepLink("task", realId, project?.workspace_id);
 		setMenuOpen(false);
-		showToast(t("detail.linkCopied"));
+		showToast(t(copied ? "deepLink.copied" : "deepLink.copyFailed"));
 	};
 	const del = () => {
 		void deleteTaskWithUndo(realId); // mazání s undo (⌘Z)

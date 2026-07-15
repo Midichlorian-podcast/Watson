@@ -10,6 +10,7 @@
  */
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { keyedValues } from "../lib/keyedValues";
+import { copyDeepLink } from "../lib/deepLink";
 import { showToast } from "../lib/toast";
 import { TEXT_COLORS } from "./colors";
 import { MB, P, SLA, STL, TPL } from "./data";
@@ -1375,10 +1376,13 @@ export function MailThread() {
 						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => {
 								setPop(null);
-								// deep link vlákna — otevře se jen lidem s přístupem (L-22)
-								navigator.clipboard?.writeText(`watson://mail/${t.id}`).catch(() => {});
-								showToast(
-									`Odkaz zkopírován. Otevře se jen lidem s přístupem k ${mb?.short ?? ""} — ostatním neexistuje.`,
+								// Deep link stále respektuje oprávnění cílové schránky (L-22).
+								void copyDeepLink("mail", t.id).then((copied) =>
+									showToast(
+										copied
+											? `Odkaz zkopírován. Otevře se jen lidem s přístupem k ${mb?.short ?? ""} — ostatním neexistuje.`
+											: "Odkaz se nepodařilo zkopírovat.",
+									),
 								);
 							}}
 							data-menuitem

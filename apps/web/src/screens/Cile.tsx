@@ -1,9 +1,11 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
+import { CopyLinkButton } from "../components/CopyLinkButton";
 import { DataLoading } from "../components/Loading";
 import { initials } from "../lib/format";
 import { focusOnMount } from "../lib/focusOnMount";
@@ -127,6 +129,8 @@ const SCOPE_LABEL_KEY: Record<string, string> = {
 /** Cíle — taby dle scope, karty s progresem z reálných úkolů, builder + detail (1:1 dle Cloud Design). */
 export function Cile() {
 	const { t } = useTranslation();
+	const navigate = useNavigate();
+	const search = useSearch({ from: "/cile" });
 	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs } = useWorkspace();
@@ -136,7 +140,6 @@ export function Cile() {
 
 	const [tab, setTab] = useState<string | null>(null);
 	const [modalOpen, setModalOpen] = useState(false);
-	const [selectedId, setSelectedId] = useState<string | null>(null);
 
 	const { data: goals, isLoading: goalsLoading } = usePsQuery<GoalRow>(
 		"SELECT * FROM goals WHERE workspace_id = ? ORDER BY created_at",
@@ -278,7 +281,7 @@ export function Cile() {
 	const tabCount = (k: string) =>
 		wsP ? view.length : view.filter((v) => (v.g.scope ?? "team") === k).length;
 
-	const selected = view.find((v) => v.g.id === selectedId) ?? null;
+	const selected = view.find((v) => v.g.id === search.cil) ?? null;
 
 	return (
 		<div className="mx-auto max-w-[1080px]" style={{ padding: "20px 22px 90px" }}>
@@ -294,7 +297,7 @@ export function Cile() {
 							type="button"
 							onClick={() => {
 								setTab(k);
-								setSelectedId(null);
+								void navigate({ to: "/cile", search: {} });
 							}}
 							className="inline-flex items-center gap-1.5 rounded-[7px] font-display font-semibold"
 							style={{
@@ -358,7 +361,7 @@ export function Cile() {
 						<button
 							key={g.id}
 							type="button"
-							onClick={() => setSelectedId(g.id)}
+							onClick={() => void navigate({ to: "/cile", search: { cil: g.id } })}
 							className="flex flex-col rounded-2xl border border-line bg-card text-left transition-shadow hover:shadow-md"
 							style={{ padding: 18, boxShadow: "var(--w-shadow-sm)" }}
 						>
@@ -464,7 +467,7 @@ export function Cile() {
 					filterPersonName={memberName(selected.g.filter_person_id)}
 					sampleTasks={goalTasks(selected.g)}
 					canEdit={canManageGoals}
-					onClose={() => setSelectedId(null)}
+					onClose={() => void navigate({ to: "/cile", search: {} })}
 				/>
 			)}
 		</div>
@@ -1065,11 +1068,12 @@ function GoalDetail({
 					>
 						{t(SCOPE_LABEL_KEY[g.scope ?? "team"] ?? "goals.scopeLabelTeam")}
 					</span>
+					<CopyLinkButton entity="goal" id={g.id} workspaceId={g.workspace_id} />
 					<button
 						type="button"
 						onClick={onClose}
 						aria-label={t("common.cancel")}
-						className="grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
+						className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 					>
 						<Icon name="zavrit" size={16} />
 					</button>

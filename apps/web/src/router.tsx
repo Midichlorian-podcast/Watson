@@ -36,8 +36,9 @@ const seznamyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/seznamy",
 	component: Seznamy,
-	validateSearch: (s: Record<string, unknown>): { seznam?: string } => ({
+	validateSearch: (s: Record<string, unknown>): { seznam?: string; prostor?: string } => ({
 		seznam: typeof s.seznam === "string" ? s.seznam : undefined,
+		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
 	}),
 });
 const velinRoute = createRoute({
@@ -49,14 +50,21 @@ const mailRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/mail",
 	component: Mail,
+	validateSearch: (s: Record<string, unknown>): { vlakno?: string; prostor?: string } => ({
+		vlakno: typeof s.vlakno === "string" ? s.vlakno : undefined,
+		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
+	}),
 });
 const mitingyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/meets",
 	// ?meet= otevře board porady (deep-link); ?focus=zapis skočí na vkládání zápisu.
-	validateSearch: (s: Record<string, unknown>): { meet?: string; focus?: "zapis" } => ({
+	validateSearch: (
+		s: Record<string, unknown>,
+	): { meet?: string; focus?: "zapis"; prostor?: string } => ({
 		meet: typeof s.meet === "string" ? s.meet : undefined,
 		focus: s.focus === "zapis" ? "zapis" : undefined,
+		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
 	}),
 	component: Mitingy,
 });
@@ -76,18 +84,23 @@ const ukolyRoute = createRoute({
 	component: () => <UkolyShell defaultTab="vse" />,
 	validateSearch: (
 		s: Record<string, unknown>,
-	): { projekt?: string; ukol?: string; tab?: TaskTab } => ({
+	): { projekt?: string; ukol?: string; tab?: TaskTab; prostor?: string } => ({
 		projekt: typeof s.projekt === "string" ? s.projekt : undefined,
 		// deep-link z „Kopírovat odkaz" — otevře detail úkolu
 		ukol: typeof s.ukol === "string" ? s.ukol : undefined,
 		// aktivní záložka modulu (dnes | vse | zasobnik); default vse na /ukoly
 		tab: parseTab(s.tab),
+		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
 	}),
 });
 const projektyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/projekty",
 	component: Projekty,
+	validateSearch: (s: Record<string, unknown>): { projekt?: string; prostor?: string } => ({
+		projekt: typeof s.projekt === "string" ? s.projekt : undefined,
+		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
+	}),
 });
 const nastaveniRoute = createRoute({
 	getParentRoute: () => rootRoute,
@@ -113,22 +126,30 @@ const cileRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/cile",
 	component: Cile,
+	validateSearch: (s: Record<string, unknown>): { cil?: string; prostor?: string } => ({
+		cil: typeof s.cil === "string" ? s.cil : undefined,
+		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
+	}),
 });
 const postupyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/postupy",
 	component: Postupy,
-	validateSearch: (s: Record<string, unknown>): { postup?: string } => ({
+	validateSearch: (s: Record<string, unknown>): { postup?: string; prostor?: string } => ({
 		postup: typeof s.postup === "string" ? s.postup : undefined,
+		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
 	}),
 });
 const reportyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/reporty",
 	component: Reporty,
-	validateSearch: (s: Record<string, unknown>): { tab?: string; clen?: string } => ({
+	validateSearch: (
+		s: Record<string, unknown>,
+	): { tab?: string; clen?: string; prostor?: string } => ({
 		tab: typeof s.tab === "string" ? s.tab : undefined,
 		clen: typeof s.clen === "string" ? s.clen : undefined,
+		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
 	}),
 });
 

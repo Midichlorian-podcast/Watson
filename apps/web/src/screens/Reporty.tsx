@@ -4,6 +4,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { useEffect, useMemo, useState } from "react";
+import { CopyLinkButton } from "../components/CopyLinkButton";
 import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
@@ -655,11 +656,12 @@ function MemberDetail({
 					<span className="flex-1 font-display font-bold text-ink-2" style={{ fontSize: 14 }}>
 						{t("reports.memberPanel")}
 					</span>
+					<CopyLinkButton entity="person" id={member.id} workspaceId={workspaceId} />
 					<button
 						type="button"
 						onClick={onClose}
 						aria-label={t("common.cancel")}
-						className="flex text-ink-3 hover:text-ink"
+						className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 					>
 						<Icon name="zavrit" size={16} />
 					</button>
