@@ -4,22 +4,22 @@ import { useTranslation } from "@watson/i18n";
 import { type CSSProperties, type ReactNode, useMemo, useRef, useState } from "react";
 import { CalendarWidget } from "../components/CalendarWidget";
 import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
+import { useSession } from "../lib/auth-client";
+import { LoadingNote, SyncStamp, useAllReady } from "../lib/dataState";
 import { useFlowSteps } from "../lib/flowSteps";
 import { initials } from "../lib/format";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import { useAllMembers, useFlowsOverview, useGoalsOverview } from "../lib/overview";
 import type { ListItemRow, ListRow, TaskRow } from "../lib/powersync/AppSchema";
-import { useMailDigest, useOpenMailThread } from "../mail/state";
 import { powerSync } from "../lib/powersync/db";
-import { LoadingNote, SyncStamp, useAllReady } from "../lib/dataState";
 import { useProjectsWithState } from "../lib/projects";
+import { storageGet, storageSet } from "../lib/storage";
 import { useTaskDetail } from "../lib/taskDetail";
 import { startMinOf, todayISO, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
-import { storageGet, storageSet } from "../lib/storage";
 import { pushUndo } from "../lib/undo";
-import { useSession } from "../lib/auth-client";
 import { useWorkspaces } from "../lib/workspace";
+import { useMailDigest, useOpenMailThread } from "../mail/state";
 
 /**
  * Přehled — domovská syntéza celé appky (prototyp ř. 698–835 + prehledView ř. 3850–3888):
@@ -445,6 +445,7 @@ export function Prehled() {
 							style={{
 								fontSize: 10.5,
 								padding: "3px 9px",
+								minHeight: 24,
 								background: layout === k ? "var(--w-card)" : "transparent",
 								color: layout === k ? "var(--w-ink)" : "var(--w-ink-3)",
 								boxShadow: layout === k ? "var(--w-shadow-sm)" : undefined,

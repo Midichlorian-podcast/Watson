@@ -13,11 +13,11 @@ import {
 	restoreBackup,
 	type ServerBackup,
 } from "../lib/backup";
-import { initials } from "../lib/format";
 import { focusOnMount } from "../lib/focusOnMount";
+import { initials } from "../lib/format";
 import { shutdownPowerSync } from "../lib/powersync/db";
-import { showToast } from "../lib/toast";
 import { storageGet, storageSet } from "../lib/storage";
+import { showToast } from "../lib/toast";
 import {
 	type Accent,
 	type Density,
@@ -773,6 +773,7 @@ export function Nastaveni() {
 						value={backupPassphrase}
 						onChange={(event) => setBackupPassphrase(event.target.value)}
 						placeholder={t("settings.backupPassphrasePlaceholder")}
+						aria-label={t("settings.backupPassphrase")}
 						style={{ ...INPUT_SM, width: 360, maxWidth: "100%" }}
 					/>
 				</div>

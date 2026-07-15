@@ -11,11 +11,11 @@
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { keyedValues } from "../lib/keyedValues";
 import { showToast } from "../lib/toast";
+import { TEXT_COLORS } from "./colors";
 import { MB, P, SLA, STL, TPL } from "./data";
 import { HostPreview } from "./HostPreview";
-import { TEXT_COLORS } from "./colors";
+import { RecipientField, SigBlock, SigPicker, sigIdOf } from "./SigPicker";
 import { escapeHtmlText, safeRichTextHref } from "./sanitizeRichText";
-import { RecipientField, SigBlock, sigIdOf, SigPicker } from "./SigPicker";
 import { useMail } from "./state";
 import { TaskModal } from "./TaskModal";
 
@@ -790,6 +790,7 @@ export function MailThread() {
 		<div style={{ display: "flex", gap: 7, alignItems: "center" }}>
 			<input
 				value={chatIn}
+				aria-label="Interní komentář k e-mailovému vláknu"
 				onChange={(ev) => setChatIn(ev.target.value)}
 				onKeyDown={(ev) => {
 					if (ev.key === "Enter") sendChatNow();
@@ -1123,6 +1124,8 @@ export function MailThread() {
 							</span>
 							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => setPop(pop === "more" ? null : "more")}
+								aria-label="Další akce s e-mailem"
+								title="Další akce s e-mailem"
 								data-ghost
 								style={{
 									display: "inline-flex",

@@ -1,13 +1,13 @@
 {
   "status": "passed",
   "environment": "local-docker-isolated-database",
-  "startedAt": "2026-07-15T11:42:33Z",
+  "startedAt": "2026-07-15T20:55:08Z",
   "durationSeconds": 2,
   "rtoTargetSeconds": 7200,
   "encryptedRoundTrip": true,
-  "migrations": 38,
-  "users": 28,
-  "tasks": 94,
+  "migrations": 42,
+  "users": 31,
+  "tasks": 100,
   "orphans": {
     "tasks": 0,
     "assignments": 0,

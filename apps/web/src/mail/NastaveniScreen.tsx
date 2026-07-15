@@ -429,6 +429,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								if (e.key === "Enter") addVip();
 							}}
 							placeholder="přidat adresu ⏎"
+							aria-label="Přidat VIP e-mailovou adresu"
 							style={{
 								width: 150,
 								border: "1px dashed var(--line)",

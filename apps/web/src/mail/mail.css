@@ -148,6 +148,10 @@
 [data-actlbl]{ display:inline; }
 @media (max-width:1599px){ [data-actlbl]{ display:none; } }
 @media (max-width:879px){
+  /* Mobilní mail zachovává vizuální hustotu, ale hlavní ovládací prvky mají
+     skutečnou 44px dotykovou plochu podle WCAG/Apple/Material doporučení. */
+  [data-rowbtn]{ width:44px; height:44px; }
+  [data-srow], [data-menuitem], [data-ghost]{ min-height:44px; box-sizing:border-box; }
   [data-thrhead]{ flex-wrap:wrap; }
   [data-thracts]{ flex-wrap:nowrap !important; overflow-x:auto; justify-content:flex-start !important; width:100%; padding-bottom:2px; scrollbar-width:none; }
   [data-thracts]::-webkit-scrollbar{ display:none; }

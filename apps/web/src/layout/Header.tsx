@@ -4,8 +4,8 @@ import { useTranslation } from "@watson/i18n";
 import { useMemo, useState } from "react";
 import { NotifCenter, useNotifItems } from "../components/NotifCenter";
 import { useAddTask } from "../lib/addTask";
-import { INBOX_NAMES } from "../lib/inbox";
 import { focusOnMount } from "../lib/focusOnMount";
+import { INBOX_NAMES } from "../lib/inbox";
 import { useListSearch } from "../lib/listSearch";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useViewMode, type ViewMode } from "../lib/viewMode";
@@ -14,7 +14,7 @@ import { ALL_NAV } from "./nav";
 import { useTheme } from "./useTheme";
 
 const ICON_BASE =
-	"grid h-[34px] w-[34px] place-items-center rounded-[9px] border border-line bg-panel-2 text-ink-2";
+	"grid h-11 w-11 place-items-center rounded-[9px] border border-line bg-panel-2 text-ink-2 md:h-[34px] md:w-[34px]";
 // Hover dle prototypu ř. 298–301: lupa jen okraj, zvonek/motiv jen barva textu.
 const ICON_BTN_BORDER = `${ICON_BASE} hover:border-brass`;
 const ICON_BTN_TEXT = `${ICON_BASE} hover:text-brass-text`;
@@ -287,6 +287,7 @@ export function Header() {
 								}
 							}}
 							placeholder={t("shell.searchInline")}
+							aria-label={t("shell.searchInline")}
 							className="w-full border-none bg-transparent font-body text-ink outline-none"
 							style={{ fontSize: 13 }}
 						/>
@@ -438,7 +439,7 @@ export function Header() {
 					type="button"
 					onClick={() => openAdd()}
 					aria-label={t("shell.addTask")}
-					className="flex h-[34px] items-center rounded-[9px] font-display font-bold text-white hover:brightness-105"
+					className="flex h-11 items-center rounded-[9px] font-display font-bold text-white hover:brightness-105 md:h-[34px]"
 					style={{
 						gap: 6,
 						background: "var(--w-brass)",

@@ -7,6 +7,16 @@ import { initPowerSyncForUser, powerSync } from "./lib/powersync/db";
 import { router } from "./router";
 import { SignIn } from "./screens/SignIn";
 
+function safeDbErrorChain(error: unknown) {
+	const chain: { name: string; code: string }[] = [];
+	let current: unknown = error;
+	for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
+		chain.push({ name: current.name, code: current.message.slice(0, 120) });
+		current = current.cause;
+	}
+	return chain;
+}
+
 export function App() {
 	const { data: session, isPending } = useSession();
 	// CC-P0-03: router se NErenderuje, dokud není otevřená per-user DB právě
@@ -26,7 +36,10 @@ export function App() {
 			.then(() => {
 				if (!cancelled) setDbUserId(userId);
 			})
-			.catch(() => {
+			.catch((error: unknown) => {
+				if (import.meta.env.DEV) {
+					console.error(`[powersync] init selhal ${JSON.stringify(safeDbErrorChain(error))}`);
+				}
 				if (!cancelled) setDbError("Lokální data se nepodařilo bezpečně otevřít nebo zašifrovat.");
 			});
 		return () => {

@@ -6,8 +6,9 @@
  * Dění/Administrace/Nastavení jsou vnitřní obrazovky (m.scr) — aktivní složka
  * se zvýrazňuje jen na obrazovce "mail".
  */
-import type { CSSProperties, ReactNode } from "react";
+
 import { useNavigate } from "@tanstack/react-router";
+import type { CSSProperties, ReactNode } from "react";
 import { MB } from "./data";
 import { useMail } from "./state";
 
@@ -517,20 +518,26 @@ export function MailSub({
 						{mb.warn && !m.adm.fixed && (
 							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								data-sublbl
-								data-health="warn"
 								title="Token vyprší za 12 dní — klikem otevřeš Administraci pošty"
+								aria-label="Token vyprší za 12 dní — otevřít Administraci pošty"
 								onClick={(e) => {
 									e.stopPropagation();
 									void navigate({ to: "/nastaveni", hash: "posta-admin" });
 								}}
 								style={{
 									cursor: "pointer",
-									width: 7,
-									height: 7,
-									borderRadius: "50%",
+									width: 24,
+									height: 24,
+									display: "grid",
+									placeItems: "center",
 									flex: "none",
 								}}
-							/>
+							>
+								<span
+									data-health="warn"
+									style={{ width: 7, height: 7, borderRadius: "50%" }}
+								/>
+							</span>
 						)}
 						<Badge>{un.per[id] ?? ""}</Badge>
 					</SRow>

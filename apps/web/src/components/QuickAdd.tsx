@@ -336,6 +336,7 @@ export function QuickAdd({
 						}}
 						onKeyDown={onKey}
 						placeholder={t("quickadd.placeholder")}
+						aria-label={t("quickadd.placeholder")}
 						className="relative w-full rounded-lg border border-line bg-transparent px-3 py-2 text-sm text-ink outline-none focus:border-brass"
 					/>
 				</div>

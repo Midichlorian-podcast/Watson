@@ -40,37 +40,55 @@ export function SignIn() {
 				</div>
 
 				{mode === "up" && (
+					<label className="mb-3 block text-xs font-semibold text-ink-2" htmlFor="auth-name">
+						{t("auth.name")}
+						<input
+							id="auth-name"
+							name="name"
+							autoComplete="name"
+							className="mt-1 min-h-11 w-full rounded-lg border border-line px-3 py-2 text-sm font-normal text-ink"
+							placeholder={t("auth.name")}
+							value={name}
+							onChange={(e) => setName(e.target.value)}
+							required
+						/>
+					</label>
+				)}
+				<label className="mb-3 block text-xs font-semibold text-ink-2" htmlFor="auth-email">
+					{t("auth.email")}
 					<input
-						className="mb-2 w-full rounded-lg border border-line px-3 py-2 text-sm"
-						placeholder={t("auth.name")}
-						value={name}
-						onChange={(e) => setName(e.target.value)}
+						id="auth-email"
+						name="email"
+						autoComplete="email"
+						className="mt-1 min-h-11 w-full rounded-lg border border-line px-3 py-2 text-sm font-normal text-ink"
+						type="email"
+						placeholder={t("auth.email")}
+						value={email}
+						onChange={(e) => setEmail(e.target.value)}
 						required
 					/>
-				)}
-				<input
-					className="mb-2 w-full rounded-lg border border-line px-3 py-2 text-sm"
-					type="email"
-					placeholder={t("auth.email")}
-					value={email}
-					onChange={(e) => setEmail(e.target.value)}
-					required
-				/>
-				<input
-					className="mb-3 w-full rounded-lg border border-line px-3 py-2 text-sm"
-					type="password"
-					placeholder={t("auth.password")}
-					value={password}
-					onChange={(e) => setPassword(e.target.value)}
-					required
-				/>
+				</label>
+				<label className="mb-3 block text-xs font-semibold text-ink-2" htmlFor="auth-password">
+					{t("auth.password")}
+					<input
+						id="auth-password"
+						name="password"
+						autoComplete={mode === "in" ? "current-password" : "new-password"}
+						className="mt-1 min-h-11 w-full rounded-lg border border-line px-3 py-2 text-sm font-normal text-ink"
+						type="password"
+						placeholder={t("auth.password")}
+						value={password}
+						onChange={(e) => setPassword(e.target.value)}
+						required
+					/>
+				</label>
 
 				{error && <p className="mb-3 text-xs text-overdue">{error}</p>}
 
 				<button
 					type="submit"
 					disabled={busy}
-					className="w-full rounded-lg bg-navy py-2 font-display text-sm font-semibold text-white disabled:opacity-50"
+					className="min-h-11 w-full rounded-lg bg-navy py-2 font-display text-sm font-semibold text-white disabled:opacity-50"
 				>
 					{mode === "in" ? t("auth.signIn") : t("auth.createAccount")}
 				</button>
@@ -78,7 +96,7 @@ export function SignIn() {
 				<button
 					type="button"
 					onClick={() => setMode(mode === "in" ? "up" : "in")}
-					className="mt-3 w-full text-center text-xs text-ink-3 hover:text-brass-text"
+					className="mt-2 min-h-11 w-full text-center text-xs text-ink-3 hover:text-brass-text"
 				>
 					{mode === "in" ? t("auth.switchToSignUp") : t("auth.switchToSignIn")}
 				</button>

@@ -4,8 +4,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { type ReactNode, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
-import { initials } from "../lib/format";
 import { focusOnMount } from "../lib/focusOnMount";
+import { initials } from "../lib/format";
 import type { ChainRow, GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjectsWithState } from "../lib/projects";
@@ -367,6 +367,7 @@ export function Hledat() {
 					value={q}
 					onChange={(e) => setQ(e.target.value)}
 					placeholder={t("search.placeholder")}
+					aria-label={t("search.placeholder")}
 					className="flex-1 border-none bg-transparent font-body text-ink outline-none"
 					style={{ fontSize: 15 }}
 					data-search-screen
