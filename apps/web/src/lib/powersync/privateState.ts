@@ -1,5 +1,14 @@
-import { powerSync } from "./db";
 import { storageGet, storageRemove } from "../storage";
+import { powerSync } from "./db";
+
+interface PrivateStateTransaction {
+	getOptional<T>(sql: string, parameters?: unknown[]): Promise<T | null>;
+	execute(sql: string, parameters?: unknown[]): Promise<unknown>;
+}
+
+interface PrivateStateWriter {
+	writeTransaction(callback: (transaction: PrivateStateTransaction) => Promise<void>): Promise<void>;
+}
 
 /** Čtení citlivého device-only JSON z šifrované PowerSync SQLite DB. */
 export async function readPrivateJson<T>(key: string, fallback: T): Promise<T> {
@@ -15,13 +24,39 @@ export async function readPrivateJson<T>(key: string, fallback: T): Promise<T> {
 	}
 }
 
+/**
+ * Atomický upsert citlivého device-only JSON. PowerSync tabulky jsou SQLite
+ * views, na kterých `INSERT … ON CONFLICT` končí `cannot UPSERT a view`.
+ * Existenci proto zjistíme a UPDATE/INSERT provedeme ve stejné transakci.
+ */
+export async function writePrivateJsonWith(
+	database: PrivateStateWriter,
+	key: string,
+	value: unknown,
+	now = new Date().toISOString(),
+): Promise<void> {
+	await database.writeTransaction(async (transaction) => {
+		const existing = await transaction.getOptional<{ id: string }>(
+			"SELECT id FROM local_private_state WHERE id = ?",
+			[key],
+		);
+		if (existing) {
+			await transaction.execute(
+				"UPDATE local_private_state SET value = ?, updated_at = ? WHERE id = ?",
+				[JSON.stringify(value), now, key],
+			);
+			return;
+		}
+		await transaction.execute(
+			"INSERT INTO local_private_state (id, value, updated_at) VALUES (?, ?, ?)",
+			[key, JSON.stringify(value), now],
+		);
+	});
+}
+
 /** Atomický upsert citlivého device-only JSON do šifrované lokální DB. */
 export async function writePrivateJson(key: string, value: unknown): Promise<void> {
-	await powerSync.execute(
-		`INSERT INTO local_private_state (id, value, updated_at) VALUES (?, ?, ?)
-		 ON CONFLICT(id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		[key, JSON.stringify(value), new Date().toISOString()],
-	);
+	await writePrivateJsonWith(powerSync as unknown as PrivateStateWriter, key, value);
 }
 
 export async function removePrivateJson(key: string): Promise<void> {

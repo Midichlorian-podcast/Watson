@@ -2,10 +2,17 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { type KeyboardEvent, useCallback, useMemo, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useAddTask } from "../lib/addTask";
 import { API_URL } from "../lib/api";
 import { focusOnMount } from "../lib/focusOnMount";
+import { useProjectDetail } from "../lib/projectDetail";
 import { useProjects } from "../lib/projects";
+import {
+	type RecentEntity,
+	readRecentEntities,
+	trackRecentEntity,
+} from "../lib/recentItems";
 import { useViewMode } from "../lib/viewMode";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { searchMailThreads } from "../mail/search";
@@ -52,13 +59,43 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 	const { activeWs } = useWorkspace();
 	const { data: workspaces } = useWorkspaces();
 	const { setView } = useViewMode();
+	const { openAdd } = useAddTask();
+	const projectDetail = useProjectDetail();
 	const m = useMail();
 	const [q, setQ] = useState("");
 	const [idx, setIdx] = useState(0);
+	const [recent, setRecent] = useState<RecentEntity[]>([]);
+
+	useEffect(() => {
+		let active = true;
+		const refresh = () => {
+			void readRecentEntities().then((rows) => {
+				if (active) setRecent(rows);
+			});
+		};
+		refresh();
+		window.addEventListener("watson:recent-items", refresh);
+		return () => {
+			active = false;
+			window.removeEventListener("watson:recent-items", refresh);
+		};
+	}, []);
 
 	const { data: chains } = usePsQuery<{ id: string; name: string | null }>(
 		"SELECT id, name FROM chains WHERE state IS NULL OR state != 'done'",
 	);
+	const { data: tasks } = usePsQuery<{
+		id: string;
+		name: string | null;
+		project_id: string | null;
+	}>(
+		"SELECT id, name, project_id FROM tasks WHERE parent_id IS NULL ORDER BY completed_at IS NOT NULL, created_at DESC",
+	);
+	const { data: meetings } = usePsQuery<{
+		id: string;
+		title: string | null;
+		status: string | null;
+	}>("SELECT id, title, status FROM meetings ORDER BY created_at DESC");
 	const { data: team } = useQuery({
 		queryKey: ["wsMembersFull", activeWs],
 		enabled: !!activeWs,
@@ -78,6 +115,23 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
 	const items = useMemo(() => {
 		const query = q.trim().toLowerCase();
+		const actionItems: PalItem[] = [
+			{
+				key: "a:new-task",
+				kind: t("palette.kindAction"),
+				label: t("palette.actionNewTask"),
+				run: () => {
+					onClose();
+					openAdd();
+				},
+			},
+			{
+				key: "a:search",
+				kind: t("palette.kindAction"),
+				label: t("palette.actionSearch"),
+				run: go("/hledat"),
+			},
+		];
 		// Nové obrazovky handoffu (prototyp SCN, ř. 2933): Přehled/Mail/Seznamy/Velín;
 		// Velín jen pro vedení (stejný gating jako sidebar).
 		const screens: PalItem[] = (
@@ -124,9 +178,32 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 				color: p.color ?? undefined,
 				run: () => {
 					onClose();
-					void navigate({ to: "/ukoly", search: { projekt: p.id } });
+					projectDetail.open(p.id);
+					void navigate({ to: "/projekty" });
 				},
 			}));
+		const projectMap = new Map(projects.map((project) => [project.id, project] as const));
+		const taskItems: PalItem[] = (tasks ?? []).map((task) => ({
+			key: `t:${task.id}`,
+			kind: t("palette.kindTask"),
+			label: task.name ?? "",
+			color: task.project_id ? (projectMap.get(task.project_id)?.color ?? undefined) : undefined,
+			run: () => {
+				onClose();
+				trackRecentEntity("task", task.id);
+				void navigate({ to: "/ukoly", search: { ukol: task.id } });
+			},
+		}));
+		const meetingItems: PalItem[] = (meetings ?? []).map((meeting) => ({
+			key: `mt:${meeting.id}`,
+			kind: t("palette.kindMeeting"),
+			label: meeting.title ?? t("search.meeting"),
+			run: () => {
+				onClose();
+				trackRecentEntity("meeting", meeting.id);
+				void navigate({ to: "/meets", search: { meet: meeting.id } });
+			},
+		}));
 		const peopleItems: PalItem[] = (team ?? []).map((m) => ({
 			key: `m:${m.id}`,
 			kind: t("palette.kindPerson"),
@@ -146,11 +223,18 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 				void navigate({ to: "/postupy", search: { postup: c.id } });
 			},
 		}));
-		const all = [...screens, ...projItems, ...peopleItems, ...flowItems];
-		const navMatches = query ? all.filter((it) => it.label.toLowerCase().includes(query)) : all;
+		const all = [
+			...actionItems,
+			...screens,
+			...taskItems,
+			...projItems,
+			...meetingItems,
+			...peopleItems,
+			...flowItems,
+		];
 		// Pošta — STEJNÉ hledání jako dřívější mailový overlay (operátory from:/has:/…),
 		// teď v jedné globální paletě. Klik otevře vlákno v mailu.
-		const mailItems: PalItem[] = searchMailThreads(m, q).map((h) => ({
+		const mailItems: PalItem[] = (query ? searchMailThreads(m, q) : []).map((h) => ({
 			key: `mail:${h.id}`,
 			kind: t("nav.mail"),
 			label: h.subj,
@@ -161,8 +245,39 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 				void navigate({ to: "/mail" });
 			},
 		}));
-		return [...navMatches.slice(0, 12), ...mailItems].slice(0, 18);
-	}, [q, projects, activeWs, team, chains, t, m, navigate, onClose, go, setView, workspaces]);
+		if (query) {
+			const matches = all.filter((item) => item.label.toLowerCase().includes(query));
+			return [...matches.slice(0, 14), ...mailItems].slice(0, 18);
+		}
+		const entityMap = new Map<string, PalItem>([
+			...taskItems.map((item) => [`task:${item.key.slice(2)}`, item] as const),
+			...projItems.map((item) => [`project:${item.key.slice(2)}`, item] as const),
+			...meetingItems.map((item) => [`meeting:${item.key.slice(3)}`, item] as const),
+		]);
+		const recentItems = recent
+			.map((entry) => entityMap.get(`${entry.kind}:${entry.id}`))
+			.filter((item): item is PalItem => Boolean(item))
+			.map((item) => ({ ...item, key: `r:${item.key}`, kind: t("palette.kindRecent") }));
+		return [...actionItems, ...recentItems.slice(0, 6), ...screens].slice(0, 18);
+	}, [
+		q,
+		projects,
+		activeWs,
+		team,
+		chains,
+		tasks,
+		meetings,
+		recent,
+		t,
+		m,
+		navigate,
+		onClose,
+		go,
+		setView,
+		workspaces,
+		openAdd,
+		projectDetail,
+	]);
 
 	const activeIdx = Math.min(idx, Math.max(0, items.length - 1));
 
@@ -197,6 +312,9 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 				style={{ zIndex: 73, paddingTop: "11vh" }}
 			>
 				<div
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("palette.placeholder")}
 					className="pointer-events-auto overflow-hidden rounded-[14px] border border-line bg-card"
 					style={{ width: 560, maxWidth: "94vw", boxShadow: "var(--w-shadow)" }}
 				>
@@ -224,6 +342,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 							}}
 							onKeyDown={onKey}
 							placeholder={t("palette.placeholder")}
+							aria-label={t("palette.placeholder")}
 							className="flex-1 border-none bg-transparent font-display font-semibold text-ink outline-none"
 							style={{ fontSize: 15 }}
 						/>

@@ -18,6 +18,7 @@ import { useSession } from "../lib/auth-client";
 import { initials, shortDayLabel } from "../lib/format";
 import { useAllMembers } from "../lib/overview";
 import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
+import { trackRecentEntity } from "../lib/recentItems";
 import { useTaskDetail } from "../lib/taskDetail";
 import { todayISO } from "../lib/tasks";
 import {
@@ -145,6 +146,9 @@ export function Mitingy() {
 	// zpět tlačítkem prohlížeče, žádné vrstvení overlayů.
 	const navigate = useNavigate();
 	const search = useSearch({ from: "/meets" });
+	useEffect(() => {
+		if (search.meet) trackRecentEntity("meeting", search.meet);
+	}, [search.meet]);
 	const openBoard = (meetingId: string, focus?: "zapis") =>
 		void navigate({ to: "/meets", search: { meet: meetingId, focus } });
 	const [title, setTitle] = useState("");

@@ -468,14 +468,20 @@
 		"redone": "Redone",
 		"deleteFailed": "Delete failed. Your data was not changed; check your connection and permissions."
 	},
-	"palette": {
-		"placeholder": "Jump to a screen, project, person, flow…",
-		"empty": "Nothing found",
-		"kindGoto": "Go to",
-		"kindProject": "Project",
-		"kindPerson": "Person",
-		"kindFlow": "Flow"
-	},
+  "palette": {
+	"placeholder": "Find a task, project, meeting, person, or command…",
+	"empty": "Nothing found",
+	"kindGoto": "Go to",
+	"kindAction": "Action",
+	"kindRecent": "Recent",
+	"kindTask": "Task",
+	"kindMeeting": "Meeting",
+	"kindProject": "Project",
+	"kindPerson": "Person",
+	"kindFlow": "Flow",
+	"actionNewTask": "Add a new task",
+	"actionSearch": "Open full search"
+  },
 	"inbox": {
 		"heading": "Inbox",
 		"subtitle": "Quick ideas and unsorted tasks land here. Assign a project and date — the task then flies on to Today or Upcoming.",

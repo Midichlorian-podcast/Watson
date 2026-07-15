@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useContext, useState } from "react";
+import { trackRecentEntity } from "./recentItems";
 
 interface ProjectDetailCtx {
 	openId: string | null;
@@ -17,7 +18,14 @@ export function ProjectDetailProvider({ children }: { children: ReactNode }) {
 	const [openId, setOpenId] = useState<string | null>(null);
 	return (
 		<Ctx.Provider
-			value={{ openId, open: setOpenId, close: () => setOpenId(null) }}
+			value={{
+				openId,
+				open: (id) => {
+					setOpenId(id);
+					trackRecentEntity("project", id);
+				},
+				close: () => setOpenId(null),
+			}}
 		>
 			{children}
 		</Ctx.Provider>

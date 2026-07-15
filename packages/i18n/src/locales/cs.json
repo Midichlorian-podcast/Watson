@@ -476,14 +476,20 @@
 		"redone": "Znovu provedeno",
 		"deleteFailed": "Smazání se nepodařilo. Data zůstala beze změny; zkontrolujte připojení a oprávnění."
 	},
-	"palette": {
-		"placeholder": "Skoč na obrazovku, projekt, člověka, postup…",
-		"empty": "Nic nenalezeno",
-		"kindGoto": "Přejít",
-		"kindProject": "Projekt",
-		"kindPerson": "Člověk",
-		"kindFlow": "Postup"
-	},
+  "palette": {
+	"placeholder": "Najdi úkol, projekt, poradu, člověka nebo příkaz…",
+	"empty": "Nic nenalezeno",
+	"kindGoto": "Přejít",
+	"kindAction": "Akce",
+	"kindRecent": "Nedávné",
+	"kindTask": "Úkol",
+	"kindMeeting": "Porada",
+	"kindProject": "Projekt",
+	"kindPerson": "Člověk",
+	"kindFlow": "Postup",
+	"actionNewTask": "Přidat nový úkol",
+	"actionSearch": "Otevřít úplné vyhledávání"
+  },
 	"inbox": {
 		"heading": "Schránka",
 		"subtitle": "Sem padají rychlé nápady a nezařazené úkoly. Přiřaď projekt a termín — úkol pak poletí dál do Dnes nebo Nadcházejících.",
