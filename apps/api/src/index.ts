@@ -231,6 +231,7 @@ app.post("/api/projects", async (c) => {
 	const name = (body.name ?? "").trim();
 	if (!name || !body.workspaceId)
 		return c.json({ error: "name and workspaceId required" }, 400);
+	const workspaceId = body.workspaceId;
 
 	const db = getDb();
 	// zakladatel musí být členem prostoru (a ne Host)
@@ -240,7 +241,7 @@ app.post("/api/projects", async (c) => {
 			.from(memberships)
 			.where(
 				and(
-					eq(memberships.workspaceId, body.workspaceId),
+					eq(memberships.workspaceId, workspaceId),
 					eq(memberships.userId, session.user.id),
 				),
 			)
@@ -250,47 +251,51 @@ app.post("/api/projects", async (c) => {
 
 	const kind =
 		body.kind === "goal" || body.kind === "cycle" ? body.kind : "flow";
-	const [project] = await db
-		.insert(projects)
-		.values({
-			name,
-			workspaceId: body.workspaceId,
-			color: body.color ?? null,
-			kind,
-			ownerId: session.user.id,
-		})
-		.returning();
-	if (!project) return c.json({ error: "insert failed" }, 500);
+	// CC-P0-07: projekt, manager a výchozí stavy tvoří jediný DB invariant.
+	// Dílčí selhání musí vrátit vše a klient nesmí dostat napůl vytvořený projekt.
+	const project = await db.transaction(async (tx) => {
+		const [created] = await tx
+			.insert(projects)
+			.values({
+				name,
+				workspaceId,
+				color: body.color ?? null,
+				kind,
+				ownerId: session.user.id,
+			})
+			.returning();
+		if (!created) throw new Error("project_insert_returned_no_row");
 
-	await db.insert(projectMembers).values({
-		projectId: project.id,
-		userId: session.user.id,
-		role: "manager",
+		await tx.insert(projectMembers).values({
+			projectId: created.id,
+			userId: session.user.id,
+			role: "manager",
+		});
+		await tx.insert(statuses).values([
+			{
+				scope: "project",
+				projectId: created.id,
+				name: "K udělání",
+				position: 0,
+				isDone: false,
+			},
+			{
+				scope: "project",
+				projectId: created.id,
+				name: "Probíhá",
+				position: 1,
+				isDone: false,
+			},
+			{
+				scope: "project",
+				projectId: created.id,
+				name: "Hotovo",
+				position: 2,
+				isDone: true,
+			},
+		]);
+		return created;
 	});
-	// výchozí statusy (Board sloupce, R9)
-	await db.insert(statuses).values([
-		{
-			scope: "project",
-			projectId: project.id,
-			name: "K udělání",
-			position: 0,
-			isDone: false,
-		},
-		{
-			scope: "project",
-			projectId: project.id,
-			name: "Probíhá",
-			position: 1,
-			isDone: false,
-		},
-		{
-			scope: "project",
-			projectId: project.id,
-			name: "Hotovo",
-			position: 2,
-			isDone: true,
-		},
-	]);
 
 	return c.json({ project });
 });
@@ -520,7 +525,7 @@ app.post("/api/workspaces/:id/invite", async (c) => {
 		role?: string;
 	};
 	const email = body.email?.trim().toLowerCase();
-	if (!email || !email.includes("@"))
+	if (!email?.includes("@"))
 		return c.json({ error: "invalid email" }, 400);
 	const role =
 		body.role && (WORKSPACE_ROLES as readonly string[]).includes(body.role)
@@ -685,6 +690,25 @@ app.delete("/api/projects/:id/members/:userId", async (c) => {
 			),
 		);
 	return c.json({ ok: true });
+});
+
+// CC-P0-16: poslední bezpečnostní síť všech rout. Odpověď ani log nesmí nést
+// request body, SQL, parametry, stack či error.message (mohou obsahovat osobní data).
+app.onError((err, c) => {
+	const requestId = c.get("requestId") ?? crypto.randomUUID().slice(0, 8);
+	const rawCode = (err as { code?: unknown; cause?: { code?: unknown } }).code ??
+		(err as { cause?: { code?: unknown } }).cause?.code;
+	const code = typeof rawCode === "string" && /^[0-9A-Za-z_]{1,64}$/.test(rawCode)
+		? rawCode
+		: null;
+	console.error(JSON.stringify({
+		level: "error",
+		event: "unhandled_api_error",
+		requestId,
+		name: err.name,
+		code,
+	}));
+	return c.json({ error: "internal_error", requestId }, 500);
 });
 
 serve({ fetch: app.fetch, port: env.apiPort }, (info) => {

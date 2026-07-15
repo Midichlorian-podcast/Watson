@@ -1,5 +1,13 @@
 import { column, Schema, Table } from "@powersync/web";
 
+// P0-06: PATCH/DELETE musí nést snapshot řádku, který uživatel skutečně editoval.
+// Server jej porovná v téže transakci se současnou DB a stale zápis odmítne 409.
+const trackAllPrevious = { trackPrevious: true } as const;
+const tracked = <T extends Record<string, unknown>>(options: T) => ({
+	...options,
+	trackPrevious: true as const,
+});
+
 /**
  * Klientské zrcadlo (podmnožina) app tabulek.
  * PowerSync přidává textové `id` PK automaticky — neuvádí se.
@@ -47,25 +55,29 @@ const tasks = new Table(
 			by_status: ["status_id"],
 			by_meeting: ["meeting_id"],
 		},
+		trackPrevious: true,
 	},
 );
 
 /** Projekt (barva = tělo karet úkolů, R6); kind=flow|goal|cycle, status 4-stavový. */
-const projects = new Table({
-	workspace_id: column.text,
-	name: column.text,
-	color: column.text,
-	icon: column.text,
-	default_layout: column.text,
-	visibility: column.text,
-	kind: column.text,
-	owner_id: column.text,
-	status: column.text,
-	delivery_date: column.text,
-	definition_of_done: column.text,
-	archived_at: column.text,
-	created_at: column.text,
-});
+const projects = new Table(
+	{
+		workspace_id: column.text,
+		name: column.text,
+		color: column.text,
+		icon: column.text,
+		default_layout: column.text,
+		visibility: column.text,
+		kind: column.text,
+		owner_id: column.text,
+		status: column.text,
+		delivery_date: column.text,
+		definition_of_done: column.text,
+		archived_at: column.text,
+		created_at: column.text,
+	},
+	trackAllPrevious,
+);
 
 const sections = new Table(
 	{
@@ -74,7 +86,7 @@ const sections = new Table(
 		position: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_project: ["project_id"] } },
+	tracked({ indexes: { by_project: ["project_id"] } }),
 );
 
 /** Stavy úkolů per projekt; is_done (0/1) provázané se zaškrtnutím úkolu (R9). */
@@ -89,7 +101,7 @@ const statuses = new Table(
 		is_done: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_project: ["project_id"] } },
+	tracked({ indexes: { by_project: ["project_id"] } }),
 );
 
 const project_members = new Table(
@@ -117,6 +129,7 @@ const assignments = new Table(
 			by_project: ["project_id"],
 			by_user: ["user_id"], // Sidebar „Přiřazeno mně" / rowMeta agregace
 		},
+		trackPrevious: true,
 	},
 );
 
@@ -128,7 +141,7 @@ const comments = new Table(
 		body: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_task: ["task_id"] } },
+	tracked({ indexes: { by_task: ["task_id"] } }),
 );
 
 /** R4 — per-výskyt výjimky opakování (done/skip jednoho výskytu). */
@@ -141,7 +154,7 @@ const task_occurrence_overrides = new Table(
 		skipped: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_task: ["task_id"], by_project: ["project_id"] } },
+	tracked({ indexes: { by_task: ["task_id"], by_project: ["project_id"] } }),
 );
 
 /** R6 — per-uživatelská barva úkolu (syncuje se jen vlastní barva). */
@@ -153,7 +166,7 @@ const task_user_colors = new Table(
 		color: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_task: ["task_id"] } },
+	tracked({ indexes: { by_task: ["task_id"] } }),
 );
 
 const reminders = new Table(
@@ -167,7 +180,7 @@ const reminders = new Table(
 		channel: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_task: ["task_id"] } },
+	tracked({ indexes: { by_task: ["task_id"] } }),
 );
 
 /**
@@ -204,7 +217,7 @@ const chains = new Table(
 		completed_at: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_project: ["project_id"] } },
+	tracked({ indexes: { by_project: ["project_id"] } }),
 );
 
 const chain_steps = new Table(
@@ -220,7 +233,7 @@ const chain_steps = new Table(
 		activated_at: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_chain: ["chain_id"], by_project: ["project_id"] } },
+	tracked({ indexes: { by_chain: ["chain_id"], by_project: ["project_id"] } }),
 );
 
 /** Cíle (workspace-scoped). */
@@ -244,11 +257,11 @@ const goals = new Table(
 		created_by: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_workspace: ["workspace_id"] } },
+	tracked({ indexes: { by_workspace: ["workspace_id"] } }),
 );
 const goal_projects = new Table(
 	{ goal_id: column.text, project_id: column.text, workspace_id: column.text },
-	{ indexes: { by_goal: ["goal_id"] } },
+	tracked({ indexes: { by_goal: ["goal_id"] } }),
 );
 const goal_milestones = new Table(
 	{
@@ -259,7 +272,7 @@ const goal_milestones = new Table(
 		position: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_goal: ["goal_id"] } },
+	tracked({ indexes: { by_goal: ["goal_id"] } }),
 );
 
 // Seznamy — checklisty na akce (handoff 2026-07-10; šablona → instance).
@@ -275,7 +288,7 @@ const lists = new Table(
 		created_by: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_workspace: ["workspace_id"] } },
+	tracked({ indexes: { by_workspace: ["workspace_id"] } }),
 );
 const list_sections = new Table(
 	{
@@ -285,7 +298,7 @@ const list_sections = new Table(
 		position: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_list: ["list_id"] } },
+	tracked({ indexes: { by_list: ["list_id"] } }),
 );
 const list_items = new Table(
 	{
@@ -299,7 +312,7 @@ const list_items = new Table(
 		position: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_list: ["list_id"], by_section: ["section_id"] } },
+	tracked({ indexes: { by_list: ["list_id"], by_section: ["section_id"] } }),
 );
 const list_templates = new Table(
 	{
@@ -311,7 +324,7 @@ const list_templates = new Table(
 		created_by: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_workspace: ["workspace_id"] } },
+	tracked({ indexes: { by_workspace: ["workspace_id"] } }),
 );
 
 const contacts = new Table(
@@ -326,7 +339,7 @@ const contacts = new Table(
 		created_by: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_workspace: ["workspace_id"] } },
+	tracked({ indexes: { by_workspace: ["workspace_id"] } }),
 );
 
 /** Polymorfní vazby (mail↔úkol, LuckyOS↔úkol) — dedup + proklik. Workspace-scoped. */
@@ -363,6 +376,7 @@ const meetings = new Table(
 	},
 	{
 		indexes: { by_workspace: ["workspace_id"], by_hub: ["hub_task_id"], by_series: ["series_id"] },
+		trackPrevious: true,
 	},
 );
 
@@ -375,6 +389,10 @@ const meetings = new Table(
 const local_rejected_ops = new Table(
 	{
 		created_at: column.text,
+		last_attempt_at: column.text,
+		attempt_count: column.integer,
+		client_id: column.text,
+		operation_id: column.text,
 		table_name: column.text,
 		/** PUT | PATCH | DELETE */
 		op: column.text,
@@ -387,7 +405,7 @@ const local_rejected_ops = new Table(
 		server_code: column.text,
 		/** korelace se serverovým logem (X-Request-Id) */
 		request_id: column.text,
-		/** open | discarded */
+		/** open | retrying | resolved | discarded */
 		status: column.text,
 	},
 	{ localOnly: true },

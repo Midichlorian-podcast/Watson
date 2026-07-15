@@ -1,27 +1,45 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
+import { useState } from "react";
 import type { RejectedOpRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
+import { retryRejectedOperation } from "../lib/powersync/syncRecovery";
 import { showToast } from "../lib/toast";
 
 /**
  * CC-P0-04 — Centrum problémů se synchronizací (první verze). Ukazuje trvale
  * odmítnuté zápisy z local_rejected_ops: co, kdy, proč (kód + request ID pro
- * dohledání v serverovém logu) a payload. Umí export do schránky a zahození.
- * Oprava/retry s version checkem přijde s write path v2 (F2).
+ * dohledání v serverovém logu) a payload. Umí retry se stejným idempotency
+ * klíčem, export do schránky a explicitně potvrzené zahození.
  */
 export function SyncProblems() {
 	const { t } = useTranslation();
 	const { data: rows } = usePsQuery<RejectedOpRow>(
 		"SELECT * FROM local_rejected_ops WHERE status = 'open' ORDER BY created_at DESC LIMIT 50",
 	);
+	const [retryingId, setRetryingId] = useState<string | null>(null);
 	const list = rows ?? [];
 	if (list.length === 0) return null;
 
 	const discard = (id: string) => {
+		if (!window.confirm(t("sync.problemDiscardConfirm"))) return;
 		void powerSync.execute("UPDATE local_rejected_ops SET status = 'discarded' WHERE id = ?", [
 			id,
 		]);
+	};
+	const retry = async (r: RejectedOpRow) => {
+		if (retryingId) return;
+		setRetryingId(r.id);
+		try {
+			const result = await retryRejectedOperation(powerSync, r);
+			showToast(
+				result.ok
+					? t("sync.problemRetrySuccess")
+					: t("sync.problemRetryFailed", { code: result.code ?? "unknown" }),
+			);
+		} finally {
+			setRetryingId(null);
+		}
 	};
 	const copyOne = async (r: RejectedOpRow) => {
 		try {
@@ -103,6 +121,26 @@ export function SyncProblems() {
 								{r.request_id ? ` · req:${r.request_id}` : ""} · {(r.payload ?? "").slice(0, 80)}
 							</div>
 						</div>
+						<button
+							type="button"
+							disabled={retryingId !== null}
+							onClick={() => void retry(r)}
+							className="font-display hover:border-brass"
+							style={{
+								flex: "none",
+								fontSize: 11.5,
+								fontWeight: 600,
+								color: "var(--w-brass)",
+								border: "1px solid var(--w-line)",
+								borderRadius: 8,
+								padding: "5px 10px",
+								background: "transparent",
+								cursor: retryingId === null ? "pointer" : "wait",
+								opacity: retryingId !== null && retryingId !== r.id ? 0.5 : 1,
+							}}
+						>
+							{retryingId === r.id ? t("sync.problemRetrying") : t("sync.problemRetry")}
+						</button>
 						<button
 							type="button"
 							onClick={() => void copyOne(r)}

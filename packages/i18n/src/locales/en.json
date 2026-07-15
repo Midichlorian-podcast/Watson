@@ -67,11 +67,16 @@
 	"sync": {
 		"writeRejected": "The server rejected this change and it was reverted. See Settings → Sync problems for details.",
 		"problemsTitle": "Sync problems",
-		"problemsDesc": "The server permanently rejected these changes (permissions or validation) and they were reverted in the app. Nothing is lost — copy the details or discard the record. Fix & resubmit arrives in a future version.",
+		"problemsDesc": "The server rejected these changes (permissions, conflict, or validation) and they were reverted in the app. Retry after fixing the cause, copy the details, or explicitly discard them.",
 		"problemCopy": "Copy",
 		"problemCopied": "Details copied to clipboard.",
 		"problemCopyFailed": "Copy failed — try again.",
-		"problemDiscard": "Discard"
+		"problemRetry": "Retry",
+		"problemRetrying": "Retrying…",
+		"problemRetrySuccess": "The change was restored successfully.",
+		"problemRetryFailed": "The change could not be restored ({{code}}).",
+		"problemDiscard": "Discard",
+		"problemDiscardConfirm": "Permanently discard this unsent change? This action cannot be undone."
 	},
 	"detail": {
 		"properties": "Properties",

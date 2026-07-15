@@ -8,23 +8,21 @@
  * Zachován tok „přepis → AI návrhy → lidská revize → úkoly" (human-in-the-loop).
  */
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import i18n from "@watson/i18n";
 import { AvatarGroup } from "@watson/ui";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { pillStyle } from "../components/filterUi";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
-import { logTaskActivity } from "../lib/activity";
 import { initials, shortDayLabel } from "../lib/format";
 import { useAllMembers } from "../lib/overview";
 import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
-import { powerSync } from "../lib/powersync/db";
 import { useTaskDetail } from "../lib/taskDetail";
-import { useNavigate, useSearch } from "@tanstack/react-router";
-import { MeetBoard } from "./MeetBoard";
 import { todayISO } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { useWorkspace } from "../lib/workspace";
+import { MeetBoard } from "./MeetBoard";
 
 interface Proposal {
 	title: string;
@@ -125,7 +123,6 @@ export function Mitingy() {
 	const { data: session } = useSession();
 	const uid = session?.user?.id;
 	const members = useAllMembers();
-	const memberList = [...members].map(([id, name]) => ({ id, name }));
 	const { open: openTask } = useTaskDetail();
 	const { data: allProjects } = usePsQuery<ProjectRow>(
 		"SELECT id, name, workspace_id FROM projects WHERE archived_at IS NULL ORDER BY created_at",
@@ -233,6 +230,13 @@ export function Mitingy() {
 	const planMembers = (pmRows ?? [])
 		.map((r) => ({ id: r.user_id, name: members.get(r.user_id) ?? "…" }))
 		.sort((a, b) => a.name.localeCompare(b.name, "cs"));
+	const { data: reviewPmRows } = usePsQuery<{ user_id: string }>(
+		"SELECT user_id FROM project_members WHERE project_id = ?",
+		[projectId || ""],
+	);
+	const reviewMembers = (reviewPmRows ?? [])
+		.map((row) => ({ id: row.user_id, name: members.get(row.user_id) ?? "…" }))
+		.sort((a, b) => a.name.localeCompare(b.name, "cs"));
 	// Moje role per projekt — meet smím založit jen tam, kde jsem editor+ (server by
 	// commenterovi tasks/assignments odmítl a nechal osiřelý sidecar — audit Fáze 1).
 	const { data: myRoleRows } = usePsQuery<{ project_id: string; role: string | null }>(
@@ -291,7 +295,7 @@ export function Mitingy() {
 		setMode("plan");
 	};
 
-	/** Založí meet = kotevní úkol + sidecar + účastníci v JEDNÉ lokální transakci (CC-P0-07). */
+	/** Založí meet jediným atomickým, idempotentním serverovým příkazem (CC-P0-07). */
 	async function planCreate() {
 		const name = pTitle.trim();
 		if (!name || !pProject || !pDate || !pTime || !uid || !activeWs) {
@@ -314,30 +318,24 @@ export function Mitingy() {
 		try {
 			const meetId = crypto.randomUUID();
 			const taskId = crypto.randomUUID();
-			const now = new Date().toISOString();
-			const startIso = `${pDate}T${pTime}:00`;
-			await powerSync.writeTransaction(async (tx) => {
-				await tx.execute(
-					`INSERT INTO tasks (id, project_id, name, priority, due_date, start_date, duration_min,
-					   assignment_mode, kind, meeting_id, created_by, created_at)
-					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-					[taskId, pProject, name, 4, pDate, startIso, pDur, "single", "meeting", meetId, uid, now],
-				);
-				await tx.execute(
-					`INSERT INTO meetings (id, workspace_id, title, status, hub_task_id, created_by, created_at)
-					 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-					[meetId, activeWs, name, "scheduled", taskId, uid, now],
-				);
-				for (const w of who) {
-					await tx.execute(
-						"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (?, ?, ?, ?, ?)",
-						[crypto.randomUUID(), taskId, pProject, w, now],
-					);
-				}
+			const startAt = new Date(`${pDate}T${pTime}:00`).toISOString();
+			const response = await fetch(`${API_URL}/api/meetings/plan`, {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					meetingId: meetId,
+					hubTaskId: taskId,
+					workspaceId: activeWs,
+					projectId: pProject,
+					title: name,
+					dueDate: pDate,
+					startAt,
+					durationMin: pDur,
+					participantIds: who,
+				}),
 			});
-			void logTaskActivity(taskId, pProject, uid, "created", null, "meet");
-			// Bez slibů o viditelnosti ostatním — zápis je zatím jen lokální (0.4: úspěch
-			// až po potvrzení autoritativním systémem; sync běží na pozadí).
+			if (!response.ok) throw new Error(`plan:${response.status}`);
 			showToast(`Meet naplánován na ${dayLabel(pDate)} ${pTime}.`);
 			setMode("list");
 		} catch {
@@ -381,54 +379,21 @@ export function Mitingy() {
 	}
 
 	async function commit() {
-		if (!projectId || !session?.user?.id) {
+		if (!projectId || !session?.user?.id || !meetingId) {
 			showToast("Vyber projekt.");
 			return;
 		}
 		setBusy(true);
 		try {
-			const idByIndex: Record<number, string> = {};
-			let created = 0;
-			for (let i = 0; i < proposals.length; i++) {
-				const p = proposals[i];
-				if (!p || !p.keep || !p.title.trim()) continue;
-				const taskId = crypto.randomUUID();
-				idByIndex[i] = taskId;
-				const parentId =
-					p.parentIndex != null && idByIndex[p.parentIndex] ? idByIndex[p.parentIndex] : null;
-				await powerSync.execute(
-					`INSERT INTO tasks (id, project_id, parent_id, name, priority, due_date, assignment_mode, created_by, created_at)
-					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-					[
-						taskId,
-						projectId,
-						parentId,
-						p.title.trim(),
-						p.priority ?? 3,
-						p.due ?? null,
-						"single",
-						uid,
-						new Date().toISOString(),
-					],
-				);
-				void logTaskActivity(taskId, projectId, uid, "created", null, "porada");
-				if (p.assigneeUserId) {
-					await powerSync.execute(
-						"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (?, ?, ?, ?, ?)",
-						[crypto.randomUUID(), taskId, projectId, p.assigneeUserId, new Date().toISOString()],
-					);
-				}
-				created++;
-			}
-			if (meetingId) {
-				// I rychlý zápis dostane lineage — úkoly jdou dohledat zpět k přepisu.
-				await fetch(`${API_URL}/api/meetings/${meetingId}/commit`, {
-					method: "POST",
-					credentials: "include",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ taskIds: Object.values(idByIndex) }),
-				}).catch(() => {});
-			}
+			const response = await fetch(`${API_URL}/api/meetings/${meetingId}/commit`, {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ defaultProjectId: projectId, proposals }),
+			});
+			if (!response.ok) throw new Error(`commit:${response.status}`);
+			const result = (await response.json()) as { created?: number };
+			const created = result.created ?? 0;
 			showToast(`Vytvořeno ${created} úkolů z porady.`);
 			setMode("list");
 			setTitle("");
@@ -966,7 +931,7 @@ export function Mitingy() {
 										style={{ ...INPUT, ...INPUT_SM }}
 									>
 										<option value="">— nikdo —</option>
-										{memberList.map((m) => (
+						{reviewMembers.map((m) => (
 											<option key={m.id} value={m.id}>
 												{m.name}
 											</option>

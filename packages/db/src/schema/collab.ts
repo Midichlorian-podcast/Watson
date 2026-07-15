@@ -5,6 +5,7 @@
 import { sql } from "drizzle-orm";
 import {
 	bigint,
+	check,
 	index,
 	integer,
 	pgTable,
@@ -128,15 +129,28 @@ export const reminders = pgTable(
 		/** Relativní offset v minutách vůči termínu (type=relative). */
 		offsetMin: integer("offset_min"),
 		channel: notificationChannelEnum("channel").notNull().default("push"),
-		/** Kdy worker připomínku odeslal (null = čeká na doručení). Píše jen server. */
+		/** Serverová delivery state machine; do PowerSync read-modelu se tyto interní sloupce neposílají. */
+		deliveryState: varchar("delivery_state", { length: 16 }).notNull().default("pending"),
+		attempts: integer("attempts").notNull().default(0),
+		nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+		claimedAt: timestamp("claimed_at", { withTimezone: true }),
+		lastErrorCode: varchar("last_error_code", { length: 64 }),
+		providerMessageId: varchar("provider_message_id", { length: 256 }),
+		/** Kdy provider potvrdil alespoň jedno doručení. Píše jen server. */
 		sentAt: timestamp("sent_at", { withTimezone: true }),
 		createdAt: createdAt(),
 	},
 	(t) => [
 		index("reminders_task_idx").on(t.taskId),
 		index("reminders_user_idx").on(t.userId),
-		// Doručovací worker skenuje NEodeslané → parciální index drží frontu malou i s historií.
-		index("reminders_pending_idx").on(t.remindAt).where(sql`sent_at IS NULL`),
+		check(
+			"reminders_delivery_state_valid",
+			sql`${t.deliveryState} in ('pending', 'claimed', 'retry', 'sent', 'dead')`,
+		),
+		check("reminders_attempts_nonnegative", sql`${t.attempts} >= 0`),
+		index("reminders_pending_idx")
+			.on(t.deliveryState, t.nextAttemptAt, t.remindAt)
+			.where(sql`delivery_state in ('pending', 'retry', 'claimed')`),
 	],
 );
 

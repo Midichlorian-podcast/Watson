@@ -69,11 +69,16 @@
 	"sync": {
 		"writeRejected": "Server změnu odmítl a byla vrácena zpět. Detail najdeš v Nastavení → Problémy se synchronizací.",
 		"problemsTitle": "Problémy se synchronizací",
-		"problemsDesc": "Tyhle změny server trvale odmítl (oprávnění nebo validace) a v aplikaci se vrátily zpět. Nic z toho se neztratilo — můžeš si detail zkopírovat, nebo záznam zahodit. Oprava a nové odeslání přijdou v další verzi.",
+		"problemsDesc": "Tyhle změny server odmítl (oprávnění, konflikt nebo validace) a v aplikaci se vrátily zpět. Zkus je po nápravě znovu odeslat, zkopíruj si detail, nebo je vědomě zahoď.",
 		"problemCopy": "Kopírovat",
 		"problemCopied": "Detail zkopírován do schránky.",
 		"problemCopyFailed": "Kopírování se nepovedlo — zkus to znovu.",
-		"problemDiscard": "Zahodit"
+		"problemRetry": "Zkusit znovu",
+		"problemRetrying": "Odesílám…",
+		"problemRetrySuccess": "Změna byla úspěšně obnovena.",
+		"problemRetryFailed": "Změnu se nepodařilo obnovit ({{code}}).",
+		"problemDiscard": "Zahodit",
+		"problemDiscardConfirm": "Opravdu trvale zahodit tuto neodeslanou změnu? Tuto akci nelze vrátit."
 	},
 	"detail": {
 		"properties": "Vlastnosti",

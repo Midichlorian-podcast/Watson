@@ -12,9 +12,10 @@ import {
 	and,
 	eq,
 	getDb,
-	isNull,
+	inArray,
 	pushSubscriptions,
 	reminders,
+	sql,
 	tasks,
 } from "@watson/db";
 import { Hono } from "hono";
@@ -56,27 +57,35 @@ export function reminderFireTime(r: DueReminder): Date | null {
 async function sendOne(
 	sub: { endpoint: string; p256dh: string; auth: string },
 	payload: object,
-): Promise<"ok" | "expired" | "error"> {
+): Promise<{ result: "ok" | "expired" | "error"; errorCode?: string }> {
 	try {
 		await webpush.sendNotification(
 			{ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
 			JSON.stringify(payload),
 		);
-		return "ok";
+		return { result: "ok" };
 	} catch (e) {
 		const code = (e as { statusCode?: number }).statusCode;
-		if (code === 404 || code === 410) return "expired";
-		console.error("[push] odeslání selhalo", code ?? "", (e as Error).message);
-		return "error";
+		if (code === 404 || code === 410) return { result: "expired", errorCode: `http_${code}` };
+		console.error(
+			JSON.stringify({ level: "error", event: "push_delivery_failed", providerStatus: code ?? null }),
+		);
+		return { result: "error", errorCode: code ? `http_${code}` : "provider_error" };
 	}
 }
 
-/** Pošle notifikaci uživateli na všechna jeho zařízení. Vrací počet úspěšných doručení. */
-export async function pushToUser(
+interface PushDeliveryResult {
+	delivered: number;
+	errorCode: string | null;
+	providerMessageId: string | null;
+}
+
+async function deliverPushToUser(
 	userId: string,
 	payload: object,
-): Promise<number> {
-	if (!pushEnabled) return 0;
+): Promise<PushDeliveryResult> {
+	if (!pushEnabled)
+		return { delivered: 0, errorCode: "push_not_configured", providerMessageId: null };
 	const db = getDb();
 	const subs = await db
 		.select({
@@ -87,24 +96,74 @@ export async function pushToUser(
 		})
 		.from(pushSubscriptions)
 		.where(eq(pushSubscriptions.userId, userId));
+	if (subs.length === 0)
+		return { delivered: 0, errorCode: "no_subscription", providerMessageId: null };
 	let ok = 0;
+	let lastError: string | null = null;
 	for (const s of subs) {
 		const res = await sendOne(s, payload);
-		if (res === "ok") ok++;
-		else if (res === "expired")
+		if (res.result === "ok") ok++;
+		else if (res.result === "expired")
 			await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, s.id));
+		if (res.result !== "ok") lastError = res.errorCode ?? "provider_error";
 	}
-	return ok;
+	return {
+		delivered: ok,
+		errorCode: ok > 0 ? null : (lastError ?? "no_subscription"),
+		providerMessageId: null,
+	};
+}
+
+/** Pošle notifikaci uživateli na všechna jeho zařízení. Vrací počet úspěšných doručení. */
+export async function pushToUser(userId: string, payload: object): Promise<number> {
+	return (await deliverPushToUser(userId, payload)).delivered;
 }
 
 // E-mailový kanál připomínek: záměrně BEZ implementace i BEZ fake „sent" větve
 // (CC-P0-09). Scan e-mailové připomínky přeskakuje; kanál se zapne až s reálným
 // mailerem (Resend) a delivery state machine v F5.
 
-/** Projde splatné připomínky (sent_at NULL, úkol nedokončený), doručí, označí sent. */
-export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
+/**
+ * Atomicky claimne splatné push připomínky. SKIP LOCKED zaručuje, že dvě API
+ * instance nevezmou stejný řádek; pětiminutový lease obnoví práci po pádu workeru.
+ */
+async function claimDue(now: Date): Promise<(DueReminder & { attempts: number })[]> {
 	const db = getDb();
-	const rows = (await db
+	const claimed = await db.transaction(async (tx) =>
+		tx.execute(sql`
+			WITH candidates AS (
+				SELECT r.id
+				FROM reminders r
+				JOIN tasks t ON t.id = r.task_id
+				WHERE t.completed_at IS NULL
+				  AND r.channel = 'push'
+				  AND (
+					(r.delivery_state IN ('pending', 'retry')
+					 AND (r.next_attempt_at IS NULL OR r.next_attempt_at <= ${now})
+					 AND (
+						(r.type <> 'relative' AND r.remind_at IS NOT NULL AND r.remind_at <= ${now})
+						OR
+						(r.type = 'relative' AND r.offset_min IS NOT NULL
+						 AND COALESCE(t.start_date, t.due_date::timestamptz)
+						     - (r.offset_min * interval '1 minute') <= ${now})
+					 ))
+					OR
+					(r.delivery_state = 'claimed' AND r.claimed_at < ${now} - interval '5 minutes')
+				  )
+				ORDER BY COALESCE(r.next_attempt_at, r.remind_at, r.created_at), r.id
+				FOR UPDATE OF r SKIP LOCKED
+				LIMIT 100
+			)
+			UPDATE reminders r
+			SET delivery_state = 'claimed', claimed_at = ${now}, attempts = r.attempts + 1
+			FROM candidates c
+			WHERE r.id = c.id
+			RETURNING r.id
+		`),
+	);
+	const ids = (claimed as unknown as { id: string }[]).map((row) => row.id);
+	if (ids.length === 0) return [];
+	return (await db
 		.select({
 			id: reminders.id,
 			userId: reminders.userId,
@@ -115,36 +174,53 @@ export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
 			taskName: tasks.name,
 			dueDate: tasks.dueDate,
 			startDate: tasks.startDate,
+			attempts: reminders.attempts,
 		})
 		.from(reminders)
 		.innerJoin(tasks, eq(tasks.id, reminders.taskId))
-		.where(
-			and(isNull(reminders.sentAt), isNull(tasks.completedAt)),
-		)) as DueReminder[];
+		.where(inArray(reminders.id, ids))) as (DueReminder & { attempts: number })[];
+}
+
+/** Projde splatné připomínky přes delivery state machine a označí sent jen po ACK. */
+export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
+	const db = getDb();
+	const rows = await claimDue(now);
 
 	let fired = 0;
 	for (const r of rows) {
-		const fireAt = reminderFireTime(r);
-		if (!fireAt || fireAt.getTime() > now.getTime()) continue;
-		// CC-P0-09: e-mailový kanál není implementovaný (sendEmailReminder je no-op) —
-		// připomínka zůstává pending; `sent_at` nesmí lhát o doručení.
-		if (r.channel === "email") continue;
 		const payload = {
 			title: "Watson · připomínka",
 			body: r.taskName,
 			tag: `reminder-${r.id}`,
 			url: "/dnes",
 		};
-		const delivered = await pushToUser(r.userId, payload);
-		// `sent_at` až po potvrzeném úspěchu aspoň jednoho odběru; při 0 doručeních
-		// zůstává pending a další scan to zkusí znovu (plná state machine s retry
-		// limitem a dead-letter = CC-P0-09 v F5).
-		if (delivered === 0) continue;
+		const delivery = await deliverPushToUser(r.userId, payload);
+		if (delivery.delivered > 0) {
+			await db
+				.update(reminders)
+				.set({
+					deliveryState: "sent",
+					sentAt: now,
+					claimedAt: null,
+					nextAttemptAt: null,
+					lastErrorCode: null,
+					providerMessageId: delivery.providerMessageId,
+				})
+				.where(and(eq(reminders.id, r.id), eq(reminders.deliveryState, "claimed")));
+			fired++;
+			continue;
+		}
+		const dead = r.attempts >= 5;
+		const delayMinutes = Math.min(2 ** Math.max(0, r.attempts - 1), 60);
 		await db
 			.update(reminders)
-			.set({ sentAt: now })
-			.where(eq(reminders.id, r.id));
-		fired++;
+			.set({
+				deliveryState: dead ? "dead" : "retry",
+				claimedAt: null,
+				nextAttemptAt: dead ? null : new Date(now.getTime() + delayMinutes * 60_000),
+				lastErrorCode: delivery.errorCode,
+			})
+			.where(and(eq(reminders.id, r.id), eq(reminders.deliveryState, "claimed")));
 	}
 	if (fired) console.log(`[reminders] doručeno ${fired}`);
 	return fired;
@@ -159,7 +235,15 @@ export function startReminderWorker(intervalMs = 30_000): void {
 		return;
 	}
 	timer = setInterval(() => {
-		scanAndSendDue().catch((e) => console.error("[reminders] scan chyba", e));
+		scanAndSendDue().catch((error) =>
+			console.error(
+				JSON.stringify({
+					level: "error",
+					event: "reminder_scan_failed",
+					name: error instanceof Error ? error.name : "UnknownError",
+				}),
+			),
+		);
 	}, intervalMs);
 	console.log(`[reminders] worker běží (interval ${intervalMs / 1000}s)`);
 }
@@ -187,23 +271,46 @@ pushRoutes.post("/api/push/subscribe", async (c) => {
 		return c.json({ error: "invalid subscription" }, 400);
 
 	const db = getDb();
-	await db
-		.insert(pushSubscriptions)
-		.values({
-			userId: session.user.id,
-			endpoint,
-			p256dh,
-			auth: authKey,
-			userAgent: c.req.header("user-agent") ?? null,
-		})
-		// Kolize endpointu = STEJNÉ zařízení (push subscription je per browser profil,
-		// sdílená napříč účty) → přepis na aktuální session je legitimní přepnutí účtu.
-		// Vzdálený útočník by musel znát celý capability URL endpointu. Plné vlastnictví
-		// + ověření řeší CC-P0-09/P1-10 se state machine; tady vědomě zůstává reassign.
-		.onConflictDoUpdate({
-			target: pushSubscriptions.endpoint,
-			set: { userId: session.user.id, p256dh, auth: authKey },
-		});
+	const result = await db.transaction(async (tx) => {
+		const inserted = await tx
+			.insert(pushSubscriptions)
+			.values({
+				userId: session.user.id,
+				endpoint,
+				p256dh,
+				auth: authKey,
+				userAgent: c.req.header("user-agent") ?? null,
+			})
+			.onConflictDoNothing()
+			.returning({ id: pushSubscriptions.id });
+		if (inserted.length > 0) return { conflict: false as const };
+		const existing = (
+			await tx
+				.select({ userId: pushSubscriptions.userId })
+				.from(pushSubscriptions)
+				.where(eq(pushSubscriptions.endpoint, endpoint))
+				.limit(1)
+		)[0];
+		if (!existing || existing.userId !== session.user.id) return { conflict: true as const };
+		await tx
+			.update(pushSubscriptions)
+			.set({ p256dh, auth: authKey, userAgent: c.req.header("user-agent") ?? null })
+			.where(
+				and(
+					eq(pushSubscriptions.endpoint, endpoint),
+					eq(pushSubscriptions.userId, session.user.id),
+				),
+			);
+		return { conflict: false as const };
+	});
+	if (result.conflict)
+		return c.json(
+			{
+				error: "subscription_owned_by_another_account",
+				action: "unsubscribe_in_browser_and_create_a_new_subscription",
+			},
+			409,
+		);
 	return c.json({ ok: true });
 });
 

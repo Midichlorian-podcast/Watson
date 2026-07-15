@@ -117,6 +117,32 @@ export const auditEvents = pgTable(
 );
 
 /**
+ * Přijaté PowerSync operace. Zařízení + monotónní local op id tvoří
+ * idempotency key; hash brání použití stejného klíče pro jiný payload.
+ */
+export const syncWriteReceipts = pgTable(
+	"sync_write_receipts",
+	{
+		id: pk(),
+		userId: uuid("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		clientId: varchar("client_id", { length: 128 }).notNull(),
+		operationId: varchar("operation_id", { length: 32 }).notNull(),
+		payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		uniqueIndex("sync_write_receipts_user_client_op_uq").on(
+			t.userId,
+			t.clientId,
+			t.operationId,
+		),
+		index("sync_write_receipts_created_idx").on(t.createdAt),
+	],
+);
+
+/**
  * AISuggestion — fronta návrhů (suggest) i provedených auto_notify akcí.
  * Nic se neaplikuje tiše; vše projde sem (AI spec §1).
  */
@@ -204,6 +230,7 @@ export type Palette = typeof palettes.$inferSelect;
 export type CalendarConnection = typeof calendarConnections.$inferSelect;
 export type CalendarLink = typeof calendarLinks.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
+export type SyncWriteReceipt = typeof syncWriteReceipts.$inferSelect;
 export type AiSuggestion = typeof aiSuggestions.$inferSelect;
 export type AiPolicy = typeof aiPolicies.$inferSelect;
 export type EntityLink = typeof entityLinks.$inferSelect;
