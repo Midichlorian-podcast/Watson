@@ -553,6 +553,11 @@
 	"search": {
 		"placeholder": "Hledat úkoly, komentáře, porady, seznamy, poštu…",
 		"prompt": "Začni psát — Watson prohledá autorizovaná data napříč všemi tvými prostory.",
+		"clear": "Vymazat hledání",
+		"scopeLabel": "Typ výsledku",
+		"scopeAll": "Vše",
+		"scopeLists": "Seznamy",
+		"operatorHint": "Přesněji: typ:úkol · prostor:Obchod · stav:open · před:2026-08-01 · od:jana@firma.cz · fráze v uvozovkách",
 		"loading": "Prohledávám synchronizovaná data…",
 		"partialError": "Část lidí se nepodařilo načíst. Ostatní výsledky jsou úplné a můžeš je dál používat.",
 		"empty": "Nic nenalezeno",

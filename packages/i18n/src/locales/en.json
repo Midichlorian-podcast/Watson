@@ -545,6 +545,11 @@
 	"search": {
 		"placeholder": "Search tasks, comments, meetings, lists, mail…",
 		"prompt": "Start typing — Watson searches authorized data across all your workspaces.",
+		"clear": "Clear search",
+		"scopeLabel": "Result type",
+		"scopeAll": "All",
+		"scopeLists": "Lists",
+		"operatorHint": "Narrow it down: type:task · in:Sales · status:open · before:2026-08-01 · from:jane@company.com · phrases in quotes",
 		"loading": "Searching synchronized data…",
 		"partialError": "Some people could not be loaded. Other results are complete and remain available.",
 		"empty": "Nothing found",
