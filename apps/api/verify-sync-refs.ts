@@ -108,7 +108,7 @@ const taskName = async (taskId: string) =>
 	(await db.select({ name: tasks.name }).from(tasks).where(eq(tasks.id, taskId)))[0]?.name ?? null;
 const taskSnapshot = async (taskId: string) => {
 	const rows = (await db.execute(sql`
-		SELECT project_id, section_id, parent_id, name, description, priority, color,
+		SELECT project_id, section_id, parent_id, name, description, why_now, priority, color,
 		       due_date, start_date, start_timezone, deadline, duration_min, days, sort_order,
 		       recurrence, recurrence_rule, recurrence_basis, assignment_mode,
 		       status_id, mail_th, mail_label, kind, meeting_id, completed_at
@@ -215,6 +215,21 @@ async function main() {
 		const t6 = crypto.randomUUID();
 		r = await w("PUT", "tasks", t6, mkTask(t6, A.pid, null));
 		check("běžný úkol bez porady projde (200)", r.status === 200, r.status);
+
+		// 6b) produktový limit „Proč teď?“ musí být stejný na API i v DB.
+		const tooLongWhyNow = crypto.randomUUID();
+		r = await w("PUT", "tasks", tooLongWhyNow, {
+			...mkTask(tooLongWhyNow, A.pid, null),
+			why_now: "x".repeat(1001),
+		});
+		check("why_now nad 1 000 znaků API odmítne (422)", r.status === 422, r.status);
+		check("  …a neplatný úkol v DB nevznikl", !(await taskExists(tooLongWhyNow)));
+		const validWhyNow = crypto.randomUUID();
+		r = await w("PUT", "tasks", validWhyNow, {
+			...mkTask(validWhyNow, A.pid, null),
+			why_now: "x".repeat(1000),
+		});
+		check("why_now přesně 1 000 znaků projde (200)", r.status === 200, r.status);
 
 		// 7) stejná operace po timeoutu je idempotentní, nový CREATE stejného id je konflikt.
 		const t7 = crypto.randomUUID();

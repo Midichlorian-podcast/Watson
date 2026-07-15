@@ -8,7 +8,7 @@ bucket_definitions:
     # jeden bucket na každý projekt, kde je uživatel členem (parametr z JWT)
     parameters: SELECT project_id FROM project_members WHERE user_id = request.user_id()
     data:
-      - SELECT id, project_id, section_id, parent_id, name, description, priority, color,
+      - SELECT id, project_id, section_id, parent_id, name, description, why_now, priority, color,
                due_date, start_date, start_timezone, deadline, duration_min, days, sort_order, recurrence, recurrence_rule, recurrence_basis,
         assignment_mode, status_id, mail_th, mail_label, kind, meeting_id, completed_at, created_by, created_at
         FROM tasks

@@ -20,6 +20,7 @@ const tasks = new Table(
 		parent_id: column.text,
 		name: column.text,
 		description: column.text,
+    why_now: column.text,
 		priority: column.integer,
 		color: column.text,
 		due_date: column.text,

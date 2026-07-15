@@ -48,6 +48,7 @@ import {
 import { logTaskActivity } from "../lib/activity";
 import { deleteTaskWithUndo } from "../lib/undo";
 import { useOpenMailThread } from "../mail/state";
+import { WHY_NOW_MAX_LENGTH, type WhyNowSignal, whyNowSignals } from "../lib/whyNow";
 
 type Pri = 1 | 2 | 3 | 4;
 type Member = { id: string; name: string; email: string; image: string | null };
@@ -67,6 +68,7 @@ function whenLabel(iso: string | null, t: (k: string) => string) {
 const ACT_FIELD_KEY: Record<string, string> = {
 	name: "detail.actName",
 	description: "detail.actDesc",
+	why_now: "detail.actWhyNow",
 	due_date: "detail.actDue",
 	start_date: "detail.actTime",
 	duration_min: "detail.actTime",
@@ -81,6 +83,16 @@ const ACT_FIELD_KEY: Record<string, string> = {
 function actFieldLabel(field: string, t: (k: string) => string) {
 	return t(ACT_FIELD_KEY[field] ?? "detail.actField");
 }
+
+const WHY_NOW_SIGNAL_KEY: Record<WhyNowSignal, string> = {
+	due_overdue: "detail.whyNowDueOverdue",
+	due_today: "detail.whyNowDueToday",
+	deadline_overdue: "detail.whyNowDeadlineOverdue",
+	deadline_today: "detail.whyNowDeadlineToday",
+	deadline_soon: "detail.whyNowDeadlineSoon",
+	starts_today: "detail.whyNowStartsToday",
+	priority_one: "detail.whyNowPriorityOne",
+};
 /** Lidsky čitelná hodnota pole pro log (priorita → P2, datum → 8.7. 14:00…). */
 function fmtActVal(field: string, val: unknown): string | null {
 	if (val == null || val === "") return null;
@@ -377,6 +389,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const [name, setName] = useState("");
 	const [desc, setDesc] = useState("");
 	const [descOpen, setDescOpen] = useState(false);
+	const [whyNow, setWhyNow] = useState("");
+	const [whyNowOpen, setWhyNowOpen] = useState(false);
 	const [subText, setSubText] = useState("");
 	const [cmtText, setCmtText] = useState("");
 	const [menuOpen, setMenuOpen] = useState(false);
@@ -399,6 +413,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		if (task) {
 			setName(task.name ?? "");
 			setDesc(task.description ?? "");
+			setWhyNow(task.why_now ?? "");
+			setWhyNowOpen(false);
 		}
 	}, [task?.id]);
 
@@ -409,6 +425,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const members = team ?? [];
 	const memberOf = (uid: string | null) => members.find((m) => m.id === uid);
 	const acts = activity ?? [];
+	const relevanceSignals = whyNowSignals(task, { deviceTimeZone: deviceTimeZone() });
 
 	// Zápis jednoho záznamu do historie úprav.
 	const logActivity = async (field: string, oldVal: string | null, newVal: string | null) => {
@@ -534,10 +551,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		const copyOne = async (srcId: string, newParentId: string | null, suffix: string) => {
 			const nid = crypto.randomUUID();
 			await powerSync.execute(
-				`INSERT INTO tasks (id, project_id, section_id, parent_id, name, description, priority, color,
+				`INSERT INTO tasks (id, project_id, section_id, parent_id, name, description, why_now, priority, color,
           due_date, start_date, start_timezone, deadline, duration_min, days, recurrence, recurrence_rule,
           recurrence_basis, assignment_mode, created_at)
-         SELECT ?, project_id, section_id, ?, name || ?, description, priority, color,
+         SELECT ?, project_id, section_id, ?, name || ?, description, why_now, priority, color,
           due_date, start_date, start_timezone, deadline, duration_min, days, recurrence, recurrence_rule,
           recurrence_basis, assignment_mode, ? FROM tasks WHERE id = ?`,
 				[nid, newParentId, suffix, now, srcId],
@@ -1002,14 +1019,14 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											</span>
 											<input
 												type="time"
-										value={
-											task.start_date && task.start_timezone
-												? (wallTimeFromInstant(
-														task.start_date,
-														task.start_timezone,
-													)?.slice(0, 5) ?? "")
-												: task.start_date?.slice(11, 16) ?? ""
-										}
+											value={
+												task.start_date && task.start_timezone
+													? (wallTimeFromInstant(
+															task.start_date,
+															task.start_timezone,
+														)?.slice(0, 5) ?? "")
+													: task.start_date?.slice(11, 16) ?? ""
+											}
 										onChange={(e) => {
 											const zone = task.start_timezone ?? session?.user?.timezone ?? deviceTimeZone();
 											const base =
@@ -1361,6 +1378,101 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								{t("addmodal.addDesc")}
 							</button>
 						)}
+
+						{/* PROČ TEĎ — vlastní kontext + výhradně vysvětlitelné systémové signály. */}
+						<SectionLabel>{t("detail.whyNow")}</SectionLabel>
+						<div
+							className="border border-line bg-panel-2"
+							style={{ borderRadius: 11, padding: "12px 13px" }}
+						>
+							{whyNowOpen ? (
+								<div>
+									<label
+										htmlFor={`why-now-${realId}`}
+										className="mb-1 block font-display font-semibold text-ink-2"
+										style={{ fontSize: 12 }}
+									>
+										{t("detail.whyNowOwnReason")}
+									</label>
+									<textarea
+										id={`why-now-${realId}`}
+										ref={focusOnMount}
+										value={whyNow}
+										onChange={(event) => setWhyNow(event.target.value)}
+										maxLength={WHY_NOW_MAX_LENGTH}
+										rows={3}
+										placeholder={t("detail.whyNowPlaceholder")}
+										className="w-full resize-y rounded-lg border border-line bg-card px-3 py-2 text-ink text-sm outline-none focus:border-brass"
+									/>
+									<div
+										className="mt-2 flex flex-wrap items-center justify-between"
+										style={{ gap: 8 }}
+									>
+										<span className="font-mono text-ink-3" style={{ fontSize: 10.5 }}>
+											{whyNow.length}/{WHY_NOW_MAX_LENGTH}
+										</span>
+										<div className="flex items-center" style={{ gap: 7 }}>
+											<button
+												type="button"
+												onClick={() => {
+													setWhyNow(task.why_now ?? "");
+													setWhyNowOpen(false);
+												}}
+												className="min-h-11 rounded-lg px-3 font-display font-semibold text-ink-2 hover:bg-panel"
+												style={{ fontSize: 12 }}
+											>
+												{t("common.cancel")}
+											</button>
+											<button
+												type="button"
+												onClick={() => {
+													const normalized = whyNow.trim();
+													setWhyNow(normalized);
+													setWhyNowOpen(false);
+													void patchLog({ why_now: normalized || null });
+												}}
+												className="min-h-11 rounded-lg bg-brass px-3 font-display font-bold text-white hover:brightness-105"
+												style={{ fontSize: 12 }}
+											>
+												{t("common.save")}
+											</button>
+										</div>
+									</div>
+								</div>
+							) : (
+								<div className="flex items-start justify-between" style={{ gap: 12 }}>
+									<p className="font-body text-ink-2" style={{ fontSize: 13, lineHeight: 1.5 }}>
+										{task.why_now || t("detail.whyNowEmpty")}
+									</p>
+									<button
+										type="button"
+										onClick={() => setWhyNowOpen(true)}
+										className="min-h-11 shrink-0 rounded-lg border border-line bg-card px-3 font-display font-semibold text-ink-2 hover:border-brass hover:text-brass-text"
+										style={{ fontSize: 11.5 }}
+									>
+										{task.why_now ? t("common.edit") : t("detail.whyNowAdd")}
+									</button>
+								</div>
+							)}
+							{relevanceSignals.length > 0 && (
+								<div className="mt-3 border-line border-t pt-3">
+									<p className="mb-2 font-body text-ink-3" style={{ fontSize: 11.5 }}>
+										{t("detail.whyNowSystemSignals")}
+									</p>
+									<div className="flex flex-wrap" style={{ gap: 6 }}>
+										{relevanceSignals.map((signal) => (
+											<span
+												key={signal}
+												className="rounded-full border border-line bg-card font-display font-semibold text-ink-2"
+												style={{ fontSize: 10.5, padding: "4px 8px" }}
+											>
+												{t(WHY_NOW_SIGNAL_KEY[signal])}
+											</span>
+										))}
+									</div>
+								</div>
+							)}
+						</div>
 
 						{/* PODÚKOLY — reálné úkoly vrstvené na sebe (rozhodnutí 2026-07-02): plnohodnotný
               řádek s prioritním okrajem, počty vlastních podúkolů a klikem do vlastního detailu. */}

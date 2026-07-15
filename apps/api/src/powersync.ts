@@ -97,6 +97,8 @@ type ColType = "text" | "int" | "bool" | "ts";
 interface TableDef {
 	/** Zapisovatelné sloupce → typ (pro správný cast SQLite→Postgres). `id` se řeší zvlášť. */
 	columns: Record<string, ColType>;
+	/** Uživatelské texty s produktovým limitem; kontrola před DB dává stabilní 422. */
+	maxLengths?: Record<string, number>;
 	/** Má sloupec `updated_at` (nastaví se now() při zápisu). */
 	hasUpdatedAt: boolean;
 	/** Sloupec autora — na PUT se vyplní serverovým userId (atribuce, R10). */
@@ -191,6 +193,7 @@ export const TABLES: Record<string, TableDef> = {
 			parent_id: "text",
 			name: "text",
 			description: "text",
+			why_now: "text",
 			priority: "int",
 			color: "text",
 			due_date: "ts",
@@ -211,6 +214,7 @@ export const TABLES: Record<string, TableDef> = {
 			meeting_id: "text",
 			completed_at: "ts",
 		},
+		maxLengths: { why_now: 1000 },
 		hasUpdatedAt: true,
 		creatorCol: "created_by",
 		projectVia: { kind: "column", col: "project_id" },
@@ -955,6 +959,12 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 
 	const data = { ...(body.data ?? {}) };
 	const previous = body.previous ?? null;
+	for (const [columnName, maxLength] of Object.entries(def.maxLengths ?? {})) {
+		const value = data[columnName];
+		if (value != null && String(value).length > maxLength) {
+			return c.json({ error: "field_too_long", field: columnName, maxLength }, 422);
+		}
+	}
 	// E-mailový provider připomínek zatím neexistuje. Přijetí `channel=email` by
 	// vytvořilo trvale nedoručitelný business stav, proto fail-closed už na write-path.
 	if (body.table === "reminders" && data.channel === "email") {

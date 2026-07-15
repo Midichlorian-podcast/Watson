@@ -143,6 +143,24 @@ async function main(): Promise<void> {
 		await rejected("days=0 je v DB neplatné", () =>
 			db.insert(tasks).values({ projectId: projectA.id, name: "bad days", days: 0 }),
 		);
+		await rejected("why_now delší než 1 000 znaků je v DB neplatné", () =>
+			db.insert(tasks).values({
+				projectId: projectA.id,
+				name: "bad why now",
+				whyNow: "x".repeat(1001),
+			}),
+		);
+		await db.insert(tasks).values({
+			projectId: projectA.id,
+			name: "valid why now",
+			whyNow: "x".repeat(1000),
+		});
+		check(
+			"DB přijme why_now dlouhé přesně 1 000 znaků",
+			(
+				await db.select({ id: tasks.id }).from(tasks).where(eq(tasks.name, "valid why now"))
+			).length === 1,
+		);
 		await rejected("deadline před plánovaným due je v DB neplatný", () =>
 			db.insert(tasks).values({
 				projectId: projectA.id,

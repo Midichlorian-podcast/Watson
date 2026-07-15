@@ -42,6 +42,8 @@ export const tasks = pgTable(
 		name: varchar("name", { length: 500 }).notNull(),
 		/** Markdown (BEZ CRDT v MVP — §12), LWW přes PowerSync. */
 		description: text("description"),
+		/** Ručně zadaný, auditovatelný kontext relevance. Systémové signály se počítají v UI. */
+		whyNow: text("why_now"),
 		/** R6 — priorita P1–P4 (nebarevný odznak), nezávislá na barvě. */
 		priority: integer("priority").notNull().default(4),
 		/** R6 — uživatelský barevný akcent úkolu. */
@@ -96,6 +98,7 @@ export const tasks = pgTable(
 	},
 	(t) => [
 		check("tasks_priority_range", sql`${t.priority} between 1 and 4`),
+		check("tasks_why_now_length", sql`${t.whyNow} is null or char_length(${t.whyNow}) <= 1000`),
 		check("tasks_days_positive", sql`${t.days} is null or ${t.days} between 1 and 3650`),
 		check(
 			"tasks_duration_positive",
