@@ -20,6 +20,7 @@ import {
 } from "@watson/db";
 import { Hono } from "hono";
 import webpush from "web-push";
+import { z } from "zod";
 import { auth } from "./auth";
 import { env, pushEnabled } from "./env";
 
@@ -129,6 +130,7 @@ export async function pushToUser(userId: string, payload: object): Promise<numbe
  */
 async function claimDue(now: Date): Promise<(DueReminder & { attempts: number })[]> {
 	const db = getDb();
+	const nowIso = now.toISOString();
 	const claimed = await db.transaction(async (tx) =>
 		tx.execute(sql`
 			WITH candidates AS (
@@ -139,23 +141,23 @@ async function claimDue(now: Date): Promise<(DueReminder & { attempts: number })
 				  AND r.channel = 'push'
 				  AND (
 					(r.delivery_state IN ('pending', 'retry')
-					 AND (r.next_attempt_at IS NULL OR r.next_attempt_at <= ${now})
+					 AND (r.next_attempt_at IS NULL OR r.next_attempt_at <= ${nowIso}::timestamptz)
 					 AND (
-						(r.type <> 'relative' AND r.remind_at IS NOT NULL AND r.remind_at <= ${now})
+						(r.type <> 'relative' AND r.remind_at IS NOT NULL AND r.remind_at <= ${nowIso}::timestamptz)
 						OR
 						(r.type = 'relative' AND r.offset_min IS NOT NULL
 						 AND COALESCE(t.start_date, t.due_date::timestamptz)
-						     - (r.offset_min * interval '1 minute') <= ${now})
+						     - (r.offset_min * interval '1 minute') <= ${nowIso}::timestamptz)
 					 ))
 					OR
-					(r.delivery_state = 'claimed' AND r.claimed_at < ${now} - interval '5 minutes')
+					(r.delivery_state = 'claimed' AND r.claimed_at < ${nowIso}::timestamptz - interval '5 minutes')
 				  )
 				ORDER BY COALESCE(r.next_attempt_at, r.remind_at, r.created_at), r.id
 				FOR UPDATE OF r SKIP LOCKED
 				LIMIT 100
 			)
 			UPDATE reminders r
-			SET delivery_state = 'claimed', claimed_at = ${now}, attempts = r.attempts + 1
+			SET delivery_state = 'claimed', claimed_at = ${nowIso}::timestamptz, attempts = r.attempts + 1
 			FROM candidates c
 			WHERE r.id = c.id
 			RETURNING r.id
@@ -251,6 +253,28 @@ export function startReminderWorker(intervalMs = 30_000): void {
 /** REST endpointy Web Push. */
 export const pushRoutes = new Hono();
 
+const pushEndpoint = z
+	.string()
+	.url()
+	.max(4096)
+	.refine((value) => new URL(value).protocol === "https:", "push_endpoint_must_use_https")
+	.refine((value) => {
+		const host = new URL(value).hostname.toLowerCase();
+		return host !== "localhost" && host !== "::1" && !host.endsWith(".local") && !/^127\./.test(host);
+	}, "push_endpoint_must_be_public");
+const subscribeSchema = z
+	.object({
+		endpoint: pushEndpoint,
+		keys: z
+			.object({
+				p256dh: z.string().min(20).max(512),
+				auth: z.string().min(8).max(128),
+			})
+			.strict(),
+	})
+	.strict();
+const unsubscribeSchema = z.object({ endpoint: pushEndpoint }).strict();
+
 /** Veřejný VAPID klíč (klient ho potřebuje k subscribe). */
 pushRoutes.get("/api/push/vapid", (c) =>
 	c.json({ publicKey: env.vapid.publicKey ?? null, enabled: pushEnabled }),
@@ -260,15 +284,11 @@ pushRoutes.get("/api/push/vapid", (c) =>
 pushRoutes.post("/api/push/subscribe", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const body = (await c.req.json().catch(() => null)) as {
-		endpoint?: string;
-		keys?: { p256dh?: string; auth?: string };
-	} | null;
-	const endpoint = body?.endpoint;
-	const p256dh = body?.keys?.p256dh;
-	const authKey = body?.keys?.auth;
-	if (!endpoint || !p256dh || !authKey)
-		return c.json({ error: "invalid subscription" }, 400);
+	const parsed = subscribeSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success)
+		return c.json({ error: "invalid_subscription", issues: parsed.error.issues }, 422);
+	const { endpoint, keys: { p256dh, auth: authKey } } = parsed.data;
+	const userAgent = (c.req.header("user-agent") ?? "").slice(0, 512) || null;
 
 	const db = getDb();
 	const result = await db.transaction(async (tx) => {
@@ -279,7 +299,7 @@ pushRoutes.post("/api/push/subscribe", async (c) => {
 				endpoint,
 				p256dh,
 				auth: authKey,
-				userAgent: c.req.header("user-agent") ?? null,
+				userAgent,
 			})
 			.onConflictDoNothing()
 			.returning({ id: pushSubscriptions.id });
@@ -294,7 +314,7 @@ pushRoutes.post("/api/push/subscribe", async (c) => {
 		if (!existing || existing.userId !== session.user.id) return { conflict: true as const };
 		await tx
 			.update(pushSubscriptions)
-			.set({ p256dh, auth: authKey, userAgent: c.req.header("user-agent") ?? null })
+			.set({ p256dh, auth: authKey, userAgent })
 			.where(
 				and(
 					eq(pushSubscriptions.endpoint, endpoint),
@@ -318,17 +338,17 @@ pushRoutes.post("/api/push/subscribe", async (c) => {
 pushRoutes.post("/api/push/unsubscribe", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const body = (await c.req.json().catch(() => null)) as {
-		endpoint?: string;
-	} | null;
-	if (!body?.endpoint) return c.json({ error: "invalid" }, 400);
+	const parsed = unsubscribeSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success)
+		return c.json({ error: "invalid_unsubscribe", issues: parsed.error.issues }, 422);
+	const { endpoint } = parsed.data;
 	const db = getDb();
 	// CC-P0-09: mazat jen VLASTNÍ odběr — cizí session nesmí odhlásit cizí endpoint.
 	await db
 		.delete(pushSubscriptions)
 		.where(
 			and(
-				eq(pushSubscriptions.endpoint, body.endpoint),
+				eq(pushSubscriptions.endpoint, endpoint),
 				eq(pushSubscriptions.userId, session.user.id),
 			),
 		);

@@ -7,7 +7,7 @@
 		"dev": "tsx watch src/index.ts",
 		"build": "tsc",
 		"start": "node dist/index.js",
-		"lint": "biome lint .",
+		"lint": "biome lint . --error-on-warnings",
 		"typecheck": "tsc --noEmit",
 		"verify:reminders": "tsx verify-reminders.ts",
 		"verify:contract": "tsx verify-contract.ts",
@@ -16,7 +16,17 @@
 		"verify:export": "tsx verify-export.ts",
 		"verify:sync-refs": "tsx verify-sync-refs.ts",
 		"verify:meet-acl": "tsx verify-meet-acl.ts",
-		"verify:meeting-commands": "tsx verify-meeting-commands.ts"
+		"verify:meeting-commands": "tsx verify-meeting-commands.ts",
+		"verify:employee-reconcile": "tsx verify-employee-reconcile.ts",
+		"verify:db-invariants": "tsx verify-db-invariants.ts",
+		"verify:ai-policy": "tsx verify-ai-policy.ts",
+		"verify:rate-limit": "tsx verify-rate-limit.ts",
+		"verify:task-delete": "tsx verify-task-delete.ts",
+		"verify:workspace-policy": "tsx verify-workspace-policy.ts",
+		"verify:signing-keys": "tsx verify-signing-keys.ts",
+		"verify:auth-security": "tsx verify-auth-security.ts",
+		"verify:manual-chain-gate": "tsx verify-manual-chain-gate.ts",
+		"verify:input-observability": "tsx verify-input-observability.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.111.0",

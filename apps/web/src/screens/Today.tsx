@@ -4,6 +4,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { QuickAdd } from "../components/QuickAdd";
+import { DataLoading } from "../components/Loading";
 import { RescheduleMenu } from "../components/RescheduleMenu";
 import { TaskItem } from "../components/TaskItem";
 import {
@@ -24,7 +25,7 @@ import { filterByQuery, useListSearch } from "../lib/listSearch";
 import { expandOccurrences, parseRecurrenceRule } from "../lib/occurrences";
 import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
@@ -61,13 +62,13 @@ export function DnesTab() {
 	const { toggleWatson } = useWatson();
 	const isMobile = useIsMobile();
 
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
 
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
 	// Výkon: v běžném případě (bez „Dokončené") filtruj hotové rovnou v SQL — méně řádků materializuje
 	// se přes WASM bridge při KAŽDÉ změně tabulky. Zapnutí „Dokončené" se re-subscribne na plný dotaz.
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		tb.showDone
 			? "SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date, created_at DESC"
 			: "SELECT * FROM tasks WHERE completed_at IS NULL ORDER BY priority, due_date IS NULL, due_date, created_at DESC",
@@ -79,11 +80,11 @@ export function DnesTab() {
 	const userId = session?.user?.id;
 	const { activeWs } = useWorkspace();
 	const inboxId = useMemo(() => pickInboxId(projects, activeWs), [projects, activeWs]);
-	const { data: allAsg } = usePsQuery<{
+	const { data: allAsg, isLoading: assignmentsLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments ORDER BY created_at");
-	const { data: allSteps } = usePsQuery<{
+	const { data: allSteps, isLoading: stepsLoading } = usePsQuery<{
 		chain_id: string | null;
 		task_id: string | null;
 		position: number | null;
@@ -274,6 +275,7 @@ export function DnesTab() {
 			</div>
 		);
 	};
+	if (projectsLoading || tasksLoading || assignmentsLoading || stepsLoading) return <DataLoading />;
 
 	return (
 		<>

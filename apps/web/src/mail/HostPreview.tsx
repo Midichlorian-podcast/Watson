@@ -79,7 +79,7 @@ export function HostPreview({ onClose }: { onClose: () => void }) {
 					Žádný název vlákna, žádná schránka, žádné „požádej o přístup" — obsah, na který nemáš
 					oprávnění, v UI neexistuje.
 				</div>
-				<span
+				<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 					onClick={onClose}
 					data-ghost
 					style={{

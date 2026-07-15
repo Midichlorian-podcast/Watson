@@ -6,8 +6,9 @@
  *
  * Invariant: tasks.meeting_id smí ukazovat JEN na poradu ze stejného prostoru jako
  * projekt úkolu. Bez toho jde úkolu podstrčit cizí poradu a UI z toho vykreslí
- * důvěryhodný chip „z porady" s proklikem. Neexistující cíl je soft-pending
- * (offline fronta ho teprve nahraje) — stejně shovívavě jako refProjectCols.
+ * důvěryhodný chip „z porady" s proklikem. Neexistující cíl je odmítnut:
+ * meeting + hub/action tasky vznikají atomickými command endpointy, takže zde
+ * neexistuje legitimní důvod přijmout osiřelý soft-reference zápis.
  *
  * Negativní testy ověřují i NEZMĚNĚNOU DB, ne jen HTTP kód.
  */
@@ -108,7 +109,7 @@ const taskName = async (taskId: string) =>
 const taskSnapshot = async (taskId: string) => {
 	const rows = (await db.execute(sql`
 		SELECT project_id, section_id, parent_id, name, description, priority, color,
-		       due_date, start_date, deadline, duration_min, days, sort_order,
+		       due_date, start_date, start_timezone, deadline, duration_min, days, sort_order,
 		       recurrence, recurrence_rule, recurrence_basis, assignment_mode,
 		       status_id, mail_th, mail_label, kind, meeting_id, completed_at
 		FROM tasks WHERE id = ${taskId} LIMIT 1
@@ -197,12 +198,12 @@ async function main() {
 		check("PATCH na poradu cizího prostoru odmítnut (403)", r.status === 403, r.status);
 		check("  …a meeting_id zůstal původní", (await meetingOf(t1)) === A.meetingId);
 
-		// 4) neexistující porada (offline fronta ji teprve nahraje) → soft-pending
+		// 4) neexistující porada → 422 a žádný osiřelý task/chip
 		const t4 = crypto.randomUUID();
 		const ghost = crypto.randomUUID();
 		r = await w("PUT", "tasks", t4, mkTask(t4, A.pid, ghost));
-		check("neexistující porada projde jako soft-pending (200)", r.status === 200, r.status);
-		check("  …a meeting_id je uložené", (await meetingOf(t4)) === ghost);
+		check("neexistující porada je odmítnuta (422)", r.status === 422, r.status);
+		check("  …a osiřelý task v DB nevznikl", !(await taskExists(t4)));
 
 		// 5) nesmysl místo UUID → deterministicky 422 (ne 500, ne uložený chip)
 		const t5 = crypto.randomUUID();

@@ -46,18 +46,24 @@ export function CheatSheet({
 	return (
 		<div
 			data-esc-layer
-			onClick={onClose}
 			style={{
 				position: "fixed",
 				inset: 0,
 				zIndex: 77,
-				background: "rgba(23,40,63,.32)",
 				animation: "wFade .12s ease",
 			}}
 		>
+			<button
+				type="button"
+				aria-label="Zavřít zkratky"
+				onClick={onClose}
+				style={{ position: "absolute", inset: 0, border: 0, background: "rgba(23,40,63,.32)" }}
+			/>
 			<div
+				role="dialog"
+				aria-modal="true"
+				aria-label="Klávesové zkratky"
 				data-screen-label="Zkratky"
-				onClick={(e) => e.stopPropagation()}
 				style={{
 					position: "fixed",
 					top: "50%",
@@ -79,7 +85,7 @@ export function CheatSheet({
 					<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 800, fontSize: 14, color: "var(--ink)", flex: 1 }}>
 						Klávesové zkratky
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						onClick={onClose}
 						title="Zavřít (Esc)"
 						style={{ fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}

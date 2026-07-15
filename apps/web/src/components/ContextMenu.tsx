@@ -137,15 +137,21 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
 				createPortal(
 					<div
 						data-esc-layer
-						onClick={close}
-						onContextMenu={(e) => {
-							e.preventDefault();
-							close();
-						}}
 						style={{ position: "fixed", inset: 0, zIndex: 85 }}
 					>
+						<button
+							type="button"
+							aria-label="Zavřít kontextovou nabídku"
+							onClick={close}
+							onContextMenu={(e) => {
+								e.preventDefault();
+								close();
+							}}
+							style={{ position: "absolute", inset: 0, border: 0, background: "transparent" }}
+						/>
 						<div
-							onClick={(e) => e.stopPropagation()}
+							role="menu"
+							aria-label="Kontextová nabídka"
 							className="rounded-xl border border-line bg-card p-1 shadow-lg"
 							style={{
 								position: "fixed",
@@ -171,7 +177,8 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
 								);
 								return (
 									<div
-										onClick={(e) => e.stopPropagation()}
+										role="menu"
+										aria-label="Podnabídka"
 										className="rounded-xl border border-line bg-card p-1"
 										style={{
 											position: "fixed",

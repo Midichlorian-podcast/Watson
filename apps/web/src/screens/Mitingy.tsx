@@ -20,6 +20,12 @@ import { useAllMembers } from "../lib/overview";
 import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useTaskDetail } from "../lib/taskDetail";
 import { todayISO } from "../lib/tasks";
+import {
+	dateInTimeZone,
+	deviceTimeZone,
+	wallTimeFromInstant,
+	zonedDateTimeToIso,
+} from "../lib/timeZone";
 import { showToast } from "../lib/toast";
 import { useWorkspace } from "../lib/workspace";
 import { MeetBoard } from "./MeetBoard";
@@ -122,6 +128,7 @@ export function Mitingy() {
 	const { activeWs } = useWorkspace();
 	const { data: session } = useSession();
 	const uid = session?.user?.id;
+	const userTimeZone = session?.user?.timezone ?? deviceTimeZone();
 	const members = useAllMembers();
 	const { open: openTask } = useTaskDetail();
 	const { data: allProjects } = usePsQuery<ProjectRow>(
@@ -159,7 +166,7 @@ export function Mitingy() {
 	useEffect(() => {
 		if (inbox && !projectId) setProjectId(inbox.id);
 		// pProject se nastavuje v openPlan (reset per prostor — audit Fáze 1)
-	}, [inbox?.id, projectId, pProject]);
+	}, [inbox, projectId]);
 	// Přepnutí prostoru = reset cílového projektu revize; stale ID projektu jiného
 	// workspace by zapsalo úkoly mimo poradu (audit v2 — M4).
 	// biome-ignore lint/correctness/useExhaustiveDependencies: reset jen na změnu prostoru
@@ -249,7 +256,7 @@ export function Mitingy() {
 		return projects.filter((p) => (rank[mine.get(p.id) ?? ""] ?? 0) >= 2);
 	}, [projects, myRoleRows]);
 
-	const today = todayISO();
+	const today = dateInTimeZone(userTimeZone);
 	/** Skupiny přehledu: Dnes / Zítra / Tento týden / Později / Proběhlé. */
 	const groups = useMemo(() => {
 		const g: Record<Bucket, HubMeet[]> = {
@@ -281,7 +288,7 @@ export function Mitingy() {
 
 	const openPlan = () => {
 		setPTitle("");
-		setPDate(todayISO());
+		setPDate(dateInTimeZone(userTimeZone));
 		setPTime("10:00");
 		setPDur(60);
 		setPWho(uid ? { [uid]: true } : {});
@@ -318,7 +325,11 @@ export function Mitingy() {
 		try {
 			const meetId = crypto.randomUUID();
 			const taskId = crypto.randomUUID();
-			const startAt = new Date(`${pDate}T${pTime}:00`).toISOString();
+			const startAt = zonedDateTimeToIso(pDate, `${pTime}:00`, userTimeZone);
+			if (!startAt) {
+				showToast(i18n.t("addmodal.invalidLocalTime"));
+				return;
+			}
 			const response = await fetch(`${API_URL}/api/meetings/plan`, {
 				method: "POST",
 				credentials: "include",
@@ -331,6 +342,7 @@ export function Mitingy() {
 					title: name,
 					dueDate: pDate,
 					startAt,
+					startTimezone: userTimeZone,
 					durationMin: pDur,
 					participantIds: who,
 				}),
@@ -347,13 +359,15 @@ export function Mitingy() {
 
 	async function extract() {
 		if (transcript.trim().length < 10 || !activeWs) return;
+		const vendorConsent = window.confirm(i18n.t("common.aiVendorConsentConfirm"));
+		if (!vendorConsent) return;
 		setBusy(true);
 		try {
 			const r = await fetch(`${API_URL}/api/meetings/extract`, {
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ workspaceId: activeWs, title, transcript }),
+				body: JSON.stringify({ workspaceId: activeWs, title, transcript, vendorConsent }),
 			});
 			if (!r.ok) throw new Error("extract");
 			const j = await r.json();
@@ -488,7 +502,10 @@ export function Mitingy() {
 									{rows.map((m) => {
 										const st = meetState(m, today);
 										const day = (m.due_date ?? m.start_date ?? "").slice(0, 10);
-										const time = m.start_date?.slice(11, 16) ?? "";
+										const time =
+											m.start_date && m.start_timezone
+												? (wallTimeFromInstant(m.start_date, m.start_timezone)?.slice(0, 5) ?? "")
+												: m.start_date?.slice(11, 16) ?? "";
 										const sub = subMap.get(m.id);
 										const who = asgMap.get(m.id) ?? [];
 										const proj = projects.find((p) => p.id === m.project_id);
@@ -575,9 +592,9 @@ export function Mitingy() {
 												{/* účastníci — sdílený AvatarGroup (packages/ui), ne lokální kopie stacku */}
 												{who.length > 0 && (
 													<span style={{ flex: "none" }}>
-														<AvatarGroup
-															people={who.map((id) => initials(members.get(id) ?? "?"))}
-														/>
+											<AvatarGroup
+												people={who.map((id) => ({ id, initials: initials(members.get(id) ?? "?") }))}
+											/>
 													</span>
 												)}
 											</button>
@@ -596,14 +613,18 @@ export function Mitingy() {
 							</div>
 							<div style={{ ...CARD, overflow: "hidden" }}>
 								{(detachedMeets ?? []).map((m) => (
-									<div
+									<button
 										key={m.id}
+										type="button"
+										onClick={() => openBoard(m.id)}
+										className="w-full text-left hover:bg-panel-2"
 										style={{
 											display: "flex",
 											alignItems: "center",
 											gap: 12,
 											padding: "12px 14px",
 											borderBottom: "1px solid var(--w-line)",
+											background: "transparent",
 										}}
 									>
 										<div style={{ minWidth: 0, flex: 1 }}>
@@ -623,7 +644,7 @@ export function Mitingy() {
 													: "jen přepis (bez termínu)"}
 											</div>
 										</div>
-									</div>
+									</button>
 								))}
 							</div>
 						</div>

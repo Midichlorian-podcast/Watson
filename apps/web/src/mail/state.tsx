@@ -17,7 +17,9 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { migratePrivateJson, writePrivateJson } from "../lib/powersync/privateState";
 import { showToast } from "../lib/toast";
+import { storageGet, storageSet } from "../lib/storage";
 import {
 	ADM_SEED,
 	type AdmSeed,
@@ -276,7 +278,7 @@ const LS = {
 
 const loadJSON = <T,>(key: string, fallback: T): T => {
 	try {
-		const raw = localStorage.getItem(key);
+		const raw = storageGet(key);
 		return raw ? (JSON.parse(raw) as T) : fallback;
 	} catch {
 		return fallback;
@@ -314,25 +316,21 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const [rozOn, setRozOn] = useState(false);
 	const [selIds, setSelIds] = useState<Record<string, true>>({});
 	const [ov, setOvState] = useState<Record<string, ThreadOv>>({});
-	const [drafts, setDrafts] = useState<Record<string, DraftState>>(() => loadJSON(LS.drafts, {}));
+	const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
 	const [attached, setAttached] = useState<Record<string, string>>({});
 	const [sentX, setSentX] = useState<Record<string, SentMsg[]>>({});
 	const [float, setFloat] = useState<{ id: string; min: boolean } | null>(null);
 	const [chatX, setChatX] = useState<Record<string, ChatExtra[]>>({});
-	const [chatOff, setChatOffRaw] = useState(() => localStorage.getItem(LS.chatOff) === "1");
-	const [perOsoba, setPerOsobaRaw] = useState(() => localStorage.getItem(LS.perOsoba) !== "false");
+	const [chatOff, setChatOffRaw] = useState(() => storageGet(LS.chatOff) === "1");
+	const [perOsoba, setPerOsobaRaw] = useState(() => storageGet(LS.perOsoba) !== "false");
 	const [mbRead, setMbReadState] = useState<Record<string, "per" | "shared">>(() =>
 		loadJSON(LS.mbRead, {}),
 	);
 	// volba podpisu per identita — drží jen explicitní volby, defaulty řeší SigPicker.sigIdOf
-	const [sigChoice, setSigChoiceState] = useState<Record<string, string>>(() =>
-		loadJSON(LS.sig, {}),
-	);
+	const [sigChoice, setSigChoiceState] = useState<Record<string, string>>({});
 	// uživatelské podpisy — seed SIGS jen když v úložišti nic není (pak už žije edit)
-	const [sigs, setSigsState] = useState<MailSig[]>(() => {
-		const saved = loadJSON<MailSig[] | null>(LS.sigs, null);
-		return Array.isArray(saved) && saved.length ? saved : SIGS;
-	});
+	const [sigs, setSigsState] = useState<MailSig[]>(SIGS);
+	const [privateHydrated, setPrivateHydrated] = useState(false);
 	const [gkDone, setGkDone] = useState<Record<string, string>>({});
 	const [sd, setSdState] = useState<Record<string, SdState>>({});
 	const [soTh, setSoTh] = useState<string | null>(null);
@@ -357,36 +355,53 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	// Reálné vazby z tasks.mail_th (bridge); seed jen jako fallback bez aplikace.
 	const taskLinks = bridge?.taskLinks ?? TASK_LINKS_SEED;
 
+	// Citlivé koncepty a podpisy patří do šifrované local-only SQLite tabulky,
+	// ne do čitelného localStorage. Helper zároveň jednorázově přesune stará data.
+	useEffect(() => {
+		let cancelled = false;
+		void Promise.all([
+			migratePrivateJson<Record<string, DraftState>>(LS.drafts, {}),
+			migratePrivateJson<Record<string, string>>(LS.sig, {}),
+			migratePrivateJson<MailSig[]>(LS.sigs, SIGS),
+		]).then(([savedDrafts, savedChoice, savedSigs]) => {
+			if (cancelled) return;
+			setDrafts(savedDrafts);
+			setSigChoiceState(savedChoice);
+			setSigsState(Array.isArray(savedSigs) && savedSigs.length ? savedSigs : SIGS);
+			setPrivateHydrated(true);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
 	// koncepty přežijí reload (prototyp interval 1,5 s; tady debounce 1,5 s)
 	const draftsRef = useRef(drafts);
 	draftsRef.current = drafts;
 	useEffect(() => {
+		void drafts;
+		if (!privateHydrated) return;
 		const t = setTimeout(() => {
-			try {
-				localStorage.setItem(LS.drafts, JSON.stringify(draftsRef.current));
-			} catch {
-				/* plné úložiště — koncept zůstává v paměti */
-			}
+			void writePrivateJson(LS.drafts, draftsRef.current).catch(() => {
+				/* DB chyba — koncept zůstává v paměti a další změna zápis zopakuje */
+			});
 		}, 1500);
 		return () => clearTimeout(t);
-	}, [drafts]);
+	}, [drafts, privateHydrated]);
 	// flush při zavření/skrytí stránky — jinak reload do 1,5 s od posledního
 	// úhozu ztratí text (audit S9; UI slibuje průběžné ukládání)
 	useEffect(() => {
 		const flush = () => {
-			try {
-				localStorage.setItem(LS.drafts, JSON.stringify(draftsRef.current));
-			} catch {
-				/* plné úložiště */
-			}
+			if (privateHydrated)
+				void writePrivateJson(LS.drafts, draftsRef.current).catch(() => {
+					/* nejlepší možný flush; debounce při další změně zápis zopakuje */
+				});
 		};
-		window.addEventListener("beforeunload", flush);
 		document.addEventListener("visibilitychange", flush);
 		return () => {
-			window.removeEventListener("beforeunload", flush);
 			document.removeEventListener("visibilitychange", flush);
 		};
-	}, []);
+	}, [privateHydrated]);
 
 	const undoTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 	const prevSend = useRef<{
@@ -561,7 +576,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 					undoPatch({ spam: true }, "Označeno jako blokované");
 					break;
 				case "unread":
-					setOv(id, { read: e.read ? false : true });
+					setOv(id, { read: !e.read });
 					break;
 				case "mute":
 					setOv(id, { muted: !e.muted });
@@ -881,30 +896,26 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 
 	const setPerOsoba = useCallback((v: boolean) => {
 		setPerOsobaRaw(v);
-		localStorage.setItem(LS.perOsoba, String(v));
+		storageSet(LS.perOsoba, String(v));
 	}, []);
 	const setMbRead = useCallback((mb: string, mode: "per" | "shared") => {
 		setMbReadState((s) => {
 			const next = { ...s, [mb]: mode };
-			localStorage.setItem(LS.mbRead, JSON.stringify(next));
+			storageSet(LS.mbRead, JSON.stringify(next));
 			return next;
 		});
 	}, []);
 	const setSigChoice = useCallback((mb: string, sigId: string) => {
 		setSigChoiceState((s) => {
 			const next = { ...s, [mb]: sigId };
-			localStorage.setItem(LS.sig, JSON.stringify(next));
+			void writePrivateJson(LS.sig, next).catch(() => {});
 			return next;
 		});
 	}, []);
 	const addSig = useCallback((n: string, body: string[]) => {
 		setSigsState((prev) => {
 			const next = [...prev, { id: crypto.randomUUID(), n: n.trim() || "Podpis", body }];
-			try {
-				localStorage.setItem(LS.sigs, JSON.stringify(next));
-			} catch {
-				/* plné úložiště */
-			}
+			void writePrivateJson(LS.sigs, next).catch(() => {});
 			return next;
 		});
 	}, []);
@@ -919,28 +930,20 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 						}
 					: s,
 			);
-			try {
-				localStorage.setItem(LS.sigs, JSON.stringify(next));
-			} catch {
-				/* plné úložiště */
-			}
+			void writePrivateJson(LS.sigs, next).catch(() => {});
 			return next;
 		});
 	}, []);
 	const deleteSig = useCallback((id: string) => {
 		setSigsState((prev) => {
 			const next = prev.filter((s) => s.id !== id);
-			try {
-				localStorage.setItem(LS.sigs, JSON.stringify(next));
-			} catch {
-				/* plné úložiště */
-			}
+			void writePrivateJson(LS.sigs, next).catch(() => {});
 			return next;
 		});
 	}, []);
 	const setChatOff = useCallback((v: boolean) => {
 		setChatOffRaw(v);
-		localStorage.setItem(LS.chatOff, v ? "1" : "0");
+		storageSet(LS.chatOff, v ? "1" : "0");
 	}, []);
 
 	const gkDecide = useCallback<MailCtxValue["gkDecide"]>((id, verdict) => {

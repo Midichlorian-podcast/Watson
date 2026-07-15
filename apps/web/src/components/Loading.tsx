@@ -24,6 +24,19 @@ export function Spinner({ size = 22 }: { size?: number }) {
 	);
 }
 
+/** Stav konkrétního lokálního dotazu; brání falešným business empty/KPI stavům po SyncGate. */
+export function DataLoading() {
+	const { t } = useTranslation();
+	return (
+		<div role="status" className="flex items-center justify-center" style={{ gap: 10, padding: "48px 20px" }}>
+			<Spinner size={22} />
+			<span className="font-body text-ink-3" style={{ fontSize: 12.5 }}>
+				{t("shell.syncing")}
+			</span>
+		</div>
+	);
+}
+
 /**
  * Gate první synchronizace: dokud je klient připojený a NEMÁ za sebou první sync,
  * zobrazí spinner místo bliknutí prázdné obrazovky. Offline (nepřipojeno) NEblokuje —

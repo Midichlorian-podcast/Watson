@@ -5,8 +5,8 @@
  * NÁVRH se uloží do meetings.extraction (jsonb) → syncne se klientovi přes PowerSync,
  * kde ho člověk zreviduje a teprve pak z něj vzniknou reálné úkoly (human-in-the-loop).
  *
- * Bez ANTHROPIC_API_KEY (aiEnabled=false) běží deterministický `mockExtract`, ať je
- * celý tok testovatelný i bez klíče. Přepis se do promptu vkládá jako DATA, ne instrukce.
+ * Bez ANTHROPIC_API_KEY běží deterministický `mockExtract` pouze v lokálním/dev režimu.
+ * Produkce bez providera fail-closed vrací 503. Přepis se vkládá jako DATA, ne instrukce.
  */
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -20,7 +20,6 @@ import {
 	isNull,
 	meetings,
 	memberships,
-	ne,
 	projectMembers,
 	projects,
 	sql,
@@ -29,8 +28,9 @@ import {
 } from "@watson/db";
 import { Hono } from "hono";
 import { z } from "zod";
+import { authorizeAiVendorTransfer, redactVendorText } from "./aiPolicy";
 import { auth } from "./auth";
-import { aiEnabled, env } from "./env";
+import { aiEnabled, aiMockEnabled, env } from "./env";
 
 export const meetingsRoutes = new Hono<{ Variables: { requestId: string } }>();
 
@@ -120,11 +120,13 @@ async function claudeExtract(
 	roster: RosterRow[],
 	todayISO: string,
 ): Promise<TaskProposal[]> {
-	const client = new Anthropic({ apiKey: env.anthropicApiKey });
+	const client = new Anthropic({ apiKey: env.anthropicApiKey, timeout: 90_000, maxRetries: 1 });
 	const rosterText = roster
 		.map(
 			(r) =>
-				`- ${r.name ?? "?"} (id: ${r.id})${r.areas ? ` — oblasti: ${r.areas}` : ""}${r.bio ? `; ${r.bio}` : ""}`,
+				redactVendorText(
+					`- ${r.name ?? "?"} (id: ${r.id})${r.areas ? ` — oblasti: ${r.areas}` : ""}${r.bio ? `; ${r.bio}` : ""}`,
+				),
 		)
 		.join("\n");
 
@@ -304,14 +306,29 @@ async function meetingParticipant(
 	return who.some((w) => w.userId === userId);
 }
 
-/** Účastník + ne-guest člen prostoru — brána pro ZÁPIS obsahu (extract/uložení/commit). */
-async function canWriteMeetingContent(
-	db: ReturnType<typeof getDb>,
+type DbTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
+/** Stejná content ACL uvnitř zamčené business transakce (revokace se znovu ověří). */
+async function canWriteMeetingContentTx(
+	tx: DbTransaction,
 	m: typeof meetings.$inferSelect,
 	userId: string,
 ): Promise<boolean> {
-	if (!(await memberNotGuest(db, m.workspaceId, userId))) return false;
-	return meetingParticipant(db, m, userId);
+	const role = (
+		await tx
+			.select({ role: memberships.role })
+			.from(memberships)
+			.where(and(eq(memberships.workspaceId, m.workspaceId), eq(memberships.userId, userId)))
+			.limit(1)
+	)[0]?.role;
+	if (!role || role === "guest") return false;
+	if (!m.hubTaskId) return m.createdBy === userId;
+	const participants = await tx
+		.select({ userId: assignments.userId })
+		.from(assignments)
+		.where(eq(assignments.taskId, m.hubTaskId));
+	if (participants.length === 0) return m.createdBy === userId;
+	return participants.some((participant) => participant.userId === userId);
 }
 
 const planMeetingSchema = z
@@ -323,6 +340,11 @@ const planMeetingSchema = z
 		title: z.string().trim().min(1).max(300),
 		dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 		startAt: z.string().datetime({ offset: true }),
+		startTimezone: z
+			.string()
+			.max(64)
+			.regex(/^(UTC|[A-Za-z_]+(\/[A-Za-z0-9_+.-]+)+)$/)
+			.optional(),
 		durationMin: z.number().int().min(5).max(1440),
 		participantIds: z.array(z.string().uuid()).min(1).max(100),
 		seriesId: z.string().uuid().optional(),
@@ -352,7 +374,13 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	const parsed = planMeetingSchema.safeParse(await c.req.json().catch(() => null));
 	if (!parsed.success) return c.json({ error: "invalid_meeting_plan" }, 422);
-	const body = parsed.data;
+	const startTimezone = parsed.data.startTimezone ?? session.user.timezone ?? "Europe/Prague";
+	try {
+		new Intl.DateTimeFormat("en-GB", { timeZone: startTimezone }).format(0);
+	} catch {
+		return c.json({ error: "invalid_start_timezone" }, 422);
+	}
+	const body = { ...parsed.data, startTimezone };
 	const participantIds = [...new Set(body.participantIds)];
 	const carryTaskIds = [...new Set(body.carryTaskIds ?? [])];
 	const planHash = await commandHash({
@@ -421,6 +449,7 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 				hub.createdBy !== session.user.id ||
 				hub.dueDate?.toISOString().slice(0, 10) !== body.dueDate ||
 				hub.startDate?.getTime() !== new Date(body.startAt).getTime() ||
+				hub.startTimezone !== body.startTimezone ||
 				hub.durationMin !== body.durationMin ||
 				!sameParticipants ||
 				!sameCarry
@@ -516,6 +545,7 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 			priority: 4,
 			dueDate: new Date(`${body.dueDate}T00:00:00.000Z`),
 			startDate: new Date(body.startAt),
+			startTimezone: body.startTimezone,
 			durationMin: body.durationMin,
 			assignmentMode: participantIds.length > 1 ? "shared_all" : "single",
 			kind: "meeting",
@@ -584,17 +614,38 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
  * S `meetingId` NEzakládá nový záznam, ale doplní přepis+návrhy k EXISTUJÍCÍ (naplánované)
  * poradě — audit Fáze 1: dřív vznikal duplikát a hub zůstal navěky „čeká na zápis".
  */
+const extractMeetingSchema = z
+	.object({
+		workspaceId: z.string().uuid().optional(),
+		meetingId: z.string().uuid().optional(),
+		title: z.string().trim().max(300).optional(),
+		transcript: z.string().trim().min(10).max(100_000),
+		vendorConsent: z.boolean(),
+		baseUpdatedAt: z.string().datetime({ offset: true }).optional(),
+	})
+	.strict()
+	.superRefine((value, ctx) => {
+		if (value.meetingId && !value.baseUpdatedAt)
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["baseUpdatedAt"],
+				message: "existing meeting requires a concurrency base",
+			});
+		if (!value.meetingId && !value.workspaceId)
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["workspaceId"],
+				message: "new meeting requires workspaceId",
+			});
+	});
+
 meetingsRoutes.post("/api/meetings/extract", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const body = (await c.req.json().catch(() => ({}))) as {
-		workspaceId?: string;
-		meetingId?: string;
-		title?: string;
-		transcript?: string;
-	};
-	const transcript = (body.transcript ?? "").trim();
-	if (transcript.length < 10) return c.json({ error: "empty transcript" }, 400);
+	const parsed = extractMeetingSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_meeting_extract" }, 422);
+	const body = parsed.data;
+	const transcript = body.transcript;
 
 	const db = getDb();
 	// Existující porada: workspace se bere z JEJÍHO řádku (ne z klienta — anti-spoof).
@@ -604,7 +655,7 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 		if (!existing) return c.json({ error: "not found" }, 404);
 	}
 	const workspaceId = existing?.workspaceId ?? body.workspaceId;
-	if (!workspaceId) return c.json({ error: "missing workspaceId" }, 400);
+	if (!workspaceId) return c.json({ error: "missing_workspace" }, 422);
 	// CC-P0-13 — host obsah porad nevytváří ani nečte; extract navíc volá AI (náklady).
 	if (!(await memberNotGuest(db, workspaceId, session.user.id)))
 		return c.json({ error: "forbidden" }, 403);
@@ -616,6 +667,7 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 	// + regres statusu; verze/soubeh řeší až Conflict Inbox — CC-P0-04/07).
 	if (existing && existing.status === "committed")
 		return c.json({ error: "already committed" }, 409);
+	if (!aiEnabled && !aiMockEnabled) return c.json({ error: "ai_not_configured" }, 503);
 
 	const roster: RosterRow[] = await db
 		.select({ id: users.id, name: users.name, areas: memberships.areas, bio: memberships.bio })
@@ -624,36 +676,73 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 		.where(eq(memberships.workspaceId, workspaceId));
 	const rosterIds = new Set(roster.map((r) => r.id));
 	const todayISO = new Date().toISOString().slice(0, 10);
+	if (aiEnabled) {
+		const authorization = await authorizeAiVendorTransfer({
+			workspaceId,
+			userId: session.user.id,
+			capability: "meeting_extract",
+			userConsent: body.vendorConsent === true,
+			requestId: c.get("requestId") ?? null,
+			inputChars: transcript.length,
+			model: env.anthropicModel,
+		});
+		if (!authorization.ok)
+			return c.json({ error: authorization.error }, authorization.status);
+	}
 
 	let proposals: TaskProposal[];
 	try {
 		proposals = aiEnabled
-			? await claudeExtract(transcript, roster, todayISO)
+			? await claudeExtract(redactVendorText(transcript), roster, todayISO)
 			: mockExtract(transcript, roster);
 	} catch (err) {
-		console.error("[watson-api] extrakce mítingu selhala:", err);
+		console.error(
+			JSON.stringify({
+				level: "error",
+				event: "meeting_extraction_failed",
+				requestId: c.get("requestId") ?? null,
+				name: err instanceof Error ? err.name : "UnknownError",
+			}),
+		);
 		return c.json({ error: "extraction failed" }, 502);
 	}
 	const clean = sanitizeProposals(proposals, rosterIds);
 
 	if (existing) {
-		// Doplň přepis+návrhy k naplánované poradě (žádný duplikát).
-		const extractedAt = new Date();
-		await db
-			.update(meetings)
-			.set({
-				transcript: transcript.slice(0, 100000),
-				extraction: clean,
-				status: "extracted",
-				updatedAt: extractedAt,
-			})
-			.where(eq(meetings.id, existing.id));
+		// AI call nesmí držet DB lock, proto po návratu znovu načti autoritativní
+		// řádek pod stejným lockem jako commit/autosave a ověř ACL i client base.
+		const base = new Date(body.baseUpdatedAt ?? "");
+		const result = await db.transaction(async (tx) => {
+			await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${existing.id}, 0))`);
+			const current = (
+				await tx.select().from(meetings).where(eq(meetings.id, existing.id)).limit(1)
+			)[0];
+			if (!current) return { missing: true as const };
+			if (!(await canWriteMeetingContentTx(tx, current, session.user.id)))
+				return { forbidden: true as const };
+			if (
+				current.status === "committed" ||
+				Number.isNaN(base.getTime()) ||
+				current.updatedAt.getTime() !== base.getTime()
+			)
+				return { conflict: true as const, updatedAt: current.updatedAt };
+			const extractedAt = new Date();
+			await tx
+				.update(meetings)
+				.set({ transcript, extraction: clean, status: "extracted", updatedAt: extractedAt })
+				.where(eq(meetings.id, current.id));
+			return { extractedAt };
+		});
+		if ("missing" in result) return c.json({ error: "not_found" }, 404);
+		if ("forbidden" in result) return c.json({ error: "not-a-participant" }, 403);
+		if ("conflict" in result && result.updatedAt)
+			return c.json({ error: "conflict", updatedAt: result.updatedAt.toISOString() }, 409);
 		return c.json({
 			ok: true,
 			meetingId: existing.id,
 			proposals: clean,
-			mock: !aiEnabled,
-			updatedAt: extractedAt.toISOString(),
+			mock: aiMockEnabled,
+			updatedAt: result.extractedAt.toISOString(),
 		});
 	}
 
@@ -663,7 +752,7 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 			.values({
 				workspaceId,
 				title: body.title?.trim().slice(0, 300) || null,
-				transcript: transcript.slice(0, 100000),
+				transcript,
 				extraction: clean,
 				status: "extracted",
 				createdBy: session.user.id,
@@ -671,7 +760,7 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 			.returning({ id: meetings.id })
 	)[0];
 
-	return c.json({ ok: true, meetingId: inserted?.id, proposals: clean, mock: !aiEnabled });
+	return c.json({ ok: true, meetingId: inserted?.id, proposals: clean, mock: aiMockEnabled });
 });
 
 /**
@@ -723,71 +812,83 @@ function sanitizeReview(raw: unknown): TaskProposal[] {
  * Přepíše meetings.extraction — board ji při otevření rehydratuje, takže úpravy
  * přežijí reload i přepnutí porady v řetězu. Prázdné pole = vědomé zahození návrhů.
  */
+const saveExtractionSchema = z
+	.object({
+		proposals: z.unknown(),
+		baseUpdatedAt: z.string().datetime({ offset: true }),
+	})
+	.strict();
+
 meetingsRoutes.post("/api/meetings/:id/extraction", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const body = (await c.req.json().catch(() => ({}))) as {
-		proposals?: unknown;
-		baseUpdatedAt?: string;
-	};
+	const parsed = saveExtractionSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_extraction_save" }, 422);
+	const body = parsed.data;
 	const db = getDb();
-	const m = (
-		await db
-			.select()
-			.from(meetings)
-			.where(eq(meetings.id, c.req.param("id")))
-	)[0];
-	if (!m) return c.json({ error: "not found" }, 404);
-	if (!(await canWriteMeetingContent(db, m, session.user.id)))
-		return c.json({ error: "not-a-participant" }, 403);
-	if (m.status === "committed") return c.json({ error: "already committed" }, 409);
-	// Version check (rozhodnutí 15.6 — obecné LWW není řešení): klient posílá
-	// updatedAt, ze kterého revizi rozepsal; nesouhlas = souběžná revize → 409,
-	// klient nabídne načtení aktuální verze. Bez base (starší klient) neblokujeme.
-	const base = body.baseUpdatedAt ? new Date(body.baseUpdatedAt) : null;
-	if (base && !Number.isNaN(base.getTime()) && m.updatedAt.getTime() !== base.getTime())
-		return c.json({ error: "conflict", updatedAt: m.updatedAt.toISOString() }, 409);
 	const clean = sanitizeReview(body.proposals);
-	const now = new Date();
-	// Podmíněný UPDATE — commit mohl proběhnout mezi čtením a zápisem (TOCTOU).
-	// Pozn.: verzi hlídá base-check výš (getTime v ms); eq na timestamptz ve WHERE
-	// by selhal na mikrosekundách (driver vrací ms) — proto tu není.
-	const updated = await db
-		.update(meetings)
-		.set({ extraction: clean, updatedAt: now })
-		.where(and(eq(meetings.id, m.id), ne(meetings.status, "committed")))
-		.returning({ id: meetings.id });
-	if (updated.length === 0) return c.json({ error: "conflict" }, 409);
-	return c.json({ ok: true, count: clean.length, updatedAt: now.toISOString() });
+	const base = new Date(body.baseUpdatedAt);
+	const meetingId = c.req.param("id");
+	const result = await db.transaction(async (tx) => {
+		await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
+		const m = (await tx.select().from(meetings).where(eq(meetings.id, meetingId)).limit(1))[0];
+		if (!m) return { missing: true as const };
+		if (!(await canWriteMeetingContentTx(tx, m, session.user.id)))
+			return { forbidden: true as const };
+		if (m.status === "committed" || m.updatedAt.getTime() !== base.getTime())
+			return { conflict: true as const, updatedAt: m.updatedAt };
+		const updatedAt = new Date();
+		await tx.update(meetings).set({ extraction: clean, updatedAt }).where(eq(meetings.id, m.id));
+		return { updatedAt };
+	});
+	if ("missing" in result) return c.json({ error: "not_found" }, 404);
+	if ("forbidden" in result) return c.json({ error: "not-a-participant" }, 403);
+	if ("conflict" in result)
+		return c.json({ error: "conflict", updatedAt: result.updatedAt.toISOString() }, 409);
+	return c.json({ ok: true, count: clean.length, updatedAt: result.updatedAt.toISOString() });
 });
+
+const saveTranscriptSchema = z
+	.object({
+		transcript: z.string().trim().min(1).max(100_000),
+		baseUpdatedAt: z.string().datetime({ offset: true }),
+	})
+	.strict();
 
 meetingsRoutes.post("/api/meetings/:id/transcript", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const body = (await c.req.json().catch(() => ({}))) as { transcript?: string };
-	const transcript = (body.transcript ?? "").trim();
-	if (!transcript) return c.json({ error: "empty transcript" }, 400);
+	const parsed = saveTranscriptSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_transcript_save" }, 422);
+	const body = parsed.data;
+	const transcript = body.transcript;
+	const base = new Date(body.baseUpdatedAt);
+	const meetingId = c.req.param("id");
 	const db = getDb();
-	const m = (
-		await db
-			.select()
-			.from(meetings)
-			.where(eq(meetings.id, c.req.param("id")))
-	)[0];
-	if (!m) return c.json({ error: "not found" }, 404);
-	if (!(await canWriteMeetingContent(db, m, session.user.id)))
-		return c.json({ error: "not-a-participant" }, 403);
-	if (m.status === "committed") return c.json({ error: "already committed" }, 409);
-	const savedAt = new Date();
-	await db
-		.update(meetings)
-		.set({
-			transcript: transcript.slice(0, 100000),
-			status: m.status === "extracted" ? "extracted" : "transcribed",
-			updatedAt: savedAt,
-		})
-		.where(eq(meetings.id, m.id));
-	return c.json({ ok: true, updatedAt: savedAt.toISOString() });
+	const result = await db.transaction(async (tx) => {
+		await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
+		const m = (await tx.select().from(meetings).where(eq(meetings.id, meetingId)).limit(1))[0];
+		if (!m) return { missing: true as const };
+		if (!(await canWriteMeetingContentTx(tx, m, session.user.id)))
+			return { forbidden: true as const };
+		if (m.status === "committed" || m.updatedAt.getTime() !== base.getTime())
+			return { conflict: true as const, updatedAt: m.updatedAt };
+		const updatedAt = new Date();
+		await tx
+			.update(meetings)
+			.set({
+				transcript,
+				status: m.status === "extracted" ? "extracted" : "transcribed",
+				updatedAt,
+			})
+			.where(eq(meetings.id, m.id));
+		return { updatedAt };
+	});
+	if ("missing" in result) return c.json({ error: "not_found" }, 404);
+	if ("forbidden" in result) return c.json({ error: "not-a-participant" }, 403);
+	if ("conflict" in result)
+		return c.json({ error: "conflict", updatedAt: result.updatedAt.toISOString() }, 409);
+	return c.json({ ok: true, updatedAt: result.updatedAt.toISOString() });
 });
 
 /** Seznam mítingů prostoru (nejnovější první). */

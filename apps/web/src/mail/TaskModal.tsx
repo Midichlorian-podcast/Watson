@@ -102,7 +102,7 @@ export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }
 
 	return (
 		<>
-			<div
+			<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 				onClick={onClose}
 				style={{
 					position: "fixed",
@@ -144,7 +144,7 @@ export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }
 					>
 						Udělat z mailu úkol
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						onClick={onClose}
 						style={{ fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
 					>
@@ -189,7 +189,7 @@ export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }
 						<div style={{ ...lbl, margin: "0 0 5px" }}>PRIORITA</div>
 						<div style={{ display: "flex", gap: 4 }}>
 							{(["p1", "p2", "p3", "p4"] as const).map((p) => (
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									key={p}
 									onClick={() => setPrio(p)}
 									data-statepill
@@ -234,7 +234,7 @@ export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }
 				</div>
 				{projects.length > 0 ? (
 					<div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => setProjId(null)}
 							data-statepill
 							data-on={projId === null || undefined}
@@ -249,7 +249,7 @@ export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }
 							Bez projektu
 						</span>
 						{projects.map((p) => (
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								key={p.id}
 								onClick={() => setProjId(p.id)}
 								data-statepill
@@ -298,10 +298,10 @@ export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }
 				/>
 
 				<div style={{ display: "flex", gap: 7, marginTop: 13, justifyContent: "flex-end" }}>
-					<span data-ghost onClick={onClose} style={{ fontSize: 11.5, padding: "7px 13px" }}>
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }} data-ghost onClick={onClose} style={{ fontSize: 11.5, padding: "7px 13px" }}>
 						Zrušit
 					</span>
-					<span data-primary onClick={create} style={{ fontSize: 11.5, padding: "7px 15px" }}>
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }} data-primary onClick={create} style={{ fontSize: 11.5, padding: "7px 15px" }}>
 						Vytvořit úkol
 					</span>
 				</div>

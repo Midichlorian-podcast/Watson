@@ -134,7 +134,7 @@ async function activateRun(steps: ChainStepLite[], i: number): Promise<void> {
 	await setStepState(first.id, "active");
 	for (let j = i + 1; j < steps.length; j++) {
 		const st = steps[j];
-		if (!st || st.gate !== "with_previous" || isClosed(st)) break;
+		if (st?.gate !== "with_previous" || isClosed(st)) break;
 		await setStepState(st.id, "active");
 	}
 }
@@ -291,7 +291,7 @@ export function computeChainStates(
 			desired.set(s.id, "active");
 			for (let j = i + 1; j < steps.length; j++) {
 				const st = steps[j];
-				if (!st || st.gate !== "with_previous" || closed(st)) break;
+				if (st?.gate !== "with_previous" || closed(st)) break;
 				desired.set(st.id, "active");
 			}
 		}
@@ -329,10 +329,25 @@ export async function repairChain(chainId: string): Promise<void> {
 /** Ruční aktivace dormant kroku (gate manual) — jen když jsou předchozí uzavřené. */
 export async function activateStepManually(step: ChainStepLite): Promise<void> {
 	if (!step.chain_id) return;
-	const steps = await loadChainSteps(step.chain_id);
-	const i = steps.findIndex((s) => s.id === step.id);
-	if (i < 0 || !steps.slice(0, i).every(isClosed)) return;
-	await activateRun(steps, i);
+	const response = await fetch(`${API_URL}/api/chains/steps/${step.id}/activate`, {
+		method: "POST",
+		credentials: "include",
+	});
+	const body = (await response.json().catch(() => ({}))) as {
+		error?: string;
+		activatedStepIds?: string[];
+	};
+	if (!response.ok || !body.activatedStepIds) {
+		throw new Error(body.error ?? `manual_activation_${response.status}`);
+	}
+	await powerSync.writeTransaction(async (tx) => {
+		for (const id of body.activatedStepIds ?? []) {
+			await tx.execute(
+				"UPDATE chain_steps SET step_state = 'active', activated_at = ? WHERE id = ?",
+				[new Date().toISOString(), id],
+			);
+		}
+	});
 	await syncChainState(step.chain_id);
 }
 

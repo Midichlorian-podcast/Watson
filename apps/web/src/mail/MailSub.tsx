@@ -38,7 +38,7 @@ function SRow({
 	pad?: string;
 }) {
 	return (
-		<div
+		<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 			data-srow
 			data-active={active || undefined}
 			onClick={onClick}
@@ -162,7 +162,7 @@ export function MailSub({
 						Doručené
 					</span>
 					{/* přepínač sbalení panelu na ikony (prototyp subToggle, ř. 349) */}
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-rowbtn
 						onClick={onToggleSube}
 						title={sube ? "Sbalit složky na ikony" : "Rozbalit panel složek"}
@@ -515,7 +515,7 @@ export function MailSub({
 							</span>
 						)}
 						{mb.warn && !m.adm.fixed && (
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								data-sublbl
 								data-health="warn"
 								title="Token vyprší za 12 dní — klikem otevřeš Administraci pošty"
@@ -682,7 +682,7 @@ export function MailSub({
 				</SRow>
 			</div>
 			{drawer && (
-				<div
+				<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 					data-mscrim
 					onClick={onCloseDrawer}
 					style={{

@@ -3,12 +3,13 @@ import { useTranslation } from "@watson/i18n";
 import { useMemo } from "react";
 import { Board } from "../components/Board";
 import { Calendar } from "../components/CalendarLazy";
+import { DataLoading } from "../components/Loading";
 import { TaskItem } from "../components/TaskItem";
 import { useSession } from "../lib/auth-client";
 import { useFlowSteps } from "../lib/flowSteps";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import type { TaskRow } from "../lib/powersync/AppSchema";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useViewMode } from "../lib/viewMode";
 import { NOT_MEETING } from "../lib/tasks";
 
@@ -20,16 +21,16 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 	const { t } = useTranslation();
 	const { data: session } = useSession();
 	const meId = session?.user?.id;
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 	const inboxIds = useMemo(() => inboxProjectIds(projects), [projects]);
 	const flowSteps = useFlowSteps();
 	const { view } = useViewMode();
 
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		`SELECT * FROM tasks WHERE completed_at IS NULL AND ${NOT_MEETING} ORDER BY priority, due_date IS NULL, due_date`,
 	);
-	const { data: assignments } = usePsQuery<{
+	const { data: assignments, isLoading: assignmentsLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
@@ -70,7 +71,9 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 				</span>
 			</div>
 
-			{view === "calendar" ? (
+			{projectsLoading || tasksLoading || assignmentsLoading ? (
+				<DataLoading />
+			) : view === "calendar" ? (
 				<Calendar tasks={shown} />
 			) : view === "board" ? (
 				<Board tasks={shown} />

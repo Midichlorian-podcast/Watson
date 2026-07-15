@@ -9,66 +9,42 @@
  * žádné natvrdo psané SQL per tabulka.
  */
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { getDb, sql } from "@watson/db";
 import { Hono } from "hono";
-import { exportJWK, generateKeyPair, importJWK, type JWK, SignJWT } from "jose";
+import { SignJWT } from "jose";
 import { z } from "zod";
 import { auth } from "./auth";
+import { loadSigningKeyRing, SIGNING_ALG } from "./signingKeys";
 
-const KID = "watson-dev-1";
-const ALG = "RS256";
 const AUDIENCE = "powersync";
+const POWERSYNC_ISSUER = process.env.POWERSYNC_ISSUER ?? "watson-powersync";
 /** Bridge-token pro LuckyOS employee API (zaměstnanecký modul). */
 const LUCKYOS_AUDIENCE = "luckyos";
-const BRIDGE_ISSUER = "watson";
-const keyDir = fileURLToPath(new URL("../.keys", import.meta.url));
-const keyFile = fileURLToPath(new URL("../.keys/powersync-key.json", import.meta.url));
+const LUCKYOS_ISSUER = process.env.LUCKYOS_ISSUER ?? "watson-luckyos";
 
-let privateKey: CryptoKey;
-let publicJwk: JWK;
+// Oddělené compromise domains. JWKS obsahuje aktuální i staré veřejné klíče
+// během overlap rotace, ale podpis vždy používá právě currentKid.
+const powerSyncKeyRing = await loadSigningKeyRing("powersync");
+const luckyOsKeyRing = await loadSigningKeyRing("luckyos");
 
-async function loadKeys() {
-	if (existsSync(keyFile)) {
-		// CC-P0-12: soubor s privátním klíčem smí číst jen vlastník — starší generace
-		// ho zapsala s výchozím 644, tak práva zpřísni i zpětně.
-		chmodSync(keyFile, 0o600);
-		const stored = JSON.parse(readFileSync(keyFile, "utf8")) as {
-			privateJwk: JWK;
-			publicJwk: JWK;
-		};
-		privateKey = (await importJWK(stored.privateJwk, ALG)) as CryptoKey;
-		publicJwk = stored.publicJwk;
-		return;
-	}
-	const { privateKey: priv, publicKey: pub } = await generateKeyPair(ALG, {
-		extractable: true,
-	});
-	privateKey = priv as CryptoKey;
-	const privateJwk = await exportJWK(priv);
-	publicJwk = { ...(await exportJWK(pub)), kid: KID, alg: ALG, use: "sig" };
-	if (!existsSync(keyDir)) mkdirSync(keyDir, { recursive: true, mode: 0o700 });
-	// CC-P0-12: privátní klíč pouze pro vlastníka (0600), ne world-readable 644
-	writeFileSync(keyFile, JSON.stringify({ privateJwk, publicJwk }, null, 2), { mode: 0o600 });
-	console.log("[watson-api] vygenerován nový PowerSync RSA keypair (.keys/)");
-}
-await loadKeys();
+export const getPowerSyncJwks = () => powerSyncKeyRing.publicJwks;
+export const getLuckyOsJwks = () => luckyOsKeyRing.publicJwks;
 
 /** Krátkodobý JWT pro PowerSync (sub = user id). */
-async function issueToken(userId: string) {
+export async function issuePowerSyncToken(userId: string) {
 	return new SignJWT({})
-		.setProtectedHeader({ alg: ALG, kid: KID })
+		.setProtectedHeader({ alg: SIGNING_ALG, kid: powerSyncKeyRing.currentKid })
 		.setSubject(userId)
 		.setAudience(AUDIENCE)
+		.setIssuer(POWERSYNC_ISSUER)
 		.setIssuedAt()
 		.setExpirationTime("10m")
-		.sign(privateKey);
+		.sign(powerSyncKeyRing.privateKey);
 }
 
 /**
  * Krátkodobý bridge-token pro LuckyOS employee API (server-to-server). LuckyOS ho ověří
- * proti JWKS na `/api/powersync/jwks` (stejný keypair), zkontroluje `aud`/`iss`/`exp`
+ * proti JWKS na `/api/employee/jwks` (oddělený keyring), zkontroluje `aud`/`iss`/`exp`
  * a z claimu `email` dohledá osobu. Nikdy neopustí server (prohlížeč ho nevidí).
  * Spec pro LuckyOS: files/ZAMESTNANEC_LUCKYOS_pozadavky_2026-07-12.md §1.
  */
@@ -78,25 +54,34 @@ export async function issueBridgeToken(claims: { email: string; personId?: strin
 		role: "employee",
 		...(claims.personId ? { person_id: claims.personId } : {}),
 	})
-		.setProtectedHeader({ alg: ALG, kid: KID })
+		.setProtectedHeader({ alg: SIGNING_ALG, kid: luckyOsKeyRing.currentKid })
 		.setSubject(claims.personId ?? claims.email)
 		.setAudience(LUCKYOS_AUDIENCE)
-		.setIssuer(BRIDGE_ISSUER)
+		.setIssuer(LUCKYOS_ISSUER)
 		.setIssuedAt()
 		.setExpirationTime("5m")
-		.sign(privateKey);
+		.sign(luckyOsKeyRing.privateKey);
 }
 
 export const powersyncRoutes = new Hono<{ Variables: { requestId: string } }>();
 
 /** JWKS — PowerSync service sem chodí pro veřejné klíče. */
-powersyncRoutes.get("/api/powersync/jwks", (c) => c.json({ keys: [publicJwk] }));
+powersyncRoutes.get("/api/powersync/jwks", (c) =>
+	c.json({ keys: getPowerSyncJwks() }),
+);
+/** LuckyOS nikdy nedostane PowerSync klíče a naopak. Alias odpovídá integračnímu kontraktu. */
+powersyncRoutes.get("/api/employee/jwks", (c) =>
+	c.json({ keys: getLuckyOsJwks() }),
+);
+powersyncRoutes.get("/api/integrations/luckyos/jwks", (c) =>
+	c.json({ keys: getLuckyOsJwks() }),
+);
 
 /** Vydá PowerSync token přihlášenému uživateli + endpoint sync služby. */
 powersyncRoutes.get("/api/powersync/token", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const token = await issueToken(session.user.id);
+	const token = await issuePowerSyncToken(session.user.id);
 	return c.json({
 		token,
 		powersync_url: process.env.POWERSYNC_URL || "http://localhost:8080",
@@ -166,6 +151,37 @@ const PROJECT_ROLE_RANK: Record<string, number> = {
 	manager: 3,
 };
 
+type WorkspaceRole = "guest" | "member" | "manager" | "admin" | "owner";
+const WORKSPACE_ROLE_RANK: Record<WorkspaceRole, number> = {
+	guest: 0,
+	member: 1,
+	manager: 2,
+	admin: 3,
+	owner: 4,
+};
+
+/**
+ * Centrální default-deny policy pro workspace-scoped sync zdroje. Chybějící
+ * resource/action není „member může", ale zákaz. Jemné author/project/tenant
+ * guardy se vyhodnocují navíc pod touto minimální rolí.
+ */
+export const WORKSPACE_WRITE_POLICY: Record<
+	string,
+	Partial<Record<Op, WorkspaceRole>>
+> = {
+	goals: { PUT: "manager", PATCH: "manager", DELETE: "manager" },
+	goal_projects: { PUT: "manager", PATCH: "manager", DELETE: "manager" },
+	goal_milestones: { PUT: "manager", PATCH: "manager", DELETE: "manager" },
+	contacts: { PUT: "member", PATCH: "member", DELETE: "member" },
+	lists: { PUT: "member", PATCH: "member", DELETE: "member" },
+	list_sections: { PUT: "member", PATCH: "member", DELETE: "member" },
+	list_items: { PUT: "member", PATCH: "member", DELETE: "member" },
+	list_templates: { PUT: "manager", PATCH: "manager", DELETE: "manager" },
+	// Metadata meetings smí vzniknout pouze /api/meetings/plan nebo /extract.
+	// Sync nechává jen autorovu editaci/odstranění starších řádků.
+	meetings: { PATCH: "member" },
+};
+
 /** Write registry — exportovaný i pro contract test (verify-contract.ts). */
 export const TABLES: Record<string, TableDef> = {
 	tasks: {
@@ -179,6 +195,7 @@ export const TABLES: Record<string, TableDef> = {
 			color: "text",
 			due_date: "ts",
 			start_date: "ts",
+			start_timezone: "text",
 			deadline: "ts",
 			duration_min: "int",
 			days: "int",
@@ -378,6 +395,10 @@ export const TABLES: Record<string, TableDef> = {
 		columns: { goal_id: "text", project_id: "text", workspace_id: "text" },
 		hasUpdatedAt: false,
 		workspaceVia: { kind: "column", col: "workspace_id" },
+		refWorkspaceCols: [
+			{ col: "goal_id", table: "goals" },
+			{ col: "project_id", table: "projects" },
+		],
 	},
 	goal_milestones: {
 		columns: {
@@ -389,6 +410,7 @@ export const TABLES: Record<string, TableDef> = {
 		},
 		hasUpdatedAt: false,
 		workspaceVia: { kind: "column", col: "workspace_id" },
+		refWorkspaceCols: [{ col: "goal_id", table: "goals" }],
 	},
 	// Seznamy — checklisty na akce (handoff 2026-07-10): instance + sekce + položky + šablony.
 	contacts: {
@@ -403,6 +425,7 @@ export const TABLES: Record<string, TableDef> = {
 		},
 		hasUpdatedAt: true,
 		creatorCol: "created_by",
+		authorEditOnly: true,
 		workspaceVia: { kind: "column", col: "workspace_id" },
 	},
 	// Meets — porada (sidecar kotevního úkolu). Klient smí ZALOŽIT metadata (title/status +
@@ -411,6 +434,7 @@ export const TABLES: Record<string, TableDef> = {
 	// existující id nic nepřepíše; authorEditOnly = PATCH/DELETE jen autor nebo admin prostoru
 	// (audit Fáze 1: jinak mohl kdokoli z prostoru smazat poradu VČETNĚ serverového přepisu).
 	meetings: {
+		patchOnly: true,
 		columns: {
 			workspace_id: "text",
 			title: "text",
@@ -436,6 +460,7 @@ export const TABLES: Record<string, TableDef> = {
 		},
 		hasUpdatedAt: true,
 		creatorCol: "created_by",
+		authorEditOnly: true,
 		workspaceVia: { kind: "column", col: "workspace_id" },
 		refWorkspaceCols: [
 			{ col: "project_id", table: "projects" },
@@ -698,7 +723,12 @@ async function creatorOfRow(
 /** Role uživatele v prostoru (memberships) — null = není člen. */
 async function workspaceRole(db: Db, workspaceId: string, userId: string): Promise<string | null> {
 	const rows = (await db.execute(
-		sql`SELECT role FROM memberships WHERE workspace_id = ${workspaceId} AND user_id = ${userId} LIMIT 1`,
+		sql`SELECT CASE WHEN w.owner_id = ${userId} THEN 'owner'::text ELSE m.role::text END AS role
+		    FROM workspaces w
+		    LEFT JOIN memberships m ON m.workspace_id = w.id AND m.user_id = ${userId}
+		    WHERE w.id = ${workspaceId}
+		      AND (w.owner_id = ${userId} OR m.user_id IS NOT NULL)
+		    LIMIT 1`,
 	)) as Rows;
 	return (rows[0]?.role as string) ?? null;
 }
@@ -930,6 +960,13 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 	if (body.table === "reminders" && data.channel === "email") {
 		return c.json({ error: "email_reminders_not_available" }, 422);
 	}
+	if (body.table === "tasks" && data.start_timezone != null) {
+		try {
+			new Intl.DateTimeFormat("en-GB", { timeZone: String(data.start_timezone) }).format(0);
+		} catch {
+			return c.json({ error: "invalid_start_timezone" }, 422);
+		}
+	}
 	if (body.op !== "PUT") {
 		const missing = Object.keys(def.columns).filter(
 			(columnName) => !previous || !Object.hasOwn(previous, columnName),
@@ -957,6 +994,8 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 
 	// Workspace-scoped tabulky (cíle): membership + role kontrola přes memberships.
 	if (def.workspaceVia) {
+		const minimumRole = WORKSPACE_WRITE_POLICY[body.table]?.[body.op];
+		if (!minimumRole) return c.json({ error: "workspace_action_not_allowed" }, 403);
 		const wsNeed = new Set<string>();
 		let rowWs: string | null = null;
 		if (body.op === "PUT" || body.op === "PATCH") {
@@ -977,6 +1016,12 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 				const role = await workspaceRole(db, w, userId);
 				if (!role) return c.json({ error: "forbidden" }, 403);
 				if (role === "guest") return c.json({ error: "read-only-host" }, 403);
+				if (
+					(WORKSPACE_ROLE_RANK[role as WorkspaceRole] ?? -1) <
+					WORKSPACE_ROLE_RANK[minimumRole]
+				) {
+					return c.json({ error: "insufficient-workspace-role" }, 403);
+				}
 			}
 		}
 		try {
@@ -988,8 +1033,8 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 					const refId = data[ref.col] as string | undefined;
 					if (!refId) continue;
 					const refWs = await workspaceOfRow(db, ref.table, refId);
-					// null = reference se ještě nenahrála (offline) → přeskoč (jako refProjectCols).
-					if (refWs && refWs !== rowWs) return c.json({ error: "cross-workspace-reference" }, 403);
+					if (!refWs) return c.json({ error: "reference_not_found", field: ref.col }, 422);
+					if (refWs !== rowWs) return c.json({ error: "cross-workspace-reference" }, 403);
 				}
 				// who_id apod. musí být člen workspace řádku (ne cizí/neexistující uživatel).
 				for (const col of def.memberWorkspaceCols ?? []) {
@@ -1008,7 +1053,7 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 					let ok = false;
 					for (const w of wsNeed) {
 						const role = await workspaceRole(db, w, userId);
-						if (role === "admin" || role === "manager") ok = true;
+						if (role === "admin" || role === "manager" || role === "owner") ok = true;
 					}
 					if (!ok) return c.json({ error: "author-only" }, 403);
 				}
@@ -1062,7 +1107,8 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 			const refId = data[ref.col] as string | undefined;
 			if (refId) {
 				const p = await projectOfRow(db, ref.table, refId);
-				if (p) need.add(p);
+				if (!p) return c.json({ error: "reference_not_found", field: ref.col }, 422);
+				need.add(p);
 			}
 		}
 		// DELETE neexistujícího řádku = no-op (idempotentní upload).
@@ -1130,7 +1176,8 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 				const refId = data[ref.col] as string | undefined;
 				if (!refId) continue;
 				const refWs = await workspaceOfRow(db, ref.table, refId);
-				if (refWs && refWs !== auditWs) return c.json({ error: "cross-workspace-reference" }, 403);
+				if (!refWs) return c.json({ error: "reference_not_found", field: ref.col }, 422);
+				if (refWs !== auditWs) return c.json({ error: "cross-workspace-reference" }, 403);
 			}
 		}
 		await auditedWrite(db, body.table, def, body.op, body.id, data, userId, {

@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { TaskCard } from "@watson/ui";
-import { type CSSProperties, useState } from "react";
+import { useState } from "react";
 import { logTaskActivity } from "../lib/activity";
 import { useSession } from "../lib/auth-client";
 import { useBulkSelect } from "../lib/bulkSelect";

@@ -29,16 +29,16 @@ export function AvatarGroup({
 	people,
 	max = 4,
 }: {
-	people: string[];
+	people: { id: string; initials: string; color?: string }[];
 	max?: number;
 }) {
 	const shown = people.slice(0, max);
 	const rest = people.length - shown.length;
 	return (
 		<span className="flex items-center">
-			{shown.map((p, i) => (
-				<span key={`${p}-${i}`} className={i > 0 ? "-ml-1.5" : ""}>
-					<Avatar initials={p} />
+			{shown.map((person, i) => (
+				<span key={person.id} className={i > 0 ? "-ml-1.5" : ""}>
+					<Avatar initials={person.initials} color={person.color} />
 				</span>
 			))}
 			{rest > 0 && (

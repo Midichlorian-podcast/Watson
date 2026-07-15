@@ -43,7 +43,7 @@ export interface TaskCardProps {
 	/** Režim „každý zvlášť" — pilulka `{label} · N/M` (prototyp ř. 437). */
 	assignAll?: { done: number; total: number; label: string };
 	/** Avatary přiřazených (max 3; první brass při shared_all). */
-	avatars?: { initials: string; brass?: boolean }[];
+	avatars?: { id: string; initials: string; brass?: boolean }[];
 	/** Spící krok postupu — šrafovaný řádek (prototyp data-dormant). */
 	dormant?: boolean;
 	/** Kontext vrstveného podúkolu — „↑ {rodič}" v podřádku. */
@@ -145,6 +145,15 @@ export function TaskCard({
 	return (
 		<div
 			onClick={onOpen}
+			role="button"
+			tabIndex={0}
+			onKeyDown={(event) => {
+				if (event.target !== event.currentTarget) return;
+				if (event.key === "Enter" || event.key === " ") {
+					event.preventDefault();
+					event.currentTarget.click();
+				}
+			}}
 			className={cn(
 				// w-taskcard: na ≤480 px se metadata zalomí pod název (CC-P0-17, index.css)
 				"group w-taskcard flex cursor-pointer items-center rounded-[10px] border border-line transition-shadow",
@@ -535,7 +544,7 @@ export function TaskCard({
 					<span className="inline-flex shrink-0 items-center">
 						{avatars.map((a, i) => (
 							<span
-								key={`${a.initials}-${i}`}
+								key={a.id}
 								className="flex items-center justify-center rounded-full font-display font-semibold"
 								style={{
 									width: 22,

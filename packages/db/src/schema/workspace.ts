@@ -3,8 +3,10 @@
  * Pozn.: každá tabulka má jediný UUID PK `id` (požadavek PowerSync), přirozené klíče
  * jsou vynucené přes unique indexy.
  */
+import { sql } from "drizzle-orm";
 import {
 	boolean,
+	check,
 	index,
 	integer,
 	pgTable,
@@ -63,6 +65,36 @@ export const memberships = pgTable(
 	},
 	(t) => [
 		uniqueIndex("memberships_user_workspace_uq").on(t.userId, t.workspaceId),
+	],
+);
+
+/**
+ * Invite-only onboarding. Bearer token drží Better Auth verification tabulka;
+ * zde je jen auditovatelná autorizace konkrétního e-mailu, role a expirace.
+ */
+export const workspaceInvitations = pgTable(
+	"workspace_invitations",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		email: varchar("email", { length: 254 }).notNull(),
+		role: workspaceRoleEnum("role").notNull().default("member"),
+		invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+		expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+		acceptedBy: uuid("accepted_by").references(() => users.id, { onDelete: "set null" }),
+		acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+		revokedAt: timestamp("revoked_at", { withTimezone: true }),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		index("workspace_invitations_email_idx").on(t.email),
+		index("workspace_invitations_workspace_idx").on(t.workspaceId),
+		uniqueIndex("workspace_invitations_active_uq")
+			.on(t.workspaceId, t.email)
+			.where(sql`${t.acceptedAt} is null and ${t.revokedAt} is null`),
 	],
 );
 
@@ -137,24 +169,35 @@ export const sections = pgTable(
  * Statusy — jednoduché per projekt (default), volitelně per workspace.
  * R9 — `isDone=true` status je provázaný se zaškrtnutím úkolu (řeší app/sync vrstva).
  */
-export const statuses = pgTable("statuses", {
-	id: pk(),
-	scope: statusScopeEnum("scope").notNull().default("project"),
-	projectId: uuid("project_id").references(() => projects.id, {
-		onDelete: "cascade",
-	}),
-	workspaceId: uuid("workspace_id").references(() => workspaces.id, {
-		onDelete: "cascade",
-	}),
-	name: varchar("name", { length: 100 }).notNull(),
-	color: varchar("color", { length: 9 }),
-	position: integer("position").notNull().default(0),
-	isDone: boolean("is_done").notNull().default(false),
-	createdAt: createdAt(),
-});
+export const statuses = pgTable(
+	"statuses",
+	{
+		id: pk(),
+		scope: statusScopeEnum("scope").notNull().default("project"),
+		projectId: uuid("project_id").references(() => projects.id, {
+			onDelete: "cascade",
+		}),
+		workspaceId: uuid("workspace_id").references(() => workspaces.id, {
+			onDelete: "cascade",
+		}),
+		name: varchar("name", { length: 100 }).notNull(),
+		color: varchar("color", { length: 9 }),
+		position: integer("position").notNull().default(0),
+		isDone: boolean("is_done").notNull().default(false),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		check(
+			"statuses_scope_owner_valid",
+			sql`(${t.scope} = 'project' and ${t.projectId} is not null and ${t.workspaceId} is null)
+				or (${t.scope} = 'workspace' and ${t.workspaceId} is not null and ${t.projectId} is null)`,
+		),
+	],
+);
 
 export type Workspace = typeof workspaces.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
+export type WorkspaceInvitation = typeof workspaceInvitations.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type ProjectMember = typeof projectMembers.$inferSelect;
 export type Section = typeof sections.$inferSelect;

@@ -1,0 +1,2 @@
+DROP INDEX "entity_links_source_external_uq";--> statement-breakpoint
+CREATE UNIQUE INDEX "entity_links_source_external_uq" ON "entity_links" USING btree ("workspace_id","source_system","external_id","to_type");

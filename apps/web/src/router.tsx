@@ -6,9 +6,8 @@ import { AppLayout } from "./layout/AppLayout";
 import { Nadchazejici } from "./screens/Nadchazejici";
 import { parseTab, type TaskTab, UkolyShell } from "./screens/UkolyShell";
 
-// biome-ignore lint/suspicious/noExplicitAny: obrazovky nemají props; any tu jen sjednotí lazy typ
 const named = <K extends string>(
-	loader: () => Promise<Record<K, React.ComponentType<any>>>,
+	loader: () => Promise<Record<K, React.ComponentType>>,
 	key: K,
 ) => lazy(() => loader().then((m) => ({ default: m[key] })));
 

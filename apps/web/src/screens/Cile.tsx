@@ -4,7 +4,9 @@ import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
+import { DataLoading } from "../components/Loading";
 import { initials } from "../lib/format";
+import { focusOnMount } from "../lib/focusOnMount";
 import {
 	type GoalStatusKind,
 	GSTAT,
@@ -15,11 +17,11 @@ import {
 } from "../lib/goals";
 import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
+import { NOT_MEETING } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
-import { NOT_MEETING } from "../lib/tasks";
 
 type Member = { id: string; name: string; email: string; image: string | null };
 type MilestoneRow = {
@@ -125,30 +127,32 @@ const SCOPE_LABEL_KEY: Record<string, string> = {
 /** Cíle — taby dle scope, karty s progresem z reálných úkolů, builder + detail (1:1 dle Cloud Design). */
 export function Cile() {
 	const { t } = useTranslation();
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs } = useWorkspace();
-	const wsP = workspaces?.find((w) => w.id === activeWs)?.isPersonal ?? false;
+	const activeWorkspace = workspaces?.find((workspace) => workspace.id === activeWs);
+	const wsP = activeWorkspace?.isPersonal ?? false;
+	const canManageGoals = activeWorkspace?.capabilities?.manageGoals === true;
 
 	const [tab, setTab] = useState<string | null>(null);
 	const [modalOpen, setModalOpen] = useState(false);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 
-	const { data: goals } = usePsQuery<GoalRow>(
+	const { data: goals, isLoading: goalsLoading } = usePsQuery<GoalRow>(
 		"SELECT * FROM goals WHERE workspace_id = ? ORDER BY created_at",
 		[activeWs ?? ""],
 	);
-	const { data: goalProjects } = usePsQuery<{
+	const { data: goalProjects, isLoading: goalProjectsLoading } = usePsQuery<{
 		goal_id: string | null;
 		project_id: string | null;
 	}>("SELECT goal_id, project_id FROM goal_projects");
-	const { data: milestones } = usePsQuery<MilestoneRow>(
+	const { data: milestones, isLoading: milestonesLoading } = usePsQuery<MilestoneRow>(
 		"SELECT id, goal_id, label, done, position FROM goal_milestones ORDER BY position, created_at",
 	);
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		`SELECT id, name, project_id, completed_at, due_date FROM tasks WHERE ${NOT_MEETING}`,
 	);
-	const { data: assignments } = usePsQuery<{
+	const { data: assignments, isLoading: assignmentsLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
@@ -164,6 +168,13 @@ export function Cile() {
 		},
 	});
 	const members = team ?? [];
+	const dataLoading =
+		projectsLoading ||
+		goalsLoading ||
+		goalProjectsLoading ||
+		milestonesLoading ||
+		tasksLoading ||
+		assignmentsLoading;
 	const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "";
 
 	const wsProjectIds = useMemo(
@@ -300,26 +311,30 @@ export function Cile() {
 						</button>
 					))}
 				</div>
-				<button
-					type="button"
-					onClick={() => setModalOpen(true)}
-					className="ml-auto inline-flex items-center gap-1.5 rounded-[10px] font-display font-semibold text-white hover:brightness-105"
-					style={{
-						background: "var(--w-brass)",
-						padding: "9px 15px",
-						fontSize: 13,
-					}}
-				>
-					<span style={{ fontSize: 16, lineHeight: 1 }}>+</span> {t("goals.newGoal")}
-				</button>
+				{canManageGoals && (
+					<button
+						type="button"
+						onClick={() => setModalOpen(true)}
+						className="ml-auto inline-flex items-center gap-1.5 rounded-[10px] font-display font-semibold text-white hover:brightness-105"
+						style={{
+							background: "var(--w-brass)",
+							padding: "9px 15px",
+							fontSize: 13,
+						}}
+					>
+						<span style={{ fontSize: 16, lineHeight: 1 }}>+</span> {t("goals.newGoal")}
+					</button>
+				)}
 			</div>
 
-			{shown.length === 0 ? (
+			{dataLoading ? (
+				<DataLoading />
+			) : shown.length === 0 ? (
 				<div className="text-center" style={{ padding: "60px 20px" }}>
 					<div className="font-body text-ink-3" style={{ fontSize: 14 }}>
 						{t("goals.empty")}
 					</div>
-					<button
+					{canManageGoals && <button
 						type="button"
 						onClick={() => setModalOpen(true)}
 						className="mt-3.5 rounded-[10px] font-display font-bold text-white hover:brightness-105"
@@ -330,7 +345,7 @@ export function Cile() {
 						}}
 					>
 						+ {t("goals.newGoal")}
-					</button>
+					</button>}
 				</div>
 			) : (
 				<div
@@ -429,7 +444,7 @@ export function Cile() {
 				</div>
 			)}
 
-			{modalOpen && activeWs && (
+			{modalOpen && activeWs && canManageGoals && (
 				<GoalModal
 					workspaceId={activeWs}
 					personal={wsP}
@@ -448,6 +463,7 @@ export function Cile() {
 					ownerName={memberName(selected.g.owner_id)}
 					filterPersonName={memberName(selected.g.filter_person_id)}
 					sampleTasks={goalTasks(selected.g)}
+					canEdit={canManageGoals}
 					onClose={() => setSelectedId(null)}
 				/>
 			)}
@@ -619,8 +635,7 @@ function GoalModal({
 					</div>
 
 					<input
-						// biome-ignore lint/a11y/noAutofocus: builder modal
-						autoFocus
+						ref={focusOnMount}
 						value={name}
 						onChange={(e) => setName(e.target.value)}
 						placeholder={t("goals.namePlaceholder")}
@@ -923,6 +938,7 @@ function GoalDetail({
 	ownerName,
 	filterPersonName,
 	sampleTasks,
+	canEdit,
 	onClose,
 }: {
 	data: {
@@ -938,6 +954,7 @@ function GoalDetail({
 	filterPersonName: string;
 	/** Úkoly v hledáčku cíle (prototyp sampleTasks, ř. 3204). */
 	sampleTasks: TaskRow[];
+	canEdit: boolean;
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
@@ -961,6 +978,7 @@ function GoalDetail({
 
 	// Zápis až na blur (ne per-znak): míň sync-ops a užší okno pro přepsání souběžné editace.
 	const commitName = () => {
+		if (!canEdit) return;
 		const v = nameDraft.trim();
 		if (!v) {
 			// Prázdný/mezerový název je neplatný → vrať draft na uloženou hodnotu (žádné tiché rozejití UI a DB).
@@ -972,6 +990,7 @@ function GoalDetail({
 	};
 	/** Obnova období: posun period_start na dnešek → hotové úkoly před ním se přestanou počítat (prototyp resetGoalPeriod, ř. 2346). */
 	const resetPeriod = () => {
+		if (!canEdit) return;
 		void powerSync.execute("UPDATE goals SET period_start = ? WHERE id = ?", [
 			new Date().toISOString(),
 			g.id,
@@ -980,6 +999,7 @@ function GoalDetail({
 	};
 	// Krok a strop dle metriky (prototyp adjGoalTarget, ř. 2352: count ±5 / % ±1; max 100000 / 100).
 	const adjTarget = (dir: number) => {
+		if (!canEdit) return;
 		const step = metric === "count" ? 5 : 1;
 		const max = metric === "count" ? 100000 : 100;
 		// Počítej z aktuální DB hodnoty v SQL, ne z props (jinak rychlé kliky před re-renderem ztrácejí kroky).
@@ -999,6 +1019,7 @@ function GoalDetail({
 					: t("goals.paceTrack");
 
 	const addMilestone = async () => {
+		if (!canEdit) return;
 		if (!msText.trim() || !g.workspace_id) return;
 		await powerSync.execute(
 			"INSERT INTO goal_milestones (id, goal_id, workspace_id, label, done, position, created_at) VALUES (uuid(), ?, ?, ?, 0, ?, ?)",
@@ -1006,12 +1027,15 @@ function GoalDetail({
 		);
 		setMsText("");
 	};
-	const toggleMs = (m: MilestoneRow) =>
+	const toggleMs = (m: MilestoneRow) => {
+		if (!canEdit) return;
 		void powerSync.execute("UPDATE goal_milestones SET done = ? WHERE id = ?", [
 			m.done ? 0 : 1,
 			m.id,
 		]);
+	};
 	const remove = async () => {
+		if (!canEdit) return;
 		await powerSync.execute("DELETE FROM goal_milestones WHERE goal_id = ?", [g.id]);
 		await powerSync.execute("DELETE FROM goal_projects WHERE goal_id = ?", [g.id]);
 		await powerSync.execute("DELETE FROM goals WHERE id = ?", [g.id]);
@@ -1055,8 +1079,9 @@ function GoalDetail({
 					{/* Editovatelný název bez rámečku (prototyp ř. 1299 + onGoalName ř. 2354) */}
 					<input
 						value={nameDraft}
-						onChange={(e) => setNameDraft(e.target.value)}
+						onChange={(e) => canEdit && setNameDraft(e.target.value)}
 						onBlur={commitName}
+						readOnly={!canEdit}
 						onKeyDown={(e) => {
 							if (e.key === "Enter") e.currentTarget.blur();
 						}}
@@ -1129,7 +1154,7 @@ function GoalDetail({
 							>
 								{metricLabel}
 							</span>
-							{canTarget && (
+							{canTarget && canEdit && (
 								<span className="inline-flex items-center" style={{ gap: 4 }}>
 									<button
 										type="button"
@@ -1308,14 +1333,14 @@ function GoalDetail({
 									{t("goals.renewsSub")}
 								</div>
 							</div>
-							<button
+							{canEdit && <button
 								type="button"
 								onClick={resetPeriod}
 								className="flex-none whitespace-nowrap rounded-[8px] border border-line font-display font-semibold text-brass-text hover:bg-card"
 								style={{ fontSize: 12, padding: "6px 11px" }}
 							>
 								{t("goals.resetPeriod")}
-							</button>
+							</button>}
 						</div>
 					)}
 
@@ -1412,6 +1437,7 @@ function GoalDetail({
 									<button
 										type="button"
 										onClick={() => toggleMs(m)}
+										disabled={!canEdit}
 										className="grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border text-[9px] text-white"
 										style={{
 											borderColor: m.done ? "var(--w-success)" : "var(--w-line)",
@@ -1426,17 +1452,17 @@ function GoalDetail({
 								</li>
 							))}
 						</ul>
-						<input
+						{canEdit && <input
 							value={msText}
 							onChange={(e) => setMsText(e.target.value)}
 							onKeyDown={(e) => e.key === "Enter" && void addMilestone()}
 							placeholder={t("goals.addMilestone")}
 							className="mt-2 w-full rounded-lg border border-line border-dashed bg-transparent px-3 py-1.5 text-sm outline-none focus:border-brass"
-						/>
+						/>}
 					</div>
 				</div>
 
-				<div className="border-line border-t px-4 py-3">
+				{canEdit && <div className="border-line border-t px-4 py-3">
 					{confirmDelete ? (
 						<div className="flex items-center" style={{ gap: 8 }}>
 							<span className="flex-1 font-body text-ink-2" style={{ fontSize: 12.5 }}>
@@ -1473,7 +1499,7 @@ function GoalDetail({
 							{t("goals.delete")}
 						</button>
 					)}
-				</div>
+				</div>}
 			</aside>
 		</>
 	);

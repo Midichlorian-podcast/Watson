@@ -33,6 +33,7 @@ function GapLine() {
 
 /** Tint volitelné barvy úkolu (stejná konvence jako TaskCard/Calendar). */
 const tcTint = (hex: string) => `color-mix(in srgb, ${hex} 12%, var(--w-card))`;
+const statusKey = (name: string | null) => (name ?? "").trim().toLowerCase();
 
 export function Board({
 	tasks,
@@ -63,7 +64,6 @@ export function Board({
 	// Statusy jsou seedované PER PROJEKT (stejné názvy „K udělání/Probíhá/Hotovo"). Board ale může
 	// agregovat úkoly z více projektů → sloupce SLUČÍME podle názvu a drop namapujeme na status
 	// VLASTNÍHO projektu úkolu. Bez toho by Board ukázal N×3 sloupců a drop zapsal cizí status_id (S2).
-	const key = (name: string | null) => (name ?? "").trim().toLowerCase();
 	const { columns, resolveStatus } = useMemo(() => {
 		const projIds = new Set(tasks.map((t) => t.project_id).filter(Boolean) as string[]);
 		const scoped = (statuses ?? []).filter(
@@ -76,7 +76,7 @@ export function Board({
 			{ key: string; name: string; is_done: boolean; position: number }
 		>();
 		for (const s of scoped) {
-			const k = key(s.name);
+			const k = statusKey(s.name);
 			const ex = colMap.get(k);
 			if (!ex)
 				colMap.set(k, {
@@ -93,11 +93,11 @@ export function Board({
 		const ordered = [...colMap.values()].sort((a, b) => a.position - b.position);
 		// (project_id, klíč sloupce) → konkrétní status_id daného projektu.
 		const resolve = new Map<string, string>();
-		for (const s of scoped) resolve.set(`${s.project_id}::${key(s.name)}`, s.id);
+		for (const s of scoped) resolve.set(`${s.project_id}::${statusKey(s.name)}`, s.id);
 		const firstCol = ordered.find((c) => !c.is_done) ?? ordered[0];
 		const colKeyOf = (tk: TaskRow): string => {
 			const own = tk.status_id ? byId.get(tk.status_id) : undefined;
-			if (own) return key(own.name);
+			if (own) return statusKey(own.name);
 			if (tk.completed_at) return ordered.find((c) => c.is_done)?.key ?? firstCol?.key ?? "";
 			return firstCol?.key ?? "";
 		};
@@ -208,7 +208,7 @@ export function Board({
 	return (
 		<div className="flex items-start gap-3.5 overflow-x-auto" style={{ paddingBottom: 90 }}>
 			{columns.map(({ col, tasks: colTasks }) => (
-				<div
+				<div role="region"
 					key={col.key}
 					data-col={col.key}
 					onDragOver={(e) => {
@@ -249,10 +249,9 @@ export function Board({
 						const gapAfter =
 							dragId && overCol === col.key && overCard?.id === tk.id && overCard.pos === "a";
 						return (
-							// biome-ignore lint/a11y/useKeyWithClickEvents: drag karta, klik = detail; klávesnice řeší list view
 							<div key={tk.id} data-gap-wrap style={{ display: "contents" }}>
 								{gapBefore && <GapLine />}
-								<div
+								<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									draggable
 									onDragStart={(e) => {
 										e.dataTransfer.setData("text/plain", tk.id);
@@ -381,9 +380,9 @@ export function Board({
 										)}
 										{meta.avatars.length > 0 && (
 											<span className="ml-auto inline-flex items-center">
-												{meta.avatars.map((a, i) => (
-													<span
-														key={`${a.initials}-${i}`}
+											{meta.avatars.map((a, i) => (
+												<span
+													key={a.id}
 														className="flex items-center justify-center rounded-full font-display font-semibold"
 														style={{
 															width: 20,

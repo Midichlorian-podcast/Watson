@@ -15,6 +15,7 @@ import { ProjectDetailProvider } from "../lib/projectDetail";
 import { RowMetaProvider } from "../lib/rowMeta";
 import { TaskDetailProvider } from "../lib/taskDetail";
 import { ActionToast } from "../lib/toast";
+import { storageGet, storageSet } from "../lib/storage";
 import { applyTweaks } from "../lib/tweaks";
 import { useIsMobile } from "../lib/useIsMobile";
 import { ViewModeProvider } from "../lib/viewMode";
@@ -26,7 +27,7 @@ import { Sidebar } from "./Sidebar";
 
 export function AppLayout() {
 	// Sbalení sidebaru se persistuje (prototyp toggleRail + persist, ř. 2580).
-	const [collapsed, setCollapsed] = useState(() => localStorage.getItem("watson.rail") === "1");
+	const [collapsed, setCollapsed] = useState(() => storageGet("watson.rail") === "1");
 	const isMobile = useIsMobile();
 	// Mail zabírá celou plochu MAIN místo topbaru (prototyp screenNotMail, ř. 357).
 	const path = useRouterState({ select: (s) => s.location.pathname });
@@ -38,13 +39,13 @@ export function AppLayout() {
 	useEffect(() => {
 		if (landed.current) return;
 		landed.current = true;
-		if (window.location.pathname === "/" && localStorage.getItem("watson.landing") === "prehled") {
+		if (window.location.pathname === "/" && storageGet("watson.landing") === "prehled") {
 			void navigate({ to: "/prehled", replace: true });
 		}
 	}, [navigate]);
 	useEffect(applyTweaks, []);
 	useEffect(() => {
-		localStorage.setItem("watson.rail", collapsed ? "1" : "0");
+		storageSet("watson.rail", collapsed ? "1" : "0");
 	}, [collapsed]);
 	return (
 		<WorkspaceProvider>

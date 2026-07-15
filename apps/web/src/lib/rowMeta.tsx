@@ -13,7 +13,7 @@ export interface RowMeta {
 	checklist?: { done: number; total: number };
 	comments?: number;
 	reminder?: boolean;
-	avatars: { initials: string; brass?: boolean }[];
+	avatars: { id: string; initials: string; brass?: boolean }[];
 	/** User ids přiřazených (pro „Přišlo na tebe" apod.). */
 	assigneeIds: string[];
 	assignAll?: { done: number; total: number };
@@ -107,6 +107,7 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 				comments: cmtMap.get(task.id),
 				reminder: remSet.has(task.id) || undefined,
 				avatars: people.slice(0, 3).map((p, i) => ({
+					id: p.id,
 					initials: p.ini,
 					brass: isAll && i === 0 ? true : undefined,
 				})),

@@ -166,7 +166,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 				}
 			>
 				{!embedded && (
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-ghost
 						onClick={() => m.setScr("mail")}
 						style={{
@@ -310,7 +310,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 											/>
 											token vyprší za 12 dní
 										</span>
-										<span
+										<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 											data-ghost
 											onClick={() => {
 												// do provideru (S5) — jinak banner v seznamu nezhasne
@@ -337,7 +337,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 									>
 										Gatekeeper
 									</span>
-									<span
+									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										data-statepill
 										data-on={adm.gate[id] || undefined}
 										onClick={() => setAdm({ gate: { ...adm.gate, [id]: !adm.gate[id] } })}
@@ -365,7 +365,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 										AI
 									</span>
 									{lock ? (
-										<span
+										<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 											onClick={() =>
 												showToast(
 													"granty@ pracuje s osobními údaji žadatelů — AI je vypnutá napevno, rozhodnutí týmu",
@@ -413,7 +413,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 												padding: 2,
 											}}
 										>
-											<span
+											<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 												onClick={() => setAi(id, "off")}
 												data-tab
 												data-active={lvl === "off" || undefined}
@@ -421,7 +421,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 											>
 												Off
 											</span>
-											<span
+											<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 												onClick={() => setAi(id, "read")}
 												data-tab
 												data-active={lvl === "read" || undefined}
@@ -429,7 +429,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 											>
 												Čte
 											</span>
-											<span
+											<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 												onClick={() => setAi(id, "triage")}
 												data-tab
 												data-active={lvl === "triage" || undefined}
@@ -453,7 +453,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 							flexWrap: "wrap",
 						}}
 					>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-ghost
 							onClick={() => setWizOn(true)}
 							style={{ fontSize: 11.5, padding: "6px 12px", flex: "none" }}
@@ -489,7 +489,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 							<div style={{ display: "flex", alignItems: "flex-end" }}>
 								<span style={{ width: 150, flex: "none" }} />
 								{COLS.map(({ pid, p }) => (
-									<div
+									<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										key={pid}
 										data-pcol
 										onClick={() => setPerson(pid)}
@@ -536,7 +536,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 										</div>
 									</div>
 								))}
-								<div
+								<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									data-pcol
 									onClick={() => showToast("Host poštu nemá vůbec — nemá ani kartu přístupů")}
 									style={{
@@ -605,7 +605,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 										// acc z provideru (S5) — matice i karta osoby čtou tentýž živý stav
 										const v = m.adm.acc[mbid]?.[pid] ?? 0;
 										return (
-											<span
+											<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 												key={pid}
 												data-accell
 												data-v={String(v)}
@@ -622,7 +622,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 											</span>
 										);
 									})}
-									<span
+									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										data-accell
 										data-v="0"
 										data-lock="true"
@@ -728,7 +728,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 										flex: "none",
 									}}
 								>
-									<span
+									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										onClick={() => m.setMbRead(id, "per")}
 										data-tab
 										data-active={mode === "per" || undefined}
@@ -736,7 +736,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 									>
 										Per osoba
 									</span>
-									<span
+									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										onClick={() => m.setMbRead(id, "shared")}
 										data-tab
 										data-active={mode === "shared" || undefined}
@@ -814,7 +814,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 						</div>
 					))}
 					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px" }}>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-ghost
 							onClick={() =>
 								showToast(
@@ -881,7 +881,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 							>
 								{r.prev}
 							</span>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								data-ghost
 								onClick={() =>
 									showToast(
@@ -892,7 +892,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 							>
 								Upravit
 							</span>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								data-ghost
 								onClick={r.del}
 								style={{
@@ -907,7 +907,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 						</div>
 					))}
 					<div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px" }}>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-ghost
 							onClick={() => {
 								cache.tplAdd = [

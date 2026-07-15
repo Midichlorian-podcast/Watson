@@ -134,7 +134,7 @@ export function Velin() {
 	const firmsWs = useMemo(() => (workspaces ?? []).filter((w) => !w.isPersonal), [workspaces]);
 
 	const view = useMemo(() => {
-		const tdy = todayISO();
+		const tdy = dayKey;
 		const inboxIds = inboxProjectIds(projects);
 		const projById = new Map(projects.map((p) => [p.id, p]));
 		const wsOfT = (tk: TaskRow) =>
@@ -289,7 +289,7 @@ export function Velin() {
 	]);
 
 	const todayLabel = useMemo(() => {
-		const d = new Date();
+		const d = new Date(`${dayKey}T12:00:00`);
 		const wd = new Intl.DateTimeFormat(i18n.language, {
 			weekday: "short",
 		}).format(d);
@@ -791,8 +791,11 @@ function Row({
 	onClick?: () => void;
 	column?: boolean;
 	pad?: string;
-}) {
+	}) {
 	return (
+		// Biome neumí odvodit, že role, tabIndex i klávesová obsluha jsou přítomné
+		// současně právě tehdy, když je řádek interaktivní.
+		// biome-ignore lint/a11y/noStaticElementInteractions: podmíněná interaktivita má shodně podmíněnou sémantiku i klávesnici
 		<div
 			onClick={onClick}
 			role={onClick ? "button" : undefined}

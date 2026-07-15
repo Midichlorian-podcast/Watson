@@ -18,7 +18,8 @@ import { P, SLA } from "../mail/data";
 import { useMail } from "../mail/state";
 import { useSession } from "../lib/auth-client";
 import { useTaskDetail } from "../lib/taskDetail";
-import { NOT_MEETING, todayISO } from "../lib/tasks";
+import { NOT_MEETING, startMinOf, todayISO } from "../lib/tasks";
+import { storageGet, storageSet } from "../lib/storage";
 import { PeekPanel, type PeekTarget } from "./PeekPanel";
 
 /** Zítřek YYYY-MM-DD (lokálně) — pro okno „porada dnes/zítra". */
@@ -33,7 +34,7 @@ const tomorrowISO = () => {
 const SEEN_KEY = "watson.notifSeen";
 let seenCache: Record<string, number> = (() => {
 	try {
-		return JSON.parse(localStorage.getItem(SEEN_KEY) ?? "{}");
+		return JSON.parse(storageGet(SEEN_KEY) ?? "{}");
 	} catch {
 		return {};
 	}
@@ -59,11 +60,7 @@ function writeSeen(next: Record<string, number>) {
 	seenCache = next;
 	// Quota/soukromý režim (QuotaExceeded/SecurityError) nesmí shodit onClick
 	// handler notifikace — držíme aspoň in-memory stav a UI běží dál.
-	try {
-		localStorage.setItem(SEEN_KEY, JSON.stringify(next));
-	} catch {
-		/* localStorage nedostupný — pokračujeme jen s in-memory cache */
-	}
+	storageSet(SEEN_KEY, JSON.stringify(next));
 	for (const fn of seenSubs) fn();
 }
 export function markSeen(keys: string[]) {
@@ -129,8 +126,9 @@ export function useNotifItems(): { items: NotifItem[]; unseen: number } {
 		name: string | null;
 		due_date: string | null;
 		start_date: string | null;
+		start_timezone: string | null;
 	}>(
-		`SELECT t.id, t.name, t.due_date, t.start_date
+		`SELECT t.id, t.name, t.due_date, t.start_date, t.start_timezone
 		 FROM meetings m
 		 JOIN tasks t ON t.id = m.hub_task_id AND t.completed_at IS NULL
 		 JOIN assignments a ON a.task_id = t.id AND a.user_id = ?
@@ -142,7 +140,11 @@ export function useNotifItems(): { items: NotifItem[]; unseen: number } {
 	const items: NotifItem[] = [];
 	for (const mt of meets ?? []) {
 		const day = (mt.due_date ?? "").slice(0, 10);
-		const hm = mt.start_date && mt.start_date.length >= 16 ? mt.start_date.slice(11, 16) : "";
+		const startMin = startMinOf(mt);
+		const hm =
+			startMin === null
+				? ""
+				: `${String(Math.floor(startMin / 60)).padStart(2, "0")}:${String(startMin % 60).padStart(2, "0")}`;
 		items.push({
 			key: `meet:${mt.id}:${day}`,
 			kind: "meet",
@@ -336,11 +338,14 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 	return createPortal(
 		<>
 			{/* průhledný scrim — klik mimo zavírá; panel je ucelená karta pod zvonkem */}
-			<div
+			<button
+				type="button"
+				aria-label={t("common.close")}
 				onClick={onClose}
+				data-focus-trap-companion
 				data-esc-layer={escLayer}
 				data-notif-layer={escLayer}
-				style={{ position: "fixed", inset: 0, zIndex: 64 }}
+				style={{ position: "fixed", inset: 0, zIndex: 64, border: 0, background: "transparent" }}
 			/>
 			<div
 				ref={panelRef}

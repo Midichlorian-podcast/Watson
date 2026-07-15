@@ -118,20 +118,26 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 	return (
 		<div
 			data-esc-layer
-			onClick={onClose}
 			style={{
 				position: "fixed",
 				inset: 0,
 				zIndex: 79,
-				background: "rgba(23,40,63,.32)",
 				animation: "wFade .12s ease",
 			}}
 		>
+			<button
+				type="button"
+				aria-label="Zavřít průvodce"
+				onClick={onClose}
+				style={{ position: "absolute", inset: 0, border: 0, background: "rgba(23,40,63,.32)" }}
+			/>
 			<div
 				ref={trapRef}
 				tabIndex={-1}
+				role="dialog"
+				aria-modal="true"
+				aria-label="Připojení schránky"
 				data-screen-label="Připojení schránky"
-				onClick={(e) => e.stopPropagation()}
 				style={{
 					position: "fixed",
 					top: "50%",
@@ -166,7 +172,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 					<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)" }}>
 						Krok {step} / 4 — {STEP_L[step - 1]}
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						onClick={onClose}
 						title="Zavřít (Esc)"
 						style={{ fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
@@ -183,7 +189,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 						</div>
 						<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
 							{PROVS.map((p) => (
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									key={p.id}
 									data-statepill
 									data-on={prov === p.id || undefined}
@@ -234,7 +240,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 								</span>
 							</div>
 						) : (
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								data-primary
 								onClick={() => {
 									// demo — OAuth okno poskytovatele tu není, rovnou „připojeno"
@@ -337,7 +343,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 							<input placeholder="přihlašovací jméno" autoComplete="off" style={inputStyle} />
 							<input type="password" placeholder="heslo" autoComplete="off" style={inputStyle} />
 						</div>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-ghost
 							onClick={doTest}
 							style={{ display: "inline-flex", fontSize: 11, padding: "6px 12px", marginTop: 8 }}
@@ -358,7 +364,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 								const p = P[pid];
 								if (!p) return null;
 								return (
-									<span
+									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										key={pid}
 										data-statepill
 										data-on={ppl[pid] || undefined}
@@ -443,7 +449,11 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 				<div style={{ display: "flex", gap: 7, marginTop: 14, alignItems: "center" }}>
 					<span
 						style={{ display: "inline-flex", gap: 5, flex: 1 }}
+						role="progressbar"
 						aria-label={`Krok ${step} ze 4`}
+						aria-valuemin={1}
+						aria-valuemax={4}
+						aria-valuenow={step}
 					>
 						{[1, 2, 3, 4].map((s) => (
 							<span
@@ -458,7 +468,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 						))}
 					</span>
 					{step > 1 && step < 4 && (
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-ghost
 							onClick={() => setStep((s) => Math.max(1, s - 1))}
 							style={{ fontSize: 11.5, padding: "7px 13px" }}
@@ -467,7 +477,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 						</span>
 					)}
 					{step < 3 && (
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-primary
 							onClick={() => {
 								// krok 2 nejde přeskočit bez ověření — OAuth vyžaduje přihlášení,
@@ -494,7 +504,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 						</span>
 					)}
 					{step === 3 && (
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-primary
 							onClick={finish}
 							style={{ fontSize: 11.5, padding: "7px 15px", display: "inline-flex" }}
@@ -503,7 +513,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 						</span>
 					)}
 					{step === 4 && (
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-primary
 							onClick={onClose}
 							style={{ fontSize: 11.5, padding: "7px 15px", display: "inline-flex" }}

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { storageGet, storageSet } from "../lib/storage";
 
 type Theme = "light" | "dark";
 const KEY = "w-theme";
@@ -8,17 +9,14 @@ const KEY = "w-theme";
  * (prototyp má jediný state.theme; header ikona i switch v Nastavení se přepínají spolu).
  * Zatím localStorage; trvale per-uživatel přes sync engine později (K3).
  */
-let current: Theme =
-	typeof localStorage !== "undefined" && localStorage.getItem(KEY) === "dark"
-		? "dark"
-		: "light";
+let current: Theme = storageGet(KEY) === "dark" ? "dark" : "light";
 const listeners = new Set<() => void>();
 
 function apply(theme: Theme) {
 	const el = document.documentElement;
 	if (theme === "dark") el.setAttribute("data-w-theme", "dark");
 	else el.removeAttribute("data-w-theme");
-	localStorage.setItem(KEY, theme);
+	storageSet(KEY, theme);
 }
 if (typeof document !== "undefined") apply(current);
 

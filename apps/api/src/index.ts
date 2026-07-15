@@ -1,9 +1,12 @@
 import "./env"; // načte .env (musí být první)
+import { createHmac } from "node:crypto";
 import { serve } from "@hono/node-server";
 import {
 	and,
+	auditEvents,
 	eq,
 	getDb,
+	isNull,
 	memberships,
 	ne,
 	projectMembers,
@@ -11,22 +14,27 @@ import {
 	sql,
 	statuses,
 	users,
+	workspaceInvitations,
 	workspaces,
 } from "@watson/db";
-import { DEFAULT_LOCALE, WORKSPACE_ROLES } from "@watson/shared";
-import { Hono } from "hono";
+import { DEFAULT_LOCALE } from "@watson/shared";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
+import { z } from "zod";
+import { aiPolicyRoutes } from "./aiPolicy";
 import { auth } from "./auth";
-import { env, googleEnabled, pushEnabled } from "./env";
+import { chainCommandRoutes } from "./chainCommands";
 import { employeeRoutes } from "./employee";
+import { env, googleEnabled, pushEnabled } from "./env";
 import { exportRoutes } from "./export";
 import { meetingsRoutes } from "./meetings";
 import { powersyncRoutes } from "./powersync";
-import { watsonRoutes } from "./watson";
 import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
+import { taskCommandRoutes } from "./taskCommands";
+import { watsonRoutes } from "./watson";
 
 /** Pořadí workspace rolí (R5) pro kontrolu eskalace práv — owner se řeší zvlášť (99). */
 const WS_ROLE_RANK: Record<string, number> = {
@@ -37,6 +45,33 @@ const WS_ROLE_RANK: Record<string, number> = {
 };
 const roleRank = (r?: string | null): number =>
 	(r ? WS_ROLE_RANK[r] : undefined) ?? 0;
+
+const uuid = z.string().uuid();
+const workspaceRole = z.enum(["admin", "manager", "member", "guest"]);
+const createProjectSchema = z
+	.object({
+		name: z.string().trim().min(1).max(200),
+		workspaceId: uuid,
+		color: z.string().regex(/^#[0-9a-f]{6}$/i).nullable().optional(),
+		kind: z.enum(["flow", "goal", "cycle"]).optional().default("flow"),
+	})
+	.strict();
+const memberProfileSchema = z
+	.object({
+		areas: z.string().trim().max(500).nullable().optional(),
+		bio: z.string().trim().max(1000).nullable().optional(),
+	})
+	.strict()
+	.refine((body) => body.areas !== undefined || body.bio !== undefined, "nothing_to_update");
+const memberRoleSchema = z.object({ role: workspaceRole }).strict();
+const inviteSchema = z
+	.object({
+		email: z.string().trim().toLowerCase().email().max(254),
+		name: z.string().trim().min(1).max(200).optional(),
+		role: workspaceRole.optional().default("member"),
+	})
+	.strict();
+const projectMemberSchema = z.object({ userId: uuid }).strict();
 
 /**
  * CC-P0-05 — smí volající spravovat ČLENSTVÍ projektu? Rozhodnutí §15/5:
@@ -98,6 +133,29 @@ app.use("/*", async (c, next) => {
 	const rid = crypto.randomUUID().slice(0, 8);
 	c.set("requestId", rid);
 	c.header("X-Request-Id", rid);
+	const started = performance.now();
+	await next();
+	const durationMs = Math.round((performance.now() - started) * 10) / 10;
+	c.header("Server-Timing", `app;dur=${durationMs}`);
+	const record = JSON.stringify({
+		level: c.res.status >= 500 ? "error" : c.res.status >= 400 ? "warn" : "info",
+		event: "http_request",
+		requestId: rid,
+		method: c.req.method,
+		// Nikdy query string: auth callback může nést jednorázový token.
+		path: c.req.path,
+		status: c.res.status,
+		durationMs,
+	});
+	if (c.res.status >= 500) console.error(record);
+	else if (c.res.status >= 400) console.warn(record);
+	else if (!c.req.path.startsWith("/health")) console.log(record);
+});
+
+// Autentizovaná API data, exporty a meeting obsah se nesmí ocitnout v browser/proxy cache.
+app.use("/api/*", async (c, next) => {
+	c.header("Cache-Control", "private, no-store, max-age=0");
+	c.header("Pragma", "no-cache");
 	await next();
 });
 
@@ -113,12 +171,16 @@ app.use(
 // CC-P0-16 — globální strop velikosti těla: největší legitimní payload je přepis
 // porady (stovky kB); 2 MB stačí všem a zastaví zbytek. Přílohy (M1/F7) dostanou
 // vlastní upload endpoint s vlastním limitem.
-app.use(
-	"/*",
-	bodyLimit({
-		maxSize: 2 * 1024 * 1024,
-		onError: (c) => c.json({ error: "body_too_large" }, 413),
-	}),
+const standardBodyLimit = bodyLimit({
+	maxSize: 2 * 1024 * 1024,
+	onError: (c) => c.json({ error: "body_too_large" }, 413),
+});
+const restoreBodyLimit = bodyLimit({
+	maxSize: 25 * 1024 * 1024,
+	onError: (c) => c.json({ error: "restore_file_too_large", maxBytes: 25 * 1024 * 1024 }, 413),
+});
+app.use("/*", (c, next) =>
+	c.req.path === "/api/restore" ? restoreBodyLimit(c, next) : standardBodyLimit(c, next),
 );
 
 app.use(
@@ -137,28 +199,110 @@ app.use(
 // POZN.: /api/sync/write ZÁMĚRNĚ NElimitujeme per-IP — tým za jednou IP dělá legitimně mnoho zápisů;
 // zneužití řeší row-level auth ve write-pathu, ne IP throttling.
 app.use("/api/auth/*", rateLimit({ name: "auth", windowMs: 15 * 60_000, max: 300 }));
-app.use("/api/push/*", rateLimit({ name: "push", windowMs: 60_000, max: 120 }));
-
-app.get("/health", (c) =>
-	c.json({
-		ok: true,
-		service: "watson-api",
-		locale: DEFAULT_LOCALE,
-		auth: {
-			emailPassword: true,
-			twoFactor: true,
-			magicLink: "dev",
-			google: googleEnabled,
-		},
-		time: new Date().toISOString(),
-	}),
+app.use(
+	"/api/push/*",
+	rateLimit({ name: "push", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
 );
+app.use(
+	"/api/meetings/*",
+	rateLimit({ name: "meetings", windowMs: 60_000, max: 60, scope: "session-or-ip" }),
+);
+app.use(
+	"/api/watson/*",
+	rateLimit({ name: "watson-ai", windowMs: 60_000, max: 20, scope: "session-or-ip" }),
+);
+app.use(
+	"/api/employee/*",
+	rateLimit({ name: "employee", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
+);
+
+// CC-P0-11 — privilegovaný účet bez 2FA smí číst data a otevřít Nastavení, ale
+// v produkčním režimu nesmí provést žádný zápis. Auth endpointy zůstávají volné,
+// aby si mohl TOTP zapnout. Kontrola je serverová; skrytí tlačítka v UI nestačí.
+app.use("/api/*", async (c, next) => {
+	if (
+		!env.authRequirePrivileged2FA ||
+		["GET", "HEAD", "OPTIONS"].includes(c.req.method) ||
+		c.req.path.startsWith("/api/auth/")
+	) {
+		return next();
+	}
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return next();
+	const [security] = await getDb()
+		.select({
+			twoFactorEnabled: users.twoFactorEnabled,
+			privileged: sql<boolean>`(
+				exists(select 1 from memberships m where m.user_id = ${session.user.id} and m.role = 'admin')
+				or exists(select 1 from workspaces w where w.owner_id = ${session.user.id})
+			)`,
+		})
+		.from(users)
+		.where(eq(users.id, session.user.id))
+		.limit(1);
+	if (security?.privileged && !security.twoFactorEnabled) {
+		return c.json(
+			{
+				error: "two_factor_enrollment_required",
+				message: "Privilegovaný účet musí před zápisem zapnout dvoufázové ověření.",
+				action: "/nastaveni#zabezpeceni",
+			},
+			403,
+		);
+	}
+	return next();
+});
+
+const healthPayload = (database: "up" | "down") => ({
+	ok: database === "up",
+	service: "watson-api",
+	locale: DEFAULT_LOCALE,
+	database,
+	auth: {
+		emailPassword: true,
+		emailVerification: true,
+		signup: env.authAllowSignup ? "public" : "invite-only",
+		twoFactor: {
+			available: true,
+			privilegedWritesRequired: env.authRequirePrivileged2FA,
+		},
+		magicLink: env.resendApiKey
+			? "email"
+			: process.env.DEV_AUTH_LOG_LINKS === "1" && process.env.NODE_ENV !== "production"
+				? "explicit-dev-console"
+				: "unavailable",
+		passwordReset: env.resendApiKey ? "email" : "unavailable",
+		google: googleEnabled,
+	},
+	time: new Date().toISOString(),
+});
+
+app.get("/health/live", (c) => {
+	c.header("Cache-Control", "no-store");
+	return c.json({ ok: true, service: "watson-api", time: new Date().toISOString() });
+});
+
+async function readiness(c: Context<{ Variables: { requestId: string } }>) {
+	c.header("Cache-Control", "no-store");
+	try {
+		await getDb().execute(sql`SELECT 1`);
+		return c.json(healthPayload("up"));
+	} catch {
+		return c.json(healthPayload("down"), 503);
+	}
+}
+
+app.get("/health", readiness);
+app.get("/health/ready", readiness);
 
 /** Better Auth — všechny auth endpointy (/api/auth/sign-up, sign-in, two-factor, ...). */
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 
 /** PowerSync — JWKS, token, write upload. */
 app.route("/", powersyncRoutes);
+app.route("/", aiPolicyRoutes);
+app.route("/", taskCommandRoutes);
+app.route("/", chainCommandRoutes);
 app.route("/", meetingsRoutes);
 app.route("/", watsonRoutes);
 app.route("/", exportRoutes);
@@ -174,6 +318,24 @@ app.get("/api/me", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ user: null }, 401);
 	return c.json({ user: session.user });
+});
+
+/**
+ * Per-user klíč pro šifrovanou lokální PowerSync DB. Klíč je deterministický,
+ * takže stejný uživatel svou cache otevře i po nové session, ale dva uživatelé
+ * nikdy nedostanou stejný klíč. Odpověď je chráněná session cookie a globálním
+ * no-store; root secret nikdy neopustí server.
+ */
+app.get("/api/me/local-data-key", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const root =
+		env.localDataEncryptionSecret ??
+		"watson-dev-local-data-encryption-secret-not-for-production";
+	const key = createHmac("sha256", root)
+		.update(`watson-local-db:v1:${session.user.id}`)
+		.digest("base64url");
+	return c.json({ key, version: 1 });
 });
 
 /** Workspaces přihlášeného uživatele (přes membership). */
@@ -194,7 +356,21 @@ app.get("/api/workspaces", async (c) => {
 		.innerJoin(workspaces, eq(memberships.workspaceId, workspaces.id))
 		.where(eq(memberships.userId, session.user.id));
 
-	return c.json({ workspaces: rows });
+	return c.json({
+		workspaces: rows.map((workspace) => {
+			const rank = roleRank(workspace.role);
+			return {
+				...workspace,
+				capabilities: {
+					manageGoals: rank >= roleRank("manager"),
+					manageListTemplates: rank >= roleRank("manager"),
+					manageWorkspaceMembers: rank >= roleRank("admin"),
+					createContacts: rank >= roleRank("member"),
+					createLists: rank >= roleRank("member"),
+				},
+			};
+		}),
+	});
 });
 
 /** Projekty přihlášeného uživatele (přes project membership). */
@@ -222,15 +398,10 @@ app.post("/api/projects", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 
-	const body = (await c.req.json().catch(() => ({}))) as {
-		name?: string;
-		workspaceId?: string;
-		color?: string;
-		kind?: string;
-	};
-	const name = (body.name ?? "").trim();
-	if (!name || !body.workspaceId)
-		return c.json({ error: "name and workspaceId required" }, 400);
+	const parsed = createProjectSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_project", issues: parsed.error.issues }, 422);
+	const body = parsed.data;
+	const name = body.name;
 	const workspaceId = body.workspaceId;
 
 	const db = getDb();
@@ -249,8 +420,7 @@ app.post("/api/projects", async (c) => {
 	if (!mine) return c.json({ error: "forbidden" }, 403);
 	if (mine.role === "guest") return c.json({ error: "read-only-host" }, 403);
 
-	const kind =
-		body.kind === "goal" || body.kind === "cycle" ? body.kind : "flow";
+	const kind = body.kind;
 	// CC-P0-07: projekt, manager a výchozí stavy tvoří jediný DB invariant.
 	// Dílčí selhání musí vrátit vše a klient nesmí dostat napůl vytvořený projekt.
 	const project = await db.transaction(async (tx) => {
@@ -384,10 +554,11 @@ app.patch("/api/workspaces/:id/members/:userId/profile", async (c) => {
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	const wsId = c.req.param("id");
 	const targetId = c.req.param("userId");
-	const body = (await c.req.json().catch(() => ({}))) as {
-		areas?: string | null;
-		bio?: string | null;
-	};
+	if (!uuid.safeParse(wsId).success || !uuid.safeParse(targetId).success)
+		return c.json({ error: "invalid_id" }, 422);
+	const parsed = memberProfileSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_profile", issues: parsed.error.issues }, 422);
+	const body = parsed.data;
 
 	const db = getDb();
 	const ws = (
@@ -417,8 +588,6 @@ app.patch("/api/workspaces/:id/members/:userId/profile", async (c) => {
 		patch.areas = body.areas?.trim() ? body.areas.trim().slice(0, 500) : null;
 	if ("bio" in body)
 		patch.bio = body.bio?.trim() ? body.bio.trim().slice(0, 1000) : null;
-	if (Object.keys(patch).length === 0)
-		return c.json({ error: "nothing to update" }, 400);
 
 	const updated = await db
 		.update(memberships)
@@ -438,11 +607,11 @@ app.patch("/api/workspaces/:id/members/:userId/role", async (c) => {
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	const wsId = c.req.param("id");
 	const targetId = c.req.param("userId");
-	const role = ((await c.req.json().catch(() => ({}))) as { role?: string })
-		.role;
-	// Validace proti sdílenému enumu WORKSPACE_ROLES (admin/manager/member/guest) — dřív odmítal 'manager'.
-	if (!role || !(WORKSPACE_ROLES as readonly string[]).includes(role))
-		return c.json({ error: "invalid role" }, 400);
+	if (!uuid.safeParse(wsId).success || !uuid.safeParse(targetId).success)
+		return c.json({ error: "invalid_id" }, 422);
+	const parsed = memberRoleSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_role", issues: parsed.error.issues }, 422);
+	const role = parsed.data.role;
 
 	const db = getDb();
 	const ws = (
@@ -512,25 +681,18 @@ app.patch("/api/workspaces/:id/members/:userId/role", async (c) => {
 });
 
 /**
- * Pozvat člena do workspace (jen owner/admin/manager): existujícího uživatele podle e-mailu
- * přidá do memberships (roster se hned aktualizuje). Uživatel zatím neexistuje → added:false
- * (skutečná e-mailová pozvánka nováčkovi = mail infra, blok #8).
+ * Pozvat člena do workspace (jen owner/admin/manager). Existující účet se přidá
+ * ihned; nový dostane skutečný Better Auth magic link a user.create hook jej po
+ * ověření e-mailu atomicky přidá do všech platných pozvánek.
  */
 app.post("/api/workspaces/:id/invite", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	const wsId = c.req.param("id");
-	const body = (await c.req.json().catch(() => ({}))) as {
-		email?: string;
-		role?: string;
-	};
-	const email = body.email?.trim().toLowerCase();
-	if (!email?.includes("@"))
-		return c.json({ error: "invalid email" }, 400);
-	const role =
-		body.role && (WORKSPACE_ROLES as readonly string[]).includes(body.role)
-			? body.role
-			: "member";
+	if (!uuid.safeParse(wsId).success) return c.json({ error: "invalid_id" }, 422);
+	const parsed = inviteSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_invite", issues: parsed.error.issues }, 422);
+	const { email, name, role } = parsed.data;
 
 	const db = getDb();
 	const ws = (
@@ -564,13 +726,84 @@ app.post("/api/workspaces/:id/invite", async (c) => {
 			.from(users)
 			.where(eq(sql`lower(${users.email})`, email))
 	)[0];
-	if (!user) return c.json({ ok: true, added: false, reason: "no_user" });
+	if (user) {
+		await db.transaction(async (tx) => {
+			await tx
+				.insert(memberships)
+				.values({ workspaceId: wsId, userId: user.id, role })
+				.onConflictDoNothing();
+			await tx.insert(auditEvents).values({
+				workspaceId: wsId,
+				actorType: "user",
+				actorUserId: session.user.id,
+				entity: "membership",
+				entityId: user.id,
+				action: "invite_existing",
+				diff: { role },
+				requestId: c.get("requestId") ?? null,
+			});
+		});
+		return c.json({ ok: true, added: true, invited: false, member: user });
+	}
 
-	await db
-		.insert(memberships)
-		.values({ workspaceId: wsId, userId: user.id, role })
-		.onConflictDoNothing();
-	return c.json({ ok: true, added: true, member: user });
+	const invitation = await db.transaction(async (tx) => {
+		await tx.execute(
+			sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${wsId}:${email}`}, 0))`,
+		);
+		const [prior] = await tx
+			.select({ id: workspaceInvitations.id })
+			.from(workspaceInvitations)
+			.where(
+				and(
+					eq(workspaceInvitations.workspaceId, wsId),
+					eq(workspaceInvitations.email, email),
+					isNull(workspaceInvitations.acceptedAt),
+					isNull(workspaceInvitations.revokedAt),
+				),
+			)
+			.limit(1);
+		const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1_000);
+		const [row] = prior
+			? await tx
+					.update(workspaceInvitations)
+					.set({ role, invitedBy: session.user.id, expiresAt, updatedAt: new Date() })
+					.where(eq(workspaceInvitations.id, prior.id))
+					.returning({ id: workspaceInvitations.id })
+			: await tx
+					.insert(workspaceInvitations)
+					.values({ workspaceId: wsId, email, role, invitedBy: session.user.id, expiresAt })
+					.returning({ id: workspaceInvitations.id });
+		if (!row) throw new Error("workspace_invitation_not_persisted");
+		await tx.insert(auditEvents).values({
+			workspaceId: wsId,
+			actorType: "user",
+			actorUserId: session.user.id,
+			entity: "workspace_invitation",
+			entityId: row.id,
+			action: prior ? "resend" : "invite",
+			diff: { role, expiresInDays: 7 },
+			requestId: c.get("requestId") ?? null,
+		});
+		return row;
+	});
+
+	try {
+		await auth.api.signInMagicLink({
+			headers: c.req.raw.headers,
+			body: {
+				email,
+				name,
+				callbackURL: `${env.webOrigin}/`,
+				newUserCallbackURL: `${env.webOrigin}/`,
+			},
+		});
+	} catch {
+		return c.json(
+			{ error: "invitation_delivery_failed", invitationId: invitation.id },
+			502,
+		);
+	}
+	return c.json({ ok: true, added: false, invited: true, invitationId: invitation.id });
 });
 
 /** Členové projektu (jen pro člena) — Projekty detail (vlastník + avatary). */
@@ -607,9 +840,10 @@ app.post("/api/projects/:id/members", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	const pid = c.req.param("id");
-	const userId = ((await c.req.json().catch(() => ({}))) as { userId?: string })
-		.userId;
-	if (!userId) return c.json({ error: "userId required" }, 400);
+	if (!uuid.safeParse(pid).success) return c.json({ error: "invalid_id" }, 422);
+	const parsed = projectMemberSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_project_member", issues: parsed.error.issues }, 422);
+	const { userId } = parsed.data;
 
 	const db = getDb();
 	// CC-P0-05: členství smí měnit jen project manager nebo workspace admin/owner (§15/5)

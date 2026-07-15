@@ -2,12 +2,13 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { useEffect, useMemo, useState } from "react";
+import { DataLoading } from "../components/Loading";
 import { useSession } from "../lib/auth-client";
 import { inboxProjectIds } from "../lib/inbox";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { toggleTask } from "../lib/tasks";
 import { useWorkspace } from "../lib/workspace";
@@ -29,7 +30,7 @@ function triageDate(kind: "today" | "tomorrow" | "nextWeek"): string {
 /** Schránka — inbox triage: nezařazené (undated) úkoly v inbox projektech + naplánovat/přesun + undo. */
 export function Schranka() {
 	const { t } = useTranslation();
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { open } = useTaskDetail();
 	const { activeWs } = useWorkspace();
 	const { q: searchQ } = useListSearch();
@@ -55,7 +56,7 @@ export function Schranka() {
 		[projects, inboxIds, activeWs],
 	);
 
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		"SELECT * FROM tasks WHERE completed_at IS NULL AND due_date IS NULL AND parent_id IS NULL ORDER BY created_at DESC",
 	);
 	const items = useMemo(
@@ -115,7 +116,9 @@ export function Schranka() {
 				{t("inbox.subtitle")}
 			</p>
 
-			{items.length === 0 ? (
+			{projectsLoading || tasksLoading ? (
+				<DataLoading />
+			) : items.length === 0 ? (
 				<div className="text-center" style={{ padding: "54px 20px" }}>
 					<div className="mb-1 font-display font-bold text-ink" style={{ fontSize: 15 }}>
 						{t("inbox.empty")}

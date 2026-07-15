@@ -5,11 +5,13 @@ import { useTranslation } from "@watson/i18n";
 import { type ReactNode, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
 import { initials } from "../lib/format";
+import { focusOnMount } from "../lib/focusOnMount";
 import type { ChainRow, GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { useWorkspaces } from "../lib/workspace";
+import { useMail } from "../mail/state";
 
 const INBOX_NAMES = new Set(["Doručené", "Inbox"]);
 type Member = {
@@ -26,27 +28,62 @@ function totalLabel(total: number, t: (k: string, o: { count: number }) => strin
 }
 
 /**
- * Hledat — 5 entit (úkoly/projekty/lidé/postupy/cíle), substring match, limity 8/6/6/6/6
- * (1:1 dle Cloud Design). Prompt/empty stavy, počítadlo s českou pluralizací.
+ * Globální offline hledání. Prohledává výhradně řádky, které PowerSync uživateli
+ * autorizovaně synchronizoval; tím nepřidává druhou, hůře auditovatelnou ACL cestu.
+ * Přepis meetingu se záměrně neprohledává: není plošně synchronizovaný a jeho
+ * participant ACL se vyhodnocuje on-demand na API.
  */
 export function Hledat() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const taskDetail = useTaskDetail();
 	const projectDetail = useProjectDetail();
-	const { data: workspaces } = useWorkspaces();
+	const { data: workspaces, isPending: workspacesLoading } = useWorkspaces();
+	const { threads, openThread } = useMail();
 	const [q, setQ] = useState("");
 
-	const { data: tasks } = usePsQuery<TaskRow>(
-		"SELECT id, name, project_id, due_date, parent_id, completed_at FROM tasks",
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
+		"SELECT id, name, description, project_id, due_date, parent_id, completed_at FROM tasks",
 	);
-	const { data: chains } = usePsQuery<ChainRow>("SELECT id, name FROM chains");
-	const { data: steps } = usePsQuery<{
+	const { data: comments, isLoading: commentsLoading } = usePsQuery<{
+		task_id: string;
+		body: string | null;
+	}>("SELECT task_id, body FROM comments");
+	const { data: chains, isLoading: chainsLoading } = usePsQuery<ChainRow>(
+		"SELECT id, name, description FROM chains",
+	);
+	const { data: steps, isLoading: stepsLoading } = usePsQuery<{
 		chain_id: string | null;
 		step_state: string | null;
 	}>("SELECT chain_id, step_state FROM chain_steps");
-	const { data: goals } = usePsQuery<GoalRow>("SELECT id, name, scope FROM goals");
+	const { data: goals, isLoading: goalsLoading } = usePsQuery<GoalRow>(
+		"SELECT id, name, scope, metric, period FROM goals",
+	);
+	const { data: lists, isLoading: listsLoading } = usePsQuery<{
+		id: string;
+		name: string | null;
+		event: string | null;
+	}>("SELECT id, name, event FROM lists WHERE archived = 0 OR archived IS NULL");
+	const { data: listItems, isLoading: listItemsLoading } = usePsQuery<{
+		list_id: string;
+		text: string | null;
+		qty: string | null;
+	}>("SELECT list_id, text, qty FROM list_items");
+	const { data: contacts, isLoading: contactsLoading } = usePsQuery<{
+		id: string;
+		name: string | null;
+		email: string | null;
+		org: string | null;
+		role: string | null;
+		areas: string | null;
+		note: string | null;
+	}>("SELECT id, name, email, org, role, areas, note FROM contacts");
+	const { data: meetings, isLoading: meetingsLoading } = usePsQuery<{
+		id: string;
+		title: string | null;
+		status: string | null;
+	}>("SELECT id, title, status FROM meetings");
 
 	// Lidé napříč všemi prostory (dedup podle id).
 	const memberQueries = useQueries({
@@ -66,6 +103,36 @@ export function Hledat() {
 		for (const mq of memberQueries) for (const m of mq.data ?? []) map.set(m.id, m);
 		return [...map.values()];
 	}, [memberQueries]);
+	const commentsByTask = useMemo(() => {
+		const map = new Map<string, string[]>();
+		for (const row of comments ?? []) {
+			if (!row.task_id || !row.body) continue;
+			map.set(row.task_id, [...(map.get(row.task_id) ?? []), row.body]);
+		}
+		return map;
+	}, [comments]);
+	const itemsByList = useMemo(() => {
+		const map = new Map<string, string[]>();
+		for (const row of listItems ?? []) {
+			const value = [row.text, row.qty].filter(Boolean).join(" ");
+			if (row.list_id && value) map.set(row.list_id, [...(map.get(row.list_id) ?? []), value]);
+		}
+		return map;
+	}, [listItems]);
+	const searchLoading =
+		projectsLoading ||
+		workspacesLoading ||
+		tasksLoading ||
+		commentsLoading ||
+		chainsLoading ||
+		stepsLoading ||
+		goalsLoading ||
+		listsLoading ||
+		listItemsLoading ||
+		contactsLoading ||
+		meetingsLoading ||
+		memberQueries.some((query) => query.isPending);
+	const searchPartialError = memberQueries.some((query) => query.isError);
 
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
 	const inboxIds = useMemo(
@@ -82,7 +149,7 @@ export function Hledat() {
 		const rTasks = (tasks ?? [])
 			.filter(
 				(tk) =>
-					has(tk.name) &&
+					(has(tk.name) || has(tk.description) || (commentsByTask.get(tk.id) ?? []).some(has)) &&
 					!(tk.project_id && inboxIds.has(tk.project_id) && !tk.due_date && !tk.parent_id),
 			)
 			// Dokončené řadit až za otevřené (a odlišit v renderu), ať nepřebijí aktivní.
@@ -136,7 +203,7 @@ export function Hledat() {
 			doneBy.set(st.chain_id, c);
 		}
 		const rFlows = (chains ?? [])
-			.filter((ch) => has(ch.name))
+			.filter((ch) => has(ch.name) || has(ch.description))
 			.slice(0, 6)
 			.map((ch) => {
 				const c = doneBy.get(ch.id) ?? { done: 0, total: 0 };
@@ -155,7 +222,7 @@ export function Hledat() {
 			person: t("search.goalPerson"),
 		};
 		const rGoals = (goals ?? [])
-			.filter((g) => has(g.name))
+			.filter((g) => has(g.name) || has(g.metric) || has(g.period))
 			.slice(0, 6)
 			.map((g) => ({
 				id: g.id,
@@ -164,13 +231,86 @@ export function Hledat() {
 				run: () => void navigate({ to: "/cile" }),
 			}));
 
-		const total = rTasks.length + rProjects.length + rPeople.length + rFlows.length + rGoals.length;
+		const rLists = (lists ?? [])
+			.filter((list) => has(list.name) || has(list.event) || (itemsByList.get(list.id) ?? []).some(has))
+			.slice(0, 6)
+			.map((list) => ({
+				id: list.id,
+				name: list.name ?? t("search.unnamedList"),
+				sub: list.event ?? t("search.checklist"),
+				run: () => void navigate({ to: "/seznamy", search: { seznam: list.id } }),
+			}));
+
+		const rMeetings = (meetings ?? [])
+			.filter((meeting) => has(meeting.title))
+			.slice(0, 6)
+			.map((meeting) => ({
+				id: meeting.id,
+				name: meeting.title ?? t("search.unnamedMeeting"),
+				sub: meeting.status ?? t("search.meeting"),
+				run: () => void navigate({ to: "/meets", search: { meet: meeting.id } }),
+			}));
+
+		const rMail = threads
+			.filter(
+				(thread) =>
+					has(thread.subj) ||
+					has(thread.snip) ||
+					has(thread.from.n) ||
+					has(thread.from.addr) ||
+					thread.msgs.some((msg) => msg.body.some(has) || (msg.quote ?? []).some(has)) ||
+					thread.chat.some((msg) => has(msg.m) || has(msg.pre) || has(msg.post)),
+			)
+			.slice(0, 6)
+			.map((thread) => ({
+				id: thread.id,
+				name: thread.subj,
+				sub: thread.from.n,
+				run: () => {
+					openThread(thread.id);
+					void navigate({ to: "/mail" });
+				},
+			}));
+
+		const rContacts = (contacts ?? [])
+			.filter(
+				(contact) =>
+					has(contact.name) ||
+					has(contact.email) ||
+					has(contact.org) ||
+					has(contact.role) ||
+					has(contact.areas) ||
+					has(contact.note),
+			)
+			.slice(0, 6)
+			.map((contact) => ({
+				id: contact.id,
+				name: contact.name || contact.email || t("search.unnamedContact"),
+				sub: [contact.org, contact.email].filter(Boolean).join(" · "),
+				// Adresář zatím nemá vlastní detail; Mail je jeho jediný produkční konzument.
+				run: () => void navigate({ to: "/mail" }),
+			}));
+
+		const total =
+			rTasks.length +
+			rProjects.length +
+			rPeople.length +
+			rFlows.length +
+			rGoals.length +
+			rLists.length +
+			rMeetings.length +
+			rMail.length +
+			rContacts.length;
 		return {
 			tasks: rTasks,
 			projects: rProjects,
 			people: rPeople,
 			flows: rFlows,
 			goals: rGoals,
+			lists: rLists,
+			meetings: rMeetings,
+			mail: rMail,
+			contacts: rContacts,
 			total,
 		};
 	}, [
@@ -181,12 +321,19 @@ export function Hledat() {
 		chains,
 		steps,
 		goals,
+		lists,
+		meetings,
+		threads,
+		contacts,
+		commentsByTask,
+		itemsByList,
 		projMap,
 		inboxIds,
 		t,
 		navigate,
 		taskDetail,
 		projectDetail,
+		openThread,
 	]);
 
 	return (
@@ -215,9 +362,8 @@ export function Hledat() {
 						strokeLinecap="round"
 					/>
 				</svg>
-				{/* biome-ignore lint/a11y/noAutofocus: search obrazovka — input se má fokusovat hned */}
 				<input
-					autoFocus
+					ref={focusOnMount}
 					value={q}
 					onChange={(e) => setQ(e.target.value)}
 					placeholder={t("search.placeholder")}
@@ -240,7 +386,19 @@ export function Hledat() {
 				</div>
 			)}
 
-			{res && res.total === 0 && (
+			{q.trim() && searchLoading && (
+				<div role="status" className="text-center font-body text-ink-3" style={{ padding: "32px 20px", fontSize: 13 }}>
+					{t("search.loading")}
+				</div>
+			)}
+
+			{q.trim() && !searchLoading && searchPartialError && (
+				<div role="alert" className="mb-3 rounded-lg border border-line bg-panel-2 px-3 py-2 font-body text-ink-2" style={{ fontSize: 12 }}>
+					{t("search.partialError")}
+				</div>
+			)}
+
+			{res && !searchLoading && res.total === 0 && (
 				<div className="text-center" style={{ padding: "54px 20px" }}>
 					<div className="mb-1 font-display font-bold text-ink" style={{ fontSize: 15 }}>
 						{t("search.empty")}
@@ -387,7 +545,37 @@ export function Hledat() {
 					))}
 				</Section>
 			)}
+
+			{res && res.lists.length > 0 && <SimpleSection label={t("search.lists")} rows={res.lists} mark="☷" />}
+			{res && res.meetings.length > 0 && <SimpleSection label={t("search.meetings")} rows={res.meetings} mark="⌁" />}
+			{res && res.mail.length > 0 && <SimpleSection label={t("search.mail")} rows={res.mail} mark="@" />}
+			{res && res.contacts.length > 0 && <SimpleSection label={t("search.contacts")} rows={res.contacts} mark="•" />}
 		</div>
+	);
+}
+
+function SimpleSection({
+	label,
+	rows,
+	mark,
+}: {
+	label: string;
+	rows: Array<{ id: string; name: string; sub: string; run: () => void }>;
+	mark: string;
+}) {
+	return (
+		<Section label={label}>
+			{rows.map((row) => (
+				<Row key={row.id} onClick={row.run} sub={row.sub}>
+					<span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-panel-2 font-mono text-brass-text" aria-hidden>
+						{mark}
+					</span>
+					<span className="min-w-0 flex-1 truncate font-display font-semibold text-ink" style={{ fontSize: 13.5 }}>
+						{row.name}
+					</span>
+				</Row>
+			))}
+		</Section>
 	);
 }
 

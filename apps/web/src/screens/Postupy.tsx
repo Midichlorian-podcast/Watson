@@ -3,17 +3,26 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
-import { type ChainStepLite, repairChain, rewindToStep } from "../lib/chainAdvance";
+import {
+	activateStepManually,
+	type ChainStepLite,
+	repairChain,
+	rewindToStep,
+} from "../lib/chainAdvance";
 import { shiftChain, toggleChainWeekend } from "../lib/chainReflow";
 import { initials } from "../lib/format";
+import { focusOnMount } from "../lib/focusOnMount";
 import type { ChainRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { NOT_MEETING, toggleTask } from "../lib/tasks";
+import { showToast } from "../lib/toast";
+import { storageGet } from "../lib/storage";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
@@ -224,7 +233,7 @@ const TEMPLATES: {
 /** Šablony uložené z běžících postupů (localStorage, prototyp saveFlowAsTemplate). */
 function savedTemplates(): typeof TEMPLATES {
 	try {
-		return JSON.parse(localStorage.getItem("watson.flowTemplates") ?? "[]") as typeof TEMPLATES;
+		return JSON.parse(storageGet("watson.flowTemplates") ?? "[]") as typeof TEMPLATES;
 	} catch {
 		return [];
 	}
@@ -239,7 +248,7 @@ export function Postupy() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const search = useSearch({ from: "/postupy" });
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { activeWs } = useWorkspace();
 	const { data: workspaces } = useWorkspaces();
 	const activeWsInfo = (workspaces ?? []).find((w) => w.id === activeWs);
@@ -255,15 +264,15 @@ export function Postupy() {
 	);
 	const wsProjectIds = useMemo(() => new Set(wsProjects.map((p) => p.id)), [wsProjects]);
 
-	const { data: chains } = usePsQuery<ChainRow>("SELECT * FROM chains ORDER BY created_at DESC");
-	const { data: steps } = usePsQuery<StepFull>(
+	const { data: chains, isLoading: chainsLoading } = usePsQuery<ChainRow>("SELECT * FROM chains ORDER BY created_at DESC");
+	const { data: steps, isLoading: stepsLoading } = usePsQuery<StepFull>(
 		"SELECT id, chain_id, task_id, project_id, position, gate, step_state, activated_at FROM chain_steps ORDER BY position",
 	);
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		// NOT_MEETING — porada nesmí být krokem štafety (audit Fáze 1: chybějící filtr)
 		`SELECT id, name, project_id, priority, due_date, completed_at, description, assignment_mode FROM tasks WHERE ${NOT_MEETING}`,
 	);
-	const { data: assignments } = usePsQuery<{
+	const { data: assignments, isLoading: assignmentsLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
@@ -291,8 +300,10 @@ export function Postupy() {
 			return (await r.json()).members as Member[];
 		},
 	});
-	const memberName = (id: string | null | undefined) =>
-		(team ?? []).find((m) => m.id === id)?.name ?? "";
+	const memberName = useCallback(
+		(id: string | null | undefined) => (team ?? []).find((m) => m.id === id)?.name ?? "",
+		[team],
+	);
 
 	/** Role kroku — builder ji ukládá do popisu úkolu jako „Role: X" (prototyp flowView, ř. 2554). */
 	const stepRole = (st: ChainStepLite) => {
@@ -416,7 +427,9 @@ export function Postupy() {
 				{t("flows.subtitle")}
 			</p>
 
-			{view.length === 0 ? (
+			{projectsLoading || chainsLoading || stepsLoading || tasksLoading || assignmentsLoading ? (
+				<DataLoading />
+			) : view.length === 0 ? (
 				<div className="text-center" style={{ padding: "60px 20px" }}>
 					<div className="font-body text-ink-3" style={{ fontSize: 14 }}>
 						{t("flows.empty")}
@@ -533,7 +546,6 @@ export function Postupy() {
 					taskById={taskById}
 					stepWho={stepWho}
 					stepAvatar={stepAvatar}
-					isMine={(st) => !!(st.task_id && meId && assigneesByTask.get(st.task_id)?.includes(meId))}
 					meId={meId}
 					onClose={() => void navigate({ to: "/postupy", search: {} })}
 				/>
@@ -548,7 +560,6 @@ function FlowDetail({
 	taskById,
 	stepWho,
 	stepAvatar,
-	isMine,
 	meId,
 	onClose,
 }: {
@@ -564,8 +575,6 @@ function FlowDetail({
 	stepWho: (st: ChainStepLite) => string;
 	/** Avatar kroku — iniciály / ◇ (role) / ? (nepřiřazený) — prototyp flowView. */
 	stepAvatar: (st: ChainStepLite) => string;
-	/** Je krok přiřazen mně? (chip „Připomenout" — prototyp canRemind, ř. 1136) */
-	isMine: (st: ChainStepLite) => boolean;
 	meId: string | undefined;
 	onClose: () => void;
 }) {
@@ -573,11 +582,22 @@ function FlowDetail({
 	const { open: openTask, openId } = useTaskDetail();
 	const { ch, chSteps, total, done, now } = data;
 	const [pendingRewind, setPendingRewind] = useState<string | null>(null);
+	const [activatingManual, setActivatingManual] = useState<string | null>(null);
 	const skipWk = !!ch.skip_weekend;
 	// data-esc-layer signalizuje otevřenou vrstvu (kbNav/BulkBar), ale JEN dokud nad ní
 	// nestojí detail úkolu (openId) — jinak by blunt Esc-guard detailu (querySelector) našel
 	// naši vrstvu a zablokoval si vlastní zavření. Vzor NotifCenter.
 	const escLayer = openId ? undefined : "";
+	const completeStep = useCallback(
+		async (st: StepFull) => {
+			const tk = st.task_id ? taskById.get(st.task_id) : undefined;
+			if (!tk) return;
+			// Přes toggleTask (ne přímý UPDATE): dopočítá R9 status_id, u shared_all srovná
+			// per-osoba assignments (R2), zapíše undo a sám posune postup.
+			await toggleTask(tk, meId);
+		},
+		[taskById, meId],
+	);
 
 	// Otevření detailu = idempotentní oprava stavu kroků z tasks.completed_at (napraví drift ze
 	// souběžných offline změn; zapisuje jen když se stav liší → obvykle no-op).
@@ -606,7 +626,7 @@ function FlowDetail({
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-	}, [onClose, now, openId]);
+	}, [onClose, now, openId, completeStep]);
 
 	/** Uložit jako šablonu (prototyp saveFlowAsTemplate, ř. 2495) — per-user do localStorage. */
 	const STATE_LABEL: Record<string, string> = {
@@ -622,12 +642,20 @@ function FlowDetail({
 		? `${t("flows.etaCca")} ${fmtDay(dues.sort()[dues.length - 1] ?? null)}`
 		: "";
 
-	const completeStep = async (st: StepFull) => {
-		const tk = st.task_id ? taskById.get(st.task_id) : undefined;
-		if (!tk) return;
-		// Přes toggleTask (ne přímý UPDATE): dopočítá R9 status_id, u shared_all srovná
-		// per-osoba assignments (R2), zapíše undo a sám posune postup (advanceChainForTask).
-		await toggleTask(tk, meId);
+	const activateManual = async (st: StepFull) => {
+		if (activatingManual) return;
+		setActivatingManual(st.id);
+		try {
+			await activateStepManually(st);
+		} catch (error) {
+			showToast(
+				t("flows.manualActivationError", {
+					code: error instanceof Error ? error.message : "manual_activation_failed",
+				}),
+			);
+		} finally {
+			setActivatingManual(null);
+		}
 	};
 
 	return (
@@ -900,6 +928,23 @@ function FlowDetail({
 										</span>
 									</div>
 									<div className="mt-2.5 flex items-center justify-end gap-2">
+										{sk === "dormant" && st.gate === "manual" && (
+											<button
+												type="button"
+												onClick={() => void activateManual(st)}
+												disabled={!!activatingManual}
+												className="rounded-lg border border-brass font-display font-bold text-brass-text"
+												style={{
+													padding: "6px 13px",
+													fontSize: 12,
+													opacity: activatingManual ? 0.55 : 1,
+												}}
+											>
+												{activatingManual === st.id
+													? t("flows.activatingManual")
+													: t("flows.activateManual")}
+											</button>
+										)}
 										{sk === "active" && (
 											<button
 												type="button"
@@ -980,6 +1025,7 @@ function FlowModal({
 	const [tpl, setTpl] = useState<string | null>(null);
 	const [rows, setRows] = useState<
 		{
+			id: string;
 			name: string;
 			offset: number;
 			priority: number;
@@ -1033,6 +1079,7 @@ function FlowModal({
 		setRows(
 			tp.steps.map((s) => ({
 				...s,
+				id: crypto.randomUUID(),
 				who: [],
 				role: "",
 				mode: s.mode ?? "any",
@@ -1166,8 +1213,7 @@ function FlowModal({
 
 					<div style={{ padding: "18px 20px" }}>
 						<input
-							// biome-ignore lint/a11y/noAutofocus: builder modal
-							autoFocus
+							ref={focusOnMount}
 							value={name}
 							onChange={(e) => setName(e.target.value)}
 							placeholder={t("flows.namePlaceholder")}
@@ -1236,6 +1282,7 @@ function FlowModal({
 									setTpl(null);
 									setRows([
 										{
+											id: crypto.randomUUID(),
 											name: "",
 											offset: 0,
 											priority: 3,
@@ -1270,9 +1317,7 @@ function FlowModal({
 								</div>
 								{rows.map((r, i) => (
 									<div
-										// stabilní key (index) — dřív obsahoval r.name → input se při psaní
-										// remountoval a ztrácel focus po jednom písmenu
-										key={i}
+										key={r.id}
 										className="mb-2 rounded-xl border border-line bg-card"
 										style={{ padding: "12px 13px" }}
 									>
@@ -1449,6 +1494,7 @@ function FlowModal({
 										setRows((rs) => [
 											...rs,
 											{
+												id: crypto.randomUUID(),
 												name: "",
 												offset: (rs[rs.length - 1]?.offset ?? 0) + 1,
 												priority: 3,

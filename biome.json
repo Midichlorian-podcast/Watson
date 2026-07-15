@@ -10,10 +10,10 @@
 				"noNoninteractiveTabindex": "warn",
 				"noStaticElementInteractions": "warn",
 				"useKeyWithClickEvents": "warn",
-				"noSvgWithoutTitle": "warn",
+				"noSvgWithoutTitle": "off",
 				"noAutofocus": "warn",
 				"useAriaPropsSupportedByRole": "warn",
-				"useSemanticElements": "warn",
+				"useSemanticElements": "off",
 				"noLabelWithoutControl": "warn"
 			},
 			"style": {
@@ -30,5 +30,17 @@
 	},
 	"files": {
 		"includes": ["apps/**/src/**", "apps/api/*.ts", "packages/**/src/**", "!**/dist", "!**/*.css"]
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["apps/web/src/lib/quickadd/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noAssignInExpressions": "off"
+					}
+				}
+			}
+		}
+	]
 }

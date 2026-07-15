@@ -52,7 +52,7 @@ async function login(email: string): Promise<string> {
 	const cookie = v.headers.getSetCookie?.().join("; ") ?? v.headers.get("set-cookie") ?? "";
 	const sess = cookie
 		.split(/,(?=\s*\w+=)/)
-		.map((s) => s.split(";")[0]!.trim())
+		.map((s) => s.split(";")[0]?.trim() ?? "")
 		.filter(Boolean)
 		.join("; ");
 	if (!sess) throw new Error(`login ${email}: chybí session cookie`);
@@ -94,7 +94,8 @@ async function main() {
 				emailVerified: true,
 			})
 			.returning({ id: users.id, email: users.email });
-		return u!;
+		if (!u) throw new Error(`fixture_user_missing:${slug}`);
+		return u;
 	};
 	const OW = await mkUser("owner"); // zakladatel porady = účastník
 	const PART = await mkUser("part"); // přiřazený na kotevním úkolu
@@ -107,7 +108,8 @@ async function main() {
 		.insert(workspaces)
 		.values({ name: "ACL test ws", ownerId: OW.id, isPersonal: false })
 		.returning({ id: workspaces.id });
-	const wsId = ws!.id;
+	if (!ws) throw new Error("fixture_workspace_missing");
+	const wsId = ws.id;
 	await db.insert(memberships).values([
 		{ workspaceId: wsId, userId: OW.id, role: "member" },
 		{ workspaceId: wsId, userId: PART.id, role: "member" },
@@ -120,7 +122,8 @@ async function main() {
 		.insert(projects)
 		.values({ workspaceId: wsId, name: "ACL projekt", ownerId: OW.id })
 		.returning({ id: projects.id });
-	const pid = proj!.id;
+	if (!proj) throw new Error("fixture_project_missing");
+	const pid = proj.id;
 	await db.insert(projectMembers).values([
 		{ projectId: pid, userId: OW.id, role: "manager" },
 		{ projectId: pid, userId: PART.id, role: "editor" },
@@ -129,35 +132,33 @@ async function main() {
 		{ projectId: pid, userId: ADM.id, role: "editor" },
 	]);
 	// Porada = kotevní úkol + sidecar; účastníci = assignments hubu.
-	const [hub] = await db
-		.insert(tasks)
-		.values({
+	const mid = crypto.randomUUID();
+	const hubId = crypto.randomUUID();
+	await db.transaction(async (tx) => {
+		await tx.insert(tasks).values({
+			id: hubId,
 			projectId: pid,
 			name: "ACL porada",
 			priority: 4,
 			assignmentMode: "single",
 			kind: "meeting",
+			meetingId: mid,
 			createdBy: OW.id,
-		})
-		.returning({ id: tasks.id });
-	const hubId = hub!.id;
-	const [meet] = await db
-		.insert(meetings)
-		.values({
+		});
+		await tx.insert(meetings).values({
+			id: mid,
 			workspaceId: wsId,
 			title: "ACL porada",
 			status: "scheduled",
 			hubTaskId: hubId,
 			transcript: TRANSCRIPT,
 			createdBy: OW.id,
-		})
-		.returning({ id: meetings.id });
-	const mid = meet!.id;
+		});
+	});
 	await db.insert(assignments).values([
 		{ taskId: hubId, projectId: pid, userId: PART.id, createdAt: new Date() },
 		{ taskId: hubId, projectId: pid, userId: OW.id, createdAt: new Date() },
 	]);
-	await db.update(tasks).set({ meetingId: mid }).where(eq(tasks.id, hubId));
 
 	try {
 		const [ow, part, inv, mem, adm, gst] = [
@@ -169,6 +170,13 @@ async function main() {
 			api(await login(GST.email)),
 		];
 		const detail = `/api/meetings/${mid}`;
+		const currentBase = async () =>
+			(
+				await db
+					.select({ updatedAt: meetings.updatedAt })
+					.from(meetings)
+					.where(eq(meetings.id, mid))
+			)[0]?.updatedAt.toISOString();
 		const bodyOf = async (r: Response) =>
 			(await r.json().catch(() => ({}))) as { meeting?: unknown };
 
@@ -190,17 +198,33 @@ async function main() {
 		check("nepozvaný člen přepis NEDOSTANE (403)", r.status === 403, r.status);
 
 		// ── zápisové cesty neúčastníka (extract platí AI!) ──
-		r = await mem.post("/api/meetings/extract", { meetingId: mid, transcript: TRANSCRIPT });
+		r = await mem.post("/api/meetings/extract", {
+			meetingId: mid,
+			transcript: TRANSCRIPT,
+			vendorConsent: true,
+			baseUpdatedAt: await currentBase(),
+		});
 		check("neúčastník NESMÍ spustit extrakci (403)", r.status === 403, r.status);
-		r = await adm.post("/api/meetings/extract", { meetingId: mid, transcript: TRANSCRIPT });
+		r = await adm.post("/api/meetings/extract", {
+			meetingId: mid,
+			transcript: TRANSCRIPT,
+			vendorConsent: true,
+			baseUpdatedAt: await currentBase(),
+		});
 		check("admin bez pozvání NESMÍ spustit extrakci (403)", r.status === 403, r.status);
-		r = await mem.post(`${detail}/transcript`, { transcript: "podvržený zápis" });
+		r = await mem.post(`${detail}/transcript`, {
+			transcript: "podvržený zápis",
+			baseUpdatedAt: await currentBase(),
+		});
 		check("neúčastník NESMÍ uložit zápis (403)", r.status === 403, r.status);
 		const stored = async () =>
 			(await db.select({ t: meetings.transcript }).from(meetings).where(eq(meetings.id, mid)))[0]
 				?.t;
 		check("  …a přepis v DB zůstal původní", (await stored()) === TRANSCRIPT);
-		r = await mem.post(`${detail}/extraction`, { proposals: [] });
+		r = await mem.post(`${detail}/extraction`, {
+			proposals: [],
+			baseUpdatedAt: await currentBase(),
+		});
 		check("neúčastník NESMÍ uložit revizi (403)", r.status === 403, r.status);
 		r = await mem.post(`${detail}/commit`, { defaultProjectId: pid, proposals: [] });
 		check("neúčastník NESMÍ commitnout poradu (403)", r.status === 403, r.status);
@@ -214,8 +238,28 @@ async function main() {
 			.values({ taskId: hubId, projectId: pid, userId: INV.id, createdAt: new Date() });
 		r = await inv.get(detail);
 		check("po přidání mezi účastníky přepis dostane (200)", r.status === 200, r.status);
-		r = await inv.post(`${detail}/transcript`, { transcript: TRANSCRIPT });
+		r = await inv.post(`${detail}/transcript`, {
+			transcript: TRANSCRIPT,
+			baseUpdatedAt: await currentBase(),
+		});
 		check("  …a smí uložit zápis (200)", r.status === 200, r.status);
+		const sharedBase = await currentBase();
+		const concurrentSaves = await Promise.all([
+			part.post(`${detail}/transcript`, {
+				transcript: `${TRANSCRIPT} Varianta A.`,
+				baseUpdatedAt: sharedBase,
+			}),
+			ow.post(`${detail}/transcript`, {
+				transcript: `${TRANSCRIPT} Varianta B.`,
+				baseUpdatedAt: sharedBase,
+			}),
+		]);
+		check(
+			"dva souběžné zápisy se stejnou base: právě jeden uspěje a druhý dostane 409",
+			concurrentSaves.filter((save) => save.status === 200).length === 1 &&
+				concurrentSaves.filter((save) => save.status === 409).length === 1,
+			concurrentSaves.map((save) => save.status),
+		);
 
 		// ── odebrání účastníka přístup ukončí ──
 		await db.delete(assignments).where(eq(assignments.userId, INV.id));
@@ -273,31 +317,32 @@ async function main() {
 
 		// ── porada, kterou zatím nikdo nemá přiřazenou (čerstvě naplánovaná — assignments
 		// se teprve nahrávají, nebo rychlý zápis): zakladatel ano, cizí ne ──
-		const [hub2] = await db
-			.insert(tasks)
-			.values({
+		const mid2 = crypto.randomUUID();
+		const hub2Id = crypto.randomUUID();
+		await db.transaction(async (tx) => {
+			await tx.insert(tasks).values({
+				id: hub2Id,
 				projectId: pid,
 				name: "ACL porada bez účastníků",
 				priority: 4,
 				assignmentMode: "single",
 				kind: "meeting",
+				meetingId: mid2,
 				createdBy: OW.id,
-			})
-			.returning({ id: tasks.id });
-		const [meet2] = await db
-			.insert(meetings)
-			.values({
+			});
+			await tx.insert(meetings).values({
+				id: mid2,
 				workspaceId: wsId,
 				title: "ACL porada bez účastníků",
 				status: "scheduled",
-				hubTaskId: hub2!.id,
+				hubTaskId: hub2Id,
 				transcript: TRANSCRIPT,
 				createdBy: OW.id,
-			})
-			.returning({ id: meetings.id });
-		r = await ow.get(`/api/meetings/${meet2!.id}`);
+			});
+		});
+		r = await ow.get(`/api/meetings/${mid2}`);
 		check("porada bez účastníků: zakladatel přepis dostane (200)", r.status === 200, r.status);
-		r = await mem.get(`/api/meetings/${meet2!.id}`);
+		r = await mem.get(`/api/meetings/${mid2}`);
 		check("porada bez účastníků: cizí člen přepis nedostane (403)", r.status === 403, r.status);
 	} finally {
 		await db.delete(workspaces).where(eq(workspaces.id, wsId));

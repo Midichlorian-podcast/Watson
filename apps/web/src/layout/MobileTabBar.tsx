@@ -79,18 +79,26 @@ export function MobileTabBar() {
 				// Spodní sheet „Více" — sekce, které na mobilu nejsou v hlavních tabech.
 				<div
 					className="fixed inset-0"
-					style={{ zIndex: 40, background: "rgba(10,14,20,.42)" }}
-					onClick={() => setMoreOpen(false)}
+					style={{ zIndex: 40 }}
 					data-esc-layer
 				>
+					<button
+						type="button"
+						aria-label={t("common.close")}
+						onClick={() => setMoreOpen(false)}
+						className="absolute inset-0 cursor-default border-0 p-0"
+						style={{ background: "rgba(10,14,20,.42)" }}
+					/>
 					<div
 						ref={sheetRef}
 						role="dialog"
 						aria-modal="true"
 						aria-label={t("nav.more")}
 						className="fixed right-0 bottom-0 left-0 rounded-t-2xl border-line border-t bg-card"
-						style={{ paddingBottom: "calc(58px + env(safe-area-inset-bottom))" }}
-						onClick={(e) => e.stopPropagation()}
+						style={{
+							paddingBottom: "calc(58px + env(safe-area-inset-bottom))",
+							zIndex: 1,
+						}}
 					>
 						<div
 							className="mx-auto my-2 rounded-full"

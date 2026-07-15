@@ -7,6 +7,7 @@
  *   operaci zahodil (úkol po resyncu zmizí).
  * - `days` z parseru se ukládá; jinak se vícedennost tiše ztratí.
  */
+import { zonedDateTimeToIso } from "../timeZone";
 import type { ParsedDraft } from "./types";
 
 export interface QuickAddTaskInput {
@@ -24,6 +25,8 @@ export interface QuickAddTaskInput {
 	today: string;
 	/** ISO timestamp vzniku. */
 	now: string;
+	/** IANA zóna, ve které uživatel zadal wall-clock čas. */
+	timeZone: string;
 }
 
 export interface QuickAddTaskRow {
@@ -32,14 +35,16 @@ export interface QuickAddTaskRow {
 }
 
 export function buildQuickAddTaskRow(input: QuickAddTaskInput): QuickAddTaskRow {
-	const { parsed, taskId, projectId, name, assignmentMode, userId, today, now } = input;
+	const { parsed, taskId, projectId, name, assignmentMode, userId, today, now, timeZone } =
+		input;
 	// start_date = termín (nebo dnes) + čas dne, pokud parser rozpoznal čas.
 	let startDate: string | null = null;
 	if (parsed.startMin != null) {
 		const base = parsed.due ?? today;
 		const hh = String(Math.floor(parsed.startMin / 60)).padStart(2, "0");
 		const mm = String(parsed.startMin % 60).padStart(2, "0");
-		startDate = `${base}T${hh}:${mm}:00`;
+		startDate = zonedDateTimeToIso(base, `${hh}:${mm}:00`, timeZone);
+		if (!startDate) throw new Error("invalid_start_datetime");
 	}
 	const columns = [
 		"id",
@@ -48,6 +53,7 @@ export function buildQuickAddTaskRow(input: QuickAddTaskInput): QuickAddTaskRow 
 		"priority",
 		"due_date",
 		"start_date",
+		"start_timezone",
 		"deadline",
 		"duration_min",
 		"days",
@@ -65,6 +71,7 @@ export function buildQuickAddTaskRow(input: QuickAddTaskInput): QuickAddTaskRow 
 		parsed.priority ?? 2,
 		parsed.due ?? null,
 		startDate,
+		startDate ? timeZone : null,
 		parsed.deadline ?? null,
 		parsed.durationMin ?? null,
 		parsed.days ?? null,

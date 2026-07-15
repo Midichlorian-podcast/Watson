@@ -26,6 +26,24 @@ export const env = {
 	databaseUrl: process.env.DATABASE_URL,
 	authSecret: process.env.BETTER_AUTH_SECRET,
 	authUrl: process.env.BETTER_AUTH_URL ?? "http://localhost:8787",
+	/** Pilot je invite-only; veřejný signup musí být zapnut explicitně. */
+	authAllowSignup: process.env.AUTH_ALLOW_SIGNUP === "1",
+	/** V produkci výchozí povinnost 2FA pro adminy/vlastníky; nouzové vypnutí je explicitní. */
+	authRequirePrivileged2FA:
+		process.env.AUTH_REQUIRE_PRIVILEGED_2FA !== undefined
+			? process.env.AUTH_REQUIRE_PRIVILEGED_2FA === "1"
+			: process.env.NODE_ENV === "production",
+	authEmailFrom: process.env.AUTH_EMAIL_FROM ?? "Watson <auth@watson.local>",
+	/** HMAC manifestu aplikačního exportu; musí být jiný než session/signing keys. */
+	backupSigningSecret: process.env.BACKUP_SIGNING_SECRET,
+	/**
+	 * Kořenový secret pro per-user klíče lokální PowerSync DB. Nesmí se sdílet
+	 * s Better Auth ani exporty. Změna hodnoty záměrně invaliduje jen lokální
+	 * cache (serverová data zůstávají autoritativní).
+	 */
+	localDataEncryptionSecret: process.env.LOCAL_DATA_ENCRYPTION_SECRET,
+	/** Forwarded IP hlavičky jsou autoritativní jen za námi spravovanou proxy. */
+	trustProxy: process.env.TRUST_PROXY === "1",
 	google: {
 		clientId: process.env.GOOGLE_CLIENT_ID,
 		clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -46,7 +64,7 @@ export const env = {
 	 */
 	luckyOs: {
 		baseUrl: process.env.LUCKYOS_BASE_URL,
-		mock: process.env.LUCKYOS_MOCK === "1",
+		mock: process.env.NODE_ENV !== "production" && process.env.LUCKYOS_MOCK === "1",
 	},
 };
 
@@ -61,9 +79,11 @@ export const pushEnabled = Boolean(env.vapid.publicKey && env.vapid.privateKey);
 /** E-mailové notifikace (Resend) — jen když je klíč. */
 export const emailEnabled = Boolean(env.resendApiKey);
 
-/** AI vrstva (Claude) se zapne, jakmile je v .env ANTHROPIC_API_KEY. Bez něj běží
- *  modul Mítingy v „mock" režimu (deterministická ukázková extrakce). */
+/** AI vrstva (Claude) se zapne, jakmile je v .env ANTHROPIC_API_KEY. */
 export const aiEnabled = Boolean(env.anthropicApiKey);
+
+/** Deterministická ukázková extrakce je výhradně lokální/dev funkce. */
+export const aiMockEnabled = !aiEnabled && process.env.NODE_ENV !== "production";
 
 /** Zaměstnanecký modul (most na LuckyOS) — zapnut, když je base URL, nebo dev mock. */
 export const luckyOsEnabled = Boolean(env.luckyOs.baseUrl) || env.luckyOs.mock;

@@ -47,6 +47,7 @@ const mustHaveBanner: [string, number][] = [
 	["NewMessage.tsx", 1],
 	["FloatComposer.tsx", 1],
 	["../screens/Nastaveni.tsx", 2],
+	["../components/PeekPanel.tsx", 1],
 ];
 for (const [rel, min] of mustHaveBanner) {
 	const src = readFileSync(join(MAIL_DIR, rel), "utf8");

@@ -197,7 +197,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 			"/seznamy": (activeLists ?? []).length,
 			"/mail": mailUnread,
 		};
-	}, [openTasks, myAssignments, projects, userId, activeLists, mailUnread]);
+	}, [openTasks, myAssignments, projects, activeLists, mailUnread]);
 
 	const isActive = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
 	const userName = session?.user?.name ?? "";

@@ -24,6 +24,7 @@ const tasks = new Table(
 		color: column.text,
 		due_date: column.text,
 		start_date: column.text,
+		start_timezone: column.text,
 		deadline: column.text,
 		duration_min: column.integer,
 		days: column.integer,
@@ -411,6 +412,19 @@ const local_rejected_ops = new Table(
 	{ localOnly: true },
 );
 
+/**
+ * Citlivý stav, který má zůstat jen na zařízení (rozepsané demo e-maily,
+ * vlastní podpisy apod.). Tabulka žije uvnitř šifrované per-user SQLite DB;
+ * nikdy se neuploaduje do PowerSync služby.
+ */
+const local_private_state = new Table(
+	{
+		value: column.text,
+		updated_at: column.text,
+	},
+	{ localOnly: true },
+);
+
 export const AppSchema = new Schema({
 	tasks,
 	projects,
@@ -422,6 +436,7 @@ export const AppSchema = new Schema({
 	task_occurrence_overrides,
 	task_user_colors,
 	local_rejected_ops,
+	local_private_state,
 	reminders,
 	task_activity,
 	chains,
@@ -461,3 +476,4 @@ export type ContactRow = Database["contacts"];
 export type ListTemplateRow = Database["list_templates"];
 export type EntityLinkRow = Database["entity_links"];
 export type RejectedOpRow = Database["local_rejected_ops"];
+export type LocalPrivateStateRow = Database["local_private_state"];

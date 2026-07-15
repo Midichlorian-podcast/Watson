@@ -47,7 +47,7 @@ export function PriruckaScreen() {
 		<div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", background: "var(--bg)" }}>
 			{/* horní lišta (prototyp ř. 1451–1455) */}
 			<div style={{ flex: "none", display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", borderBottom: "1px solid var(--line)", background: "var(--panel)" }}>
-				<span
+				<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 					data-ghost
 					onClick={() => m.setScr("mail")}
 					style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "5px 11px" }}

@@ -2,8 +2,9 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { type KeyboardEvent, useMemo, useState } from "react";
+import { type KeyboardEvent, useCallback, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
+import { focusOnMount } from "../lib/focusOnMount";
 import { useProjects } from "../lib/projects";
 import { useViewMode } from "../lib/viewMode";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
@@ -70,10 +71,10 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 		},
 	});
 
-	const go = (to: Route) => () => {
+	const go = useCallback((to: Route) => () => {
 		onClose();
 		void navigate({ to });
-	};
+	}, [navigate, onClose]);
 
 	const items = useMemo(() => {
 		const query = q.trim().toLowerCase();
@@ -161,7 +162,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 			},
 		}));
 		return [...navMatches.slice(0, 12), ...mailItems].slice(0, 18);
-	}, [q, projects, activeWs, team, chains, t, m, navigate, onClose]);
+	}, [q, projects, activeWs, team, chains, t, m, navigate, onClose, go, setView, workspaces]);
 
 	const activeIdx = Math.min(idx, Math.max(0, items.length - 1));
 
@@ -214,9 +215,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 							<circle cx="6.4" cy="6.4" r="4.4" stroke="currentColor" strokeWidth="1.4" />
 							<line x1="9.6" y1="9.6" x2="13" y2="13" stroke="currentColor" strokeWidth="1.4" />
 						</svg>
-						{/* biome-ignore lint/a11y/noAutofocus: palette input se má fokusovat při otevření */}
 						<input
-							autoFocus
+							ref={focusOnMount}
 							value={q}
 							onChange={(e) => {
 								setQ(e.target.value);

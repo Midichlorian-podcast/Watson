@@ -33,6 +33,7 @@ function rowFor(input: string, mode: "single" | "shared_all" = "single") {
 		userId: "user-1",
 		today: ctx.today,
 		now: "2026-07-14T10:00:00.000Z",
+		timeZone: "Europe/Prague",
 	});
 	const get = (col: string) => row.values[row.columns.indexOf(col)];
 	return { parsed, row, get };
@@ -83,9 +84,12 @@ function rowFor(input: string, mode: "single" | "shared_all" = "single") {
 {
 	console.log("(e) čas dne");
 	const { get } = rowFor("Schůzka zítra v 9:30");
-	check("start_date = 2026-07-15T09:30:00", get("start_date") === "2026-07-15T09:30:00", {
-		start: get("start_date"),
-	});
+	check(
+		"start_date je skutečný UTC instant",
+		get("start_date") === "2026-07-15T07:30:00.000Z",
+		{ start: get("start_date") },
+	);
+	check("start_timezone = Europe/Prague", get("start_timezone") === "Europe/Prague");
 }
 
 // (f) SQL tvar: počet placeholderů = počet hodnot, sloupce obsahují povinné NOT NULL.
@@ -98,7 +102,7 @@ function rowFor(input: string, mode: "single" | "shared_all" = "single") {
 		placeholders,
 		values: row.values.length,
 	});
-	for (const col of ["recurrence_basis", "days", "assignment_mode"]) {
+	for (const col of ["recurrence_basis", "days", "assignment_mode", "start_timezone"]) {
 		check(`sloupec ${col} přítomen`, row.columns.includes(col));
 	}
 }

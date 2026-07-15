@@ -9,7 +9,6 @@
  */
 import {
 	type CSSProperties,
-	type KeyboardEvent,
 	type MouseEvent,
 	type ReactNode,
 	useMemo,
@@ -19,6 +18,7 @@ import {
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { showToast } from "../lib/toast";
+import { storageGet, storageSet } from "../lib/storage";
 import { type SwipeSide, useSwipe } from "../lib/useSwipe";
 import { useWatson } from "../lib/watson";
 import { CtxMenu } from "./CtxMenu";
@@ -39,21 +39,8 @@ const aiCache: { rows: AiQueueItem[]; open: boolean } = {
 /** Zvonek: tečka „neviděno" zmizí prvním otevřením (prototyp notifSeen). */
 let bellSeen = false;
 
-/** Bezpečné čtení localStorage (privátní režimy prohlížeče). */
-const lsGet = (key: string): string | null => {
-	try {
-		return localStorage.getItem(key);
-	} catch {
-		return null;
-	}
-};
-const lsSet = (key: string, val: string) => {
-	try {
-		localStorage.setItem(key, val);
-	} catch {
-		/* plné/blokované úložiště — volba platí jen pro session */
-	}
-};
+const lsGet = storageGet;
+const lsSet = storageSet;
 
 /** Kontextové prázdné stavy per složka/skupina (prototyp empties, ř. 3657–3672). */
 const EMPTY_FALLBACK: [string, string] = ["Nic tu není", "Zatím žádné položky."];
@@ -267,7 +254,7 @@ export function useListRows() {
 }
 
 const rowBtn = (onClick: (e: MouseEvent) => void, title: string, child: ReactNode) => (
-	<span data-rowbtn onClick={onClick} title={title}>
+	<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }} data-rowbtn onClick={onClick} title={title}>
 		{child}
 	</span>
 );
@@ -482,7 +469,7 @@ function MailRow({
 		},
 	});
 	return (
-		<div
+		<div role="button" onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 			onClick={() => {
 				if (swipe.swipedRecently()) return;
 				m.openThread(t.id);
@@ -523,7 +510,7 @@ function MailRow({
 						borderRadius: "0 2px 2px 0",
 					}}
 				/>
-				<span
+				<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 					data-mainav
 					onClick={(ev) => {
 						ev.stopPropagation();
@@ -986,7 +973,7 @@ export function MailList({
 	};
 	const aiDecide = (i: number, yes: boolean) => {
 		const q = aiQ[i];
-		if (!q || q.st !== "ceka") return;
+		if (q?.st !== "ceka") return;
 		if (yes) applyAi(q);
 		setAiRows(aiQ.map((z, j) => (j === i ? { ...z, st: yes ? "ok" : "no" } : z)));
 		showToast(
@@ -1012,18 +999,6 @@ export function MailList({
 		return () => document.removeEventListener("mousedown", h);
 	}, [vmenu]);
 
-	// A11y: span-tlačítka jsou jen onClick — Enter/Space je zpřístupní klávesnici
-	// a čtečka je hlásí jako tlačítka (audit MED MailList.tsx:1229).
-	const kb = (fn: () => void) => ({
-		role: "button" as const,
-		tabIndex: 0,
-		onKeyDown: (e: KeyboardEvent) => {
-			if (e.key === "Enter" || e.key === " ") {
-				e.preventDefault();
-				fn();
-			}
-		},
-	});
 	// Akce hlavičky navíc zavřou popover Filtry/Zobrazení — jinak zůstal otevřený
 	// „na pozadí" pod jiným overlayem (audit LOW MailList.tsx:1012).
 	const openDrawer = () => {
@@ -1181,10 +1156,9 @@ export function MailList({
 						zIndex: 45,
 					}}
 				>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-msubbtn
 						onClick={openDrawer}
-						{...kb(openDrawer)}
 						aria-label="Schránky a složky"
 						style={{
 							width: 31,
@@ -1257,10 +1231,9 @@ export function MailList({
 						{isGk ? m.gkLeft : pinRows.length + rows.length}
 					</span>
 					<span style={{ flex: 1 }} />
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-rowbtn
 						onClick={openSearch}
-						{...kb(openSearch)}
 						aria-label="Hledat v poště"
 						title="Hledat v poště ( / nebo ⌘K )"
 						style={{ border: "1px solid var(--line)", background: "var(--panel)" }}
@@ -1279,10 +1252,9 @@ export function MailList({
 						</svg>
 					</span>
 					{/* zvonek — NotifCenter (prototyp ui.bell, ř. 329) */}
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-rowbtn
 						onClick={openBell}
-						{...kb(openBell)}
 						aria-label="Oznámení"
 						title="Oznámení"
 						style={{
@@ -1321,10 +1293,9 @@ export function MailList({
 						)}
 					</span>
 					{/* Ask Watson — mosazné W (prototyp ui.ask, ř. 330) */}
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-rowbtn
 						onClick={openAsk}
-						{...kb(openAsk)}
 						aria-label="Zeptej se Watsona"
 						title="Zeptej se Watsona"
 						style={{
@@ -1350,10 +1321,9 @@ export function MailList({
 							W
 						</span>
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-rowbtn
 						onClick={toggleVmenu}
-						{...kb(toggleVmenu)}
 						aria-label="Filtry a zobrazení"
 						title="Filtry a zobrazení"
 						style={{
@@ -1402,10 +1372,9 @@ export function MailList({
 							</span>
 						)}
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-primary
 						onClick={openCompose}
-						{...kb(openCompose)}
 						aria-label="Napsat novou zprávu"
 						style={{
 							display: "inline-flex",
@@ -1533,7 +1502,7 @@ export function MailList({
 									2 řádky
 								</button>
 							</div>
-							<div
+							<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={markAllRead}
 								data-menuitem
 								style={{ borderTop: "1px solid var(--line)", marginTop: 7 }}
@@ -1548,7 +1517,7 @@ export function MailList({
 				{fCount > 0 && (
 					<div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
 						{activeF.map((f) => (
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								key={f.k}
 								onClick={() => m.toggleFilter(f.k)}
 								style={{ ...chipStyle(true, 999), fontSize: 11, padding: "3px 6px 3px 11px" }}
@@ -1557,7 +1526,7 @@ export function MailList({
 								<span style={{ fontSize: 12, lineHeight: 1, opacity: 0.7 }}>×</span>
 							</span>
 						))}
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => {
 								for (const f of activeF) m.toggleFilter(f.k);
 							}}
@@ -1592,7 +1561,7 @@ export function MailList({
 								["news", "Newslettery", gN.news],
 							] as const
 						).map(([k, label, n]) => (
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								key={k}
 								onClick={() => m.setGrp(k)}
 								data-tab
@@ -1639,7 +1608,7 @@ export function MailList({
 								["d_done", "Hotové", dC.d, false],
 							] as const
 						).map(([k, label, n, brass]) => (
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								key={k}
 								onClick={() => m.setFolder(k)}
 								data-tab
@@ -1705,59 +1674,52 @@ export function MailList({
 						{selCount} vybráno
 					</span>
 					<span style={{ flex: 1 }} />
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-ghost
 						onClick={bulkToTasks}
-						{...kb(bulkToTasks)}
 						title="Z každého vybraného vlákna vznikne úkol s předvyplněním"
 						style={{ fontSize: 11, padding: "5px 10px", color: "var(--brass-text)" }}
 					>
 						→ úkoly
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-ghost
 						onClick={() => m.bulkAct("done")}
-						{...kb(() => m.bulkAct("done"))}
 						style={{ fontSize: 11, padding: "5px 10px" }}
 					>
 						Hotovo
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-ghost
 						onClick={() => m.bulkAct("unread")}
-						{...kb(() => m.bulkAct("unread"))}
 						style={{ fontSize: 11, padding: "5px 10px" }}
 					>
 						Přečtené
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-ghost
 						onClick={() => m.bulkAct("snooze")}
-						{...kb(() => m.bulkAct("snooze"))}
 						style={{ fontSize: 11, padding: "5px 10px" }}
 					>
 						Odložit
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-ghost
 						onClick={() => m.bulkAct("arch")}
-						{...kb(() => m.bulkAct("arch"))}
 						style={{ fontSize: 11, padding: "5px 10px" }}
 					>
 						Archiv
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-ghost
 						onClick={() => m.bulkAct("trash")}
-						{...kb(() => m.bulkAct("trash"))}
 						style={{ fontSize: 11, padding: "5px 10px", color: "var(--overdue)" }}
 					>
 						Koš
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-rowbtn
 						onClick={m.clearSel}
-						{...kb(m.clearSel)}
 						aria-label="Zrušit výběr"
 						title="Zrušit výběr (Esc)"
 						style={{ border: "1px solid var(--line)", background: "var(--panel)" }}
@@ -1834,7 +1796,7 @@ export function MailList({
 					<>
 						{/* syncWarn — podcast@ token (prototyp ř. 622–628) */}
 						{syncWarn && (
-							<div
+							<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => void navigate({ to: "/nastaveni", hash: "posta-admin" })}
 								style={{
 									margin: "0 14px 8px",
@@ -1926,7 +1888,7 @@ export function MailList({
 										<span style={{ fontWeight: 600, color: "var(--brass-text)" }}>{aiWait}</span>{" "}
 										{aiPlural} na schválení
 									</span>
-									<span
+									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										onClick={() => setAiOpen(!aiOpen)}
 										data-ghost
 										style={{
@@ -1938,7 +1900,7 @@ export function MailList({
 									>
 										{aiOpen ? "Skrýt" : "Projít"}
 									</span>
-									<span
+									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										onClick={aiAll}
 										data-primary
 										style={{ fontSize: 10.5, padding: "4px 12px", flex: "none" }}
@@ -1961,7 +1923,7 @@ export function MailList({
 												}}
 											>
 												<div style={{ flex: 1, minWidth: 0 }}>
-													<div
+													<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 														onClick={() => m.openThread(q.th)}
 														style={{
 															fontFamily: "var(--w-font-body)",
@@ -1996,7 +1958,7 @@ export function MailList({
 														{q.why}
 													</div>
 												</div>
-												<span
+												<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 													onClick={() => aiDecide(i, true)}
 													data-ghost
 													style={{
@@ -2010,7 +1972,7 @@ export function MailList({
 												>
 													Schválit
 												</span>
-												<span
+												<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 													onClick={() => aiDecide(i, false)}
 													data-ghost
 													style={{
@@ -2040,7 +2002,7 @@ export function MailList({
 									/>
 								))}
 								{!m.pinExp && pinMore > 0 && (
-									<div
+									<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										onClick={() => m.setPinExp(true)}
 										style={{
 											display: "flex",
@@ -2075,7 +2037,7 @@ export function MailList({
 									</div>
 								)}
 								{m.pinExp && (
-									<div
+									<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										onClick={() => m.setPinExp(false)}
 										style={{
 											display: "flex",
@@ -2116,7 +2078,7 @@ export function MailList({
 								</span>
 								{/* označit oznámení jako viděná (prototyp oznBar, ř. 546–551) */}
 								{rows.length > 0 && (
-									<span
+									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										data-ghost
 										onClick={() => {
 											for (const r of rows) m.setOv(r.t.id, { read: true });
@@ -2167,7 +2129,7 @@ export function MailList({
 									padding: "8px 14px 0",
 								}}
 							>
-								<div
+								<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => m.setRozOn(!m.rozOn)}
 									style={{
 										display: "flex",
@@ -2221,7 +2183,7 @@ export function MailList({
 								</div>
 								{m.rozOn &&
 									rozRows.map((vm) => (
-										<div
+										<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 											key={vm.t.id}
 											onClick={() => m.openThread(vm.t.id)}
 											style={{
@@ -2405,28 +2367,28 @@ function GkQueue() {
 						</div>
 						{!d ? (
 							<div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "10px 0 0 37px" }}>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									data-primary
 									onClick={() => m.gkDecide(g.id, "accept")}
 									style={{ fontSize: 11, padding: "5px 11px" }}
 								>
 									Přijmout
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									data-ghost
 									onClick={() => m.gkDecide(g.id, "acceptDone")}
 									style={{ fontSize: 11, padding: "5px 11px" }}
 								>
 									Přijmout a Hotovo
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									data-ghost
 									onClick={() => m.gkDecide(g.id, "block")}
 									style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)" }}
 								>
 									Blokovat
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									data-ghost
 									onClick={() => m.gkDecide(g.id, "blockDom")}
 									style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)" }}

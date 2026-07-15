@@ -2,8 +2,11 @@
  * Průřezové entity: filtry, palety, kalendář (per projekt — §12), audit (N6),
  * a AI vrstva (AISuggestion + AiPolicy per workspace dle AI_chovani_spec.md).
  */
+import { sql } from "drizzle-orm";
 import {
+	check,
 	index,
+	integer,
 	jsonb,
 	pgTable,
 	text,
@@ -143,6 +146,53 @@ export const syncWriteReceipts = pgTable(
 );
 
 /**
+ * Distribuovaný fixed-window rate limiter. Stav není procesová paměť: všechny API
+ * instance sdílejí stejný atomický čítač a restart procesu limit nevynuluje.
+ * `key` obsahuje pouze salted hash adresy, nikdy surové IP nebo uživatelský obsah.
+ */
+export const apiRateLimits = pgTable(
+	"api_rate_limits",
+	{
+		key: varchar("key", { length: 160 }).primaryKey(),
+		count: integer("count").notNull().default(0),
+		windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
+		expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	},
+	(t) => [
+		check("api_rate_limits_count_positive", sql`${t.count} > 0`),
+		index("api_rate_limits_expires_idx").on(t.expiresAt),
+	],
+);
+
+/**
+ * Serverová kompenzace atomického smazání úkolového stromu. Snapshot zůstává 24 h
+ * pouze na serveru; klient dostane neprůhledné ID. Tím delete+undo neštěpí jednu
+ * business operaci do desítek samostatných PowerSync uploadů.
+ */
+export const taskUndoBatches = pgTable(
+	"task_undo_batches",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		createdBy: uuid("created_by")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		operationId: varchar("operation_id", { length: 128 }).notNull(),
+		requestHash: varchar("request_hash", { length: 64 }).notNull(),
+		snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
+		restoredAt: timestamp("restored_at", { withTimezone: true }),
+		expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		uniqueIndex("task_undo_batches_actor_operation_uq").on(t.createdBy, t.operationId),
+		index("task_undo_batches_expiry_idx").on(t.expiresAt),
+	],
+);
+
+/**
  * AISuggestion — fronta návrhů (suggest) i provedených auto_notify akcí.
  * Nic se neaplikuje tiše; vše projde sem (AI spec §1).
  */
@@ -218,6 +268,7 @@ export const entityLinks = pgTable(
 		index("entity_links_from_idx").on(t.fromType, t.fromId),
 		index("entity_links_to_idx").on(t.toType, t.toId),
 		uniqueIndex("entity_links_source_external_uq").on(
+			t.workspaceId,
 			t.sourceSystem,
 			t.externalId,
 			t.toType,
@@ -231,6 +282,8 @@ export type CalendarConnection = typeof calendarConnections.$inferSelect;
 export type CalendarLink = typeof calendarLinks.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type SyncWriteReceipt = typeof syncWriteReceipts.$inferSelect;
+export type ApiRateLimit = typeof apiRateLimits.$inferSelect;
+export type TaskUndoBatch = typeof taskUndoBatches.$inferSelect;
 export type AiSuggestion = typeof aiSuggestions.$inferSelect;
 export type AiPolicy = typeof aiPolicies.$inferSelect;
 export type EntityLink = typeof entityLinks.$inferSelect;

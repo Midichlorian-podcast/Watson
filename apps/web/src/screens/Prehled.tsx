@@ -14,8 +14,9 @@ import { powerSync } from "../lib/powersync/db";
 import { LoadingNote, SyncStamp, useAllReady } from "../lib/dataState";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
-import { todayISO, toggleTask } from "../lib/tasks";
+import { startMinOf, todayISO, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
+import { storageGet, storageSet } from "../lib/storage";
 import { pushUndo } from "../lib/undo";
 import { useSession } from "../lib/auth-client";
 import { useWorkspaces } from "../lib/workspace";
@@ -93,11 +94,11 @@ export function Prehled() {
 	const [peek, setPeek] = useState<PeekTarget | null>(null);
 	// ovLayout (prototyp prop prehledLayout: Mřížka | Ranní feed) — per-user volba
 	const [layout, setLayout] = useState<"grid" | "feed">(() =>
-		localStorage.getItem("watson.ovLayout") === "feed" ? "feed" : "grid",
+		storageGet("watson.ovLayout") === "feed" ? "feed" : "grid",
 	);
 	const switchLayout = (v: "grid" | "feed") => {
 		setLayout(v);
-		localStorage.setItem("watson.ovLayout", v);
+		storageSet("watson.ovLayout", v);
 	};
 
 	// kind IS NOT 'meeting' — KPI/přehled počítá úkoly; porady nezkreslují čísla
@@ -121,13 +122,13 @@ export function Prehled() {
 	const ready = useAllReady(projLoading, tasksLoading, listsLoading, itemsLoading, asgLoading);
 
 	const projById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
-	const wsOfTask = (tk: TaskRow) =>
-		tk.project_id ? (projById.get(tk.project_id)?.workspace_id ?? null) : null;
-	const firms = (workspaces ?? []).filter((w) => !w.isPersonal);
+	const firms = useMemo(() => (workspaces ?? []).filter((w) => !w.isPersonal), [workspaces]);
 
 	const view = useMemo(() => {
 		const tdy = todayISO();
 		const inboxIds = inboxProjectIds(projects);
+		const wsOfTask = (tk: TaskRow) =>
+			tk.project_id ? (projById.get(tk.project_id)?.workspace_id ?? null) : null;
 		const fOk = (tk: TaskRow) => !firm || wsOfTask(tk) === firm;
 		// otevřené úkoly bez inboxu, bez podúkolů bez termínu, bez spících kroků (Dnes pravidla)
 		const openT = (allTasks ?? []).filter((tk) => {
@@ -164,8 +165,10 @@ export function Prehled() {
 				const isOver = !!tk.due_date && tk.due_date.slice(0, 10) < tdy;
 				const due = isOver
 					? `${t("today.duePastLower")} · ${wd(tk.due_date?.slice(0, 10) ?? tdy)}`
-					: tk.start_date && tk.start_date.length >= 16
-						? tk.start_date.slice(11, 16)
+					: startMinOf(tk) !== null
+						? `${String(Math.floor((startMinOf(tk) ?? 0) / 60)).padStart(2, "0")}:${String(
+								(startMinOf(tk) ?? 0) % 60,
+							).padStart(2, "0")}`
 						: "";
 				return {
 					id: tk.id,
@@ -952,7 +955,7 @@ function OvRow({
 	column?: boolean;
 }) {
 	return (
-		<div
+		<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 			onClick={onClick}
 			className="cursor-pointer border-line border-t hover:bg-panel-2"
 			style={

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { API_URL } from "./api";
+import { storageGet, storageSet } from "./storage";
 
 export interface Workspace {
 	id: string;
@@ -9,6 +10,13 @@ export interface Workspace {
 	color: string | null;
 	/** Moje role v prostoru (memberships.role) — server ji posílá odjakživa. */
 	role?: string;
+	capabilities?: {
+		manageGoals: boolean;
+		manageListTemplates: boolean;
+		manageWorkspaceMembers: boolean;
+		createContacts: boolean;
+		createLists: boolean;
+	};
 }
 
 /**
@@ -53,7 +61,7 @@ const LS_KEY = "watson.activeWs";
 /** Aktivní pracovní prostor (per-user v localStorage) + sbalování v sidebaru. */
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
 	const { data: workspaces } = useWorkspaces();
-	const [activeWs, setActiveWsState] = useState<string | null>(() => localStorage.getItem(LS_KEY));
+	const [activeWs, setActiveWsState] = useState<string | null>(() => storageGet(LS_KEY));
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
 	// Zvol výchozí prostor (první neosobní / první), pokud žádný nebo neplatný.
@@ -63,13 +71,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 		const def = workspaces.find((w) => !w.isPersonal) ?? workspaces[0];
 		if (def) {
 			setActiveWsState(def.id);
-			localStorage.setItem(LS_KEY, def.id);
+			storageSet(LS_KEY, def.id);
 		}
 	}, [workspaces, activeWs]);
 
 	const setActiveWs = (id: string) => {
 		setActiveWsState(id);
-		localStorage.setItem(LS_KEY, id);
+		storageSet(LS_KEY, id);
 		// Vyčistit explicitní stavy — rozbalený zůstane jen nově aktivní prostor
 		// (jinak by se dřívější aktivní/ručně rozbalené hromadily rozbalené naráz).
 		setCollapsed({ [id]: false });

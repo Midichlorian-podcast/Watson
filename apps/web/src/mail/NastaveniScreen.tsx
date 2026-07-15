@@ -119,10 +119,10 @@ function SigEditor({
 				}}
 			/>
 			<div style={{ display: "flex", gap: 7, marginTop: 8 }}>
-				<span onClick={onSave} data-primary style={{ fontSize: 11.5, padding: "6px 14px" }}>
+				<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }} onClick={onSave} data-primary style={{ fontSize: 11.5, padding: "6px 14px" }}>
 					Uložit
 				</span>
-				<span
+				<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 					onClick={() => setEd(null)}
 					data-ghost
 					style={{ fontSize: 11.5, padding: "6px 12px" }}
@@ -195,7 +195,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 				}
 			>
 				{!embedded && (
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-ghost
 						onClick={() => m.setScr("mail")}
 						style={{
@@ -257,7 +257,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 									padding: 2,
 								}}
 							>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => theme === "dark" && toggle()}
 									data-tab
 									data-active={theme === "light" || undefined}
@@ -265,7 +265,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								>
 									Světlý
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => theme === "light" && toggle()}
 									data-tab
 									data-active={theme === "dark" || undefined}
@@ -320,7 +320,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 									padding: 2,
 								}}
 							>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => setNast({ notif: { ...nast.notif, [r.id]: "vse" } })}
 									data-tab
 									data-active={nast.notif[r.id] === "vse" || undefined}
@@ -328,7 +328,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								>
 									Všechny
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => setNast({ notif: { ...nast.notif, [r.id]: "vip" } })}
 									data-tab
 									data-active={nast.notif[r.id] === "vip" || undefined}
@@ -337,7 +337,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								>
 									VIP
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => setNast({ notif: { ...nast.notif, [r.id]: "zadne" } })}
 									data-tab
 									data-active={nast.notif[r.id] === "zadne" || undefined}
@@ -370,7 +370,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								— přerušit smí jen P1
 							</span>
 						</span>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-statepill
 							data-on={nast.quiet || undefined}
 							onClick={() => setNast({ quiet: !nast.quiet })}
@@ -414,7 +414,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								}}
 							>
 								{addr}
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => setNast({ vip: nast.vip.filter((z) => z !== addr) })}
 									style={{ cursor: "pointer", opacity: 0.6, fontSize: 12, lineHeight: 1 }}
 								>
@@ -473,7 +473,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								blokování skryje sledovací pixely — načteš je pak jedním klikem
 							</div>
 						</div>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-statepill
 							data-on={nast.privImg || undefined}
 							onClick={() => setNast({ privImg: !nast.privImg })}
@@ -500,7 +500,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								pro rychlé náhledy; vypni na pomalém připojení
 							</div>
 						</div>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-statepill
 							data-on={nast.privAtt || undefined}
 							onClick={() => setNast({ privAtt: !nast.privAtt })}
@@ -546,7 +546,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								flex: "none",
 							}}
 						>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => setNast({ beh: "dalsi" })}
 								data-tab
 								data-active={nast.beh !== "seznam" || undefined}
@@ -554,7 +554,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 							>
 								Další konverzace
 							</span>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => setNast({ beh: "seznam" })}
 								data-tab
 								data-active={nast.beh === "seznam" || undefined}
@@ -601,7 +601,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								flex: "none",
 							}}
 						>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => {
 									m.setPerOsoba(true);
 									showToast(
@@ -614,7 +614,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 							>
 								Per osoba
 							</span>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => {
 									m.setPerOsoba(false);
 									showToast(
@@ -689,14 +689,14 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 										{s.body.length ? s.body.join("\n") : "— bez textu —"}
 									</div>
 								</div>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									data-ghost
 									onClick={() => setSigEd({ id: s.id, n: s.n, b: s.body.join("\n") })}
 									style={{ fontSize: 11, padding: "4px 10px", flex: "none" }}
 								>
 									Upravit
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									data-ghost
 									onClick={() => {
 										m.deleteSig(s.id);
@@ -721,7 +721,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 						<SigEditor ed={sigEd} setEd={setSigEd} onSave={saveSig} />
 					) : (
 						<div style={{ padding: "10px 18px", borderBottom: "1px solid var(--line)" }}>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								data-ghost
 								onClick={() => setSigEd({ id: null, n: "", b: "" })}
 								style={{ fontSize: 11.5, padding: "5px 12px" }}
@@ -776,7 +776,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								</span>
 								<div style={{ display: "flex", gap: 5, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
 									{m.sigs.map((s) => (
-										<span
+										<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 											key={s.id}
 											onClick={() => m.setSigChoice(idn.id, s.id)}
 											data-statepill
@@ -838,7 +838,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								mimo kancelář — každému odesílateli max 1× za 4 dny, newslettery se přeskakují
 							</div>
 						</div>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-statepill
 							data-on={nast.ooo || undefined}
 							onClick={() => setNast({ ooo: !nast.ooo })}
@@ -933,7 +933,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 							demo · bez AI
 						</span>
 						<span style={{ flex: 1 }} />
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-ghost
 							onClick={() =>
 								showToast(

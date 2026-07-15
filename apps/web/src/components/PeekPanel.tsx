@@ -14,16 +14,18 @@ import { createPortal } from "react-dom";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
+import { keyedValues } from "../lib/keyedValues";
 import type { FlowOverviewRow, GoalOverviewRow } from "../lib/overview";
 import type { ListItemRow, ListRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
-import { NOT_MEETING, toggleTask, todayISO } from "../lib/tasks";
+import { NOT_MEETING, startMinOf, toggleTask, todayISO } from "../lib/tasks";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { showToast } from "../lib/toast";
 import { useTheme } from "../layout/useTheme";
 import { MB, P, SLA, TH } from "../mail/data";
+import { MailDemoBanner } from "../mail/DemoBanner";
 import { RichText } from "../mail/RichText";
 import { SigBlock, sigIdOf, SigPicker } from "../mail/SigPicker";
 import { useMail } from "../mail/state";
@@ -102,28 +104,34 @@ export function PeekPanel({
 	return createPortal(
 		// ztmavený scrim jako u detailu úkolu — klik mimo zavírá
 		<div
-			onClick={onClose}
 			data-esc-layer={escLayer}
 			data-peek-layer={escLayer}
 			style={{
 				position: "fixed",
 				inset: 0,
 				zIndex: layer,
-				background: "rgba(10,14,20,.42)",
 				display: "flex",
 				alignItems: "flex-start",
 				justifyContent: "center",
 				paddingTop: "7vh",
 			}}
 		>
+			<button
+				type="button"
+				aria-label="Zavřít náhled"
+				onClick={onClose}
+				className="absolute inset-0 cursor-default border-0 p-0"
+				style={{ background: "rgba(10,14,20,.42)" }}
+			/>
 			<section
 				ref={trapRef}
-				onClick={(e) => e.stopPropagation()}
 				role="dialog"
 				aria-modal="true"
 				aria-label={title}
 				className="border border-line bg-card"
 				style={{
+					position: "relative",
+					zIndex: 1,
 					width: "min(620px, 94vw)",
 					maxHeight: "82vh",
 					display: "flex",
@@ -359,7 +367,7 @@ function FlowPeek({ flow }: { flow: FlowOverviewRow }) {
 				const active = s.step_state === "active";
 				const done = s.step_state === "done";
 				return (
-					<div
+					<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						key={s.task_id ?? i}
 						onClick={() => s.task_id && open(s.task_id)}
 						className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"
@@ -515,6 +523,9 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 		// mail scope — stejné proměnné, chipy a tlačítka jako mail modul
 		// (feedback: sjednotit pojmy/ikony/vizuál rychlého řešení s moduly)
 		<div data-wm-theme={theme === "dark" ? "dark" : "light"}>
+			<div style={{ margin: "-20px -20px 12px" }}>
+				<MailDemoBanner compact />
+			</div>
 			<div style={{ display: "flex", alignItems: "center", gap: 9 }}>
 				<span
 					data-av={P[th.owner ?? ""]?.av ?? ""}
@@ -709,9 +720,9 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 			)}
 
 			<SectionLabel>{t("peek.mailMsgs")}</SectionLabel>
-			{allMsgs.map((mg, i) => (
+			{keyedValues(allMsgs, (message) => JSON.stringify(message)).map(({ key, value: mg }) => (
 				<div
-					key={`${mg.t}-${i}`}
+					key={key}
 					style={{
 						border: "1px solid var(--line)",
 						borderRadius: 10,
@@ -753,8 +764,8 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 							lineHeight: 1.55,
 						}}
 					>
-						{mg.body.map((pp, j) => (
-							<p key={`${j}-${pp.slice(0, 8)}`} style={{ margin: "0 0 5px" }}>
+						{keyedValues(mg.body, (paragraph) => paragraph).map(({ key, value: pp }) => (
+							<p key={key} style={{ margin: "0 0 5px" }}>
 								{pp}
 							</p>
 						))}
@@ -783,8 +794,8 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 						{t("peek.chatEmpty")}
 					</div>
 				)}
-				{[...th.chat, ...(m.chatX[id] ?? [])].map((c, i) => (
-					<div key={`${c.who}-${c.t}-${i}`} style={{ display: "flex", gap: 8, padding: "3px 0" }}>
+				{keyedValues([...th.chat, ...(m.chatX[id] ?? [])], (entry) => JSON.stringify(entry)).map(({ key, value: c }) => (
+					<div key={key} style={{ display: "flex", gap: 8, padding: "3px 0" }}>
 						<span
 							data-av={P[c.who]?.av ?? ""}
 							style={{
@@ -1091,7 +1102,7 @@ function ListPeek({ id }: { id: string }) {
 			</div>
 			<SectionLabel>{t("peek.listItems")}</SectionLabel>
 			{(items ?? []).map((it) => (
-				<div
+				<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 					key={it.id}
 					onClick={() => toggleItem(it)}
 					className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"
@@ -1164,7 +1175,7 @@ function DayPeek({ dateISO, firm }: { dateISO: string; firm: string | null }) {
 				<>
 					<SectionLabel>{t("peek.dayDeadlines")}</SectionLabel>
 					{dayDeadlines.map((d) => (
-						<div
+						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							key={d.id}
 							onClick={() => open(d.id)}
 							className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"
@@ -1202,7 +1213,7 @@ function DayPeek({ dateISO, firm }: { dateISO: string; firm: string | null }) {
 			{openRows.map((tk) => {
 				const p = tk.project_id ? projById.get(tk.project_id) : undefined;
 				return (
-					<div
+					<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						key={tk.id}
 						onClick={() => open(tk.id)}
 						className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"
@@ -1223,9 +1234,11 @@ function DayPeek({ dateISO, firm }: { dateISO: string; firm: string | null }) {
 						<span className="min-w-0 flex-1 truncate font-body text-ink" style={{ fontSize: 12.5 }}>
 							{tk.name}
 						</span>
-						{tk.start_date && tk.start_date.length >= 16 && (
+						{startMinOf(tk) !== null && (
 							<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 10.5 }}>
-								{tk.start_date.slice(11, 16)}
+								{`${String(Math.floor((startMinOf(tk) ?? 0) / 60)).padStart(2, "0")}:${String(
+									(startMinOf(tk) ?? 0) % 60,
+								).padStart(2, "0")}`}
 							</span>
 						)}
 						{(tk.priority ?? 4) <= 2 && (
@@ -1246,7 +1259,7 @@ function DayPeek({ dateISO, firm }: { dateISO: string; firm: string | null }) {
 				);
 			})}
 			{doneRows.map((tk) => (
-				<div
+				<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 					key={tk.id}
 					onClick={() => open(tk.id)}
 					className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"
@@ -1325,7 +1338,7 @@ function MemberPeek({ id, name }: { id: string; name: string }) {
 				const p = tk.project_id ? projById.get(tk.project_id) : undefined;
 				const over = !!tk.due_date && tk.due_date.slice(0, 10) < tdy;
 				return (
-					<div
+					<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						key={tk.id}
 						onClick={() => open(tk.id)}
 						className="flex cursor-pointer items-center rounded-lg hover:bg-panel-2"

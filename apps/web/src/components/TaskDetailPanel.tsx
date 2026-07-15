@@ -9,6 +9,7 @@ import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
 import { initials } from "../lib/format";
+import { focusOnMount } from "../lib/focusOnMount";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
 import { rescheduleDate } from "../lib/reschedule";
 import type { TaskRow } from "../lib/powersync/AppSchema";
@@ -38,6 +39,12 @@ import {
 	toggleTask,
 } from "../lib/tasks";
 import { showToast } from "../lib/toast";
+import {
+	dateInTimeZone,
+	deviceTimeZone,
+	wallTimeFromInstant,
+	zonedDateTimeToIso,
+} from "../lib/timeZone";
 import { logTaskActivity } from "../lib/activity";
 import { deleteTaskWithUndo } from "../lib/undo";
 import { useOpenMailThread } from "../mail/state";
@@ -528,10 +535,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			const nid = crypto.randomUUID();
 			await powerSync.execute(
 				`INSERT INTO tasks (id, project_id, section_id, parent_id, name, description, priority, color,
-          due_date, start_date, deadline, duration_min, days, recurrence, recurrence_rule,
+          due_date, start_date, start_timezone, deadline, duration_min, days, recurrence, recurrence_rule,
           recurrence_basis, assignment_mode, created_at)
          SELECT ?, project_id, section_id, ?, name || ?, description, priority, color,
-          due_date, start_date, deadline, duration_min, days, recurrence, recurrence_rule,
+          due_date, start_date, start_timezone, deadline, duration_min, days, recurrence, recurrence_rule,
           recurrence_basis, assignment_mode, ? FROM tasks WHERE id = ?`,
 				[nid, newParentId, suffix, now, srcId],
 			);
@@ -995,18 +1002,29 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											</span>
 											<input
 												type="time"
-												value={
-													task.start_date && task.start_date.length >= 16
-														? task.start_date.slice(11, 16)
-														: ""
-												}
-												onChange={(e) => {
-													const _n = new Date();
-													const base =
-														task.due_date?.slice(0, 10) ??
-														`${_n.getFullYear()}-${String(_n.getMonth() + 1).padStart(2, "0")}-${String(_n.getDate()).padStart(2, "0")}`;
-													void patchLog({
-														start_date: e.target.value ? `${base}T${e.target.value}:00` : null,
+										value={
+											task.start_date && task.start_timezone
+												? (wallTimeFromInstant(
+														task.start_date,
+														task.start_timezone,
+													)?.slice(0, 5) ?? "")
+												: task.start_date?.slice(11, 16) ?? ""
+										}
+										onChange={(e) => {
+											const zone = task.start_timezone ?? session?.user?.timezone ?? deviceTimeZone();
+											const base =
+												task.due_date?.slice(0, 10) ??
+												dateInTimeZone(zone);
+											const start = e.target.value
+												? zonedDateTimeToIso(base, `${e.target.value}:00`, zone)
+												: null;
+											if (e.target.value && !start) {
+												showToast(t("addmodal.invalidLocalTime"));
+												return;
+											}
+											void patchLog({
+												start_date: start,
+												start_timezone: start ? zone : null,
 														// čas bez termínu → nastavit i termín (jinak by blok neměl den)
 														...(e.target.value && !task.due_date ? { due_date: base } : {}),
 													});
@@ -1307,8 +1325,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								<SectionLabel>{t("detail.description")}</SectionLabel>
 								{descOpen ? (
 									<textarea
-										// biome-ignore lint/a11y/noAutofocus: přepnutí do editace popisu
-										autoFocus
+										ref={focusOnMount}
 										value={desc}
 										onChange={(e) => setDesc(e.target.value)}
 										onBlur={() => {
@@ -1358,11 +1375,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								const sMeta = metaOf(s);
 								const sDue = rowDue(s, t);
 								return (
-									// biome-ignore lint/a11y/useKeyWithClickEvents: klik = otevřít detail podúkolu
 									<li
 										key={s.id}
-										onClick={() => open(s.id)}
-										className="flex cursor-pointer items-center border-line border-b hover:bg-panel-2"
+										className="flex items-center border-line border-b hover:bg-panel-2"
 										style={{
 											gap: 10,
 											padding: "8px 4px 8px 9px",
@@ -1380,6 +1395,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											// toggleTask = jednotná sémantika R9/advance/opakování (ne přímý patch)
 											onClick={() => void toggleTask(s)}
 										/>
+										<button
+											type="button"
+											onClick={() => open(s.id)}
+											className="flex min-w-0 flex-1 items-center text-left"
+											style={{ gap: 10 }}
+										>
 										<span
 											className="min-w-0 flex-1 truncate font-display font-semibold"
 											style={{
@@ -1409,6 +1430,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										<span className="shrink-0 text-ink-3" style={{ fontSize: 12 }}>
 											›
 										</span>
+										</button>
 									</li>
 								);
 							})}

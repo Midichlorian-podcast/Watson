@@ -17,6 +17,7 @@ import {
 	useState,
 } from "react";
 import { TEXT_COLORS } from "./colors";
+import { safeRichTextHref, sanitizeRichText } from "./sanitizeRichText";
 
 export interface RichTextHandle {
 	insertText: (text: string) => void;
@@ -61,8 +62,10 @@ export const RichText = forwardRef<
 			el.focus();
 			// Vlož jako text (zachová řádky) na aktuální kurzor.
 			document.execCommand("insertText", false, text);
-			lastHtml.current = el.innerHTML;
-			onChange(el.innerHTML);
+			const clean = sanitizeRichText(el.innerHTML);
+			if (clean !== el.innerHTML) el.innerHTML = clean;
+			lastHtml.current = clean;
+			onChange(clean);
 		},
 		focus() {
 			elRef.current?.focus();
@@ -74,16 +77,20 @@ export const RichText = forwardRef<
 	useEffect(() => {
 		const el = elRef.current;
 		if (el && value !== lastHtml.current) {
-			el.innerHTML = value;
-			lastHtml.current = value;
+			const clean = sanitizeRichText(value);
+			el.innerHTML = clean;
+			lastHtml.current = clean;
+			if (clean !== value) onChange(clean);
 		}
 	}, [value]);
 
 	function emit() {
 		const el = elRef.current;
 		if (!el) return;
-		lastHtml.current = el.innerHTML;
-		onChange(el.innerHTML);
+		const clean = sanitizeRichText(el.innerHTML);
+		if (clean !== el.innerHTML) el.innerHTML = clean;
+		lastHtml.current = clean;
+		onChange(clean);
 	}
 
 	/** Formátovací příkaz — nekrade fokus editoru (mousedown preventDefault na toolbaru). */
@@ -111,8 +118,7 @@ export const RichText = forwardRef<
 			}}
 		>
 			{/* toolbar */}
-			<div
-				// biome-ignore lint/a11y/noStaticElementInteractions: toolbar drží výběr v editoru
+			<div role="region"
 				onMouseDown={(e) => e.preventDefault()}
 				style={{
 					display: "flex",
@@ -162,7 +168,8 @@ export const RichText = forwardRef<
 					title="Odkaz"
 					onClick={() => {
 						const url = window.prompt("Adresa odkazu (URL):", "https://");
-						if (url) cmd("createLink", url);
+						const safeUrl = url ? safeRichTextHref(url) : null;
+						if (safeUrl) cmd("createLink", safeUrl);
 					}}
 				>
 					↗
@@ -246,6 +253,14 @@ export const RichText = forwardRef<
 					data-rte
 					onInput={emit}
 					onBlur={emit}
+					onPaste={(event) => {
+					event.preventDefault();
+					const html = event.clipboardData.getData("text/html");
+					const text = event.clipboardData.getData("text/plain");
+					if (html) document.execCommand("insertHTML", false, sanitizeRichText(html));
+					else document.execCommand("insertText", false, text);
+					emit();
+				}}
 					suppressContentEditableWarning
 					style={{
 						minHeight,

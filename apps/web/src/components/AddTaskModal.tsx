@@ -23,6 +23,8 @@ import { useProjects } from "../lib/projects";
 import type { Highlight, RecurrenceRule } from "../lib/quickadd";
 import { parseQuick } from "../lib/quickadd";
 import { todayISO } from "../lib/tasks";
+import { deviceTimeZone, zonedDateTimeToIso } from "../lib/timeZone";
+import { showToast } from "../lib/toast";
 import { useWorkspace } from "../lib/workspace";
 
 /**
@@ -70,7 +72,6 @@ interface Draft {
 	repeatShowAll: boolean;
 	color: string; // "none" | hex z USER_COLORS
 	deadline: string;
-	attached: string[];
 	flowAttach: string;
 	pop: PopKey;
 	more: boolean;
@@ -104,7 +105,6 @@ const freshDraft = (project: string | null): Draft => ({
 	repeatShowAll: true,
 	color: "none",
 	deadline: "",
-	attached: [],
 	flowAttach: "",
 	pop: "",
 	more: false,
@@ -167,15 +167,15 @@ function termISO(d: Draft, today: string): string | null {
 
 /** Segmenty rawName pro overlay zvýraznění. */
 function segments(raw: string, hl: Highlight[]) {
-	const segs: { text: string; mark: boolean }[] = [];
+	const segs: { text: string; mark: boolean; start: number }[] = [];
 	let pos = 0;
 	for (const h of [...hl].sort((a, b) => a.start - b.start)) {
-		if (h.start > pos) segs.push({ text: raw.slice(pos, h.start), mark: false });
-		segs.push({ text: raw.slice(h.start, h.end), mark: true });
+		if (h.start > pos) segs.push({ text: raw.slice(pos, h.start), mark: false, start: pos });
+		segs.push({ text: raw.slice(h.start, h.end), mark: true, start: h.start });
 		pos = h.end;
 	}
-	if (pos < raw.length) segs.push({ text: raw.slice(pos), mark: false });
-	if (segs.length === 0) segs.push({ text: raw, mark: false });
+	if (pos < raw.length) segs.push({ text: raw.slice(pos), mark: false, start: pos });
+	if (segs.length === 0) segs.push({ text: raw, mark: false, start: 0 });
 	return segs;
 }
 
@@ -417,7 +417,7 @@ export function AddTaskModal({
 		const mPer = draft.rawName.match(/[@+](\p{L}{1,})$/u);
 		const mProj = draft.rawName.match(/#(\p{L}{1,})$/u);
 		if (mPer) {
-			const q = mPer[1]!.toLowerCase();
+			const q = (mPer[1] ?? "").toLowerCase();
 			const list = people
 				.filter((p) => p.name.toLowerCase().includes(q) || p.initials.toLowerCase().startsWith(q))
 				.slice(0, 5)
@@ -427,12 +427,12 @@ export function AddTaskModal({
 					initials: p.initials,
 					name: p.name,
 					action: t("addmodal.sugAssign"),
-					token: mPer[0]!,
+					token: mPer[0] ?? "",
 				}));
 			return list.length ? list : null;
 		}
 		if (mProj) {
-			const q = mProj[1]!.toLowerCase();
+			const q = (mProj[1] ?? "").toLowerCase();
 			const list = projects
 				.filter((p) => (p.name ?? "").toLowerCase().includes(q))
 				.slice(0, 6)
@@ -442,7 +442,7 @@ export function AddTaskModal({
 					initials: "",
 					name: p.name ?? "",
 					action: t("addmodal.sugProject"),
-					token: mProj[0]!,
+					token: mProj[0] ?? "",
 				}));
 			return list.length ? list : null;
 		}
@@ -494,8 +494,8 @@ export function AddTaskModal({
 			}
 			if (e.key === "Enter") {
 				e.preventDefault();
-				const it = suggest[i] ?? suggest[0]!;
-				pickSug(it);
+				const it = suggest[i] ?? suggest[0];
+				if (it) pickSug(it);
 				return;
 			}
 			if (e.key === "Escape") {
@@ -626,8 +626,8 @@ export function AddTaskModal({
 		{
 			key: "priloha",
 			icon: "priloha",
-			disp: draft.attached.length ? `${draft.attached.length}×` : t("addmodal.fieldAttach"),
-			on: draft.attached.length > 0,
+			disp: t("addmodal.fieldAttach"),
+			on: false,
 		},
 		...(flowOptions.length
 			? [
@@ -705,7 +705,13 @@ export function AddTaskModal({
 		if (!draft.project) return;
 		const id = crypto.randomUUID();
 		const dueISO = tISO;
-		const startDate = draft.time && dueISO ? `${dueISO}T${draft.time}:00` : null;
+		const timeZone = session?.user?.timezone ?? deviceTimeZone();
+		const startDate =
+			draft.time && dueISO ? zonedDateTimeToIso(dueISO, `${draft.time}:00`, timeZone) : null;
+		if (draft.time && dueISO && !startDate) {
+			showToast(t("addmodal.invalidLocalTime"));
+			return;
+		}
 		const mode =
 			draft.assignees.length >= 2
 				? draft.assignMode === "all"
@@ -726,9 +732,9 @@ export function AddTaskModal({
 			recurrenceLabel = draft.repeatLabel || repLbl[draft.repeat];
 		}
 		await powerSync.execute(
-			`INSERT INTO tasks (id, project_id, parent_id, name, description, priority, color, due_date, start_date,
+			`INSERT INTO tasks (id, project_id, parent_id, name, description, priority, color, due_date, start_date, start_timezone,
         deadline, duration_min, days, recurrence, recurrence_rule, recurrence_basis, assignment_mode, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				id,
 				draft.project,
@@ -740,6 +746,7 @@ export function AddTaskModal({
 				null,
 				dueISO,
 				startDate,
+				startDate ? timeZone : null,
 				draft.deadline || null,
 				draft.duration || null,
 				draft.days > 1 ? draft.days : null,
@@ -816,24 +823,30 @@ export function AddTaskModal({
 	// se musí kreslit před ním, ne za ním (feedback 2026-07-11)
 	return (
 		<div
-			onClick={onClose}
 			data-esc-layer
 			data-add-layer
 			className="fixed inset-0 z-[75] flex justify-center"
 			style={{
-				background: "rgba(10,14,20,.42)",
 				alignItems: "flex-start",
 				paddingTop: "12vh",
 			}}
 		>
+			<button
+				type="button"
+				aria-label="Zavřít dialog"
+				onClick={onClose}
+				className="absolute inset-0 cursor-default border-0 p-0"
+				style={{ background: "rgba(10,14,20,.42)" }}
+			/>
 			<div
 				ref={trapRef}
 				tabIndex={-1}
 				role="dialog"
 				aria-modal="true"
-				onClick={(e) => e.stopPropagation()}
 				className="border border-line bg-card outline-none"
 				style={{
+					position: "relative",
+					zIndex: 1,
 					width: 520,
 					maxWidth: "94vw",
 					maxHeight: "86vh",
@@ -877,10 +890,10 @@ export function AddTaskModal({
 							className="pointer-events-none absolute inset-0 overflow-hidden"
 							style={{ ...titleFont, color: "transparent" }}
 						>
-							{segs.map((s, i) =>
+							{segs.map((s) =>
 								s.mark ? (
 									<span
-										key={i}
+										key={s.start}
 										style={{
 											background: "var(--w-brass-soft)",
 											borderRadius: 5,
@@ -890,7 +903,7 @@ export function AddTaskModal({
 										{s.text}
 									</span>
 								) : (
-									<span key={i}>{s.text}</span>
+									<span key={s.start}>{s.text}</span>
 								),
 							)}
 						</div>
@@ -1653,63 +1666,13 @@ export function AddTaskModal({
 						)}
 
 						{draft.pop === "priloha" && (
-							<>
-								<div className="flex flex-wrap items-center" style={{ gap: 7 }}>
-									{draft.attached.map((name, i) => (
-										<span
-											key={`${name}-${i}`}
-											className="flex items-center border border-line bg-card font-body"
-											style={{
-												gap: 6,
-												fontSize: 12,
-												padding: "5px 9px",
-												borderRadius: 8,
-												color: "var(--w-ink-2)",
-											}}
-										>
-											{name}
-											<button
-												type="button"
-												onClick={() =>
-													patch({
-														attached: draft.attached.filter((_, j) => j !== i),
-													})
-												}
-												className="cursor-pointer text-ink-3"
-											>
-												✕
-											</button>
-										</span>
-									))}
-									<label
-										className="flex cursor-pointer items-center font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
-										style={{
-											gap: 6,
-											fontSize: 12,
-											padding: "6px 11px",
-											borderRadius: 9,
-											border: "1px dashed var(--w-line)",
-										}}
-									>
-										<input
-											type="file"
-											multiple
-											className="hidden"
-											onChange={(e) => {
-												const names = Array.from(e.target.files ?? []).map((f) => f.name);
-												if (names.length) patch({ attached: [...draft.attached, ...names] });
-												e.target.value = "";
-											}}
-										/>
-										{t("addmodal.addAttachment")}
-									</label>
-								</div>
-								{/* Upload/persist příloh zatím není implementován → jasně označit,
-							    ať uživatel nečeká uložení (dřív se tiše zahodily). */}
-								<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 8 }}>
-									{t("addmodal.attachDemo")}
-								</div>
-							</>
+							<div
+								role="status"
+								className="rounded-lg border border-line bg-panel-2 font-body text-ink-2"
+								style={{ fontSize: 12, padding: "9px 11px" }}
+							>
+								{t("addmodal.attachUnavailable")}
+							</div>
 						)}
 
 						{draft.pop === "postup" && (

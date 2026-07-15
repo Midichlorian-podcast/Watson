@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { NotifCenter, useNotifItems } from "../components/NotifCenter";
 import { useAddTask } from "../lib/addTask";
 import { INBOX_NAMES } from "../lib/inbox";
+import { focusOnMount } from "../lib/focusOnMount";
 import { useListSearch } from "../lib/listSearch";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useViewMode, type ViewMode } from "../lib/viewMode";
@@ -93,7 +94,7 @@ export function Header() {
 			count: src.length,
 			timeLabel: h > 0 ? `${String(h).replace(".", ",")} h` : null,
 		};
-	}, [openRows, projRows, path, isWorkspace]);
+	}, [openRows, projRows, path, isWorkspace, activeTab, inTaskModule]);
 
 	const { q, setQ, open: searchOpen, setOpen: setSearchOpen } = useListSearch();
 
@@ -275,9 +276,8 @@ export function Header() {
 								strokeLinecap="round"
 							/>
 						</svg>
-						{/* biome-ignore lint/a11y/noAutofocus: `/` fokusuje inline hledání */}
 						<input
-							autoFocus
+							ref={focusOnMount}
 							value={q}
 							onChange={(e) => setQ(e.target.value)}
 							onKeyDown={(e) => {

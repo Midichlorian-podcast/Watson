@@ -82,10 +82,11 @@ WHERE p.workspace_id IN (SELECT id FROM workspaces WHERE name IN ('Kancelář Pr
 -- ── Úkoly (reprezentativní výběr seedu prototypu; relativní data) ──────────
 WITH pr AS (SELECT name, id FROM projects),
      us AS (SELECT email, id FROM users)
-INSERT INTO tasks (id, project_id, name, description, priority, due_date, start_date, duration_min, days, assignment_mode, completed_at, created_at)
+INSERT INTO tasks (id, project_id, name, description, priority, due_date, start_date, start_timezone, duration_min, days, assignment_mode, completed_at, created_at)
 SELECT t.id::uuid, pr.id, t.name, t.descr, t.pri,
        CASE WHEN t.due_off IS NULL THEN NULL ELSE CURRENT_DATE + t.due_off END,
-       CASE WHEN t.start_min IS NULL THEN NULL ELSE (CURRENT_DATE + t.due_off) + (t.start_min || ' minutes')::interval END,
+	   CASE WHEN t.start_min IS NULL THEN NULL ELSE ((CURRENT_DATE + t.due_off) + (t.start_min || ' minutes')::interval) AT TIME ZONE 'Europe/Prague' END,
+	   CASE WHEN t.start_min IS NULL THEN NULL ELSE 'Europe/Prague' END,
        t.dur, t.days,
        t.mode::assignment_mode,
        CASE WHEN t.done THEN now() ELSE NULL END,

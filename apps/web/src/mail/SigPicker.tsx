@@ -165,7 +165,7 @@ export function RecipientField({
 						<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
 							{nameOfAddr(c)}
 						</span>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => removeChip(i)}
 							title="Odebrat"
 							style={{ cursor: "pointer", color: "var(--ink-3)", lineHeight: 1, flex: "none" }}
@@ -219,7 +219,7 @@ export function RecipientField({
 					}}
 				>
 					{sugg.map((c, i) => (
-						<div
+						<div role="region"
 							key={c.addr}
 							// mousedown místo click, ať blur nezavře popover dřív než výběr projde
 							onMouseDown={(ev) => {
@@ -342,7 +342,7 @@ export function SigPicker({
 
 	return (
 		<div ref={ref} style={{ position: "relative", display: "inline-flex" }}>
-			<span
+			<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 				onClick={() => setOpen((v) => !v)}
 				data-ghost
 				title="Podpis na konci mailu — vyber z vytvořených podpisů"
@@ -394,7 +394,7 @@ export function SigPicker({
 						Podpis
 					</div>
 					{m.sigs.map((s) => (
-						<div
+						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							key={s.id}
 							onClick={() => {
 								onChange(s.id);

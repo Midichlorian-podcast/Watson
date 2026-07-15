@@ -5,6 +5,11 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+	build: {
+		// Raw-size warning is noisy for the PowerSync worker/runtime; the repository
+		// enforces a stricter gzip + offline precache budget after every root build.
+		chunkSizeWarningLimit: 1100,
+	},
 	resolve: {
 		alias: {
 			"@": fileURLToPath(new URL("./src", import.meta.url)),
@@ -48,16 +53,15 @@ export default defineConfig({
 				],
 			},
 			injectManifest: {
-				// PowerSync WASM (~2.5 MB) chceme v offline cache.
+				// PowerSync WASM včetně MultipleCiphers buildu chceme v offline cache;
+				// lokální databáze je šifrovaná a bez mc-wa-sqlite by offline start selhal.
 				maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-				globPatterns: ["**/*.{js,css,html,svg,wasm}"],
-				// mc-* = SQLite MultipleCiphers (šifrovaný build). Šifrování NEpoužíváme (žádný
-				// encryption key), PowerSync načítá standardní `wa-sqlite` → 3,8 MB pryč z precache.
-				globIgnores: ["**/mc-wa-sqlite*.wasm"],
+				globPatterns: ["**/*.{js,css,html,svg}", "**/mc-wa-sqlite-async-*.wasm"],
 			},
-			// Dev: SW aktivní i v `vite dev`, aby šly Web Push notifikace ověřit lokálně.
+			// Dev SW je záměrně vypnutý: cache v dev serveru jinak maskuje změny a
+			// produkuje falešné regrese. Push/offline se ověřují na produkčním preview buildu.
 			devOptions: {
-				enabled: true,
+				enabled: false,
 				type: "module",
 				navigateFallback: "index.html",
 			},

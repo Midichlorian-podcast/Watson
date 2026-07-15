@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useContext, useState } from "react";
+import { storageGet, storageRemove, storageSet } from "./storage";
 
 /**
  * Sdílený režim zobrazení Seznam | Nástěnka | Kalendář (prototyp s.view — globální pro
@@ -24,7 +25,7 @@ const Ctx = createContext<ViewModeCtx>({
 });
 
 const readLock = (): ViewMode | null => {
-	const v = localStorage.getItem(LS_LOCK);
+	const v = storageGet(LS_LOCK);
 	return v === "list" || v === "board" || v === "calendar" ? v : null;
 };
 
@@ -39,10 +40,10 @@ export function ViewModeProvider({ children }: { children: ReactNode }) {
 	};
 	const toggleLock = () => {
 		if (locked) {
-			localStorage.removeItem(LS_LOCK);
+			storageRemove(LS_LOCK);
 			setLocked(false);
 		} else {
-			localStorage.setItem(LS_LOCK, view);
+			storageSet(LS_LOCK, view);
 			setLocked(true);
 		}
 	};

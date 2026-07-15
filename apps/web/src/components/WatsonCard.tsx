@@ -6,9 +6,11 @@
  * klíče se příkazová vrstva skryje (503) a zůstane jen odkaz na přehled.
  */
 import { useQuery as usePsQuery } from "@powersync/react";
+import i18n from "@watson/i18n";
 import { type CSSProperties, useMemo, useState } from "react";
 import { logTaskActivity } from "../lib/activity";
 import { API_URL } from "../lib/api";
+import { focusOnMount } from "../lib/focusOnMount";
 import { useSession } from "../lib/auth-client";
 import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
@@ -32,7 +34,7 @@ const OVERLAY: CSSProperties = {
 	position: "fixed",
 	inset: 0,
 	zIndex: 90,
-	background: "rgba(20,16,10,.34)",
+	background: "transparent",
 	display: "flex",
 	alignItems: "flex-start",
 	justifyContent: "center",
@@ -77,6 +79,8 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 
 	async function run() {
 		if (command.trim().length < 2 || !activeWs) return;
+		const vendorConsent = window.confirm(i18n.t("common.aiVendorConsentConfirm"));
+		if (!vendorConsent) return;
 		setBusy(true);
 		setActions(null);
 		setNote(null);
@@ -99,6 +103,7 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 				body: JSON.stringify({
 					workspaceId: activeWs,
 					command,
+					vendorConsent,
 					context: { projects: projects.map((p) => ({ id: p.id, name: p.name ?? "" })), tasks },
 				}),
 			});
@@ -215,16 +220,18 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 	const keepCount = keep.filter(Boolean).length;
 
 	return (
-		// biome-ignore lint/a11y/useKeyWithClickEvents: klik na pozadí zavře (Esc řeší focus-trap)
 		<div
 			style={OVERLAY}
 			data-esc-layer
 			data-watson-layer
-			onClick={(e) => {
-				if (e.target === e.currentTarget) onClose();
-			}}
 		>
-			<div ref={trapRef} style={CARD} role="dialog" aria-label="Watson">
+			<button
+				type="button"
+				aria-label="Zavřít Watsona"
+				onClick={onClose}
+				style={{ position: "absolute", inset: 0, border: 0, background: "rgba(20,16,10,.34)" }}
+			/>
+			<div ref={trapRef} style={{ ...CARD, position: "relative", zIndex: 1 }} role="dialog" aria-label="Watson">
 				{/* hlavička */}
 				<div
 					style={{
@@ -284,8 +291,7 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 						}}
 						placeholder="Řekni Watsonovi, co udělat… (⌘/Ctrl + Enter odešle)"
 						rows={3}
-						// biome-ignore lint/a11y/noAutofocus: hlavní vstup karty
-						autoFocus
+						ref={focusOnMount}
 						style={{
 							width: "100%",
 							fontSize: 14,

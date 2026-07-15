@@ -104,7 +104,7 @@ export function CtxMenu({
 	return (
 		<div data-esc-layer>
 			{/* průhledná click-catch vrstva (ř. 2041) — pravý klik mimo taky zavře */}
-			<div
+			<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 				onClick={onClose}
 				onContextMenu={(ev) => {
 					ev.preventDefault();
@@ -133,7 +133,7 @@ export function CtxMenu({
 						// biome-ignore lint/suspicious/noArrayIndexKey: statický seznam položek
 						<div key={i} style={{ height: 1, background: "var(--line)", margin: "4px 6px" }} />
 					) : (
-						<div
+						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							key={it.l}
 							onClick={it.go}
 							data-menuitem

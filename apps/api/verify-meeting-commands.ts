@@ -121,6 +121,7 @@ async function main(): Promise<void> {
 			title: "Atomická porada",
 			dueDate: "2026-08-20",
 			startAt: "2026-08-20T08:30:00.000Z",
+			startTimezone: "Europe/Prague",
 			durationMin: 60,
 			participantIds: [owner.id, participant.id],
 		};
@@ -136,6 +137,11 @@ async function main(): Promise<void> {
 		check(
 			"vznikne právě jeden hub task",
 			(await db.select().from(tasks).where(eq(tasks.id, hubTaskId))).length === 1,
+		);
+		check(
+			"hub ukládá IANA zónu z commandu",
+			(await db.select().from(tasks).where(eq(tasks.id, hubTaskId)))[0]?.startTimezone ===
+				"Europe/Prague",
 		);
 		check(
 			"vzniknou oba účastníci",
@@ -154,6 +160,13 @@ async function main(): Promise<void> {
 		);
 		response = await post(cookie, "/api/meetings/plan", { ...plan, title: "Jiný payload" });
 		check("stejné command ID s jiným plánem je 409", response.status === 409, response.status);
+		response = await post(cookie, "/api/meetings/plan", {
+			...plan,
+			meetingId: crypto.randomUUID(),
+			hubTaskId: crypto.randomUUID(),
+			startTimezone: "Invalid/Timezone",
+		});
+		check("neexistující IANA zóna je odmítnuta", response.status === 422, response.status);
 
 		const invalidMeetingId = crypto.randomUUID();
 		const invalidHubId = crypto.randomUUID();

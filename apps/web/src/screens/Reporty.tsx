@@ -4,12 +4,13 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { useEffect, useMemo, useState } from "react";
+import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
 import { GSTAT, goalElapsed, goalProgress, goalStatus } from "../lib/goals";
 import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
@@ -46,8 +47,8 @@ const wdLabels = (lang: string): string[] =>
 	);
 
 /** ISO data aktuálního týdne Po–Ne. */
-function weekDays(): string[] {
-	const now = new Date();
+function weekDays(today: string): string[] {
+	const now = new Date(`${today}T12:00:00`);
 	const mon = new Date(now);
 	mon.setDate(now.getDate() - ((now.getDay() + 6) % 7));
 	return Array.from({ length: 7 }, (_, i) => {
@@ -63,7 +64,7 @@ export function Reporty() {
 	const WD_LABELS = wdLabels(i18n.language);
 	const navigate = useNavigate();
 	const search = useSearch({ from: "/reporty" });
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const taskDetail = useTaskDetail();
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs } = useWorkspace();
@@ -75,24 +76,24 @@ export function Reporty() {
 	const setSearch = (next: { tab?: string; clen?: string }) =>
 		void navigate({ to: "/reporty", search: next });
 
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		`SELECT id, name, project_id, priority, due_date, completed_at, assignment_mode FROM tasks WHERE ${NOT_MEETING}`,
 	);
 	// completed_at účasti — u shared_all je dokončení PER-OSOBA (task.completed_at je odvozené až po všech).
-	const { data: assignments } = usePsQuery<{
+	const { data: assignments, isLoading: assignmentsLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 		completed_at: string | null;
 	}>("SELECT task_id, user_id, completed_at FROM assignments");
-	const { data: goals } = usePsQuery<GoalRow>(
+	const { data: goals, isLoading: goalsLoading } = usePsQuery<GoalRow>(
 		"SELECT * FROM goals WHERE workspace_id = ? ORDER BY created_at",
 		[activeWs ?? ""],
 	);
-	const { data: goalProjects } = usePsQuery<{
+	const { data: goalProjects, isLoading: goalProjectsLoading } = usePsQuery<{
 		goal_id: string | null;
 		project_id: string | null;
 	}>("SELECT goal_id, project_id FROM goal_projects");
-	const { data: team } = useQuery({
+	const { data: team, isPending: teamLoading } = useQuery({
 		queryKey: ["wsMembersFull", activeWs],
 		enabled: !!activeWs,
 		queryFn: async () => {
@@ -104,6 +105,8 @@ export function Reporty() {
 		},
 	});
 	const members = team ?? [];
+	const dataLoading =
+		projectsLoading || tasksLoading || assignmentsLoading || goalsLoading || goalProjectsLoading || teamLoading;
 
 	const wsProjects = useMemo(
 		() => projects.filter((p) => p.workspace_id === activeWs),
@@ -128,7 +131,8 @@ export function Reporty() {
 
 	// ── Přehled ────────────────────────────────────────────────────────────────
 	// Závislost na dnešku, aby graf po přechodu týdne (kiosk/otevřený tab) nezůstal na minulém týdnu.
-	const days = useMemo(weekDays, [todayISO()]);
+	const reportDay = todayISO();
+	const days = useMemo(() => weekDays(reportDay), [reportDay]);
 	const overview = useMemo(() => {
 		const tdy = todayISO();
 		const perDay = days.map(
@@ -200,7 +204,7 @@ export function Reporty() {
 			const st = goalStatus(pr.pct, goalElapsed(g.created_at, g.due_date, tdy), overdue, false);
 			return { g, pr, st };
 		};
-	}, [wsTasks, linksByGoal, assigneesByTask]);
+	}, [wsTasks, linksByGoal, assigneesByTask, t]);
 	const { data: session } = useSession();
 	const meId = session?.user?.id;
 	const reportGoals = useMemo(() => {
@@ -289,7 +293,9 @@ export function Reporty() {
 				)}
 			</div>
 
-			{tab === "prehled" ? (
+			{dataLoading ? (
+				<DataLoading />
+			) : tab === "prehled" ? (
 				<>
 					{/* KPI */}
 					<div className="mb-4 flex gap-3.5">

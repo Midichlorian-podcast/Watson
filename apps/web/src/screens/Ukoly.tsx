@@ -1,9 +1,10 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { Link, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Board } from "../components/Board";
 import { Calendar } from "../components/CalendarLazy";
+import { DataLoading } from "../components/Loading";
 import { RescheduleMenu } from "../components/RescheduleMenu";
 import { TaskItem } from "../components/TaskItem";
 import {
@@ -22,7 +23,7 @@ import { filterByQuery, useListSearch } from "../lib/listSearch";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjectDetail } from "../lib/projectDetail";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
@@ -46,7 +47,7 @@ export function VseTab() {
 		ukol?: string;
 	};
 	const projektId = search.projekt;
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { open } = useTaskDetail();
 	const projDetail = useProjectDetail();
 	const { openAdd } = useAddTask();
@@ -58,7 +59,7 @@ export function VseTab() {
 
 	// Výkon: bez „Dokončené" filtruj hotové rovnou v SQL (méně řádků přes WASM bridge na každou změnu).
 	// NOT_MEETING — pracovní seznam úkolů; porady mají modul Meets + kalendář
-	const { data: allTasks } = usePsQuery<TaskRow>(
+	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		tb.showDone
 			? `SELECT * FROM tasks WHERE ${NOT_MEETING} ORDER BY priority, due_date IS NULL, due_date`
 			: `SELECT * FROM tasks WHERE completed_at IS NULL AND ${NOT_MEETING} ORDER BY priority, due_date IS NULL, due_date`,
@@ -120,6 +121,7 @@ export function VseTab() {
 	const [showAllRows, setShowAllRows] = useState(false);
 	// „Zobrazit vše" nesmí přežít přechod mezi projekty — jinak by cap znovu nezabral (perf regrese).
 	useEffect(() => {
+		void projektId;
 		setShowAllRows(false);
 	}, [projektId]);
 	const capped = !showAllRows && shown.length > CAP;
@@ -194,7 +196,9 @@ export function VseTab() {
 
 			{view !== "calendar" && <TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />}
 
-			{view === "calendar" ? (
+			{projectsLoading || tasksLoading ? (
+				<DataLoading />
+			) : view === "calendar" ? (
 				<Calendar tasks={scoped} />
 			) : view === "board" ? (
 				// Cap platí i pro Nástěnku (jinak by velký workspace vykreslil desetitisíce karet);
@@ -306,12 +310,12 @@ function KbRow({ selected, children }: { selected: boolean; children: ReactNode 
  */
 export function ZasobnikTab() {
 	const { t } = useTranslation();
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const flowSteps = useFlowSteps();
 	const { setNavIds } = useTaskDetail();
 	const { q: searchQ } = useListSearch();
 
-	const { data: allTasks } = usePsQuery<TaskRow>(
+	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		`SELECT * FROM tasks WHERE due_date IS NULL AND completed_at IS NULL AND ${NOT_MEETING} ORDER BY priority, created_at`,
 	);
 
@@ -363,7 +367,9 @@ export function ZasobnikTab() {
 			<p className="font-body text-ink-3" style={{ padding: "6px 4px 10px", fontSize: 12.5 }}>
 				{t("zasobnik.intro")}
 			</p>
-			{shown.length === 0 ? (
+			{projectsLoading || tasksLoading ? (
+				<DataLoading />
+			) : shown.length === 0 ? (
 				<p
 					className="text-center font-body text-ink-3"
 					style={{ padding: "80px 20px", fontSize: 13.5 }}

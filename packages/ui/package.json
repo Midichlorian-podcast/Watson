@@ -10,7 +10,7 @@
 		"./tokens.css": "./src/tokens.css"
 	},
 	"scripts": {
-		"lint": "biome lint .",
+		"lint": "biome lint . --error-on-warnings",
 		"typecheck": "tsc --noEmit"
 	},
 	"peerDependencies": {

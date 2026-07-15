@@ -81,18 +81,24 @@ export function PersonCard({
 	return (
 		<div
 			data-esc-layer
-			onClick={onClose}
 			style={{
 				position: "fixed",
 				inset: 0,
 				zIndex: 79,
-				background: "rgba(23,40,63,.32)",
 				animation: "wFade .12s ease",
 			}}
 		>
+			<button
+				type="button"
+				aria-label="Zavřít kartu osoby"
+				onClick={onClose}
+				style={{ position: "absolute", inset: 0, border: 0, background: "rgba(23,40,63,.32)" }}
+			/>
 			<div
+				role="dialog"
+				aria-modal="true"
+				aria-label="Karta osoby"
 				data-screen-label="Karta osoby"
-				onClick={(e) => e.stopPropagation()}
 				style={{
 					position: "fixed",
 					top: "50%",
@@ -126,7 +132,7 @@ export function PersonCard({
 							{person.role}
 						</div>
 					</div>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						onClick={onClose}
 						title="Zavřít (Esc)"
 						style={{ fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
@@ -185,10 +191,10 @@ export function PersonCard({
 							· granty se odeberou, lokální kopie pošty se smažou, VIP záznamy zmizí
 						</div>
 						<div style={{ display: "flex", gap: 7, marginTop: 10, justifyContent: "flex-end" }}>
-							<span data-ghost onClick={() => setOffStage(false)} style={{ fontSize: 11, padding: "6px 12px" }}>
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }} data-ghost onClick={() => setOffStage(false)} style={{ fontSize: 11, padding: "6px 12px" }}>
 								Zpět
 							</span>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								data-primary
 								onClick={() => {
 									// demo — jen toast (prototyp navíc přepisoval acc + ov, ř. 3292–3300)
@@ -207,7 +213,7 @@ export function PersonCard({
 
 				{/* patička — vstup do offboardingu (prototyp ř. 1940–1943) */}
 				<div style={{ display: "flex", gap: 7, marginTop: 15, justifyContent: "space-between", alignItems: "center" }}>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-ghost
 						onClick={() => setOffStage(true)}
 						style={{ fontSize: 11, padding: "6px 12px", color: "var(--overdue)" }}

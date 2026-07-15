@@ -51,6 +51,8 @@ export const tasks = pgTable(
 		 *  enginu (počítá s JS Date). Časový plán zůstává start_date (timestamptz). */
 		dueDate: date("due_date", { mode: "date" }),
 		startDate: timestamp("start_date", { withTimezone: true }),
+		/** IANA zóna, ve které uživatel zadal start_date (např. Europe/Prague). */
+		startTimezone: varchar("start_timezone", { length: 64 }),
 		/** R6/B2 — dokdy musí být hotovo (zobrazit zřetelně, červeně). DATE dle §15/7. */
 		deadline: date("deadline", { mode: "date" }),
 		/** B3 — odhad délky pro time-blocking (NE time tracking). */
@@ -94,8 +96,26 @@ export const tasks = pgTable(
 	},
 	(t) => [
 		check("tasks_priority_range", sql`${t.priority} between 1 and 4`),
+		check("tasks_days_positive", sql`${t.days} is null or ${t.days} between 1 and 3650`),
+		check(
+			"tasks_duration_positive",
+			sql`${t.durationMin} is null or ${t.durationMin} between 1 and 10080`,
+		),
+		check(
+			"tasks_deadline_not_before_due",
+			sql`${t.deadline} is null or ${t.dueDate} is null or ${t.deadline} >= ${t.dueDate}`,
+		),
+		check(
+			"tasks_start_timezone_pair",
+			sql`(${t.startDate} is null) = (${t.startTimezone} is null)`,
+		),
+		check(
+			"tasks_start_timezone_format",
+			sql`${t.startTimezone} is null or ${t.startTimezone} ~ '^(UTC|[A-Za-z_]+(/[A-Za-z0-9_+.-]+)+)$'`,
+		),
 		// CC-P0-15 — kind je enum vynucený DB, ne jen UI filtrem (audit Meets Fáze 1).
 		check("tasks_kind_valid", sql`${t.kind} in ('task', 'meeting')`),
+		check("tasks_meeting_has_id", sql`${t.kind} <> 'meeting' or ${t.meetingId} is not null`),
 		index("tasks_project_idx").on(t.projectId),
 		index("tasks_parent_idx").on(t.parentId),
 		index("tasks_status_idx").on(t.statusId),

@@ -154,8 +154,7 @@ export function CalendarMonth({
 					const shown = list.slice(0, 3);
 					const more = list.length - shown.length;
 					return (
-						// biome-ignore lint/a11y/useKeyWithClickEvents: klik do prázdné buňky = nový úkol
-						<div
+						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							key={iso}
 							onClick={(e) => {
 								if ((e.target as HTMLElement).closest("[data-mchip]")) return;
@@ -198,8 +197,7 @@ export function CalendarMonth({
 								const sm = startMin(tk);
 								const ava = metaOf(tk).avatars[0];
 								return (
-									// biome-ignore lint/a11y/useKeyWithClickEvents: chip, klik = detail
-									<div
+									<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										key={tk.id}
 										data-mchip
 										draggable={!tk.id.includes("@")}

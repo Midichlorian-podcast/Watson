@@ -11,7 +11,7 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import i18n from "@watson/i18n";
 import { AvatarGroup } from "@watson/ui";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { initials, shortDayLabel } from "../lib/format";
@@ -19,7 +19,13 @@ import { useAllMembers } from "../lib/overview";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useTaskDetail } from "../lib/taskDetail";
-import { startMinOf, todayISO, toggleTask } from "../lib/tasks";
+import { startMinOf, toggleTask } from "../lib/tasks";
+import {
+	dateInTimeZone,
+	deviceTimeZone,
+	wallTimeFromInstant,
+	zonedDateTimeToIso,
+} from "../lib/timeZone";
 import { showToast } from "../lib/toast";
 
 interface Proposal {
@@ -142,6 +148,7 @@ export function MeetBoard({
 }) {
 	const { data: session } = useSession();
 	const uid = session?.user?.id;
+	const userTimeZone = session?.user?.timezone ?? deviceTimeZone();
 	const members = useAllMembers();
 	const { open: openTask } = useTaskDetail();
 	const [busy, setBusy] = useState(false);
@@ -323,7 +330,7 @@ export function MeetBoard({
 	const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error" | "conflict">(
 		"idle",
 	);
-	async function pushReview(body: Editable[], keepaliveWanted: boolean): Promise<Response> {
+	const pushReview = useCallback(async (body: Editable[], keepaliveWanted: boolean): Promise<Response> => {
 		const payload = JSON.stringify({ proposals: body, baseUpdatedAt: reviewBaseRef.current });
 		// keepalive má tvrdý limit 64 KiB — velká revize jde běžným fetchem (SPA
 		// unmount fetch neruší; keepalive je potřeba jen pro zavření/reload stránky).
@@ -334,7 +341,7 @@ export function MeetBoard({
 			body: payload,
 			keepalive: keepaliveWanted && payload.length < 60_000,
 		});
-	}
+	}, [meetingId]);
 	/** Po 409: načti aktuální revizi ze serveru (cizí úpravy nikdy tiše nepřepsat). */
 	async function reloadReview() {
 		try {
@@ -379,7 +386,7 @@ export function MeetBoard({
 		// Cleanup JEN ruší debounce — flush dělá samostatný unmount effect níž
 		// (cleanup tady běží při každém úhozu → posílal by request na každé písmeno).
 		return () => clearTimeout(t);
-	}, [proposals, meetingId]);
+	}, [proposals, pushReview]);
 	// Flush při odchodu z boardu (unmount/přepnutí porady) — scénář „překlikl jsem
 	// v řetězu a ztratil úpravy". Refs nesou poslední stav bez re-runů na každou změnu.
 	useEffect(() => {
@@ -388,8 +395,7 @@ export function MeetBoard({
 			if (ps && JSON.stringify(ps) !== lastSavedRef.current)
 				void pushReview(ps, true).catch(() => {});
 		};
-		// biome-ignore lint/correctness/useExhaustiveDependencies: flush jen při unmountu
-	}, [meetingId]);
+	}, [pushReview]);
 	const upd = (i: number, patch: Partial<Editable>) =>
 		setProposals((ps) => (ps ?? []).map((x, xi) => (xi === i ? { ...x, ...patch } : x)));
 	/** Vlastní bod nad rámec návrhů AI — porady neříkají všechno explicitně. */
@@ -407,6 +413,10 @@ export function MeetBoard({
 		]);
 	useEffect(() => {
 		let live = true;
+		// Obě hodnoty jsou záměrné retry triggery: po dotečení účastníků nebo
+		// ručním/backoff retry znovu ověřujeme serverové ACL a obsah.
+		void whoKey;
+		void contentTry;
 		(async () => {
 			// Retry s backoffem — studený page-load burst umí shodit první request
 			// (přechodné síťové/DB chyby); teprve po vyčerpání pokusů hlásíme offline.
@@ -468,14 +478,31 @@ export function MeetBoard({
 	async function extractHere() {
 		const text = (editing ? draft : saved).trim();
 		if (text.length < 10) return;
+		const baseUpdatedAt = reviewBaseRef.current;
+		if (!baseUpdatedAt) {
+			showToast("Nejdřív načti aktuální verzi porady ze serveru.");
+			return;
+		}
+		const vendorConsent = window.confirm(i18n.t("common.aiVendorConsentConfirm"));
+		if (!vendorConsent) return;
 		setBusy(true);
 		try {
 			const r = await fetch(`${API_URL}/api/meetings/extract`, {
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ meetingId, transcript: text }),
+				body: JSON.stringify({
+					meetingId,
+					transcript: text,
+					vendorConsent,
+					baseUpdatedAt,
+				}),
 			});
+			if (r.status === 409) {
+				setSaveState("conflict");
+				showToast("Poradu mezitím upravil někdo jiný. Načti aktuální verzi; tvůj zápis zůstává v editoru.");
+				return;
+			}
 			if (!r.ok) throw new Error("extract");
 			const j = await r.json();
 			// unclear = nezaškrtnuté (rozpočet hluku), ale VIDITELNÉ — nic se neztrácí.
@@ -501,14 +528,24 @@ export function MeetBoard({
 	async function saveTranscript() {
 		const text = draft.trim();
 		if (!text) return;
+		const baseUpdatedAt = reviewBaseRef.current;
+		if (!baseUpdatedAt) {
+			showToast("Nejdřív načti aktuální verzi porady ze serveru.");
+			return;
+		}
 		setBusy(true);
 		try {
 			const r = await fetch(`${API_URL}/api/meetings/${meetingId}/transcript`, {
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ transcript: text }),
+				body: JSON.stringify({ transcript: text, baseUpdatedAt }),
 			});
+			if (r.status === 409) {
+				setSaveState("conflict");
+				showToast("Poradu mezitím upravil někdo jiný. Načti aktuální verzi; tvůj zápis zůstává v editoru.");
+				return;
+			}
 			if (!r.ok) throw new Error("save");
 			const j = await r.json().catch(() => ({}));
 			// uložení zápisu posouvá updatedAt — bez obnovy báze by autosave revize
@@ -626,14 +663,21 @@ export function MeetBoard({
 		try {
 			const newMeetId = crypto.randomUUID();
 			const newTaskId = crypto.randomUUID();
-			const baseDay = (hub.due_date ?? todayISO()).slice(0, 10);
+			const baseDay = (hub.due_date ?? dateInTimeZone(userTimeZone)).slice(0, 10);
 			const d = new Date(`${baseDay}T00:00:00`);
 			d.setDate(d.getDate() + 7);
 			const nextDay = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 			const carry = (subRows ?? []).filter((s) => !s.completed_at);
-			const startAt = hub.start_date
-				? new Date(`${nextDay}T${hub.start_date.slice(11)}`).toISOString()
-				: new Date(`${nextDay}T10:00:00`).toISOString();
+			const startTimezone = hub.start_timezone ?? userTimeZone;
+			const wallTime =
+				hub.start_date && hub.start_timezone
+					? wallTimeFromInstant(hub.start_date, hub.start_timezone)
+					: hub.start_date?.slice(11) ?? "10:00:00";
+			const startAt = zonedDateTimeToIso(nextDay, wallTime ?? "10:00:00", startTimezone);
+			if (!startAt) {
+				showToast(i18n.t("addmodal.invalidLocalTime"));
+				return;
+			}
 			const response = await fetch(`${API_URL}/api/meetings/plan`, {
 				method: "POST",
 				credentials: "include",
@@ -646,6 +690,7 @@ export function MeetBoard({
 					title: hub.name,
 					dueDate: nextDay,
 					startAt,
+					startTimezone,
 					durationMin: hub.duration_min ?? 60,
 					participantIds: who,
 					seriesId: seriesKey,
@@ -666,7 +711,7 @@ export function MeetBoard({
 	}
 
 	// ── stav → procesní ukazatel + důrazy (jedna obrazovka, tři důrazy) ──
-	const today = todayISO();
+	const today = dateInTimeZone(userTimeZone);
 	const day = (hub?.due_date ?? "").slice(0, 10);
 	const status = meta?.status ?? "scheduled";
 	const hasTranscript =
@@ -753,7 +798,9 @@ export function MeetBoard({
 				</span>
 				{who.length > 0 && (
 					<span title={whoNames.join(", ")}>
-						<AvatarGroup people={whoNames.map((n) => initials(n))} />
+					<AvatarGroup
+						people={who.map((id, index) => ({ id, initials: initials(whoNames[index] ?? "?") }))}
+					/>
 					</span>
 				)}
 				<span
@@ -994,7 +1041,6 @@ export function MeetBoard({
 										const badTarget = !editableProjects.some((e) => e.id === p.projectId);
 										return (
 											<div
-												// biome-ignore lint/suspicious/noArrayIndexKey: stabilní v rámci revize
 												key={i}
 												style={{
 													border: "1px solid var(--w-line)",
@@ -1238,7 +1284,6 @@ export function MeetBoard({
 												.filter(({ p }) => kindOf(p) === "unclear")
 												.map(({ p, i }) => (
 													<div
-														// biome-ignore lint/suspicious/noArrayIndexKey: stabilní v rámci revize
 														key={i}
 														style={{
 															marginTop: 8,
@@ -1305,7 +1350,6 @@ export function MeetBoard({
 											.filter(({ p }) => kindOf(p) === "decision")
 											.map(({ p, i }) => (
 												<label
-													// biome-ignore lint/suspicious/noArrayIndexKey: stabilní v rámci revize
 													key={i}
 													className="font-body"
 													style={{

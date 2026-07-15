@@ -7,6 +7,7 @@
  * z aplikace (kontrakt `vzhled`) přes data-wm-theme scope.
  */
 import {
+	type KeyboardEvent as ReactKeyboardEvent,
 	type PointerEvent as ReactPointerEvent,
 	useCallback,
 	useEffect,
@@ -16,6 +17,7 @@ import {
 import { useTheme } from "../layout/useTheme";
 import "./mail.css";
 import { showToast } from "../lib/toast";
+import { storageGet, storageSet } from "../lib/storage";
 import { CheatSheet } from "./CheatSheet";
 import { MailDemoBanner } from "./DemoBanner";
 import { DeniScreen } from "./DeniScreen";
@@ -30,14 +32,6 @@ import { PriruckaScreen } from "./PriruckaScreen";
 const openSearch = () => window.dispatchEvent(new Event("watson:open-palette"));
 import { useMail } from "./state";
 
-const lsSet = (key: string, val: string) => {
-	try {
-		localStorage.setItem(key, val);
-	} catch {
-		/* blokované úložiště — volba platí jen pro session */
-	}
-};
-
 export function MailScreen() {
 	const m = useMail();
 	const { theme } = useTheme();
@@ -49,20 +43,20 @@ export function MailScreen() {
 	const [lcol, setLcol] = useState(false);
 	const [dragging, setDragging] = useState(false);
 	const lwRef = useRef<string | null>(null);
+	const [listWidth, setListWidth] = useState(() => {
+		const stored = Number.parseInt(storageGet("watson-mail.listW") ?? "340", 10);
+		return Number.isFinite(stored) ? Math.max(300, Math.min(620, stored)) : 340;
+	});
 	// sbalený panel složek na ikony (prototyp sube, ř. 347–350; persist)
 	const [sube, setSube] = useState(() => {
-		try {
-			// bez uložené volby zůstává panel rozbalený (kontinuita modulu)
-			return localStorage.getItem("watson-mail.sube") !== "0";
-		} catch {
-			return true;
-		}
+		// bez uložené volby zůstává panel rozbalený (kontinuita modulu)
+		return storageGet("watson-mail.sube") !== "0";
 	});
 	const toggleSube = useCallback(() => {
 		setSube((v) => !v);
 	}, []);
 	useEffect(() => {
-		lsSet("watson-mail.sube", sube ? "1" : "0");
+		storageSet("watson-mail.sube", sube ? "1" : "0");
 	}, [sube]);
 	const { order } = useListRows();
 	const orderRef = useRef(order);
@@ -88,7 +82,10 @@ export function MailScreen() {
 				document.removeEventListener("pointermove", mv);
 				document.removeEventListener("pointerup", up);
 				setDragging(false);
-				if (lwRef.current) lsSet("watson-mail.listW", lwRef.current);
+				if (lwRef.current) {
+					storageSet("watson-mail.listW", lwRef.current);
+					setListWidth(Number.parseInt(lwRef.current, 10));
+				}
 			};
 			document.addEventListener("pointermove", mv);
 			document.addEventListener("pointerup", up);
@@ -101,9 +98,29 @@ export function MailScreen() {
 		const el = document.querySelector<HTMLElement>("[data-listpane]");
 		if (el) el.style.width = "";
 		setLcol(false);
-		lsSet("watson-mail.listW", "");
+		setListWidth(340);
+		storageSet("watson-mail.listW", "");
 		showToast("Šířka seznamu vrácena na výchozí.");
 	}, []);
+	const rzKey = useCallback(
+		(e: ReactKeyboardEvent<HTMLDivElement>) => {
+			if (e.key === "Enter" || e.key === " " || e.key === "Home") {
+				e.preventDefault();
+				rzReset();
+				return;
+			}
+			if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+			e.preventDefault();
+			const el = document.querySelector<HTMLElement>("[data-listpane]");
+			const current = el?.getBoundingClientRect().width ?? 340;
+			const next = Math.round(Math.max(300, Math.min(620, current + (e.key === "ArrowLeft" ? -20 : 20))));
+			lwRef.current = `${next}px`;
+			if (el) el.style.width = lwRef.current;
+			setListWidth(next);
+			storageSet("watson-mail.listW", lwRef.current);
+		},
+		[rzReset],
+	);
 
 	// ⌘F ve vlákně dispatchuje 'watson-mail:search' → otevři globální paletu
 	useEffect(() => {
@@ -240,11 +257,12 @@ export function MailScreen() {
 							onCompose={() => setNewOn(true)}
 						/>
 						{/* táhlo šířky seznamu + Full Screen čtení (prototyp ř. 779–784) */}
-						<div
+						<div role="separator" aria-orientation="vertical" aria-label="Šířka seznamu zpráv" aria-valuemin={300} aria-valuemax={620} aria-valuenow={listWidth} tabIndex={0}
 							data-rz
 							data-tabup
 							onPointerDown={rzDown}
 							onDoubleClick={rzReset}
+							onKeyDown={rzKey}
 							title="Táhni pro změnu šířky seznamu · dvojklik vrátí výchozí"
 							style={{
 								width: 9,
@@ -259,7 +277,7 @@ export function MailScreen() {
 								data-rzline
 								style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1 }}
 							/>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => {
 									const n = !lcol;
 									setLcol(n);

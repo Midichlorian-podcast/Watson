@@ -74,9 +74,12 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 		year: "numeric",
 	}).format(first);
 	// iniciály dnů od pondělí (Intl narrow; 2026-06-01 = pondělí)
-	const weekdays = Array.from({ length: 7 }, (_, i) =>
-		new Intl.DateTimeFormat(i18n.language, { weekday: "narrow" }).format(new Date(2026, 5, 1 + i)),
-	);
+	const weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((key, i) => ({
+		key,
+		label: new Intl.DateTimeFormat(i18n.language, { weekday: "narrow" }).format(
+			new Date(2026, 5, 1 + i),
+		),
+	}));
 	const shift = (dir: -1 | 1) =>
 		setYm(({ y, m }) => {
 			const nm = m + dir;
@@ -133,9 +136,9 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 				className="grid font-mono text-ink-3"
 				style={{ gridTemplateColumns: "repeat(7, 1fr)", fontSize: 9, textAlign: "center" }}
 			>
-				{weekdays.map((w, i) => (
-					<span key={`${w}-${i}`} style={{ padding: "2px 0 4px" }}>
-						{w}
+				{weekdays.map((weekday) => (
+					<span key={weekday.key} style={{ padding: "2px 0 4px" }}>
+						{weekday.label}
 					</span>
 				))}
 			</div>
@@ -145,13 +148,14 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 				{cells.map((c) => {
 					const info = byDay.get(c.iso);
 					const isToday = c.iso === tdy;
-					const dots: string[] = [];
+					const dots: { key: string; bg: string }[] = [];
 					if (info) {
-						if (info.overdue) dots.push("var(--w-overdue)");
+						if (info.overdue) dots.push({ key: "overdue", bg: "var(--w-overdue)" });
 						if (info.open > 0)
 							for (let i = 0; i < Math.min(info.overdue ? 2 : 3, Math.ceil(info.open / 2)); i++)
-								dots.push("var(--w-brass)");
-						if (dots.length === 0 && info.done > 0) dots.push("var(--w-ink-3)");
+								dots.push({ key: `open-${i}`, bg: "var(--w-brass)" });
+						if (dots.length === 0 && info.done > 0)
+							dots.push({ key: "done", bg: "var(--w-ink-3)" });
 					}
 					return (
 						<button
@@ -175,10 +179,10 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 								{c.day}
 							</span>
 							<span className="flex" style={{ gap: 2, height: 4 }}>
-								{dots.slice(0, 3).map((bg, i) => (
+								{dots.slice(0, 3).map((dot) => (
 									<span
-										key={`${c.iso}-${i}`}
-										style={{ width: 4, height: 4, borderRadius: 999, background: bg }}
+										key={dot.key}
+										style={{ width: 4, height: 4, borderRadius: 999, background: dot.bg }}
 									/>
 								))}
 							</span>

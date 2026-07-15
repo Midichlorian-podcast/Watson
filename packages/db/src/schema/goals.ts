@@ -9,7 +9,6 @@ import {
 	index,
 	integer,
 	pgTable,
-	text,
 	timestamp,
 	uuid,
 	varchar,

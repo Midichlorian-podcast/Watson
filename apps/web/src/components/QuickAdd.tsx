@@ -6,7 +6,7 @@ import { powerSync } from "../lib/powersync/db";
 import type { Highlight, RecurrenceRule } from "../lib/quickadd";
 import { parseQuick } from "../lib/quickadd";
 import { buildQuickAddTaskRow, quickAddInsertSql } from "../lib/quickadd/insert";
-import { todayISO } from "../lib/tasks";
+import { dateInTimeZone, deviceTimeZone } from "../lib/timeZone";
 
 type Project = { id: string; name: string };
 type Person = { id: string; name: string; initials: string };
@@ -16,14 +16,14 @@ const hhmm = (min: number) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
 
 /** Segmenty rawName pro overlay zvýraznění (z highlights rozsahů). */
 function segments(raw: string, hl: Highlight[]) {
-	const segs: { text: string; mark: boolean }[] = [];
+	const segs: { text: string; mark: boolean; start: number }[] = [];
 	let pos = 0;
 	for (const h of hl) {
-		if (h.start > pos) segs.push({ text: raw.slice(pos, h.start), mark: false });
-		segs.push({ text: raw.slice(h.start, h.end), mark: true });
+		if (h.start > pos) segs.push({ text: raw.slice(pos, h.start), mark: false, start: pos });
+		segs.push({ text: raw.slice(h.start, h.end), mark: true, start: h.start });
 		pos = h.end;
 	}
-	if (pos < raw.length) segs.push({ text: raw.slice(pos), mark: false });
+	if (pos < raw.length) segs.push({ text: raw.slice(pos), mark: false, start: pos });
 	return segs;
 }
 
@@ -47,6 +47,7 @@ export function QuickAdd({
 }) {
 	const { t } = useTranslation();
 	const { data: session } = useSession();
+	const userTimeZone = session?.user?.timezone ?? deviceTimeZone();
 	const [raw, setRaw] = useState("");
 	const [sugIdx, setSugIdx] = useState(0);
 	// Výběr z našeptávače se aplikuje jako atribut (token pryč), ne jako text (audit re:add-task).
@@ -63,14 +64,17 @@ export function QuickAdd({
 		if (autoFocus) inputRef.current?.focus();
 	}, [autoFocus]);
 
-	const ctx = useMemo(() => ({ today: todayISO(), projects, people }), [projects, people]);
+	const ctx = useMemo(
+		() => ({ today: dateInTimeZone(userTimeZone), projects, people }),
+		[userTimeZone, projects, people],
+	);
 	const parsed = useMemo(() => parseQuick(raw, ctx), [raw, ctx]);
 
 	// Našeptávač: token na konci vstupu
 	const sugRaw = useMemo(() => {
 		const mProj = raw.match(/#(\p{L}*)$/u);
 		if (mProj) {
-			const q = mProj[1]!.toLowerCase();
+			const q = (mProj[1] ?? "").toLowerCase();
 			const list = projects
 				.filter((p) => p.name.toLowerCase().includes(q))
 				.slice(0, 6)
@@ -78,13 +82,13 @@ export function QuickAdd({
 					kind: "proj" as const,
 					id: p.id,
 					label: p.name,
-					token: mProj[0]!,
+					token: mProj[0] ?? "",
 				}));
 			return list.length ? list : null;
 		}
 		const mPer = raw.match(/[@+](\p{L}*)$/u);
 		if (mPer) {
-			const q = mPer[1]!.toLowerCase();
+			const q = (mPer[1] ?? "").toLowerCase();
 			const list = people
 				.filter((p) => p.name.toLowerCase().includes(q) || p.initials.toLowerCase().startsWith(q))
 				.slice(0, 5)
@@ -92,7 +96,7 @@ export function QuickAdd({
 					kind: "person" as const,
 					id: p.id,
 					label: p.name,
-					token: mPer[0]!,
+					token: mPer[0] ?? "",
 				}));
 			return list.length ? list : null;
 		}
@@ -173,8 +177,9 @@ export function QuickAdd({
 				name,
 				assignmentMode,
 				userId: session?.user?.id ?? null,
-				today: todayISO(),
+				today: dateInTimeZone(userTimeZone),
 				now,
+				timeZone: userTimeZone,
 			});
 			await powerSync.writeTransaction(async (tx) => {
 				await tx.execute(quickAddInsertSql(row), row.values);
@@ -216,7 +221,8 @@ export function QuickAdd({
 			}
 			if (e.key === "Enter") {
 				e.preventDefault();
-				applySug(sug[sugIdx] ?? sug[0]!);
+				const item = sug[sugIdx] ?? sug[0];
+				if (item) applySug(item);
 				return;
 			}
 			if (e.key === "Escape") {
@@ -302,10 +308,10 @@ export function QuickAdd({
 						aria-hidden
 						className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre rounded-lg px-3 py-2 font-body text-sm"
 					>
-						{segs.map((s, i) =>
+						{segs.map((s) =>
 							s.mark ? (
 								<span
-									key={i}
+									key={s.start}
 									className="rounded-[4px] text-transparent"
 									style={{
 										background: "var(--w-brass-soft)",
@@ -315,7 +321,7 @@ export function QuickAdd({
 									{s.text}
 								</span>
 							) : (
-								<span key={i} className="text-transparent">
+								<span key={s.start} className="text-transparent">
 									{s.text}
 								</span>
 							),
@@ -373,8 +379,8 @@ export function QuickAdd({
 			{/* pilulky rozpoznaných atributů */}
 			{pills.length > 0 && (
 				<div className="mt-2 flex flex-wrap gap-1.5">
-					{pills.map((p, i) => (
-						<Chip key={i} tone={p.tone ?? "brass"}>
+					{pills.map((p) => (
+						<Chip key={`${p.icon}:${p.label}`} tone={p.tone ?? "brass"}>
 							<Icon name={p.icon} size={13} />
 							{p.label}
 						</Chip>

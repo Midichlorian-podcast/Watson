@@ -9,9 +9,17 @@ declare const self: ServiceWorkerGlobalScope & {
 	__WB_MANIFEST: Array<{ url: string; revision: string | null }>;
 };
 
-const PRECACHE = "watson-precache-v1";
-const FONTS = "watson-fonts-v1";
+const PRECACHE = "watson-precache-v2";
+const FONTS = "watson-fonts-v2";
 const PRECACHE_URLS = self.__WB_MANIFEST.map((e) => e.url);
+const PRECACHE_ABSOLUTE = new Set(PRECACHE_URLS.map((url) => new URL(url, self.location.origin).href));
+const MAX_FONT_ENTRIES = 24;
+
+async function trimCache(cacheName: string, maxEntries: number): Promise<void> {
+	const cache = await caches.open(cacheName);
+	const keys = await cache.keys();
+	await Promise.all(keys.slice(0, Math.max(0, keys.length - maxEntries)).map((key) => cache.delete(key)));
+}
 
 self.addEventListener("install", (event) => {
 	event.waitUntil(
@@ -24,16 +32,22 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
 	event.waitUntil(
-		caches
-			.keys()
-			.then((keys) =>
-				Promise.all(
-					keys
-						.filter((k) => k !== PRECACHE && k !== FONTS)
-						.map((k) => caches.delete(k)),
-				),
-			)
-			.then(() => self.clients.claim()),
+		(async () => {
+			const keys = await caches.keys();
+			await Promise.all(
+				keys.filter((key) => key !== PRECACHE && key !== FONTS).map((key) => caches.delete(key)),
+			);
+			// Název precache zůstává mezi buildy stejný. Bez explicitního úklidu by
+			// každý deploy trvale ponechal všechny staré hashované chunky a WASM.
+			const precache = await caches.open(PRECACHE);
+			const cachedRequests = await precache.keys();
+			await Promise.all(
+				cachedRequests
+					.filter((request) => !PRECACHE_ABSOLUTE.has(request.url))
+					.map((request) => precache.delete(request)),
+			);
+			await self.clients.claim();
+		})(),
 	);
 });
 
@@ -65,7 +79,9 @@ self.addEventListener("fetch", (event) => {
 				c.match(req).then((cached) => {
 					const net = fetch(req)
 						.then((res) => {
-							void c.put(req, res.clone());
+							if (res.ok || res.type === "opaque") {
+								void c.put(req, res.clone()).then(() => trimCache(FONTS, MAX_FONT_ENTRIES));
+							}
 							return res;
 						})
 						.catch(() => cached ?? Response.error());
@@ -109,7 +125,15 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
 	event.notification.close();
-	const url = (event.notification.data as { url?: string } | null)?.url ?? "/";
+	const rawUrl = (event.notification.data as { url?: string } | null)?.url ?? "/";
+	let url = "/";
+	try {
+		const candidate = new URL(rawUrl, self.location.origin);
+		// Push payload nesmí aplikaci použít jako open-redirect/phishing launcher.
+		if (candidate.origin === self.location.origin) url = `${candidate.pathname}${candidate.search}${candidate.hash}`;
+	} catch {
+		url = "/";
+	}
 	event.waitUntil(
 		self.clients
 			.matchAll({ type: "window", includeUncontrolled: true })

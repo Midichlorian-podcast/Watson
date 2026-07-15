@@ -59,7 +59,7 @@ export function parseRecurrence(
 	};
 
 	const tm = s.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
-	const timeMin = tm ? +tm[1]! * 60 + +tm[2]! : undefined;
+	const timeMin = tm ? +(tm[1] ?? "") * 60 + +(tm[2] ?? "") : undefined;
 
 	const kSpan = findStem("ka[žz]d\\p{L}*", s);
 	const hasK = kSpan !== null;
@@ -103,8 +103,8 @@ export function parseRecurrence(
 	const monthMatch = s.match(/\b(?:v\s+)?m[ěe]s[íi]c\p{L}*(?![\p{L}])/u);
 	const inMonthSpan = monthMatch
 		? {
-				start: monthMatch.index!,
-				end: monthMatch.index! + monthMatch[0].length,
+				start: monthMatch.index ?? 0,
+				end: (monthMatch.index ?? 0) + monthMatch[0].length,
 			}
 		: null;
 	const inMonth = inMonthSpan !== null;
@@ -181,10 +181,12 @@ export function parseRecurrence(
 	} else {
 		const dm = s.match(/(\d{1,2})\.(?!\s*\d)/);
 		if (dm) {
-			const nn = +dm[1]!;
+			const nn = +(dm[1] ?? "");
 			if (nn >= 1 && nn <= 31) {
 				day = nn;
-				daySpans = [{ start: dm.index!, end: dm.index! + dm[0].length }];
+				daySpans = [
+					{ start: dm.index ?? 0, end: (dm.index ?? 0) + dm[0].length },
+				];
 			}
 		}
 	}

@@ -5,6 +5,11 @@ import { expandOccurrences, parseOccId, recurrenceKind } from "./occurrences";
 import type { TaskRow } from "./powersync/AppSchema";
 import { powerSync } from "./powersync/db";
 import { showToast } from "./toast";
+import {
+	minutesInTimeZone,
+	nextValidZonedDateTimeToIso,
+	wallTimeFromInstant,
+} from "./timeZone";
 import { pushUndo } from "./undo";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -29,9 +34,13 @@ export const NOT_MEETING = "kind IS NOT 'meeting'";
  * `new Date()` by po sync round-tripu timestamptz „+00" posunul čas o zónu — P1-06).
  * Konvence: 00:00 = bez času (kalendář kreslí all-day). Sdílí řádek, kalendář i měsíc.
  */
-export const startMinOf = (t: Pick<TaskRow, "start_date">): number | null => {
+export const startMinOf = (
+	t: Pick<TaskRow, "start_date"> & Partial<Pick<TaskRow, "start_timezone">>,
+): number | null => {
 	const s = t.start_date;
 	if (!s || s.length < 16) return null;
+	const zoned = minutesInTimeZone(s, t.start_timezone);
+	if (zoned !== null) return zoned === 0 ? null : zoned;
 	const h = +s.slice(11, 13);
 	const m = +s.slice(14, 16);
 	if (Number.isNaN(h) || Number.isNaN(m)) return null;
@@ -332,7 +341,20 @@ async function advanceRecurrence(
 	const pastUntil =
 		endKind === "until" && typeof rule.until === "string" && next && next > rule.until;
 	if (!next || reachedCount || pastUntil) return false;
-	const nextStart = task.start_date ? `${next}T${task.start_date.slice(11)}` : null;
+	const wallTime =
+		task.start_date && task.start_timezone
+			? wallTimeFromInstant(task.start_date, task.start_timezone)
+			: null;
+	const nextStart =
+		task.start_date && task.start_timezone && wallTime
+			? nextValidZonedDateTimeToIso(next, wallTime, task.start_timezone)
+			: task.start_date
+				? `${next}T${task.start_date.slice(11)}`
+				: null;
+	if (task.start_date && !nextStart) {
+		showToast(i18n.t("addmodal.invalidLocalTime"));
+		return false;
+	}
 	const prev = {
 		due_date: task.due_date,
 		start_date: task.start_date,

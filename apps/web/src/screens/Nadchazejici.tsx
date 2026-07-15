@@ -3,6 +3,7 @@ import i18n, { useTranslation } from "@watson/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Board } from "../components/Board";
 import { Calendar } from "../components/CalendarLazy";
+import { DataLoading } from "../components/Loading";
 import { TaskItem } from "../components/TaskItem";
 import {
 	DEFAULT_TOOLBAR,
@@ -18,9 +19,10 @@ import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
 import { expandOccurrences, occId, parseRecurrenceRule } from "../lib/occurrences";
 import type { TaskRow } from "../lib/powersync/AppSchema";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { dayOf, todayISO } from "../lib/tasks";
+import { nextValidZonedDateTimeToIso, wallTimeFromInstant } from "../lib/timeZone";
 import { useViewMode } from "../lib/viewMode";
 
 const HORIZON_DAYS = 16;
@@ -62,13 +64,13 @@ function dayBucket(d: string, tdy: string): Bucket {
 export function Nadchazejici() {
 	const { t } = useTranslation();
 	const { view } = useViewMode();
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
 	const [wsFilter, setWsFilter] = useState<string | null>(null);
 	// Výkon: bez „Dokončené" filtruj hotové v SQL (opakované úkoly mají completed_at vždy NULL —
 	// dokončení posouvá due_date, takže se neztratí žádná řada).
-	const { data: allTasks } = usePsQuery<TaskRow>(
+	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		tb.showDone
 			? "SELECT * FROM tasks WHERE due_date IS NOT NULL ORDER BY due_date"
 			: "SELECT * FROM tasks WHERE due_date IS NOT NULL AND completed_at IS NULL ORDER BY due_date",
@@ -76,14 +78,14 @@ export function Nadchazejici() {
 	// Kalendář má vlastní zdroj: NEOŘEZANÝ do budoucna (jinak zmizí minulé/zpožděné úkoly a panel
 	// „Plánování → Zpožděné" je mrtvý) a nezávislý na skrytém „Dokončené" (aby šlo hotové vidět
 	// a přes CalCheck zas odškrtnout). Filtruje se jen podle workspace, ne toolbarem ani hledáním.
-	const { data: calAll } = usePsQuery<TaskRow>(
+	const { data: calAll, isLoading: calendarLoading } = usePsQuery<TaskRow>(
 		"SELECT * FROM tasks WHERE due_date IS NOT NULL ORDER BY due_date",
 	);
 	const flowSteps = useFlowSteps();
 	const { setNavIds } = useTaskDetail();
 	const { q: searchQ } = useListSearch();
 	// Per-výskyt výjimky (R4) — skip/done jednotlivých výskytů.
-	const { data: ovr } = usePsQuery<{
+	const { data: ovr, isLoading: overridesLoading } = usePsQuery<{
 		task_id: string | null;
 		occ_date: string | null;
 		done: number | null;
@@ -160,7 +162,16 @@ export function Nadchazejici() {
 						...tk,
 						id: vid,
 						due_date: od,
-						start_date: tk.start_date ? `${od}T${tk.start_date.slice(11)}` : null,
+						start_date:
+							tk.start_date && tk.start_timezone
+								? nextValidZonedDateTimeToIso(
+										od,
+										wallTimeFromInstant(tk.start_date, tk.start_timezone) ?? "00:00:00",
+										tk.start_timezone,
+									)
+								: tk.start_date
+									? `${od}T${tk.start_date.slice(11)}`
+									: null,
 						completed_at: ex?.done ? new Date().toISOString() : null,
 					};
 					const ob = dayBucket(od, tdy);
@@ -196,6 +207,7 @@ export function Nadchazejici() {
 	const kbSel = useKbNav(flatList, view === "list");
 
 	const empty = view2.length === 0;
+	if (projectsLoading || tasksLoading || calendarLoading || overridesLoading) return <DataLoading />;
 
 	if (view === "calendar") {
 		return (

@@ -9,8 +9,8 @@
   },
   "scripts": {
     "dev": "turbo run dev",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
+    "build": "turbo run build && node scripts/verify-build-budget.mjs",
+    "lint": "turbo run lint && node scripts/verify-accessibility.mjs",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "gate": "pnpm typecheck && pnpm lint && pnpm test && pnpm --filter @watson/web test:corpus && pnpm build",
