@@ -117,6 +117,9 @@ body {
 .w-taskmeta {
 	display: contents;
 }
+.w-taskquick {
+	display: none;
+}
 @media (max-width: 480px) {
 	.w-taskcard {
 		flex-wrap: wrap;
@@ -133,6 +136,13 @@ body {
 	/* hover-only rychlé přeplánování na dotyku neexistuje — jen by kradlo šířku */
 	.w-taskmeta [data-qsched] {
 		display: none;
+	}
+	/* Na dotyku zpřístupni stejné bezpečné akce, které jsou na desktopu v context menu. */
+	.w-taskquick {
+		display: grid;
+		width: 44px;
+		height: 44px;
+		margin-left: auto;
 	}
 	/* podřádek (projekt, chip postupu, checklist…) se smí zalomit, ne přetéct */
 	.w-tasksub {

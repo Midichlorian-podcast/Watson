@@ -1,5 +1,5 @@
 import type { Priority } from "@watson/shared";
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import { cn } from "./cn";
 import { Icon } from "./Icon";
 
@@ -66,6 +66,8 @@ export interface TaskCardProps {
 	 * chipy „Dnes / Zítra / Př. týden" před termínem. Lokalizuje konzument.
 	 */
 	sched?: { items: { key: string; label: string }[]; onShift: (key: string) => void };
+	/** Viditelný vstup do rychlých akcí na dotykovém zařízení. */
+	quickMenu?: { label: string; onOpen: (event: MouseEvent<HTMLButtonElement>) => void };
 	/** aria pro zaškrtávátko když je hotovo (klik → odškrtne). Lokalizuje konzument. */
 	doneLabel?: string;
 	/** aria pro zaškrtávátko když není hotovo (klik → dokončí). Lokalizuje konzument. */
@@ -117,6 +119,7 @@ export function TaskCard({
 	done,
 	sel,
 	sched,
+	quickMenu,
 	// packages/ui nemá i18n → EN neutrální fallback; konzument (TaskItem) předává lokalizované.
 	doneLabel = "Mark as not done",
 	undoneLabel = "Complete",
@@ -560,6 +563,20 @@ export function TaskCard({
 							</span>
 						))}
 					</span>
+				)}
+				{quickMenu && (
+					<button
+						type="button"
+						aria-label={quickMenu.label}
+						title={quickMenu.label}
+						onClick={(event) => {
+							event.stopPropagation();
+							quickMenu.onOpen(event);
+						}}
+						className="w-taskquick shrink-0 place-items-center rounded-lg border border-line bg-card text-ink-2 hover:border-brass hover:text-brass-text"
+					>
+						<Icon name="vice" size={18} />
+					</button>
 				)}
 			</span>
 		</div>

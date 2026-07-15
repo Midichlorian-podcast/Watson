@@ -135,8 +135,8 @@
 		"assignSingle": "Jeden",
 		"assignAny": "Stačí kdokoli",
 		"assignAll": "Každý zvlášť",
-		"assignAnyHint": "Stačí kdokoli — jeden checkbox pro celý úkol",
-		"assignAllHint": "Každý zvlášť — {{done}}/{{total}} hotovo",
+		"assignAnyHint": "Stačí dokončení od jednoho člověka. Potom se úkol uzavře všem.",
+		"assignAllHint": "Každý dokončuje svou část zvlášť · hotovo {{done}} z {{total}}. Celý úkol se uzavře po posledním člověku.",
 		"reminder": "Připomenutí",
 		"fromMail": "Z mailu",
 		"reminders": "Připomínky",
@@ -1171,7 +1171,8 @@
 		"byPrefix": "do"
 	},
 	"ctx": {
-		"open": "Otevřít"
+		"open": "Otevřít",
+		"quickActions": "Rychlé akce úkolu"
 	},
 	"tasks": {
 		"tabToday": "Dnes",

@@ -339,6 +339,20 @@ export function TaskItem({
 								}
 							: undefined
 					}
+					quickMenu={{
+						label: t("ctx.quickActions"),
+						onOpen: (event) => {
+							const rect = event.currentTarget.getBoundingClientRect();
+							cm.open(
+								{
+									clientX: rect.right,
+									clientY: rect.bottom,
+									preventDefault: () => event.preventDefault(),
+								},
+								ctxItems,
+							);
+						},
+					}}
 					onToggle={() => void toggleTask(task, myId)}
 					onOpen={() => {
 						// klik těsně po dokončeném tahu neotvírat detail

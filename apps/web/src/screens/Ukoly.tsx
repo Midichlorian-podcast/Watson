@@ -226,12 +226,24 @@ export function VseTab() {
 								</button>
 							</div>
 						) : (
-							<p
-								className="text-center font-body text-ink-3"
-								style={{ padding: "80px 20px", fontSize: 13.5 }}
-							>
-								{t("today.emptyClean")}
-							</p>
+							<div className="text-center" style={{ padding: "80px 20px" }}>
+								<p className="font-body text-ink-3" style={{ fontSize: 13.5 }}>
+									{t("today.emptyClean")}
+								</p>
+								<button
+									type="button"
+									onClick={() => openAdd()}
+									className="mt-3 rounded-[9px] font-display font-bold text-white hover:brightness-105"
+									style={{
+										minHeight: 44,
+										background: "var(--w-brass)",
+										padding: "8px 14px",
+										fontSize: 12.5,
+									}}
+								>
+									+ {t("today.addTask")}
+								</button>
+							</div>
 						))}
 					{projektId ? (
 						<ul>

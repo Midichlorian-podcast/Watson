@@ -1,4 +1,5 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { Link } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useMemo } from "react";
 import { Board } from "../components/Board";
@@ -78,12 +79,19 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 			) : view === "board" ? (
 				<Board tasks={shown} />
 			) : shown.length === 0 ? (
-				<p
-					className="text-center font-body text-ink-3"
-					style={{ padding: "80px 20px", fontSize: 13.5 }}
-				>
-					{t("today.emptyClean")}
-				</p>
+				<div className="text-center" style={{ padding: "80px 20px" }}>
+					<p className="font-body text-ink-3" style={{ fontSize: 13.5 }}>
+						{t("today.emptyClean")}
+					</p>
+					<Link
+						to="/ukoly"
+						search={{}}
+						className="mt-3 inline-flex min-h-11 items-center rounded-[9px] border border-line px-4 font-display font-bold text-ink-2 hover:border-brass hover:text-brass-text"
+						style={{ fontSize: 12.5 }}
+					>
+						{t("projects.allTasks")}
+					</Link>
+				</div>
 			) : (
 				<ul className="flex flex-col gap-0">
 					{shown.map((tk) => (

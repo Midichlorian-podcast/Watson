@@ -14,6 +14,7 @@ import {
 	useToolbarCtx,
 } from "../components/TasksToolbar";
 import { WorkspaceChips } from "../components/WorkspaceChips";
+import { useAddTask } from "../lib/addTask";
 import { useFlowSteps } from "../lib/flowSteps";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
@@ -63,6 +64,7 @@ function dayBucket(d: string, tdy: string): Bucket {
  */
 export function Nadchazejici() {
 	const { t } = useTranslation();
+	const { openAdd } = useAddTask();
 	const { view } = useViewMode();
 	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
@@ -232,12 +234,24 @@ export function Nadchazejici() {
 			<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
 			<TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />
 			{empty && (
-				<p
-					className="text-center font-body text-ink-3"
-					style={{ padding: "80px 20px", fontSize: 13.5 }}
-				>
-					{t("today.emptyClean")}
-				</p>
+				<div className="text-center" style={{ padding: "80px 20px" }}>
+					<p className="font-body text-ink-3" style={{ fontSize: 13.5 }}>
+						{t("today.emptyClean")}
+					</p>
+					<button
+						type="button"
+						onClick={() => openAdd({ date: todayISO() })}
+						className="mt-3 rounded-[9px] font-display font-bold text-white hover:brightness-105"
+						style={{
+							minHeight: 44,
+							background: "var(--w-brass)",
+							padding: "8px 14px",
+							fontSize: 12.5,
+						}}
+					>
+						+ {t("today.addTask")}
+					</button>
+				</div>
 			)}
 
 			{view2.map(({ b, label, list }) => (

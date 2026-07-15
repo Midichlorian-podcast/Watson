@@ -133,8 +133,8 @@
 		"assignSingle": "One",
 		"assignAny": "Anyone",
 		"assignAll": "Each separately",
-		"assignAnyHint": "Anyone — one checkbox for the whole task",
-		"assignAllHint": "Each separately — {{done}}/{{total}} done",
+		"assignAnyHint": "Completion by one person is enough. The task then closes for everyone.",
+		"assignAllHint": "Everyone completes their part separately · {{done}} of {{total}} done. The whole task closes after the last person finishes.",
 		"reminder": "Reminder",
 		"fromMail": "From mail",
 		"reminders": "Reminders",
@@ -1147,7 +1147,8 @@
 		"byPrefix": "by"
 	},
 	"ctx": {
-		"open": "Open"
+		"open": "Open",
+		"quickActions": "Task quick actions"
 	},
 	"tasks": {
 		"tabToday": "Today",
