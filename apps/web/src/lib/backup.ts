@@ -18,6 +18,7 @@ const BACKUP_TABLES = [
 	"project_members",
 	"assignments",
 	"comments",
+	"comment_decisions",
 	"task_occurrence_overrides",
 	"task_user_colors",
 	"reminders",

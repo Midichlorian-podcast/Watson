@@ -26,7 +26,8 @@
 		"verify:signing-keys": "tsx verify-signing-keys.ts",
 		"verify:auth-security": "tsx verify-auth-security.ts",
 		"verify:manual-chain-gate": "tsx verify-manual-chain-gate.ts",
-		"verify:input-observability": "tsx verify-input-observability.ts"
+		"verify:input-observability": "tsx verify-input-observability.ts",
+		"verify:comment-decisions": "tsx verify-comment-decisions.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.111.0",

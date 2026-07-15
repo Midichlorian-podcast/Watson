@@ -35,6 +35,9 @@ bucket_definitions:
       - SELECT id, task_id, project_id, author_id, body, created_at
         FROM comments
         WHERE project_id = bucket.project_id
+      - SELECT id, comment_id, task_id, project_id, marked_by, created_at
+        FROM comment_decisions
+        WHERE project_id = bucket.project_id
       - SELECT id, task_id, project_id, occ_date, done, skipped, created_at
         FROM task_occurrence_overrides
         WHERE project_id = bucket.project_id

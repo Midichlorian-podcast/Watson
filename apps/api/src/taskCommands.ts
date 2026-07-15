@@ -146,6 +146,7 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 				'meetings', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM meetings x WHERE x.id IN (SELECT id FROM meeting_ids)),
 				'assignments', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM assignments x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'comments', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM comments x WHERE x.task_id IN (SELECT id FROM task_ids)),
+				'commentDecisions', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM comment_decisions x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'mentions', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM mentions x WHERE x.comment_id IN (SELECT id FROM comment_ids)),
 				'attachments', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM attachments x WHERE x.task_id IN (SELECT id FROM task_ids) OR x.comment_id IN (SELECT id FROM comment_ids)),
 				'reminders', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM reminders x WHERE x.task_id IN (SELECT id FROM task_ids)),
@@ -284,6 +285,7 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 		await tx.execute(sql`INSERT INTO meetings SELECT * FROM jsonb_populate_recordset(null::meetings, ${snapshot}->'meetings') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO assignments SELECT * FROM jsonb_populate_recordset(null::assignments, ${snapshot}->'assignments') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO comments SELECT * FROM jsonb_populate_recordset(null::comments, ${snapshot}->'comments') ON CONFLICT DO NOTHING`);
+		await tx.execute(sql`INSERT INTO comment_decisions SELECT * FROM jsonb_populate_recordset(null::comment_decisions, ${snapshot}->'commentDecisions') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO mentions SELECT * FROM jsonb_populate_recordset(null::mentions, ${snapshot}->'mentions') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO attachments SELECT * FROM jsonb_populate_recordset(null::attachments, ${snapshot}->'attachments') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO reminders SELECT * FROM jsonb_populate_recordset(null::reminders, ${snapshot}->'reminders') ON CONFLICT DO NOTHING`);

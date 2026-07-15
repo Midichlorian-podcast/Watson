@@ -51,7 +51,13 @@ import { useOpenMailThread } from "../mail/state";
 import { WHY_NOW_MAX_LENGTH, type WhyNowSignal, whyNowSignals } from "../lib/whyNow";
 
 type Pri = 1 | 2 | 3 | 4;
-type Member = { id: string; name: string; email: string; image: string | null };
+type Member = {
+	id: string;
+	name: string;
+	email: string;
+	image: string | null;
+	role: "commenter" | "editor" | "manager";
+};
 type AssignMode = "single" | "shared_any" | "shared_all";
 
 /** Relativní čas komentáře („dnes 8:05" / „12. 6."). */
@@ -294,6 +300,15 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	}>("SELECT id, body, author_id, created_at FROM comments WHERE task_id = ? ORDER BY created_at", [
 		realId,
 	]);
+	const { data: commentDecisions } = usePsQuery<{
+		id: string;
+		comment_id: string;
+		marked_by: string | null;
+		created_at: string | null;
+	}>(
+		"SELECT id, comment_id, marked_by, created_at FROM comment_decisions WHERE task_id = ? ORDER BY created_at",
+		[realId],
+	);
 	const { data: assignRows } = usePsQuery<{
 		id: string;
 		user_id: string | null;
@@ -424,6 +439,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const asg = assignRows ?? [];
 	const members = team ?? [];
 	const memberOf = (uid: string | null) => members.find((m) => m.id === uid);
+	const myProjectRole = members.find((m) => m.id === session?.user?.id)?.role;
+	const canDecide = myProjectRole === "editor" || myProjectRole === "manager";
+	const decisionsByComment = new Map((commentDecisions ?? []).map((d) => [d.comment_id, d]));
 	const acts = activity ?? [];
 	const relevanceSignals = whyNowSignals(task, { deviceTimeZone: deviceTimeZone() });
 
@@ -435,6 +453,24 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		await logTaskActivity(realId, task.project_id, uid, field, oldVal, newVal);
 		// task_activity se nesyncuje (insert-only) → po zápisu refetchni historii z API.
 		void qc.invalidateQueries({ queryKey: ["taskActivity", realId] });
+	};
+
+	/** Rozhodnutí je samostatný auditovatelný objekt; text komentáře zůstává nedotčený. */
+	const toggleCommentDecision = async (commentId: string) => {
+		if (!canDecide || !session?.user?.id) return;
+		const existing = decisionsByComment.get(commentId);
+		if (existing) {
+			await powerSync.execute("DELETE FROM comment_decisions WHERE id = ?", [existing.id]);
+			await logActivity("comment_decision", commentId, null);
+			showToast(t("detail.decisionUnmarked"));
+			return;
+		}
+		await powerSync.execute(
+			"INSERT INTO comment_decisions (id, comment_id, task_id, project_id, marked_by, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
+			[commentId, realId, task.project_id, session.user.id, new Date().toISOString()],
+		);
+		await logActivity("comment_decision", null, commentId);
+		showToast(t("detail.decisionMarked"));
 	};
 
 	// V3: patch úkolu + zápis do historie + „Uloženo ✓" + cílené Zpět (revert bez logu).
@@ -1674,6 +1710,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						</SectionLabel>
 						{cmts.map((cm) => {
 							const m = memberOf(cm.author_id);
+							const decision = decisionsByComment.get(cm.id);
 							return (
 								<div key={cm.id} className="flex" style={{ gap: 9, marginBottom: 11 }}>
 									<span
@@ -1688,15 +1725,28 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									>
 										{initials(m?.name ?? "?")}
 									</span>
-									<div className="min-w-0">
+									<div className="min-w-0 flex-1">
 										<div
-											className="font-display font-semibold"
-											style={{ fontSize: 12.5, color: "var(--w-ink)" }}
+											className="flex flex-wrap items-center font-display font-semibold"
+											style={{ fontSize: 12.5, color: "var(--w-ink)", gap: "4px 8px" }}
 										>
-											{m?.name ?? "—"}{" "}
-											<span className="font-body" style={{ fontSize: 11, color: "var(--w-ink-3)" }}>
-												· {whenLabel(cm.created_at, t)}
+											<span>
+												{m?.name ?? "—"}{" "}
+												<span
+													className="font-body"
+													style={{ fontSize: 11, color: "var(--w-ink-3)" }}
+												>
+													· {whenLabel(cm.created_at, t)}
+												</span>
 											</span>
+											{decision && !canDecide && (
+												<span
+													className="rounded-full bg-brass-soft px-2 py-1 text-brass-text"
+													style={{ fontSize: 10.5 }}
+												>
+													{t("detail.decision")}
+												</span>
+											)}
 										</div>
 										<div
 											className="font-body"
@@ -1708,6 +1758,23 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										>
 											{cm.body}
 										</div>
+										{canDecide && (
+											<button
+												type="button"
+												aria-pressed={Boolean(decision)}
+												onClick={() => void toggleCommentDecision(cm.id)}
+												className="w-comment-decision mt-1 inline-flex items-center rounded-full border font-display font-semibold hover:border-brass"
+												style={{
+													fontSize: 10.5,
+													padding: "4px 9px",
+													borderColor: decision ? "var(--w-brass)" : "var(--w-line)",
+													background: decision ? "var(--w-brass-soft)" : "transparent",
+													color: decision ? "var(--w-brass-text)" : "var(--w-ink-3)",
+												}}
+											>
+												{decision ? t("detail.decision") : `+ ${t("detail.decision")}`}
+											</button>
+										)}
 									</div>
 								</div>
 							);
@@ -1750,9 +1817,13 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 													? a.new_value
 														? t("detail.actMarkedDone")
 														: t("detail.actMarkedUndone")
-													: `${t("detail.actChanged")} ${actFieldLabel(field, t)}`;
+													: field === "comment_decision"
+														? a.new_value
+															? t("detail.actMarkedDecision")
+															: t("detail.actUnmarkedDecision")
+														: `${t("detail.actChanged")} ${actFieldLabel(field, t)}`;
 											const diff =
-												field !== "completed" && a.new_value
+												field !== "completed" && field !== "comment_decision" && a.new_value
 													? a.old_value
 														? `${a.old_value} → ${a.new_value}`
 														: `→ ${a.new_value}`

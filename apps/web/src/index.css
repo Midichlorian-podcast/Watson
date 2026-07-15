@@ -159,4 +159,7 @@ body {
 		position: absolute;
 		inset: -13px;
 	}
+	.w-comment-decision {
+		min-height: 44px;
+	}
 }

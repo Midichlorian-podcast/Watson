@@ -285,6 +285,19 @@ export const TABLES: Record<string, TableDef> = {
 		authorEditOnly: true,
 		projectVia: { kind: "task", col: "task_id" },
 	},
+	comment_decisions: {
+		columns: {
+			comment_id: "text",
+			task_id: "text",
+			project_id: "text",
+		},
+		hasUpdatedAt: false,
+		creatorCol: "marked_by",
+		createOnly: true,
+		minRole: "editor",
+		projectVia: { kind: "task", col: "task_id" },
+		refProjectCols: [{ col: "comment_id", table: "comments" }],
+	},
 	task_occurrence_overrides: {
 		columns: {
 			task_id: "text",
@@ -1118,6 +1131,10 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 			if (refId) {
 				const p = await projectOfRow(db, ref.table, refId);
 				if (!p) return c.json({ error: "reference_not_found", field: ref.col }, 422);
+				// Být členem obou projektů nestačí: parent/section/status/task/comment
+				// musí patřit přímo do projektu zapisovaného řádku.
+				if (rowProject && p !== rowProject)
+					return c.json({ error: "cross-project-reference", field: ref.col }, 403);
 				need.add(p);
 			}
 		}

@@ -146,6 +146,23 @@ const comments = new Table(
 	tracked({ indexes: { by_task: ["task_id"] } }),
 );
 
+const comment_decisions = new Table(
+	{
+		comment_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		marked_by: column.text,
+		created_at: column.text,
+	},
+	tracked({
+		indexes: {
+			by_comment: ["comment_id"],
+			by_task: ["task_id"],
+			by_project: ["project_id"],
+		},
+	}),
+);
+
 /** R4 — per-výskyt výjimky opakování (done/skip jednoho výskytu). */
 const task_occurrence_overrides = new Table(
 	{
@@ -434,6 +451,7 @@ export const AppSchema = new Schema({
 	project_members,
 	assignments,
 	comments,
+	comment_decisions,
 	task_occurrence_overrides,
 	task_user_colors,
 	local_rejected_ops,

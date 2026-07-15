@@ -4,6 +4,7 @@ import {
 	and,
 	assignments,
 	auditEvents,
+	commentDecisions,
 	comments,
 	entityLinks,
 	eq,
@@ -110,6 +111,7 @@ async function main(): Promise<void> {
 	const actionId = crypto.randomUUID();
 	const assignmentId = crypto.randomUUID();
 	const commentId = crypto.randomUUID();
+	const decisionId = crypto.randomUUID();
 	const activityId = crypto.randomUUID();
 	const linkId = crypto.randomUUID();
 	await db.transaction(async (tx) => {
@@ -159,6 +161,13 @@ async function main(): Promise<void> {
 		projectId: project.id,
 		authorId: owner.id,
 		body: "Child detail",
+	});
+	await db.insert(commentDecisions).values({
+		id: decisionId,
+		commentId,
+		taskId: childId,
+		projectId: project.id,
+		markedBy: owner.id,
 	});
 	await db.insert(taskActivity).values({
 		id: activityId,
@@ -215,6 +224,8 @@ async function main(): Promise<void> {
 		check(
 			"podřízená data a lineage nezůstaly jako sirotci",
 			(await db.select().from(comments).where(eq(comments.id, commentId))).length === 0 &&
+				(await db.select().from(commentDecisions).where(eq(commentDecisions.id, decisionId)))
+					.length === 0 &&
 				(await db.select().from(assignments).where(eq(assignments.id, assignmentId))).length === 0 &&
 				(await db.select().from(taskActivity).where(eq(taskActivity.id, activityId))).length === 0 &&
 				(await db.select().from(entityLinks).where(eq(entityLinks.id, linkId))).length === 0,
@@ -247,6 +258,8 @@ async function main(): Promise<void> {
 				(await db.select().from(tasks).where(eq(tasks.id, childId))).length === 1 &&
 				(await db.select().from(meetings).where(eq(meetings.id, meetingId))).length === 1 &&
 				(await db.select().from(comments).where(eq(comments.id, commentId))).length === 1 &&
+				(await db.select().from(commentDecisions).where(eq(commentDecisions.id, decisionId)))
+					.length === 1 &&
 				(await db.select().from(assignments).where(eq(assignments.id, assignmentId))).length === 1 &&
 				(await db.select().from(taskActivity).where(eq(taskActivity.id, activityId))).length === 1 &&
 				(await db.select().from(entityLinks).where(eq(entityLinks.id, linkId))).length === 1 &&

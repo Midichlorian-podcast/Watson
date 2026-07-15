@@ -39,6 +39,7 @@ export const RESTORE_TABLE_ORDER = [
 	"meetings",
 	"assignments",
 	"comments",
+	"comment_decisions",
 	"mentions",
 	"attachments",
 	"checklist_items",
@@ -95,6 +96,8 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT a.* FROM assignments a JOIN projects p ON p.id = a.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	comments: (ws) =>
 		sql`SELECT c.* FROM comments c JOIN tasks t ON t.id = c.task_id JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	comment_decisions: (ws) =>
+		sql`SELECT d.* FROM comment_decisions d JOIN projects p ON p.id = d.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	mentions: (ws) =>
 		sql`SELECT m.* FROM mentions m JOIN comments c ON c.id = m.comment_id JOIN tasks t ON t.id = c.task_id JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	attachments: (ws) =>

@@ -828,6 +828,7 @@ app.get("/api/projects/:id/members", async (c) => {
 			name: users.name,
 			email: users.email,
 			image: users.image,
+			role: projectMembers.role,
 		})
 		.from(projectMembers)
 		.innerJoin(users, eq(projectMembers.userId, users.id))

@@ -47,6 +47,36 @@ export const comments = pgTable(
 );
 
 /**
+ * Komentář označený jako týmové rozhodnutí. Samostatný řádek zachovává původní
+ * komentář beze změny a nese autora i čas označení pro budoucí Decision Log.
+ */
+export const commentDecisions = pgTable(
+	"comment_decisions",
+	{
+		id: pk(),
+		commentId: uuid("comment_id")
+			.notNull()
+			.references(() => comments.id, { onDelete: "cascade" }),
+		taskId: uuid("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		/** Denormalizace pro PowerSync scoping. */
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		markedBy: uuid("marked_by").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		uniqueIndex("comment_decisions_comment_uq").on(t.commentId),
+		index("comment_decisions_task_idx").on(t.taskId),
+		index("comment_decisions_project_idx").on(t.projectId),
+	],
+);
+
+/**
  * Historie úprav úkolu (audit log) — kdo kdy jaké pole změnil.
  * Neměnný záznam (bez updated_at). project_id denormalizace pro PowerSync scoping.
  */
