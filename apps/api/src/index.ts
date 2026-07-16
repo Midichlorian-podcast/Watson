@@ -42,6 +42,7 @@ import { exportRoutes } from "./export";
 import { importRoutes } from "./imports";
 import { intakeFormRoutes } from "./intakeForms";
 import { meetingsRoutes } from "./meetings";
+import { isOpsTokenAuthorized, readOpsSloSnapshot, recordHttpMetric } from "./opsMetrics";
 import { pollRoutes } from "./polls";
 import { powersyncRoutes } from "./powersync";
 import { projectMilestoneRoutes } from "./projectMilestones";
@@ -169,6 +170,7 @@ app.use("/*", async (c, next) => {
 	const started = performance.now();
 	await next();
 	const durationMs = Math.round((performance.now() - started) * 10) / 10;
+	recordHttpMetric(c.req.path, c.res.status);
 	c.header("Server-Timing", `app;dur=${durationMs}`);
 	const record = JSON.stringify({
 		level: c.res.status >= 500 ? "error" : c.res.status >= 400 ? "warn" : "info",
@@ -375,6 +377,23 @@ async function readiness(c: Context<{ Variables: { requestId: string } }>) {
 
 app.get("/health", readiness);
 app.get("/health/ready", readiness);
+
+app.get("/ops/slo", async (c) => {
+	c.header("Cache-Control", "no-store");
+	if (
+		!env.opsMetricsToken ||
+		env.opsMetricsToken.length < 32 ||
+		env.opsMetricsToken.length > 512
+	) {
+		return c.json({ error: "ops_metrics_unavailable" }, 503);
+	}
+	if (!isOpsTokenAuthorized(c.req.header("authorization"), env.opsMetricsToken)) {
+		c.header("WWW-Authenticate", 'Bearer realm="watson-ops"');
+		return c.json({ error: "unauthorized" }, 401);
+	}
+	const snapshot = await readOpsSloSnapshot();
+	return c.json(snapshot, snapshot.ok ? 200 : 503);
+});
 
 /** Better Auth — všechny auth endpointy (/api/auth/sign-up, sign-in, two-factor, ...). */
 app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));

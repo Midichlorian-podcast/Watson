@@ -32,6 +32,7 @@ import { authorizeAiVendorTransfer, redactVendorText } from "./aiPolicy";
 import { auth } from "./auth";
 import { aiEnabled, aiMockEnabled, env } from "./env";
 import { lockMeetingSchedule, readMeetingBusyConflicts } from "./meetingScheduling";
+import { providerFailureStatus } from "./providerErrors";
 import { readTaskAvailabilityConflicts } from "./taskAvailability";
 
 export const meetingsRoutes = new Hono<{ Variables: { requestId: string } }>();
@@ -745,7 +746,7 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 				name: err instanceof Error ? err.name : "UnknownError",
 			}),
 		);
-		return c.json({ error: "extraction failed" }, 502);
+		return c.json({ error: "extraction failed" }, providerFailureStatus(err));
 	}
 	const clean = sanitizeProposals(proposals, rosterIds);
 

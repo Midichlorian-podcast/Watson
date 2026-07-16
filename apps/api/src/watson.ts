@@ -13,6 +13,7 @@ import { z } from "zod";
 import { authorizeAiVendorTransfer, redactVendorText } from "./aiPolicy";
 import { auth } from "./auth";
 import { aiEnabled, env } from "./env";
+import { providerFailureStatus } from "./providerErrors";
 
 export const watsonRoutes = new Hono<{ Variables: { requestId: string } }>();
 
@@ -302,6 +303,6 @@ watsonRoutes.post("/api/watson/command", async (c) => {
 				name: err instanceof Error ? err.name : "UnknownError",
 			}),
 		);
-		return c.json({ error: "command failed" }, 502);
+		return c.json({ error: "command failed" }, providerFailureStatus(err));
 	}
 });

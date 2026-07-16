@@ -6,6 +6,18 @@ const ORIGIN = "http://localhost:5173";
 const db = getDb();
 let failed = 0;
 
+type SloSnapshot = {
+	ok?: boolean;
+	database?: string;
+	reminderDead?: number | null;
+	counters?: {
+		http5xxTotal?: number;
+		authFailureTotal?: number;
+		syncRejectionTotal?: number;
+		providerTimeoutTotal?: number;
+	};
+};
+
 function check(label: string, condition: boolean, detail?: unknown) {
 	if (condition) console.log(`✓ ${label}`);
 	else {
@@ -44,6 +56,13 @@ async function post(path: string, cookie: string, body: unknown) {
 	});
 }
 
+async function readSlo(token: string) {
+	const response = await fetch(`${API}/ops/slo`, {
+		headers: { Authorization: `Bearer ${token}` },
+	});
+	return { response, body: (await response.json()) as SloSnapshot };
+}
+
 async function main() {
 	const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 	const userId = crypto.randomUUID();
@@ -54,7 +73,28 @@ async function main() {
 	await db.execute(sql`INSERT INTO memberships (user_id, workspace_id, role) VALUES (${userId}, ${workspaceId}, 'admin')`);
 
 	try {
-		let response = await fetch(`${API}/api/me/local-data-key`);
+		const opsToken = process.env.OPS_METRICS_TOKEN;
+		if (!opsToken) throw new Error("OPS_METRICS_TOKEN missing in observability verification");
+		let response = await fetch(`${API}/ops/slo`);
+		check("SLO endpoint je fail-closed bez bearer tokenu", response.status === 401, response.status);
+		const beforeSlo = await readSlo(opsToken);
+		check(
+			"autorizovaný SLO snapshot ověřuje databázi",
+			beforeSlo.response.status === 200 &&
+				beforeSlo.body.ok === true &&
+				beforeSlo.body.database === "up" &&
+				typeof beforeSlo.body.reminderDead === "number",
+			beforeSlo.body,
+		);
+
+		response = await fetch(`${API}/api/auth/sign-in/email`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Origin: ORIGIN },
+			body: JSON.stringify({ email: `missing-${suffix}@watson.test`, password: "wrong-password" }),
+		});
+		check("neúspěšné přihlášení vrací řízenou 4xx", response.status >= 400 && response.status < 500, response.status);
+
+		response = await fetch(`${API}/api/me/local-data-key`);
 		check("lokální šifrovací klíč vyžaduje session", response.status === 401, response.status);
 
 		response = await fetch(`${API}/api/employee/me`);
@@ -65,6 +105,9 @@ async function main() {
 		);
 
 		const cookie = await login(email);
+		response = await post("/api/sync/write", cookie, {});
+		check("neplatný sync envelope je trvalé odmítnutí", response.status === 422, response.status);
+
 		response = await fetch(`${API}/api/me/local-data-key`, {
 			headers: { Origin: ORIGIN, Cookie: cookie },
 		});
@@ -132,6 +175,20 @@ async function main() {
 		response = await fetch(`${API}/health/ready`);
 		const health = (await response.json()) as { ok?: boolean; database?: string };
 		check("readiness skutečně kontroluje databázi", response.status === 200 && health.ok === true && health.database === "up", health);
+
+		const afterSlo = await readSlo(opsToken);
+		check(
+			"SLO čítač zachytí auth failure",
+			(afterSlo.body.counters?.authFailureTotal ?? 0) >=
+				(beforeSlo.body.counters?.authFailureTotal ?? 0) + 1,
+			afterSlo.body.counters,
+		);
+		check(
+			"SLO čítač zachytí trvalé sync odmítnutí",
+			(afterSlo.body.counters?.syncRejectionTotal ?? 0) >=
+				(beforeSlo.body.counters?.syncRejectionTotal ?? 0) + 1,
+			afterSlo.body.counters,
+		);
 	} finally {
 		await db.execute(sql`DELETE FROM workspaces WHERE id = ${workspaceId}`);
 		await db.execute(sql`DELETE FROM users WHERE id = ${userId}`);

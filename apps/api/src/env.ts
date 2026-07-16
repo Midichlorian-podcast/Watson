@@ -44,6 +44,8 @@ export const env = {
 	localDataEncryptionSecret: process.env.LOCAL_DATA_ENCRYPTION_SECRET,
 	/** Forwarded IP hlavičky jsou autoritativní jen za námi spravovanou proxy. */
 	trustProxy: process.env.TRUST_PROXY === "1",
+	/** Samostatný bearer token pro produkční SLO scraper; nikdy nepoužívat jako auth secret. */
+	opsMetricsToken: process.env.OPS_METRICS_TOKEN,
 	google: {
 		clientId: process.env.GOOGLE_CLIENT_ID,
 		clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -67,6 +69,13 @@ export const env = {
 		mock: process.env.NODE_ENV !== "production" && process.env.LUCKYOS_MOCK === "1",
 	},
 };
+
+if (
+	process.env.NODE_ENV === "production" &&
+	(!env.opsMetricsToken || env.opsMetricsToken.length < 32 || env.opsMetricsToken.length > 512)
+) {
+	throw new Error("[watson-api] OPS_METRICS_TOKEN musí mít v produkci 32–512 znaků.");
+}
 
 /** Google login se zapne sám, jakmile jsou v .env oba klíče. */
 export const googleEnabled = Boolean(

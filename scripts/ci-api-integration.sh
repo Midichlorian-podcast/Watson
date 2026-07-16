@@ -16,6 +16,11 @@ export DEV_AUTH_LOG_LINKS=1
 export BETTER_AUTH_SECRET="ci-better-auth-secret-${RUN_NONCE}-at-least-32-bytes-long"
 export BACKUP_SIGNING_SECRET="ci-backup-signing-secret-at-least-32-bytes"
 export LOCAL_DATA_ENCRYPTION_SECRET="ci-local-data-secret-at-least-32-bytes-long"
+export OPS_METRICS_TOKEN="ci-ops-metrics-token-${RUN_NONCE}-at-least-32-bytes"
+# Test nesmí omylem převzít reálný LuckyOS z lokálního .env. Uzavřený localhost
+# port vytvoří rychlé, deterministické a bezpečné upstream selhání.
+export LUCKYOS_BASE_URL="http://127.0.0.1:1"
+export LUCKYOS_MOCK=0
 
 stop_api() {
 	if [[ -n "$API_PID" ]] && kill -0 "$API_PID" 2>/dev/null; then

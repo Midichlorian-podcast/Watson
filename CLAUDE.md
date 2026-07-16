@@ -388,7 +388,7 @@ Exit: žádný critical/serious a11y nález, žádný high/critical advisory bez
 1. Staging konfigurace se skutečnými produkčními defaulty (`NODE_ENV=production`, mocky off).
 2. Secret manager a key rotation runbook.
 3. PostgreSQL PITR, restore drill a alerting.
-4. SLO dashboard: readiness, 5xx, auth failure, sync rejection, reminder dead, AI/provider timeout.
+4. SLO zdroj je implementovaný: fail-closed `/ops/slo` dává readiness, 5xx, auth failure, sync rejection, reminder dead a provider timeout. Produkční dashboard/alert routing se musí napojit podle `ops/observability/RUNBOOK.md`.
 
 Rollback: aplikace zůstane invite-only; při nesplněném DR se pilot nerozšíří.
 
@@ -591,6 +591,9 @@ Poslední ověření 2026-07-16:
 - `pnpm verify:dependency-audit`: produkční registry scan je svázaný s lockfile SHA,
   high/critical = 0; sanitizovaný lokální artifact je uložený a CI má blokující
   runner i immutable-pinned archivaci výsledku.
+- SLO observability: unit klasifikace 5xx/auth/sync/504, fail-closed constant-time
+  bearer auth a živý PostgreSQL integrační průchod `/ops/slo` jsou zelené; provider
+  timeout se nově odlišuje jako 504 a provozní panely/alerty mají runbook.
 
 Neověřené v tomto snapshotu:
 
