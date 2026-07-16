@@ -3,6 +3,7 @@ import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useMemo, useState } from "react";
 import { NotifCenter, useNotifItems } from "../components/NotifCenter";
+import { AvailabilityQuickToggle } from "../components/AvailabilityQuickToggle";
 import { useAddTask } from "../lib/addTask";
 import { focusOnMount } from "../lib/focusOnMount";
 import { INBOX_NAMES } from "../lib/inbox";
@@ -329,6 +330,8 @@ export function Header() {
 						</svg>
 					</button>
 				)}
+
+				<AvailabilityQuickToggle isMobile={isMobile} />
 
 				<div className="relative">
 					<button

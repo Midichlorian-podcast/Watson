@@ -362,6 +362,9 @@ export const reminders = pgTable(
 		attempts: integer("attempts").notNull().default(0),
 		nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
 		claimedAt: timestamp("claimed_at", { withTimezone: true }),
+		/** Připomínka je bezpečně zadržena snooze/quiet/focus politikou, ne chybou provideru. */
+		heldAt: timestamp("held_at", { withTimezone: true }),
+		heldReason: varchar("held_reason", { length: 32 }),
 		lastErrorCode: varchar("last_error_code", { length: 64 }),
 		providerMessageId: varchar("provider_message_id", { length: 256 }),
 		/** Kdy provider potvrdil alespoň jedno doručení. Píše jen server. */
@@ -373,12 +376,16 @@ export const reminders = pgTable(
 		index("reminders_user_idx").on(t.userId),
 		check(
 			"reminders_delivery_state_valid",
-			sql`${t.deliveryState} in ('pending', 'claimed', 'retry', 'sent', 'dead')`,
+			sql`${t.deliveryState} in ('pending', 'claimed', 'held', 'retry', 'sent', 'dead')`,
+		),
+		check(
+			"reminders_held_shape",
+			sql`(${t.deliveryState} = 'held') = (${t.heldAt} is not null and ${t.heldReason} is not null)`,
 		),
 		check("reminders_attempts_nonnegative", sql`${t.attempts} >= 0`),
 		index("reminders_pending_idx")
 			.on(t.deliveryState, t.nextAttemptAt, t.remindAt)
-			.where(sql`delivery_state in ('pending', 'retry', 'claimed')`),
+			.where(sql`delivery_state in ('pending', 'retry', 'claimed', 'held')`),
 	],
 );
 

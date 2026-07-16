@@ -6,6 +6,7 @@
  */
 
 export * from "./auth";
+export * from "./availability";
 export * from "./collab";
 export * from "./contacts";
 export * from "./enums";

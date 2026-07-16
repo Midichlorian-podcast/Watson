@@ -10,7 +10,13 @@ import { startMinOf } from "../lib/tasks";
 import { toggleTask } from "../lib/tasks";
 // sdílené helpery rozsahu úkolu (tIso/tIsoEnd/addDaysISO) — kruhový import je bezpečný,
 // používají se až za renderu
-import { addDaysISO, tIso, tIsoEnd } from "./Calendar";
+import {
+	addDaysISO,
+	availabilitySegment,
+	type CalendarAvailabilityBlock,
+	tIso,
+	tIsoEnd,
+} from "./Calendar";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -24,12 +30,16 @@ const startMin = (t: TaskRow): number | null => startMinOf(t);
  */
 export function CalendarMonth({
 	tasks,
+	availability = [],
+	timeZone = "Europe/Prague",
 	controlledBase,
 	borderColorOf,
 	onOpenDay,
 	onDropDay,
 }: {
 	tasks: TaskRow[];
+	availability?: CalendarAvailabilityBlock[];
+	timeZone?: string;
 	/** Řízený měsíc (z Calendar toolbaru) — skryje vlastní hlavičku. */
 	controlledBase?: Date;
 	/** Barva levého okraje chipu (priorita/projekt dle gear menu). */
@@ -153,6 +163,12 @@ export function CalendarMonth({
 					const list = byDay.get(iso) ?? [];
 					const shown = list.slice(0, 3);
 					const more = list.length - shown.length;
+					const availabilityToday = availability
+						.map((block) => ({ block, segment: availabilitySegment(block, iso, timeZone) }))
+						.filter(
+							(value): value is { block: CalendarAvailabilityBlock; segment: { start: number; end: number } } =>
+								Boolean(value.segment),
+						);
 					return (
 						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							key={iso}
@@ -192,6 +208,33 @@ export function CalendarMonth({
 							>
 								{d.getDate()}
 							</span>
+							{availabilityToday.length > 0 && (
+								<div
+									data-mchip
+									role="note"
+									aria-label={availabilityToday
+										.map(({ block }) => t(`availability.kind.${block.kind ?? "unavailable"}`))
+										.join(", ")}
+									style={{
+										minHeight: 16,
+										border: "1px dashed var(--w-brass)",
+										borderRadius: 4,
+										padding: "1px 4px",
+										background: availabilityToday.some(({ block }) => block.kind === "focus")
+											? "repeating-linear-gradient(135deg, var(--w-brass-soft), var(--w-brass-soft) 5px, var(--w-card) 5px, var(--w-card) 10px)"
+											: "var(--w-panel-2)",
+										color: "var(--w-brass-text)",
+										fontSize: 9.5,
+										fontWeight: 700,
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+										whiteSpace: "nowrap",
+									}}
+								>
+									{t(`availability.kind.${availabilityToday[0]?.block.kind ?? "unavailable"}`)}
+									{availabilityToday.length > 1 ? ` +${availabilityToday.length - 1}` : ""}
+								</div>
+							)}
 							{shown.map((tk) => {
 								const done = Boolean(tk.completed_at);
 								const sm = startMin(tk);

@@ -27,6 +27,8 @@ const BACKUP_TABLES = [
 	"task_occurrence_overrides",
 	"task_user_colors",
 	"reminders",
+	"availability_profiles",
+	"availability_blocks",
 	"chains",
 	"chain_steps",
 	"goals",

@@ -116,6 +116,17 @@ bucket_definitions:
       - SELECT id, name, is_personal, task_conflict_policy
         FROM workspaces
         WHERE id = bucket.workspace_id
+      # Dostupnost je týmově viditelná pouze uvnitř společného workspace. Zápis
+      # nejde přes generický sync endpoint, ale auditovanými CAS API commandy.
+      - SELECT id, workspace_id, user_id, working_hours, quiet_hours,
+               manual_snooze_started_at, manual_snooze_until, version, created_at, updated_at
+        FROM availability_profiles
+        WHERE workspace_id = bucket.workspace_id
+      # Soukromý popisek se záměrně nesyncuje do týmového bucketu; UI zde ukáže typ.
+      - SELECT id, workspace_id, user_id, kind, starts_at, ends_at, timezone,
+               visibility, source, external_id, created_by, cancelled_at, version, created_at, updated_at
+        FROM availability_blocks
+        WHERE workspace_id = bucket.workspace_id
       - SELECT id, workspace_id, name, scope, metric, target, due_date, period, periodic,
                period_start, filter_person_id, filter_keyword, owner_id, created_by, created_at
         FROM goals

@@ -31,6 +31,8 @@ const backupSecret = env.backupSigningSecret ?? DEV_BACKUP_SECRET;
 export const RESTORE_TABLE_ORDER = [
 	"workspaces",
 	"memberships",
+	"availability_profiles",
+	"availability_blocks",
 	"projects",
 	"project_members",
 	"sections",
@@ -40,6 +42,7 @@ export const RESTORE_TABLE_ORDER = [
 	"intake_form_fields",
 	"import_batches",
 	"tasks",
+	"availability_task_overrides",
 	"import_items",
 	"intake_submissions",
 	"project_milestones",
@@ -97,6 +100,15 @@ const EXPORT_QUERIES: Record<
 > = {
 	workspaces: (ws) => sql`SELECT * FROM workspaces WHERE id = ANY(${uuids(ws)})`,
 	memberships: (ws) => sql`SELECT * FROM memberships WHERE workspace_id = ANY(${uuids(ws)})`,
+	availability_profiles: (ws) =>
+		sql`SELECT * FROM availability_profiles WHERE workspace_id = ANY(${uuids(ws)})`,
+	availability_blocks: (ws, userId) => sql`
+		SELECT id, workspace_id, user_id, kind, starts_at, ends_at, timezone,
+		       CASE WHEN visibility = 'team' OR user_id = ${userId} THEN label ELSE NULL END AS label,
+		       visibility, source, external_id, created_by, cancelled_at, version, created_at, updated_at
+		FROM availability_blocks
+		WHERE workspace_id = ANY(${uuids(ws)})
+	`,
 	projects: (ws) => sql`SELECT * FROM projects WHERE workspace_id = ANY(${uuids(ws)})`,
 	project_members: (ws) =>
 		sql`SELECT pm.* FROM project_members pm JOIN projects p ON p.id = pm.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
@@ -116,6 +128,8 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT m.* FROM project_milestones m JOIN projects p ON p.id = m.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	tasks: (ws) =>
 		sql`SELECT t.* FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	availability_task_overrides: (ws) =>
+		sql`SELECT o.* FROM availability_task_overrides o WHERE o.workspace_id = ANY(${uuids(ws)})`,
 	import_items: (ws) =>
 		sql`SELECT item.* FROM import_items item JOIN import_batches batch ON batch.id = item.batch_id WHERE batch.workspace_id = ANY(${uuids(ws)})`,
 	intake_submissions: (ws) =>

@@ -12,11 +12,16 @@ import {
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
 import { expandOccurrences, occId, parseOccId, parseRecurrenceRule } from "../lib/occurrences";
-import type { TaskRow } from "../lib/powersync/AppSchema";
+import type { AvailabilityBlockRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { storageGet, storageSet } from "../lib/storage";
+import {
+	createTaskAvailabilityOverrides,
+	preflightTaskAvailability,
+	type TaskAvailabilityConflict,
+} from "../lib/taskAvailability";
 import { useTaskDetail } from "../lib/taskDetail";
 import { rowDue, startMinOf, toggleTask } from "../lib/tasks";
 import {
@@ -29,8 +34,10 @@ import {
 } from "../lib/timeZone";
 import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
+import { useFocusTrap } from "../lib/useFocusTrap";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useUserColors } from "../lib/userColors";
+import { useWorkspace } from "../lib/workspace";
 import { CalendarMonth } from "./CalendarMonth";
 
 type Mode = "day" | "week" | "month";
@@ -64,6 +71,28 @@ export const addDaysISO = (iso: string, n: number) => {
 	d.setDate(d.getDate() + n);
 	return isoOf(d);
 };
+
+export type CalendarAvailabilityBlock = AvailabilityBlockRow;
+
+/** Část absolutního availability bloku, která patří do jednoho lokálního kalendářního dne. */
+export function availabilitySegment(
+	block: CalendarAvailabilityBlock,
+	iso: string,
+	timeZone: string,
+): { start: number; end: number } | null {
+	if (!block.starts_at || !block.ends_at || block.cancelled_at) return null;
+	const dayStart = zonedDateTimeToIso(iso, "00:00", timeZone);
+	const nextStart = zonedDateTimeToIso(addDaysISO(iso, 1), "00:00", timeZone);
+	if (!dayStart || !nextStart) return null;
+	const dayStartMs = Date.parse(dayStart);
+	const nextStartMs = Date.parse(nextStart);
+	const startMs = Math.max(Date.parse(block.starts_at), dayStartMs);
+	const endMs = Math.min(Date.parse(block.ends_at), nextStartMs);
+	if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
+	const start = startMs === dayStartMs ? 0 : minutesInTimeZone(new Date(startMs).toISOString(), timeZone);
+	const end = endMs === nextStartMs ? 1440 : minutesInTimeZone(new Date(endMs).toISOString(), timeZone);
+	return start === null || end === null || end <= start ? null : { start, end };
+}
 const fmtMin = (m: number) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
 
 /** Den, na kterém úkol začíná (termín). */
@@ -182,6 +211,22 @@ interface BlockDrag {
 	moved: boolean;
 }
 
+interface CalendarMovePlan {
+	taskId: string;
+	dueDate: string;
+	startsAt: string | null;
+	startTimezone: string | null;
+	durationMin: number | null;
+	previousDueDate: string | null;
+	previousStartsAt: string | null;
+	previousStartTimezone: string | null;
+}
+
+interface PendingEmergencyMove {
+	move: CalendarMovePlan;
+	conflicts: TaskAvailabilityConflict[];
+}
+
 /**
  * Kalendář 1:1 dle prototypu: Den / Týden (Sloupce|Mřížka) / Měsíc, projekce opakování,
  * vícedenní pruhy, pás CELÝ DEN, drag move/create/resize, lanes + „+N", now-line se štítkem,
@@ -191,6 +236,12 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	const { t } = useTranslation();
 	const { data: session } = useSession();
 	const userTimeZone = session?.user?.timezone ?? deviceTimeZone();
+	const { activeWs } = useWorkspace();
+	const { data: availabilityRows } = usePsQuery<CalendarAvailabilityBlock>(
+		"SELECT * FROM availability_blocks WHERE workspace_id = ? AND user_id = ? AND cancelled_at IS NULL",
+		[activeWs ?? "", session?.user?.id ?? ""],
+	);
+	const availability = availabilityRows ?? [];
 	const { open } = useTaskDetail();
 	const { openAdd } = useAddTask();
 	const projects = useProjects();
@@ -214,7 +265,25 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	);
 	const [planningOn, setPlanningOn] = useState(() => storageGet(PLANNING_LS) === "1");
 	const [gearOpen, setGearOpen] = useState(false);
+	const [pendingEmergencyMove, setPendingEmergencyMove] = useState<PendingEmergencyMove | null>(null);
+	const [emergencyReason, setEmergencyReason] = useState("");
+	const [emergencyBusy, setEmergencyBusy] = useState(false);
+	const emergencyBusyRef = useRef(false);
+	const emergencyInputRef = useRef<HTMLTextAreaElement>(null);
+	const emergencyDialogRef = useFocusTrap<HTMLDivElement>(Boolean(pendingEmergencyMove));
 	const isMobile = useIsMobile();
+	useEffect(() => {
+		if (!pendingEmergencyMove) return;
+		setEmergencyReason("");
+		setTimeout(() => emergencyInputRef.current?.focus(), 0);
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape" && !emergencyBusyRef.current) setPendingEmergencyMove(null);
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => {
+			window.removeEventListener("keydown", onKeyDown);
+		};
+	}, [pendingEmergencyMove]);
 	// Kotevní datum (calCur) — týden je „rolující" od kotvy bez snapu (prototyp weekDates, ř. 2658);
 	// při startu v týdnu kotvíme na pondělí (ekvivalent calToday, ř. 2661).
 	const [cur, setCur] = useState<Date>(() => {
@@ -431,6 +500,21 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	 * Zápis přesunu úkolu (drag): nový den + volitelně čas. min=null zachová původní čas
 	 * (prototyp monthDropTo, ř. 2710 — mění jen date); allDay=true čas smaže (pás CELÝ DEN, ř. 2700).
 	 */
+	const commitMove = async (move: CalendarMovePlan) => {
+		const write = async (d: string | null, s: string | null, z: string | null) => {
+			await powerSync.execute(
+				"UPDATE tasks SET due_date = ?, start_date = ?, start_timezone = ? WHERE id = ?",
+				[d, s, z, move.taskId],
+			);
+		};
+		await write(move.dueDate, move.startsAt, move.startTimezone);
+		pushUndo({
+			undo: () =>
+				write(move.previousDueDate, move.previousStartsAt, move.previousStartTimezone),
+			redo: () => write(move.dueDate, move.startsAt, move.startTimezone),
+		});
+	};
+
 	const moveTask = async (id: string, iso: string, min: number | null, allDay = false) => {
 		if (id.includes("@")) {
 			showToast(t("calendar.recurringDragUnsupported"));
@@ -453,27 +537,84 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 				return;
 			}
 		}
-		const prevDue = tk.due_date;
-		const prevStart = tk.start_date;
-		const prevZone = tk.start_timezone;
 		const nextZone = start ? zone : null;
-		const write = async (d: string | null, s: string | null, z: string | null) => {
-			await powerSync.execute(
-				"UPDATE tasks SET due_date = ?, start_date = ?, start_timezone = ? WHERE id = ?",
-				[
-				d,
-				s,
-				z,
-				id,
-				],
-			);
+		const move: CalendarMovePlan = {
+			taskId: id,
+			dueDate: iso,
+			startsAt: start,
+			startTimezone: nextZone,
+			durationMin: tk.duration_min,
+			previousDueDate: tk.due_date,
+			previousStartsAt: tk.start_date,
+			previousStartTimezone: tk.start_timezone,
 		};
-		await write(iso, start, nextZone);
-		// ⌘Z vrátí přesun v kalendáři (prototyp verzuje každou změnu tasks, ř. 2239).
-		pushUndo({
-			undo: () => write(prevDue, prevStart, prevZone),
-			redo: () => write(iso, start, nextZone),
-		});
+		if (start) {
+			try {
+				const availability = await preflightTaskAvailability(id, {
+					startsAt: start,
+					durationMin: tk.duration_min,
+				});
+				const strictNonFocus = availability.conflicts.filter(
+					(conflict) => conflict.blocking && conflict.kind !== "focus",
+				);
+				if (strictNonFocus.length > 0) {
+					showToast(
+						t("calendar.availabilityStrictBlocked", {
+							names: [...new Set(strictNonFocus.map((conflict) => conflict.assigneeName))].join(", "),
+						}),
+					);
+					return;
+				}
+				const focusConflicts = availability.conflicts.filter(
+					(conflict) => conflict.blocking && conflict.kind === "focus",
+				);
+				if (focusConflicts.length > 0) {
+					setPendingEmergencyMove({ move, conflicts: focusConflicts });
+					return;
+				}
+				const warnings = availability.conflicts.filter((conflict) => !conflict.blocking);
+				if (warnings.length > 0) {
+					showToast(
+						t("calendar.availabilityWarning", {
+							names: [...new Set(warnings.map((conflict) => conflict.assigneeName))].join(", "),
+						}),
+					);
+				}
+			} catch {
+				// Offline-first: záměr neztratíme. Serverový DB guard při synchronizaci stále
+				// odmítne nepovolený konflikt a uloží ho do Centra problémů.
+				showToast(t("calendar.availabilityOffline"));
+			}
+		}
+		await commitMove(move);
+	};
+
+	const confirmEmergencyMove = async () => {
+		const pending = pendingEmergencyMove;
+		const reason = emergencyReason.trim();
+		if (!pending || reason.length < 8 || emergencyBusy || !pending.move.startsAt) return;
+		emergencyBusyRef.current = true;
+		setEmergencyBusy(true);
+		try {
+			await createTaskAvailabilityOverrides(pending.move.taskId, {
+				overrides: pending.conflicts.map((conflict) => ({
+					id: crypto.randomUUID(),
+					blockId: conflict.blockId,
+					assigneeId: conflict.assigneeId,
+				})),
+				reason,
+				startsAt: pending.move.startsAt,
+				durationMin: pending.move.durationMin,
+			});
+			await commitMove(pending.move);
+			setPendingEmergencyMove(null);
+			showToast(t("calendar.emergencySaved"));
+		} catch {
+			showToast(t("calendar.emergencyFailed"));
+		} finally {
+			emergencyBusyRef.current = false;
+			setEmergencyBusy(false);
+		}
 	};
 
 	const chevron = (dir: -1 | 1) => (
@@ -713,6 +854,8 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 					{mode === "month" ? (
 						<CalendarMonth
 							tasks={calTasks}
+							availability={availability}
+							timeZone={userTimeZone}
 							controlledBase={monthBase}
 							borderColorOf={borderColorOf}
 							onOpenDay={(d) => {
@@ -725,6 +868,8 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 						<WeekColumns
 							days={days}
 							calTasks={calTasks}
+							availability={availability}
+							timeZone={userTimeZone}
 							todayIso={todayIso}
 							borderColorOf={borderColorOf}
 							projColor={projColor}
@@ -735,6 +880,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 						<TimeGrid
 							days={days}
 							calTasks={calTasks}
+							availability={availability}
 							todayIso={todayIso}
 							timeZone={userTimeZone}
 							PPM={PPM}
@@ -763,6 +909,71 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 					<PlanningPanel tasks={tasks} todayIso={todayIso} projColor={projColor} onOpen={open} />
 				)}
 			</div>
+			{pendingEmergencyMove && (
+				<div
+					className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4"
+				>
+					<div
+						ref={emergencyDialogRef}
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="focus-emergency-title"
+						className="w-full max-w-[520px] rounded-2xl border border-line bg-card p-5 shadow-2xl"
+					>
+						<div className="mb-1 flex items-start gap-3">
+							<div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-700">
+								<span aria-hidden>!</span>
+							</div>
+							<div>
+								<h2 id="focus-emergency-title" className="font-display font-extrabold text-base text-ink">
+									{t("calendar.emergencyTitle")}
+								</h2>
+								<p className="mt-1 text-sm text-ink-2">{t("calendar.emergencyDesc")}</p>
+							</div>
+						</div>
+						<ul className="my-4 space-y-2" aria-label={t("calendar.emergencyConflicts")}>
+							{pendingEmergencyMove.conflicts.map((conflict) => (
+								<li key={`${conflict.blockId}:${conflict.assigneeId}`} className="rounded-xl bg-panel-2 px-3 py-2 text-sm text-ink">
+									<span className="font-semibold">{conflict.assigneeName}</span>
+									{conflict.label ? ` · ${conflict.label}` : ""}
+								</li>
+							))}
+						</ul>
+						<label className="block font-display font-semibold text-sm text-ink" htmlFor="focus-emergency-reason">
+							{t("calendar.emergencyReason")}
+						</label>
+						<textarea
+							ref={emergencyInputRef}
+							id="focus-emergency-reason"
+							value={emergencyReason}
+							onChange={(event) => setEmergencyReason(event.target.value)}
+							maxLength={500}
+							rows={3}
+							placeholder={t("calendar.emergencyReasonPlaceholder")}
+							className="mt-2 w-full resize-y rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brass"
+						/>
+						<p className="mt-1 text-xs text-ink-3">{t("calendar.emergencyAuditNote")}</p>
+						<div className="mt-5 flex justify-end gap-2">
+							<button
+								type="button"
+								disabled={emergencyBusy}
+								onClick={() => setPendingEmergencyMove(null)}
+								className="rounded-xl border border-line px-4 py-2 font-display font-semibold text-sm text-ink-2 hover:bg-panel-2 disabled:opacity-50"
+							>
+								{t("common.cancel")}
+							</button>
+							<button
+								type="button"
+								disabled={emergencyBusy || emergencyReason.trim().length < 8}
+								onClick={() => void confirmEmergencyMove()}
+								className="rounded-xl bg-amber-700 px-4 py-2 font-display font-semibold text-sm text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								{emergencyBusy ? t("calendar.emergencySaving") : t("calendar.emergencyConfirm")}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -846,6 +1057,8 @@ function GearChip({
 function WeekColumns({
 	days,
 	calTasks,
+	availability,
+	timeZone,
 	todayIso,
 	borderColorOf,
 	projColor,
@@ -854,6 +1067,8 @@ function WeekColumns({
 }: {
 	days: Date[];
 	calTasks: TaskRow[];
+	availability: CalendarAvailabilityBlock[];
+	timeZone: string;
 	todayIso: string;
 	borderColorOf: (t: TaskRow) => string;
 	projColor: (id: string | null) => string;
@@ -910,6 +1125,13 @@ function WeekColumns({
 					const list = calTasks
 						.filter((tk) => hit(tk, iso))
 						.sort((a, b) => (startMin(a) ?? -1) - (startMin(b) ?? -1));
+					const availabilityToday = availability
+						.map((block) => ({ block, segment: availabilitySegment(block, iso, timeZone) }))
+						.filter(
+							(value): value is { block: CalendarAvailabilityBlock; segment: { start: number; end: number } } =>
+								Boolean(value.segment),
+						)
+						.sort((left, right) => left.segment.start - right.segment.start);
 					return (
 						<div role="region"
 							key={iso}
@@ -930,7 +1152,30 @@ function WeekColumns({
 								if (id) onDrop(id, iso);
 							}}
 						>
-							{list.length === 0 && (
+							{availabilityToday.map(({ block, segment }) => (
+								<div
+									key={`availability-${block.id}`}
+									role="note"
+									aria-label={`${t(`availability.kind.${block.kind ?? "unavailable"}`)} ${fmtMin(segment.start)}–${fmtMin(segment.end)}`}
+									style={{
+										border: "1px dashed var(--w-brass)",
+										borderRadius: 7,
+										padding: "5px 7px",
+										background:
+											block.kind === "focus"
+												? "repeating-linear-gradient(135deg, var(--w-brass-soft), var(--w-brass-soft) 6px, var(--w-card) 6px, var(--w-card) 12px)"
+												: "var(--w-panel-2)",
+										color: "var(--w-brass-text)",
+										fontSize: 10.5,
+									}}
+								>
+									<strong>{t(`availability.kind.${block.kind ?? "unavailable"}`)}</strong>
+									<div className="font-mono" style={{ marginTop: 2, fontSize: 9.5 }}>
+										{fmtMin(segment.start)}–{fmtMin(segment.end)}
+									</div>
+								</div>
+							))}
+							{list.length === 0 && availabilityToday.length === 0 && (
 								<div className="text-center" style={{ fontSize: 11, opacity: 0.5, marginTop: 8 }}>
 									—
 								</div>
@@ -1013,6 +1258,7 @@ function WeekColumns({
 function TimeGrid({
 	days,
 	calTasks,
+	availability,
 	todayIso,
 	timeZone,
 	PPM,
@@ -1027,6 +1273,7 @@ function TimeGrid({
 }: {
 	days: Date[];
 	calTasks: TaskRow[];
+	availability: CalendarAvailabilityBlock[];
 	todayIso: string;
 	timeZone: string;
 	PPM: number;
@@ -1846,6 +2093,12 @@ function TimeGrid({
 							}),
 						);
 						const hiddenByLane = timed.filter((tk) => (lanes.get(tk.id)?.lane ?? 0) >= MAX_LANES);
+						const availabilityToday = availability
+							.map((block) => ({ block, segment: availabilitySegment(block, iso, timeZone) }))
+							.filter(
+								(value): value is { block: CalendarAvailabilityBlock; segment: { start: number; end: number } } =>
+									Boolean(value.segment),
+							);
 						return (
 							<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								key={iso}
@@ -1876,6 +2129,43 @@ function TimeGrid({
 										style={{ top: h * 60 * PPM }}
 									/>
 								))}
+								{/* Dostupnost je netasková vrstva: bez checkboxu, dragu a priority. */}
+								{availabilityToday.map(({ block, segment }) => {
+									const kind = block.kind ?? "unavailable";
+									const height = Math.max(5, (segment.end - segment.start) * PPM);
+									const label = t(`availability.kind.${kind}`);
+									return (
+										<div
+											key={`availability-${block.id}`}
+											role="note"
+											aria-label={`${label} ${fmtMin(segment.start)}–${fmtMin(segment.end)}`}
+											title={`${label} · ${fmtMin(segment.start)}–${fmtMin(segment.end)}`}
+											style={{
+												pointerEvents: "none",
+												position: "absolute",
+												left: 2,
+												right: 2,
+												top: segment.start * PPM,
+												height,
+												zIndex: 1,
+												border: `1px ${kind === "focus" ? "dashed" : "solid"} var(--w-brass)`,
+												borderRadius: 5,
+												background:
+													kind === "focus"
+														? "repeating-linear-gradient(135deg, color-mix(in srgb, var(--w-brass) 13%, transparent), color-mix(in srgb, var(--w-brass) 13%, transparent) 7px, transparent 7px, transparent 14px)"
+														: "color-mix(in srgb, var(--w-ink-3) 8%, transparent)",
+												color: "var(--w-brass-text)",
+												overflow: "hidden",
+											}}
+										>
+											{height >= 22 && (
+												<span className="font-display" style={{ display: "inline-block", padding: "2px 5px", fontSize: 9.5, fontWeight: 750 }}>
+													{label} · {fmtMin(segment.start)}–{fmtMin(segment.end)}
+												</span>
+											)}
+										</div>
+									);
+								})}
 								{/* now line + štítek (ř. 2624) */}
 								{isToday && (
 									<div

@@ -4,6 +4,7 @@ import {
 	and,
 	assignments,
 	auditEvents,
+	availabilityBlocks,
 	comments,
 	eq,
 	getDb,
@@ -214,6 +215,39 @@ async function main() {
 
 		p = await preview(managerCookie, [plain.id, shared.id], { kind: "assign", userId: manager.id });
 		check("assign preview vynechá shared_all", p.status === 200 && p.body.applyCount === 1 && p.body.skippedCount === 1, p);
+		x = await execute(
+			managerCookie,
+			[plain.id, shared.id],
+			{ kind: "assign", userId: manager.id },
+			String(p.body.previewHash),
+		);
+		check("assign command připraví kontrolu idempotentního no-opu", x.status === 200, x);
+		await db
+			.update(tasks)
+			.set({ startDate: new Date("2026-08-01T10:00:00Z"), startTimezone: "UTC", durationMin: 60 })
+			.where(eq(tasks.id, plain.id));
+		await db.insert(availabilityBlocks).values({
+			workspaceId: workspace.id,
+			userId: manager.id,
+			kind: "focus",
+			startsAt: new Date("2026-08-01T09:30:00Z"),
+			endsAt: new Date("2026-08-01T11:30:00Z"),
+			timezone: "UTC",
+			label: "Bulk verifier Focus",
+			createdBy: manager.id,
+		});
+		p = await preview(managerCookie, [plain.id], { kind: "assign", userId: manager.id });
+		check(
+			"už hotové přiřazení je no-op i při nově překrývajícím Focus Time",
+			p.status === 200 && p.body.applyCount === 0 && p.body.skippedCount === 1 && p.body.conflicts?.length === 0,
+			p,
+		);
+		await db.delete(assignments).where(eq(assignments.taskId, plain.id));
+		await db.insert(assignments).values({ taskId: plain.id, projectId: source.id, userId: teammate.id });
+		await db
+			.update(tasks)
+			.set({ startDate: null, startTimezone: null, durationMin: null })
+			.where(eq(tasks.id, plain.id));
 
 		p = await preview(managerCookie, [plain.id], { kind: "move", projectId: target.id });
 		check("move preview blokuje chybějící členství řešitele", p.status === 200 && p.body.canExecute === false, p);

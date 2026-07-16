@@ -70,6 +70,7 @@ type TimelineKind =
 	| "dependency_added"
 	| "dependency_removed"
 	| "occurrence_updated"
+	| "availability_override"
 	| "meeting_updated"
 	| "integration_created";
 type TimelineEvent = {
@@ -256,6 +257,7 @@ const TIMELINE_KIND_KEY: Record<TimelineKind, string> = {
 	dependency_added: "detail.timelineDependencyAdded",
 	dependency_removed: "detail.timelineDependencyRemoved",
 	occurrence_updated: "detail.timelineOccurrenceUpdated",
+	availability_override: "detail.timelineAvailabilityOverride",
 	meeting_updated: "detail.timelineMeetingUpdated",
 	integration_created: "detail.timelineIntegrationCreated",
 };

@@ -15,6 +15,7 @@ import { SignJWT } from "jose";
 import { z } from "zod";
 import { auth } from "./auth";
 import { loadSigningKeyRing, SIGNING_ALG } from "./signingKeys";
+import { preflightAvailabilityForSyncWrite } from "./taskAvailability";
 
 const AUDIENCE = "powersync";
 const POWERSYNC_ISSUER = process.env.POWERSYNC_ISSUER ?? "watson-powersync";
@@ -1321,6 +1322,19 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 				const refWs = await workspaceOfRow(db, ref.table, refId);
 				if (!refWs) return c.json({ error: "reference_not_found", field: ref.col }, 422);
 				if (refWs !== auditWs) return c.json({ error: "cross-workspace-reference" }, 403);
+			}
+		}
+		if (auditWs) {
+			const availability = await preflightAvailabilityForSyncWrite(db, {
+				workspaceId: auditWs,
+				actorUserId: userId,
+				table: body.table,
+				op: body.op,
+				id: body.id,
+				data,
+			});
+			if (availability && !availability.canSchedule) {
+				return c.json({ error: "availability_conflict", availability }, 409);
 			}
 		}
 		await auditedWrite(db, body.table, def, body.op, body.id, data, userId, {

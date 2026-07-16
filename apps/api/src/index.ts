@@ -32,6 +32,7 @@ import { z } from "zod";
 import { aiPolicyRoutes } from "./aiPolicy";
 import { ATTACHMENT_MAX_BYTES, attachmentRoutes } from "./attachments";
 import { auth } from "./auth";
+import { availabilityRoutes } from "./availability";
 import { chainCommandRoutes } from "./chainCommands";
 import { customFieldRoutes } from "./customFields";
 import { employeeRoutes } from "./employee";
@@ -48,6 +49,7 @@ import { rateLimit } from "./rateLimit";
 import { savedViewRoutes } from "./savedViews";
 import { taskBulkCommandRoutes } from "./taskBulkCommands";
 import { taskAcceptanceRoutes } from "./taskAcceptances";
+import { taskAvailabilityRoutes } from "./taskAvailability";
 import { taskCommandRoutes } from "./taskCommands";
 import {
 	decodeTimelineCursor,
@@ -270,6 +272,14 @@ app.use(
 	rateLimit({ name: "custom-fields", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
 );
 app.use(
+	"/api/workspaces/:workspaceId/availability/*",
+	rateLimit({ name: "availability", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
+);
+app.use(
+	"/api/tasks/:taskId/availability/*",
+	rateLimit({ name: "task-availability", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
+);
+app.use(
 	"/api/projects/:projectId/custom-fields",
 	rateLimit({ name: "custom-fields-create", windowMs: 60_000, max: 60, scope: "session-or-ip" }),
 );
@@ -359,6 +369,8 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 /** PowerSync — JWKS, token, write upload. */
 app.route("/", powersyncRoutes);
 app.route("/", aiPolicyRoutes);
+app.route("/", availabilityRoutes);
+app.route("/", taskAvailabilityRoutes);
 app.route("/", taskCommandRoutes);
 app.route("/", taskBulkCommandRoutes);
 app.route("/", taskAcceptanceRoutes);
@@ -743,6 +755,10 @@ app.get("/api/tasks/:id/timeline", async (c) => {
 					COALESCE(ae.diff->>'blocking_task_id', ae.before->>'blocking_task_id') = ${taskId}
 					OR COALESCE(ae.diff->>'blocked_task_id', ae.before->>'blocked_task_id') = ${taskId}
 				)
+			)
+			OR (
+				ae.entity = 'availability_task_overrides'
+				AND ae.diff->>'taskId' = ${taskId}
 			)
 			OR (
 				ae.entity = 'meetings'

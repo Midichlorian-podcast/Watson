@@ -193,6 +193,48 @@ const workspaces = new Table(
 	trackAllPrevious,
 );
 
+/** Týmově viditelný rozvrh a stav snooze; mutace jsou pouze auditovaným API commandem. */
+const availability_profiles = new Table(
+	{
+		workspace_id: column.text,
+		user_id: column.text,
+		working_hours: column.text,
+		quiet_hours: column.text,
+		manual_snooze_started_at: column.text,
+		manual_snooze_until: column.text,
+		version: column.integer,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{ indexes: { by_workspace_user: ["workspace_id", "user_id"], by_user: ["user_id"] } },
+);
+
+/** Focus/absence/unavailable/holiday jako samostatná netasková kalendářní vrstva. */
+const availability_blocks = new Table(
+	{
+		workspace_id: column.text,
+		user_id: column.text,
+		kind: column.text,
+		starts_at: column.text,
+		ends_at: column.text,
+		timezone: column.text,
+		visibility: column.text,
+		source: column.text,
+		external_id: column.text,
+		created_by: column.text,
+		cancelled_at: column.text,
+		version: column.integer,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: {
+			by_workspace_time: ["workspace_id", "starts_at", "ends_at"],
+			by_user_time: ["user_id", "starts_at", "ends_at"],
+		},
+	},
+);
+
 const sections = new Table(
 	{
 		project_id: column.text,
@@ -661,6 +703,8 @@ export const AppSchema = new Schema({
 	task_poll_responses,
 	project_milestones,
 	workspaces,
+	availability_profiles,
+	availability_blocks,
 	projects,
 	sections,
 	statuses,
@@ -702,6 +746,8 @@ export type TaskPollRow = Database["task_polls"];
 export type TaskPollResponseRow = Database["task_poll_responses"];
 export type ProjectMilestoneRow = Database["project_milestones"];
 export type WorkspaceRow = Database["workspaces"];
+export type AvailabilityProfileRow = Database["availability_profiles"];
+export type AvailabilityBlockRow = Database["availability_blocks"];
 export type ProjectRow = Database["projects"];
 export type SectionRow = Database["sections"];
 export type StatusRow = Database["statuses"];

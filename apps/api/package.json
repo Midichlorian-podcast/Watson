@@ -40,7 +40,8 @@
 		"verify:project-milestones": "tsx verify-project-milestones.ts",
 		"verify:intake-forms": "tsx verify-intake-forms.ts",
 		"verify:task-acceptances": "tsx verify-task-acceptances.ts",
-		"verify:imports": "tsx verify-imports.ts"
+		"verify:imports": "tsx verify-imports.ts",
+		"verify:availability": "tsx verify-availability.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.111.0",

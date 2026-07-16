@@ -372,6 +372,34 @@
       "when": 1784195644466,
       "tag": "0052_tired_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1784225022273,
+      "tag": "0053_tranquil_manta",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1784225078638,
+      "tag": "0054_loud_the_liberteens",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1784226660141,
+      "tag": "0055_brainy_bug",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1784227644154,
+      "tag": "0056_availability_race_guard",
+      "breakpoints": true
     }
   ]
 }

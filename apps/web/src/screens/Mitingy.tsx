@@ -351,7 +351,24 @@ export function Mitingy() {
 					participantIds: who,
 				}),
 			});
-			if (!response.ok) throw new Error(`plan:${response.status}`);
+			if (!response.ok) {
+				const problem = (await response.json().catch(() => ({}))) as {
+					error?: string;
+					availability?: { conflicts?: Array<{ assigneeName?: string }> };
+				};
+				if (problem.error === "availability_conflict") {
+					const names = [
+						...new Set(
+							(problem.availability?.conflicts ?? [])
+								.map((conflict) => conflict.assigneeName)
+								.filter((name): name is string => Boolean(name)),
+						),
+					].join(", ");
+					showToast(i18n.t("calendar.meetingAvailabilityBlocked", { names }));
+					return;
+				}
+				throw new Error(`plan:${response.status}`);
+			}
 			showToast(`Meet naplánován na ${dayLabel(pDate)} ${pTime}.`);
 			setMode("list");
 		} catch {

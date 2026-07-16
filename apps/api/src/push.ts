@@ -13,6 +13,7 @@ import {
 	eq,
 	getDb,
 	inArray,
+	projects,
 	pushSubscriptions,
 	reminders,
 	sql,
@@ -22,6 +23,7 @@ import { Hono } from "hono";
 import webpush from "web-push";
 import { z } from "zod";
 import { auth } from "./auth";
+import { readNotificationHold } from "./availability";
 import { env, pushEnabled } from "./env";
 
 if (pushEnabled) {
@@ -42,6 +44,7 @@ interface DueReminder {
 	taskName: string;
 	dueDate: Date | null;
 	startDate: Date | null;
+	workspaceId: string;
 }
 
 /** Kdy má připomínka padnout. null = nelze určit (relative bez termínu). */
@@ -151,13 +154,18 @@ async function claimDue(now: Date): Promise<(DueReminder & { attempts: number })
 					 ))
 					OR
 					(r.delivery_state = 'claimed' AND r.claimed_at < ${nowIso}::timestamptz - interval '5 minutes')
+					OR
+					(r.delivery_state = 'held' AND r.next_attempt_at IS NOT NULL
+					 AND r.next_attempt_at <= ${nowIso}::timestamptz)
 				  )
 				ORDER BY COALESCE(r.next_attempt_at, r.remind_at, r.created_at), r.id
 				FOR UPDATE OF r SKIP LOCKED
 				LIMIT 100
 			)
 			UPDATE reminders r
-			SET delivery_state = 'claimed', claimed_at = ${nowIso}::timestamptz, attempts = r.attempts + 1
+			SET delivery_state = 'claimed', claimed_at = ${nowIso}::timestamptz,
+			    held_at = NULL, held_reason = NULL,
+				    attempts = r.attempts + 1
 			FROM candidates c
 			WHERE r.id = c.id
 			RETURNING r.id
@@ -176,10 +184,12 @@ async function claimDue(now: Date): Promise<(DueReminder & { attempts: number })
 			taskName: tasks.name,
 			dueDate: tasks.dueDate,
 			startDate: tasks.startDate,
+			workspaceId: projects.workspaceId,
 			attempts: reminders.attempts,
 		})
 		.from(reminders)
 		.innerJoin(tasks, eq(tasks.id, reminders.taskId))
+		.innerJoin(projects, eq(projects.id, tasks.projectId))
 		.where(inArray(reminders.id, ids))) as (DueReminder & { attempts: number })[];
 }
 
@@ -190,6 +200,22 @@ export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
 
 	let fired = 0;
 	for (const r of rows) {
+		const hold = await readNotificationHold(db, r.workspaceId, r.userId, now);
+		if (hold) {
+			await db
+				.update(reminders)
+				.set({
+					deliveryState: "held",
+					heldAt: now,
+					heldReason: hold.reason,
+					claimedAt: null,
+					nextAttemptAt: hold.until,
+					attempts: Math.max(0, r.attempts - 1),
+					lastErrorCode: null,
+				})
+				.where(and(eq(reminders.id, r.id), eq(reminders.deliveryState, "claimed")));
+			continue;
+		}
 		const payload = {
 			title: "Watson · připomínka",
 			body: r.taskName,
@@ -204,6 +230,8 @@ export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
 					deliveryState: "sent",
 					sentAt: now,
 					claimedAt: null,
+					heldAt: null,
+					heldReason: null,
 					nextAttemptAt: null,
 					lastErrorCode: null,
 					providerMessageId: delivery.providerMessageId,
@@ -219,6 +247,8 @@ export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
 			.set({
 				deliveryState: dead ? "dead" : "retry",
 				claimedAt: null,
+				heldAt: null,
+				heldReason: null,
 				nextAttemptAt: dead ? null : new Date(now.getTime() + delayMinutes * 60_000),
 				lastErrorCode: delivery.errorCode,
 			})

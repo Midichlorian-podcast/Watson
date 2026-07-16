@@ -31,6 +31,7 @@ import { z } from "zod";
 import { authorizeAiVendorTransfer, redactVendorText } from "./aiPolicy";
 import { auth } from "./auth";
 import { aiEnabled, aiMockEnabled, env } from "./env";
+import { readTaskAvailabilityConflicts } from "./taskAvailability";
 
 export const meetingsRoutes = new Hono<{ Variables: { requestId: string } }>();
 
@@ -493,6 +494,19 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 		if (allowedParticipants.length !== participantIds.length) {
 			return { invalidParticipants: true as const };
 		}
+		const policyRows = (await tx.execute(sql`
+			SELECT task_conflict_policy AS policy FROM workspaces WHERE id = ${body.workspaceId} LIMIT 1
+		`)) as unknown as { policy: string }[];
+		const availability = await readTaskAvailabilityConflicts(tx, {
+			workspaceId: body.workspaceId,
+			policy: policyRows[0]?.policy === "strict" ? "strict" : "warning",
+			actorUserId: session.user.id,
+			taskId: body.hubTaskId,
+			startsAt: new Date(body.startAt),
+			durationMin: body.durationMin,
+			assigneeIds: participantIds,
+		});
+		if (!availability.canSchedule) return { availabilityConflict: availability };
 
 		if (body.prevMeetingId && body.seriesId) {
 			const previous = (
@@ -601,6 +615,11 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 	if ("forbidden" in result) return c.json({ error: "forbidden" }, 403);
 	if ("invalidParticipants" in result)
 		return c.json({ error: "participant_not_project_member" }, 422);
+	if ("availabilityConflict" in result)
+		return c.json(
+			{ error: "availability_conflict", availability: result.availabilityConflict },
+			409,
+		);
 	if ("invalidPreviousMeeting" in result)
 		return c.json({ error: "invalid_previous_meeting" }, 422);
 	if ("notPreviousParticipant" in result)

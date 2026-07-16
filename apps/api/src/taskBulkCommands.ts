@@ -2,6 +2,7 @@ import { auditEvents, getDb, sql } from "@watson/db";
 import { Hono } from "hono";
 import { z } from "zod";
 import { auth } from "./auth";
+import { readTaskAvailabilityConflicts } from "./taskAvailability";
 
 export const taskBulkCommandRoutes = new Hono<{ Variables: { requestId: string } }>();
 
@@ -36,6 +37,8 @@ type TaskAccessRow = {
 	parent_id: string | null;
 	priority: number;
 	due_date: string | Date | null;
+	start_date: string | Date | null;
+	duration_min: number | null;
 	recurrence_rule: string | null;
 	assignment_mode: string;
 	completed_at: string | Date | null;
@@ -106,7 +109,7 @@ async function selectedTaskRows(
 	return (await tx.execute(sql`${tree}
 		SELECT t.id, t.name, t.project_id, p.workspace_id, w.owner_id,
 		       pm.role::text AS project_role, wm.role::text AS workspace_role,
-		       t.parent_id, t.priority, t.due_date, t.recurrence_rule,
+		       t.parent_id, t.priority, t.due_date, t.start_date, t.duration_min, t.recurrence_rule,
 		       t.assignment_mode::text, t.completed_at, t.status_id, t.section_id,
 		       t.kind, t.updated_at
 		FROM selected x
@@ -219,15 +222,6 @@ async function buildPlan(
 		});
 		applyRows = candidates;
 		if (candidates.length) {
-			const projectIds = [...new Set(candidates.map((row) => row.project_id))];
-			const memberships = (await tx.execute(sql`
-				SELECT project_id FROM project_members
-				WHERE user_id = ${action.userId} AND project_id = ANY(${uuids(projectIds)})
-			`)) as unknown as { project_id: string }[];
-			const allowedProjects = new Set(memberships.map((row) => row.project_id));
-			const invalid = candidates.filter((row) => !allowedProjects.has(row.project_id));
-			if (invalid.length)
-				conflicts.push({ code: "assignee_not_in_project", taskIds: invalid.map((row) => row.id) });
 			const assignmentRows = (await tx.execute(sql`
 				SELECT task_id, user_id FROM assignments
 				WHERE task_id = ANY(${uuids(candidates.map((row) => row.id))})
@@ -239,18 +233,52 @@ async function buildPlan(
 					...(byTask.get(assignment.task_id) ?? []),
 					assignment.user_id,
 				]);
-			applyRows = conflicts.length
-				? []
-				: candidates.filter((row) => {
-						const current = byTask.get(row.id) ?? [];
-						if (
-							row.assignment_mode === "single" &&
-							current.length === 1 &&
-							current[0] === action.userId
-						)
-							return skip(row, "already_applied");
-						return true;
-					});
+			const effectiveCandidates = candidates.filter((row) => {
+				const current = byTask.get(row.id) ?? [];
+				if (
+					row.assignment_mode === "single" &&
+					current.length === 1 &&
+					current[0] === action.userId
+				)
+					return skip(row, "already_applied");
+				return true;
+			});
+			const projectIds = [...new Set(effectiveCandidates.map((row) => row.project_id))];
+			if (projectIds.length) {
+				const memberships = (await tx.execute(sql`
+					SELECT project_id FROM project_members
+					WHERE user_id = ${action.userId} AND project_id = ANY(${uuids(projectIds)})
+				`)) as unknown as { project_id: string }[];
+				const allowedProjects = new Set(memberships.map((row) => row.project_id));
+				const invalid = effectiveCandidates.filter((row) => !allowedProjects.has(row.project_id));
+				if (invalid.length)
+					conflicts.push({ code: "assignee_not_in_project", taskIds: invalid.map((row) => row.id) });
+			}
+			const [policyRow] = (await tx.execute(sql`
+				SELECT task_conflict_policy AS policy FROM workspaces WHERE id = ${workspaceIds[0]} LIMIT 1
+			`)) as unknown as { policy: string }[];
+			const availabilityBlocked: string[] = [];
+			let availabilityWarnings = false;
+			for (const row of effectiveCandidates) {
+				const availability = await readTaskAvailabilityConflicts(tx, {
+					workspaceId: workspaceIds[0],
+					policy: policyRow?.policy === "strict" ? "strict" : "warning",
+					actorUserId: userId,
+					taskId: row.id,
+					startsAt: row.start_date ? new Date(row.start_date) : null,
+					durationMin: row.duration_min,
+					assigneeIds: [action.userId],
+				});
+				if (!availability.canSchedule) availabilityBlocked.push(row.id);
+				if (availability.conflicts.some((conflict) => !conflict.blocking)) {
+					availabilityWarnings = true;
+				}
+			}
+			if (availabilityBlocked.length > 0) {
+				conflicts.push({ code: "assignee_availability_conflict", taskIds: availabilityBlocked });
+			}
+			if (availabilityWarnings) warnings.add("assignee_availability_warning");
+			applyRows = conflicts.length ? [] : effectiveCandidates;
 		}
 	} else if (action.kind === "move") {
 		const targetRows = (await tx.execute(sql`
@@ -364,6 +392,8 @@ async function buildPlan(
 			parentId: row.parent_id,
 			priority: row.priority,
 			dueDate: canonicalDate(row.due_date),
+			startDate: row.start_date,
+			durationMin: row.duration_min,
 			recurrenceRule: row.recurrence_rule,
 			assignmentMode: row.assignment_mode,
 			completedAt: row.completed_at,

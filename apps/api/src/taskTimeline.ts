@@ -34,6 +34,7 @@ export type TimelineKind =
 	| "dependency_added"
 	| "dependency_removed"
 	| "occurrence_updated"
+	| "availability_override"
 	| "meeting_updated"
 	| "integration_created";
 
@@ -195,6 +196,8 @@ function kindForAction(entity: string, action: string): TimelineKind | null {
 			return removed ? "dependency_removed" : "dependency_added";
 		case "task_occurrence_overrides":
 			return "occurrence_updated";
+		case "availability_task_overrides":
+			return "availability_override";
 		case "meetings":
 			return "meeting_updated";
 		case "employee_reconcile":
@@ -296,6 +299,14 @@ export function mapAuditTimelineEvent(
 			kind,
 			direction,
 			relatedTaskId: direction === "blocked_by" ? blocking : blocked,
+		};
+	}
+	if (row.entity === "availability_task_overrides") {
+		return {
+			...common,
+			kind,
+			excerpt: stringOf(data.reason, 500) ?? undefined,
+			relatedUserId: idOf(data.assigneeId),
 		};
 	}
 	return { ...common, kind };

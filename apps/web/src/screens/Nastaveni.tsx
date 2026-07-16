@@ -11,6 +11,7 @@ import {
 	useState,
 } from "react";
 import { SyncProblems } from "../components/SyncProblems";
+import { AvailabilitySettings } from "../components/AvailabilitySettings";
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
 import { authClient, signOut, useSession } from "../lib/auth-client";
@@ -1383,6 +1384,8 @@ export function Nastaveni() {
 					</p>
 				</>
 			)}
+
+			<AvailabilitySettings workspaceId={activeWorkspace?.id} />
 
 			{/* OZNÁMENÍ A WATSON */}
 			<div className="font-display" style={SECTION_LABEL}>

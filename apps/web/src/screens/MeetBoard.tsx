@@ -699,7 +699,24 @@ export function MeetBoard({
 					carryTaskIds: carry.map((task) => task.id),
 				}),
 			});
-			if (!response.ok) throw new Error(`follow-up:${response.status}`);
+			if (!response.ok) {
+				const problem = (await response.json().catch(() => ({}))) as {
+					error?: string;
+					availability?: { conflicts?: Array<{ assigneeName?: string }> };
+				};
+				if (problem.error === "availability_conflict") {
+					const names = [
+						...new Set(
+							(problem.availability?.conflicts ?? [])
+								.map((conflict) => conflict.assigneeName)
+								.filter((name): name is string => Boolean(name)),
+						),
+					].join(", ");
+					showToast(i18n.t("calendar.meetingAvailabilityBlocked", { names }));
+					return;
+				}
+				throw new Error(`follow-up:${response.status}`);
+			}
 			showToast(
 				`Navazující meet ${dayLbl(nextDay)} založen${carry.length ? ` — ${carry.length} nedodělků přesunuto do jeho přípravy` : ""}.`,
 			);

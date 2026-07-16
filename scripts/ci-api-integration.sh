@@ -4,13 +4,16 @@ set -euo pipefail
 API_URL="http://127.0.0.1:8790"
 API_PID=""
 API_LOG="${RUNNER_TEMP:-/tmp}/watson-api-integration.log"
+RUN_NONCE="${GITHUB_RUN_ID:-local}-$$-$(date +%s)"
 
 export API_PORT=8790
 export BETTER_AUTH_URL="$API_URL"
 export WEB_ORIGIN="http://localhost:5173"
 export AUTH_ALLOW_SIGNUP=0
 export DEV_AUTH_LOG_LINKS=1
-export BETTER_AUTH_SECRET="ci-better-auth-secret-at-least-32-bytes-long"
+# Rate-limit principal je záměrně svázaný s auth secret. Jedinečný testovací secret
+# udrží opakované lokální běhy izolované, aniž bychom mazali sdílenou DB tabulku.
+export BETTER_AUTH_SECRET="ci-better-auth-secret-${RUN_NONCE}-at-least-32-bytes-long"
 export BACKUP_SIGNING_SECRET="ci-backup-signing-secret-at-least-32-bytes"
 export LOCAL_DATA_ENCRYPTION_SECRET="ci-local-data-secret-at-least-32-bytes-long"
 
@@ -72,6 +75,7 @@ POLLS_API="$API_URL" pnpm --filter @watson/api verify:polls
 INTAKE_FORMS_API="$API_URL" pnpm --filter @watson/api verify:intake-forms
 TASK_ACCEPTANCES_API="$API_URL" pnpm --filter @watson/api verify:task-acceptances
 IMPORTS_API="$API_URL" pnpm --filter @watson/api verify:imports
+AVAILABILITY_API="$API_URL" pnpm --filter @watson/api verify:availability
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:meet-acl
 MEETING_API="$API_URL" pnpm --filter @watson/api verify:meeting-commands
 AI_POLICY_API="$API_URL" pnpm --filter @watson/api verify:ai-policy
