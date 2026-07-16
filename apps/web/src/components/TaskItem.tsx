@@ -294,6 +294,11 @@ export function TaskItem({
 					checklist={meta.checklist}
 					recurring={Boolean(task.recurrence)}
 					reminder={meta.reminder}
+					blockedBy={
+						meta.blockedBy
+							? t("dependencies.cardBlocked", { count: meta.blockedBy })
+							: undefined
+					}
 					comments={meta.comments}
 					assignAll={
 						meta.assignAll ? { ...meta.assignAll, label: t("today.assignAllPill") } : undefined

@@ -28,21 +28,34 @@ import {
 	workspaceRoleEnum,
 } from "./enums";
 
-export const workspaces = pgTable("workspaces", {
-	id: pk(),
-	name: varchar("name", { length: 200 }).notNull(),
-	/** Volný typ kontextu (kavárna/studio/podcast…) — generické, tvoří uživatel. */
-	contextType: varchar("context_type", { length: 64 }),
-	/** Brand-nezávislá barva workspace (R6). */
-	color: varchar("color", { length: 9 }),
-	/** R8 — osobní prostor každého uživatele (soukromý workspace). */
-	isPersonal: boolean("is_personal").notNull().default(false),
-	ownerId: uuid("owner_id").references(() => users.id, {
-		onDelete: "set null",
-	}),
-	createdAt: createdAt(),
-	updatedAt: updatedAt(),
-});
+export const workspaces = pgTable(
+	"workspaces",
+	{
+		id: pk(),
+		name: varchar("name", { length: 200 }).notNull(),
+		/** Volný typ kontextu (kavárna/studio/podcast…) — generické, tvoří uživatel. */
+		contextType: varchar("context_type", { length: 64 }),
+		/** Brand-nezávislá barva workspace (R6). */
+		color: varchar("color", { length: 9 }),
+		/** R8 — osobní prostor každého uživatele (soukromý workspace). */
+		isPersonal: boolean("is_personal").notNull().default(false),
+		/** Konflikty úkolů: warning informuje, strict zakáže neplatnou mutaci. */
+		taskConflictPolicy: varchar("task_conflict_policy", { length: 16 })
+			.notNull()
+			.default("warning"),
+		ownerId: uuid("owner_id").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check(
+			"workspaces_task_conflict_policy_valid",
+			sql`${t.taskConflictPolicy} in ('warning', 'strict')`,
+		),
+	],
+);
 
 export const memberships = pgTable(
 	"memberships",

@@ -1,6 +1,10 @@
 import i18n from "@watson/i18n";
 import { logTaskActivity } from "./activity";
 import { advanceChainForTask } from "./chainAdvance";
+import {
+	dependencyCompletionDecision,
+	unresolvedDependencyState,
+} from "./dependencies";
 import { expandOccurrences, parseOccId, recurrenceKind } from "./occurrences";
 import type { TaskRow } from "./powersync/AppSchema";
 import { powerSync } from "./powersync/db";
@@ -11,6 +15,29 @@ import {
 	wallTimeFromInstant,
 } from "./timeZone";
 import { pushUndo } from "./undo";
+
+const dependencyAcknowledgements = new Map<string, number>();
+
+async function dependencyAllowsCompletion(taskId: string): Promise<boolean> {
+	const state = await unresolvedDependencyState(taskId);
+	const now = Date.now();
+	const decision = dependencyCompletionDecision(state, dependencyAcknowledgements.get(taskId), now);
+	if (decision === "allow") {
+		dependencyAcknowledgements.delete(taskId);
+		return true;
+	}
+	const names = state.blockers
+		.slice(0, 2)
+		.map((blocker) => blocker.name)
+		.join(", ");
+	if (decision === "deny") {
+		showToast(i18n.t("dependencies.strictBlocked", { count: state.blockers.length, names }));
+		return false;
+	}
+	dependencyAcknowledgements.set(taskId, now);
+	showToast(i18n.t("dependencies.warningBlocked", { count: state.blockers.length, names }));
+	return false;
+}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 export const todayISO = () => {
@@ -156,6 +183,7 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 	const occ = parseOccId(task.id);
 	if (occ) {
 		const nowDone = !task.completed_at;
+		if (nowDone && !(await dependencyAllowsCompletion(occ.taskId))) return;
 		await setOccurrenceOverride(occ.taskId, task.project_id, occ.iso, {
 			done: nowDone,
 		});
@@ -179,6 +207,7 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 		// a tasks.completed_at nastavit jen ODVOZENĚ; un-toggle symetricky vše zruší.
 		if (asg.length > 0 && !mine) {
 			const nowDone = !task.completed_at;
+			if (nowDone && !(await dependencyAllowsCompletion(task.id))) return;
 			// R4 — u opakovaného úkolu je dokončení posunem řady (+ reset per-osoba účastí),
 			// ne trvalé nastavení completed_at všem.
 			if (nowDone && (await advanceRecurrence(task, asg))) return;
@@ -232,6 +261,7 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 		// obecná větev nastavila jen tasks.completed_at a mou účast nechala null.
 		if (asg.length >= 1 && mine) {
 			const nowMineDone = !mine.completed_at;
+			if (nowMineDone && !(await dependencyAllowsCompletion(task.id))) return;
 			const allDone = asg.every((a) => (a.id === mine.id ? nowMineDone : !!a.completed_at));
 			// R4 — pokud mou účastí spadli všichni a úkol se opakuje, posuň řadu + reset účastí.
 			if (nowMineDone && allDone && (await advanceRecurrence(task, asg))) return;
@@ -273,6 +303,7 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 	}
 
 	const nowDone = !task.completed_at;
+	if (nowDone && !(await dependencyAllowsCompletion(task.id))) return;
 	// R4 — dokončení opakovaného úkolu = posun řady na další výskyt (ne trvalé dokončení).
 	if (nowDone && (await advanceRecurrence(task))) return;
 	// R9: zaškrtnutí ⇄ stav „Hotovo" — synchronizovat i status sloupec (prototyp toggleDone).
@@ -402,6 +433,9 @@ export async function toggleAssignmentDone(task: TaskRow, assignmentId: string) 
 	const target = asg.find((a) => a.id === assignmentId);
 	if (!target) return;
 	const nowDone = !target.completed_at;
+	// Detail umožňuje přepnout konkrétní účast mimo hlavní checkbox. Musí projít
+	// stejnou závislostní branou, jinak by tento povrch obešel warning/strict UX.
+	if (nowDone && !(await dependencyAllowsCompletion(task.id))) return;
 	const allDone = asg.every((a) => (a.id === assignmentId ? nowDone : !!a.completed_at));
 	// R4 — poslední dokončení u opakovaného úkolu = posun řady + reset účastí.
 	if (nowDone && allDone && (await advanceRecurrence(task, asg))) return;

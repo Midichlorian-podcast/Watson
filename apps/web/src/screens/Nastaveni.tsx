@@ -37,6 +37,7 @@ type Workspace = {
 	isPersonal: boolean;
 	role: string;
 	color: string | null;
+	taskConflictPolicy: "warning" | "strict";
 };
 type Member = {
 	id: string;
@@ -145,6 +146,7 @@ export function Nastaveni() {
 	const [rotatedBackupCodes, setRotatedBackupCodes] = useState<string[] | null>(null);
 	const [rotatedCodesSaved, setRotatedCodesSaved] = useState(false);
 	const [openRoleId, setOpenRoleId] = useState<string | null>(null);
+	const [taskPolicyBusy, setTaskPolicyBusy] = useState(false);
 	// obal otevřeného menu role — pro zavření klikem mimo (stejně jako Invite modal má Esc)
 	const roleMenuRef = useRef<HTMLDivElement>(null);
 	const restoreInputRef = useRef<HTMLInputElement>(null);
@@ -206,7 +208,7 @@ export function Nastaveni() {
 		};
 	}, [openRoleId]);
 
-	const { data: workspaces } = useQuery({
+	const { data: workspaces, refetch: refetchWorkspaces } = useQuery({
 		queryKey: ["workspaces"],
 		queryFn: async () => {
 			const r = await fetch(`${API_URL}/api/workspaces`, {
@@ -328,6 +330,25 @@ export function Nastaveni() {
 
 	// Smí přihlášený uživatel spravovat lidi (role + oblasti)? admin/manager/vlastník.
 	const canManage = !!teamWs && (teamWs.role === "admin" || teamWs.role === "manager");
+	async function setTaskConflictPolicy(policy: "warning" | "strict") {
+		if (!teamWs || !canManage || taskPolicyBusy || teamWs.taskConflictPolicy === policy) return;
+		setTaskPolicyBusy(true);
+		try {
+			const response = await fetch(`${API_URL}/api/workspaces/${teamWs.id}/task-conflict-policy`, {
+				method: "PATCH",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ policy }),
+			});
+			if (!response.ok) throw new Error("task_conflict_policy");
+			await refetchWorkspaces();
+			showToast(t("settings.taskConflictPolicySaved"));
+		} catch {
+			showToast(t("settings.taskConflictPolicyError"));
+		} finally {
+			setTaskPolicyBusy(false);
+		}
+	}
 	// Rozepsaná editace oblastí/popisu jednoho člena (null = zavřeno).
 	const [profileEd, setProfileEd] = useState<{
 		id: string;
@@ -938,6 +959,31 @@ export function Nastaveni() {
 							{teamWs.name}
 						</span>
 					</div>
+					<div style={{ ...CARD, ...ROW, marginBottom: 10, flexWrap: "wrap" }}>
+						<div style={{ flex: "1 1 260px" }}>
+							<RowTitle>{t("settings.taskConflictPolicy")}</RowTitle>
+							<RowDesc>{t("settings.taskConflictPolicyDesc")}</RowDesc>
+						</div>
+						<Segments
+							value={teamWs.taskConflictPolicy ?? "warning"}
+							onChange={(value) => void setTaskConflictPolicy(value as "warning" | "strict")}
+							disabled={!canManage || taskPolicyBusy}
+							options={[
+								["warning", t("settings.taskConflictWarning")],
+								["strict", t("settings.taskConflictStrict")],
+							]}
+						/>
+						{!canManage && (
+							<p className="w-full font-body text-ink-3" style={{ fontSize: 11.5 }}>
+								{t("settings.taskConflictPolicyAdminOnly")}
+							</p>
+						)}
+						{taskPolicyBusy && (
+							<span className="font-body text-ink-3" style={{ fontSize: 11.5 }} role="status">
+								{t("settings.taskConflictSaving")}
+							</span>
+						)}
+					</div>
 					<div style={{ ...CARD, overflow: "visible", marginBottom: 10 }}>
 						{(team ?? []).map((m) => {
 							const label = roleLabel(m, t);
@@ -1377,24 +1423,32 @@ function Segments({
 	value,
 	onChange,
 	options,
+	disabled = false,
 }: {
 	value: string;
 	onChange: (v: string) => void;
 	options: [string, string][];
+	disabled?: boolean;
 }) {
 	return (
-		<div className="inline-flex rounded-[9px] border border-line bg-panel-2" style={{ padding: 3 }}>
+		<div
+			className="inline-flex rounded-[9px] border border-line bg-panel-2"
+			style={{ padding: 3, opacity: disabled ? 0.7 : 1 }}
+		>
 			{options.map(([k, l]) => (
 				<button
 					key={k}
 					type="button"
+					disabled={disabled}
 					onClick={() => onChange(k)}
 					className="rounded-[7px] font-display font-semibold"
 					style={{
 						fontSize: 11.5,
-						padding: "5px 10px",
+						minHeight: 44,
+						padding: "5px 12px",
 						background: value === k ? "var(--w-card)" : "transparent",
 						color: value === k ? "var(--w-ink)" : "var(--w-ink-3)",
+						cursor: disabled ? "not-allowed" : "pointer",
 					}}
 				>
 					{l}

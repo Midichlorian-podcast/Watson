@@ -6,6 +6,7 @@ import { sql } from "drizzle-orm";
 import {
 	bigint,
 	check,
+	foreignKey,
 	index,
 	integer,
 	pgTable,
@@ -20,6 +21,41 @@ import { users } from "./auth";
 import { notificationChannelEnum, reminderTypeEnum } from "./enums";
 import { tasks } from "./task";
 import { projects } from "./workspace";
+
+/**
+ * Orientovaná závislost: blocking_task_id musí být dokončen dřív než blocked_task_id.
+ * V1 záměrně drží obě strany ve stejném projektu — neprozradí restricted projekt a
+ * dovolí bezpečný offline sync. Cyklus navíc odmítá DB trigger v migraci.
+ */
+export const taskDependencies = pgTable(
+	"task_dependencies",
+	{
+		id: pk(),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		blockingTaskId: uuid("blocking_task_id").notNull(),
+		blockedTaskId: uuid("blocked_task_id").notNull(),
+		createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		uniqueIndex("task_dependencies_pair_uq").on(t.blockingTaskId, t.blockedTaskId),
+		index("task_dependencies_blocking_idx").on(t.blockingTaskId),
+		index("task_dependencies_blocked_idx").on(t.blockedTaskId),
+		check("task_dependencies_not_self", sql`${t.blockingTaskId} <> ${t.blockedTaskId}`),
+		foreignKey({
+			name: "task_dependencies_blocking_same_project_fk",
+			columns: [t.blockingTaskId, t.projectId],
+			foreignColumns: [tasks.id, tasks.projectId],
+		}).onDelete("cascade"),
+		foreignKey({
+			name: "task_dependencies_blocked_same_project_fk",
+			columns: [t.blockedTaskId, t.projectId],
+			foreignColumns: [tasks.id, tasks.projectId],
+		}).onDelete("cascade"),
+	],
+);
 
 export const comments = pgTable(
 	"comments",
@@ -205,4 +241,5 @@ export type Comment = typeof comments.$inferSelect;
 export type Mention = typeof mentions.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type Reminder = typeof reminders.$inferSelect;
+export type TaskDependency = typeof taskDependencies.$inferSelect;
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;

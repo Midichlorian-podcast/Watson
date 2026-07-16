@@ -21,6 +21,7 @@ import {
 	DEFAULT_LOCALE,
 	PROJECT_PRESET_DEFINITIONS,
 	PROJECT_PRESETS,
+	TASK_CONFLICT_POLICIES,
 } from "@watson/shared";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -80,6 +81,9 @@ const inviteSchema = z
 	})
 	.strict();
 const projectMemberSchema = z.object({ userId: uuid }).strict();
+const taskConflictPolicySchema = z
+	.object({ policy: z.enum(TASK_CONFLICT_POLICIES) })
+	.strict();
 
 /**
  * CC-P0-05 — smí volající spravovat ČLENSTVÍ projektu? Rozhodnutí §15/5:
@@ -359,6 +363,7 @@ app.get("/api/workspaces", async (c) => {
 			name: workspaces.name,
 			isPersonal: workspaces.isPersonal,
 			color: workspaces.color,
+			taskConflictPolicy: workspaces.taskConflictPolicy,
 			role: memberships.role,
 		})
 		.from(memberships)
@@ -380,6 +385,58 @@ app.get("/api/workspaces", async (c) => {
 			};
 		}),
 	});
+});
+
+/** Vedení prostoru nastaví warning/strict reakci na konflikty úkolů. */
+app.patch("/api/workspaces/:id/task-conflict-policy", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const workspaceId = c.req.param("id");
+	if (!uuid.safeParse(workspaceId).success) return c.json({ error: "invalid_workspace_id" }, 422);
+	const parsed = taskConflictPolicySchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_policy" }, 422);
+
+	const db = getDb();
+	const result = await db.transaction(async (tx) => {
+		const rows = await tx
+			.select({ role: memberships.role, ownerId: workspaces.ownerId })
+			.from(workspaces)
+			.leftJoin(
+				memberships,
+				and(
+					eq(memberships.workspaceId, workspaces.id),
+					eq(memberships.userId, session.user.id),
+				),
+			)
+			.where(eq(workspaces.id, workspaceId));
+		const access = rows[0];
+		if (!access) return { error: "not_found" as const };
+		const canManage =
+			access.ownerId === session.user.id ||
+			access.role === "admin" ||
+			access.role === "manager";
+		if (!canManage) return { error: "forbidden" as const };
+
+		const [updated] = await tx
+			.update(workspaces)
+			.set({ taskConflictPolicy: parsed.data.policy, updatedAt: new Date() })
+			.where(eq(workspaces.id, workspaceId))
+			.returning({ policy: workspaces.taskConflictPolicy });
+		await tx.insert(auditEvents).values({
+			workspaceId,
+			actorUserId: session.user.id,
+			entity: "workspaces",
+			entityId: workspaceId,
+			action: "task_conflict_policy_update",
+			diff: { policy: parsed.data.policy },
+			requestId: c.get("requestId"),
+		});
+		return { policy: updated?.policy ?? parsed.data.policy };
+	});
+	if ("error" in result) {
+		return c.json({ error: result.error }, result.error === "not_found" ? 404 : 403);
+	}
+	return c.json(result);
 });
 
 /** Projekty přihlášeného uživatele (přes project membership). */

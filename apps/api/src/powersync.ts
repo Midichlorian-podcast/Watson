@@ -225,6 +225,22 @@ export const TABLES: Record<string, TableDef> = {
 		],
 		refTenantCols: [{ col: "meeting_id", table: "meetings" }],
 	},
+	task_dependencies: {
+		columns: {
+			project_id: "text",
+			blocking_task_id: "text",
+			blocked_task_id: "text",
+			created_by: "text",
+		},
+		hasUpdatedAt: false,
+		creatorCol: "created_by",
+		createOnly: true,
+		projectVia: { kind: "column", col: "project_id" },
+		refProjectCols: [
+			{ col: "blocking_task_id", table: "tasks" },
+			{ col: "blocked_task_id", table: "tasks" },
+		],
+	},
 	sections: {
 		columns: { project_id: "text", name: "text", position: "int" },
 		hasUpdatedAt: false,
@@ -836,7 +852,10 @@ async function applyWrite(
 	}
 
 	const set: { col: string; val: unknown }[] = Object.keys(def.columns)
-		.filter((c) => c in data)
+		// U CREATE autoritu identity drží server. Klientský lokální řádek může
+		// `created_by` obsahovat kvůli optimistickému UI, nesmí ale vytvořit druhý
+		// stejnojmenný INSERT sloupec ani podvrhnout jiného autora.
+		.filter((c) => c in data && !(op === "PUT" && c === def.creatorCol))
 		.flatMap((c) => {
 			const type = def.columns[c];
 			return type ? [{ col: c, val: coerce(type, data[c]) }] : [];

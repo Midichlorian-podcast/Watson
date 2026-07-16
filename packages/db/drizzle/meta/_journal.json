@@ -302,6 +302,13 @@
       "when": 1784157141993,
       "tag": "0042_blushing_bloodstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1784161754059,
+      "tag": "0043_oval_obadiah_stane",
+      "breakpoints": true
     }
   ]
 }

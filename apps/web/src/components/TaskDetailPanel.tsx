@@ -59,6 +59,7 @@ import {
 	sortReminders,
 } from "../lib/reminders";
 import { taskProgress } from "../lib/taskProgress";
+import { wouldCreateDependencyCycle } from "../lib/dependencies";
 
 type Pri = 1 | 2 | 3 | 4;
 type Member = {
@@ -340,6 +341,36 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		[realId, session?.user?.id ?? ""],
 	);
 	const [reminderBusyKey, setReminderBusyKey] = useState<string | null>(null);
+	const { data: incomingDependencies } = usePsQuery<{
+		id: string;
+		task_id: string;
+		name: string | null;
+		completed_at: string | null;
+	}>(
+		`SELECT d.id, blocker.id AS task_id, blocker.name, blocker.completed_at
+		 FROM task_dependencies d JOIN tasks blocker ON blocker.id = d.blocking_task_id
+		 WHERE d.blocked_task_id = ? ORDER BY blocker.completed_at IS NOT NULL, blocker.name`,
+		[realId],
+	);
+	const { data: outgoingDependencies } = usePsQuery<{
+		id: string;
+		task_id: string;
+		name: string | null;
+		completed_at: string | null;
+	}>(
+		`SELECT d.id, blocked.id AS task_id, blocked.name, blocked.completed_at
+		 FROM task_dependencies d JOIN tasks blocked ON blocked.id = d.blocked_task_id
+		 WHERE d.blocking_task_id = ? ORDER BY blocked.completed_at IS NOT NULL, blocked.name`,
+		[realId],
+	);
+	const { data: dependencyCandidates } = usePsQuery<{
+		id: string;
+		name: string | null;
+		completed_at: string | null;
+	}>(
+		"SELECT id, name, completed_at FROM tasks WHERE project_id = ? AND id <> ? AND kind = 'task' ORDER BY completed_at IS NOT NULL, name LIMIT 500",
+		[task?.project_id ?? "", realId],
+	);
 	// Historie úprav (audit log) — čte se z API (task_activity je insert-only, nesyncuje se).
 	const { data: activity } = useQuery({
 		queryKey: ["taskActivity", realId],
@@ -470,6 +501,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const [cmtText, setCmtText] = useState("");
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [assignOpen, setAssignOpen] = useState(false);
+	const [selectedBlockerId, setSelectedBlockerId] = useState("");
+	const [dependencyBusy, setDependencyBusy] = useState(false);
 	// Vlastnosti (priorita/termín/deadline/čas/trvání/barva) rovnou viditelné —
 	// kompletní přehledné menu i pro podúkoly (dřív schované za klikem na chip).
 	const [editOpen, setEditOpen] = useState(true);
@@ -490,6 +523,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			setDesc(task.description ?? "");
 			setWhyNow(task.why_now ?? "");
 			setWhyNowOpen(false);
+			setSelectedBlockerId("");
 		}
 	}, [task?.id]);
 
@@ -702,6 +736,40 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			},
 		});
 	};
+	const addDependency = async () => {
+		if (!selectedBlockerId || dependencyBusy) return;
+		setDependencyBusy(true);
+		try {
+			if (await wouldCreateDependencyCycle(selectedBlockerId, realId)) {
+				showToast(t("detail.dependencyCycle"));
+				return;
+			}
+			await powerSync.execute(
+				"INSERT INTO task_dependencies (id, project_id, blocking_task_id, blocked_task_id, created_by, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
+				[
+					task.project_id,
+					selectedBlockerId,
+					realId,
+					session?.user?.id ?? null,
+					new Date().toISOString(),
+				],
+			);
+			setSelectedBlockerId("");
+			showToast(t("detail.dependencyAdded"));
+		} catch {
+			showToast(t("detail.dependencyAddFailed"));
+		} finally {
+			setDependencyBusy(false);
+		}
+	};
+	const removeDependency = async (dependencyId: string) => {
+		try {
+			await powerSync.execute("DELETE FROM task_dependencies WHERE id = ?", [dependencyId]);
+			showToast(t("detail.dependencyRemoved"));
+		} catch {
+			showToast(t("detail.dependencyRemoveFailed"));
+		}
+	};
 	const del = () => {
 		void deleteTaskWithUndo(realId); // mazání s undo (⌘Z)
 		onClose();
@@ -716,6 +784,15 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 
 	const due = rowDue(task, t);
 	const subtaskProgress = taskProgress(subs ?? []);
+	const incomingDependencyIds = new Set(
+		(incomingDependencies ?? []).map((dependency) => dependency.task_id),
+	);
+	const availableDependencyCandidates = (dependencyCandidates ?? []).filter(
+		(candidate) => !incomingDependencyIds.has(candidate.id),
+	);
+	const unresolvedDependencyCount = (incomingDependencies ?? []).filter(
+		(dependency) => !dependency.completed_at,
+	).length;
 	// Text opakování (prototyp seriesRepeat ř. 2933): rich label z parseru přednostně,
 	// krátký výběrový label („Denně") mapovat přes recurrence_rule.kind na „Opakuje se …".
 	const repKind = recurrenceKind(task.recurrence_rule);
@@ -1742,6 +1819,108 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						) : (
 							<p className="mt-2 text-ink-3 text-xs">{t("detail.maxDepth")}</p>
 						)}
+
+						<SectionLabel>
+							{t("detail.dependencies")}
+							{unresolvedDependencyCount > 0 && ` · ${unresolvedDependencyCount}`}
+						</SectionLabel>
+						{unresolvedDependencyCount > 0 && (
+							<div
+								className="mb-2 rounded-lg border border-overdue bg-overdue-soft px-3 py-2 text-overdue"
+								role="status"
+							>
+								<strong className="font-display" style={{ fontSize: 12.5 }}>
+									{t("detail.blockedByCount", { count: unresolvedDependencyCount })}
+								</strong>
+								<p className="mt-1 font-body" style={{ fontSize: 11.5 }}>
+									{t("detail.blockedCompletionHint")}
+								</p>
+							</div>
+						)}
+						{(incomingDependencies ?? []).length > 0 && (
+							<div className="mb-2">
+								<p className="mb-1 font-display font-semibold text-ink-3" style={{ fontSize: 11.5 }}>
+									{t("detail.blockedBy")}
+								</p>
+								{(incomingDependencies ?? []).map((dependency) => (
+									<div
+										key={dependency.id}
+										className="flex min-h-11 items-center rounded-lg hover:bg-panel-2"
+										style={{ gap: 6 }}
+									>
+										<span aria-hidden>{dependency.completed_at ? "✓" : "⛔"}</span>
+										<button
+											type="button"
+											onClick={() => open(dependency.task_id)}
+											className={`min-h-11 min-w-0 flex-1 truncate text-left font-display font-semibold ${dependency.completed_at ? "text-ink-3 line-through" : "text-ink"}`}
+											style={{ fontSize: 12.5 }}
+										>
+											{dependency.name}
+										</button>
+										<button
+											type="button"
+											onClick={() => void removeDependency(dependency.id)}
+											aria-label={t("detail.dependencyRemove")}
+											className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-3 hover:bg-card hover:text-overdue"
+										>
+											✕
+										</button>
+									</div>
+								))}
+							</div>
+						)}
+						{(outgoingDependencies ?? []).length > 0 && (
+							<div className="mb-2 rounded-lg bg-panel-2 px-3 py-2">
+								<p className="mb-1 font-display font-semibold text-ink-3" style={{ fontSize: 11.5 }}>
+									{t("detail.blocks")}
+								</p>
+								{(outgoingDependencies ?? []).map((dependency) => (
+									<div key={dependency.id} className="flex min-h-11 items-center" style={{ gap: 4 }}>
+										<button
+											type="button"
+											onClick={() => open(dependency.task_id)}
+											className="min-h-11 min-w-0 flex-1 truncate text-left font-display font-semibold text-ink-2 hover:text-brass-text"
+											style={{ fontSize: 12.5 }}
+										>
+											→ {dependency.name}
+										</button>
+										<button
+											type="button"
+											onClick={() => void removeDependency(dependency.id)}
+											aria-label={t("detail.dependencyRemove")}
+											className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-3 hover:bg-card hover:text-overdue"
+										>
+											✕
+										</button>
+									</div>
+								))}
+							</div>
+						)}
+						<div className="flex items-center" style={{ gap: 8 }}>
+							<select
+								value={selectedBlockerId}
+								onChange={(event) => setSelectedBlockerId(event.target.value)}
+								aria-label={t("detail.dependencySelect")}
+								className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3 font-body text-ink outline-none focus:border-brass"
+								style={{ fontSize: 12.5 }}
+							>
+								<option value="">{t("detail.dependencySelect")}</option>
+								{availableDependencyCandidates.map((candidate) => (
+									<option key={candidate.id} value={candidate.id}>
+										{candidate.completed_at ? `✓ ${candidate.name}` : candidate.name}
+									</option>
+								))}
+							</select>
+							<button
+								type="button"
+								disabled={!selectedBlockerId || dependencyBusy}
+								onClick={() => void addDependency()}
+								className="min-h-11 shrink-0 rounded-lg border border-brass bg-brass-soft px-3 font-display font-semibold text-brass-text disabled:cursor-not-allowed disabled:opacity-50"
+								style={{ fontSize: 12 }}
+							>
+								{dependencyBusy ? t("detail.dependencyAdding") : t("detail.dependencyAdd")}
+							</button>
+						</div>
 
 						{/* PŘIPOMÍNKY — relativní (před termínem) / absolutní; doručení Web Push. */}
 						<SectionLabel>

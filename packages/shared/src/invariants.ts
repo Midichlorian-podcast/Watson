@@ -197,6 +197,10 @@ export const REMINDER_TYPES = [
 ] as const;
 export type ReminderType = (typeof REMINDER_TYPES)[number];
 
+/** Režim reakce na blokaci úkolu nebo konflikt dostupnosti. */
+export const TASK_CONFLICT_POLICIES = ["warning", "strict"] as const;
+export type TaskConflictPolicy = (typeof TASK_CONFLICT_POLICIES)[number];
+
 /** Notifikační kanály (MVP: push + e-mail; in_app pro inbox). */
 export const NOTIFICATION_CHANNELS = ["push", "email", "in_app"] as const;
 export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];

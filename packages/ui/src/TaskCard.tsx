@@ -38,6 +38,8 @@ export interface TaskCardProps {
 	recurring?: boolean;
 	/** Připomínka — zvoneček v podřádku. */
 	reminder?: boolean;
+	/** Lokalizovaný štítek, pokud úkol čeká na nehotové předchůdce. */
+	blockedBy?: string;
 	/** Počet komentářů v podřádku. */
 	comments?: number;
 	/** Režim „každý zvlášť" — pilulka `{label} · N/M` (prototyp ř. 437). */
@@ -108,6 +110,7 @@ export function TaskCard({
 	checklist,
 	recurring,
 	reminder,
+	blockedBy,
 	comments,
 	assignAll,
 	avatars,
@@ -143,6 +146,7 @@ export function TaskCard({
 		!!checklist ||
 		recurring ||
 		reminder ||
+		!!blockedBy ||
 		!!comments;
 
 	return (
@@ -372,6 +376,20 @@ export function TaskCard({
 									strokeLinecap="round"
 								/>
 							</svg>
+						)}
+						{blockedBy && !done && (
+							<span
+								className="inline-flex shrink-0 items-center font-display font-semibold"
+								style={{
+									fontSize: 10.5,
+									padding: "2px 8px",
+									borderRadius: 999,
+									background: "var(--w-overdue-soft)",
+									color: "var(--w-overdue)",
+								}}
+							>
+								↳ {blockedBy}
+							</span>
 						)}
 						{!!comments && (
 							<span

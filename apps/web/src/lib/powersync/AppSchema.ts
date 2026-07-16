@@ -61,6 +61,17 @@ const tasks = new Table(
 	},
 );
 
+const task_dependencies = new Table(
+	{
+		project_id: column.text,
+		blocking_task_id: column.text,
+		blocked_task_id: column.text,
+		created_by: column.text,
+		created_at: column.text,
+	},
+	tracked({ indexes: { by_blocking: ["blocking_task_id"], by_blocked: ["blocked_task_id"] } }),
+);
+
 /** Projekt (barva = tělo karet úkolů, R6); kind=flow|goal|cycle, status 4-stavový. */
 const projects = new Table(
 	{
@@ -77,6 +88,15 @@ const projects = new Table(
 		definition_of_done: column.text,
 		archived_at: column.text,
 		created_at: column.text,
+	},
+	trackAllPrevious,
+);
+
+const workspaces = new Table(
+	{
+		name: column.text,
+		is_personal: column.integer,
+		task_conflict_policy: column.text,
 	},
 	trackAllPrevious,
 );
@@ -462,6 +482,8 @@ const filters = new Table(
 
 export const AppSchema = new Schema({
 	tasks,
+	task_dependencies,
+	workspaces,
 	projects,
 	sections,
 	statuses,
@@ -492,6 +514,8 @@ export const AppSchema = new Schema({
 
 export type Database = (typeof AppSchema)["types"];
 export type TaskRow = Database["tasks"];
+export type TaskDependencyRow = Database["task_dependencies"];
+export type WorkspaceRow = Database["workspaces"];
 export type ProjectRow = Database["projects"];
 export type SectionRow = Database["sections"];
 export type StatusRow = Database["statuses"];
