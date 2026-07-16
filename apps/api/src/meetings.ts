@@ -31,6 +31,7 @@ import { z } from "zod";
 import { authorizeAiVendorTransfer, redactVendorText } from "./aiPolicy";
 import { auth } from "./auth";
 import { aiEnabled, aiMockEnabled, env } from "./env";
+import { lockMeetingSchedule, readMeetingBusyConflicts } from "./meetingScheduling";
 import { readTaskAvailabilityConflicts } from "./taskAvailability";
 
 export const meetingsRoutes = new Hono<{ Variables: { requestId: string } }>();
@@ -384,6 +385,8 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 	const body = { ...parsed.data, startTimezone };
 	const participantIds = [...new Set(body.participantIds)];
 	const carryTaskIds = [...new Set(body.carryTaskIds ?? [])];
+	const startsAt = new Date(body.startAt);
+	const endsAt = new Date(startsAt.getTime() + body.durationMin * 60_000);
 	const planHash = await commandHash({
 		...body,
 		participantIds: [...participantIds].sort(),
@@ -392,7 +395,13 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 	const db = getDb();
 
 	const result = await db.transaction(async (tx) => {
-		await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${body.meetingId}, 0))`);
+		await lockMeetingSchedule(tx, {
+			workspaceId: body.workspaceId,
+			meetingId: body.meetingId,
+			participantIds,
+			startsAt,
+			endsAt,
+		});
 		const existing = (
 			await tx.select().from(meetings).where(eq(meetings.id, body.meetingId)).limit(1)
 		)[0];
@@ -507,6 +516,14 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 			assigneeIds: participantIds,
 		});
 		if (!availability.canSchedule) return { availabilityConflict: availability };
+		const busyConflicts = await readMeetingBusyConflicts(tx, {
+			workspaceId: body.workspaceId,
+			participantIds,
+			startsAt,
+			endsAt,
+			excludeTaskId: body.hubTaskId,
+		});
+		if (busyConflicts.length > 0) return { busyConflict: busyConflicts };
 
 		if (body.prevMeetingId && body.seriesId) {
 			const previous = (
@@ -615,6 +632,8 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 	if ("forbidden" in result) return c.json({ error: "forbidden" }, 403);
 	if ("invalidParticipants" in result)
 		return c.json({ error: "participant_not_project_member" }, 422);
+	if ("busyConflict" in result)
+		return c.json({ error: "schedule_conflict", conflicts: result.busyConflict }, 409);
 	if ("availabilityConflict" in result)
 		return c.json(
 			{ error: "availability_conflict", availability: result.availabilityConflict },
@@ -685,8 +704,9 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 		return c.json({ error: "not-a-participant" }, 403);
 	// Už zpracovaná porada se nesmí tiše přepsat (audit F2-4: destruktivní overwrite
 	// + regres statusu; verze/soubeh řeší až Conflict Inbox — CC-P0-04/07).
-	if (existing && existing.status === "committed")
-		return c.json({ error: "already committed" }, 409);
+	if (existing && existing.status === "cancelled")
+		return c.json({ error: "meeting_cancelled" }, 409);
+	if (existing && existing.status === "committed") return c.json({ error: "already committed" }, 409);
 	if (!aiEnabled && !aiMockEnabled) return c.json({ error: "ai_not_configured" }, 503);
 
 	const roster: RosterRow[] = await db
@@ -742,6 +762,7 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 				return { forbidden: true as const };
 			if (
 				current.status === "committed" ||
+				current.status === "cancelled" ||
 				Number.isNaN(base.getTime()) ||
 				current.updatedAt.getTime() !== base.getTime()
 			)
@@ -855,7 +876,11 @@ meetingsRoutes.post("/api/meetings/:id/extraction", async (c) => {
 		if (!m) return { missing: true as const };
 		if (!(await canWriteMeetingContentTx(tx, m, session.user.id)))
 			return { forbidden: true as const };
-		if (m.status === "committed" || m.updatedAt.getTime() !== base.getTime())
+		if (
+			m.status === "committed" ||
+			m.status === "cancelled" ||
+			m.updatedAt.getTime() !== base.getTime()
+		)
 			return { conflict: true as const, updatedAt: m.updatedAt };
 		const updatedAt = new Date();
 		await tx.update(meetings).set({ extraction: clean, updatedAt }).where(eq(meetings.id, m.id));
@@ -891,7 +916,11 @@ meetingsRoutes.post("/api/meetings/:id/transcript", async (c) => {
 		if (!m) return { missing: true as const };
 		if (!(await canWriteMeetingContentTx(tx, m, session.user.id)))
 			return { forbidden: true as const };
-		if (m.status === "committed" || m.updatedAt.getTime() !== base.getTime())
+		if (
+			m.status === "committed" ||
+			m.status === "cancelled" ||
+			m.updatedAt.getTime() !== base.getTime()
+		)
 			return { conflict: true as const, updatedAt: m.updatedAt };
 		const updatedAt = new Date();
 		await tx
@@ -1145,6 +1174,7 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 					).length > 0
 				: false);
 		if (!participant) return { notParticipant: true as const };
+		if (m.status === "cancelled") return { cancelled: true as const };
 
 		if (m.status === "committed") {
 			const priorEvents = await tx
@@ -1343,6 +1373,7 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 	if ("notFound" in result) return c.json({ error: "not found" }, 404);
 	if ("forbidden" in result) return c.json({ error: "forbidden" }, 403);
 	if ("notParticipant" in result) return c.json({ error: "not-a-participant" }, 403);
+	if ("cancelled" in result) return c.json({ error: "meeting_cancelled" }, 409);
 	if ("differentPayload" in result)
 		return c.json({ error: "already_committed_different_payload" }, 409);
 	if ("invalidProject" in result) return c.json({ error: "invalid_project" }, 403);

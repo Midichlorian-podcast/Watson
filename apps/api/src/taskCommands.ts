@@ -141,6 +141,22 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 		`)) as unknown as { task_id: string }[];
 		if (milestoneReferences[0]) return { milestoneReference: true as const };
 
+		// Potvrzená interní rezervace vlastní životní cyklus meetingu. Aktivní hub
+		// proto nelze obejít generickým smazáním úkolu; rezervaci je nutné nejdřív
+		// zrušit, což znovu otevře slot a atomicky uzavře meeting i hub.
+		const activeBookingReferences = (await tx.execute(sql`
+			WITH RECURSIVE tree AS (
+				SELECT id FROM tasks WHERE id = ANY(${uuids(taskIds)})
+				UNION SELECT child.id FROM tasks child JOIN tree parent ON child.parent_id = parent.id
+			)
+			SELECT reservation.id
+			FROM booking_reservations reservation
+			JOIN tree ON tree.id = reservation.hub_task_id
+			WHERE reservation.cancelled_at IS NULL
+			LIMIT 1
+		`)) as unknown as { id: string }[];
+		if (activeBookingReferences[0]) return { activeBookingReference: true as const };
+
 		const snapshots = (await tx.execute(sql`
 			WITH RECURSIVE tree_raw AS (
 				SELECT t.*, 0 AS _depth FROM tasks t WHERE t.id = ANY(${uuids(taskIds)})
@@ -277,6 +293,8 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 	if ("forbidden" in result) return c.json({ error: "forbidden" }, 403);
 	if ("milestoneReference" in result)
 		return c.json({ error: "project_milestone_task_reference" }, 409);
+	if ("activeBookingReference" in result)
+		return c.json({ error: "cancel_booking_first" }, 409);
 	if ("multipleWorkspaces" in result)
 		return c.json({ error: "cross_workspace_batch_not_allowed" }, 422);
 	return c.json({ ok: true, batchId: result.batchId, replay: result.replay });

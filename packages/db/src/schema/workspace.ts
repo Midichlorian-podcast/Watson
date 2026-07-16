@@ -146,6 +146,7 @@ export const projects = pgTable("projects", {
 	createdAt: createdAt(),
 	updatedAt: updatedAt(),
 }, (t) => [
+	uniqueIndex("projects_id_workspace_uq").on(t.id, t.workspaceId),
 	index("projects_workspace_idx").on(t.workspaceId),
 	check(
 		"projects_urgent_acceptance_priority_valid",

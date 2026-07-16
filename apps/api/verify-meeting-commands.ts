@@ -308,6 +308,8 @@ async function main(): Promise<void> {
 			meetingId: rollbackMeetingId,
 			hubTaskId: rollbackHubId,
 			title: "Rollback porada",
+			dueDate: "2026-08-21",
+			startAt: "2026-08-21T08:30:00.000Z",
 		});
 		check("setup rollback porady uspěje", response.status === 200, response.status);
 		response = await post(cookie, `/api/meetings/${rollbackMeetingId}/commit`, {

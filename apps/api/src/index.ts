@@ -33,6 +33,7 @@ import { aiPolicyRoutes } from "./aiPolicy";
 import { ATTACHMENT_MAX_BYTES, attachmentRoutes } from "./attachments";
 import { auth } from "./auth";
 import { availabilityRoutes } from "./availability";
+import { bookingRoutes } from "./bookings";
 import { chainCommandRoutes } from "./chainCommands";
 import { customFieldRoutes } from "./customFields";
 import { employeeRoutes } from "./employee";
@@ -47,9 +48,9 @@ import { projectMilestoneRoutes } from "./projectMilestones";
 import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
 import { savedViewRoutes } from "./savedViews";
-import { taskBulkCommandRoutes } from "./taskBulkCommands";
 import { taskAcceptanceRoutes } from "./taskAcceptances";
 import { taskAvailabilityRoutes } from "./taskAvailability";
+import { taskBulkCommandRoutes } from "./taskBulkCommands";
 import { taskCommandRoutes } from "./taskCommands";
 import {
 	decodeTimelineCursor,
@@ -280,6 +281,18 @@ app.use(
 	rateLimit({ name: "task-availability", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
 );
 app.use(
+	"/api/bookings/*",
+	rateLimit({ name: "bookings", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
+);
+app.use(
+	"/api/projects/:projectId/bookings",
+	rateLimit({ name: "bookings", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
+);
+app.use(
+	"/api/booking-reservations/*",
+	rateLimit({ name: "booking-reservations", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
+);
+app.use(
 	"/api/projects/:projectId/custom-fields",
 	rateLimit({ name: "custom-fields-create", windowMs: 60_000, max: 60, scope: "session-or-ip" }),
 );
@@ -370,6 +383,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route("/", powersyncRoutes);
 app.route("/", aiPolicyRoutes);
 app.route("/", availabilityRoutes);
+app.route("/", bookingRoutes);
 app.route("/", taskAvailabilityRoutes);
 app.route("/", taskCommandRoutes);
 app.route("/", taskBulkCommandRoutes);

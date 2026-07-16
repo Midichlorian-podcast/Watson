@@ -35,6 +35,9 @@ export const RESTORE_TABLE_ORDER = [
 	"availability_blocks",
 	"projects",
 	"project_members",
+	"booking_pages",
+	"booking_page_participants",
+	"booking_slots",
 	"sections",
 	"statuses",
 	"project_custom_fields",
@@ -51,6 +54,7 @@ export const RESTORE_TABLE_ORDER = [
 	"task_polls",
 	"task_poll_responses",
 	"meetings",
+	"booking_reservations",
 	"assignments",
 	"task_acceptances",
 	"comments",
@@ -112,6 +116,16 @@ const EXPORT_QUERIES: Record<
 	projects: (ws) => sql`SELECT * FROM projects WHERE workspace_id = ANY(${uuids(ws)})`,
 	project_members: (ws) =>
 		sql`SELECT pm.* FROM project_members pm JOIN projects p ON p.id = pm.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	booking_pages: (ws) =>
+		sql`SELECT * FROM booking_pages WHERE workspace_id = ANY(${uuids(ws)})`,
+	booking_page_participants: (ws) =>
+		sql`SELECT participant.* FROM booking_page_participants participant
+		JOIN booking_pages page ON page.id = participant.page_id
+		WHERE page.workspace_id = ANY(${uuids(ws)})`,
+	booking_slots: (ws) =>
+		sql`SELECT slot.* FROM booking_slots slot
+		JOIN booking_pages page ON page.id = slot.page_id
+		WHERE page.workspace_id = ANY(${uuids(ws)})`,
 	sections: (ws) =>
 		sql`SELECT s.* FROM sections s JOIN projects p ON p.id = s.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	statuses: (ws) =>
@@ -142,6 +156,10 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT poll.* FROM task_polls poll JOIN projects p ON p.id = poll.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	task_poll_responses: (ws) =>
 		sql`SELECT response.* FROM task_poll_responses response JOIN projects p ON p.id = response.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	booking_reservations: (ws) =>
+		sql`SELECT reservation.* FROM booking_reservations reservation
+		JOIN booking_pages page ON page.id = reservation.page_id
+		WHERE page.workspace_id = ANY(${uuids(ws)})`,
 	assignments: (ws) =>
 		sql`SELECT a.* FROM assignments a JOIN projects p ON p.id = a.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	task_acceptances: (ws) =>

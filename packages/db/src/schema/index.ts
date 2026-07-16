@@ -7,13 +7,14 @@
 
 export * from "./auth";
 export * from "./availability";
+export * from "./bookings";
 export * from "./collab";
 export * from "./contacts";
 export * from "./enums";
 export * from "./flow";
 export * from "./goals";
-export * from "./intake";
 export * from "./imports";
+export * from "./intake";
 export * from "./lists";
 export * from "./meetings";
 export * from "./polls";

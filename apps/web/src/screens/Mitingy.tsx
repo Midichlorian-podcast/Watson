@@ -13,6 +13,7 @@ import i18n from "@watson/i18n";
 import { AvatarGroup } from "@watson/ui";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { pillStyle } from "../components/filterUi";
+import { InternalBooking } from "../components/InternalBooking";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { initials, shortDayLabel } from "../lib/format";
@@ -28,7 +29,7 @@ import {
 	zonedDateTimeToIso,
 } from "../lib/timeZone";
 import { showToast } from "../lib/toast";
-import { useWorkspace } from "../lib/workspace";
+import { useWorkspace, useWorkspaces } from "../lib/workspace";
 import { MeetBoard } from "./MeetBoard";
 
 interface Proposal {
@@ -114,6 +115,7 @@ const DURATIONS = [30, 45, 60, 90, 120];
 /** Stav porady pro badge v přehledu (sidecar status × termín × dokončení hubu). */
 function meetState(m: HubMeet, today: string): { label: string; kind: "brass" | "muted" | "ok" } {
 	const day = (m.due_date ?? m.start_date ?? "").slice(0, 10);
+	if (m.m_status === "cancelled") return { label: "zrušeno", kind: "muted" };
 	if (m.m_status === "committed") return { label: "zpracováno", kind: "ok" };
 	if (m.m_status === "extracted") return { label: "návrhy čekají", kind: "brass" };
 	if (m.m_status === "transcribed") return { label: "přepis vložen", kind: "brass" };
@@ -127,6 +129,7 @@ const dayLabel = (iso: string) => shortDayLabel(iso, i18n.language);
 
 export function Mitingy() {
 	const { activeWs } = useWorkspace();
+	const { data: workspaces } = useWorkspaces();
 	const { data: session } = useSession();
 	const uid = session?.user?.id;
 	const userTimeZone = session?.user?.timezone ?? deviceTimeZone();
@@ -141,7 +144,9 @@ export function Mitingy() {
 	// Výchozí = první „skutečný" projekt prostoru; osobní Inbox až jako fallback.
 	const inbox = projects.find((p) => p.name !== "Doručené" && p.name !== "Inbox") ?? projects[0];
 
-	const [mode, setMode] = useState<"list" | "pick" | "plan" | "new" | "review">("list");
+	const [mode, setMode] = useState<"list" | "pick" | "plan" | "new" | "review" | "booking">(
+		"list",
+	);
 	// Board porady = celostránkový detail řízený URL (?meet=…&focus=zapis) — deep-link,
 	// zpět tlačítkem prohlížeče, žádné vrstvení overlayů.
 	const navigate = useNavigate();
@@ -259,6 +264,14 @@ export function Mitingy() {
 		const mine = new Map((myRoleRows ?? []).map((r) => [r.project_id, r.role ?? ""]));
 		return projects.filter((p) => (rank[mine.get(p.id) ?? ""] ?? 0) >= 2);
 	}, [projects, myRoleRows]);
+	const manageableBookingProjects = useMemo(() => {
+		const roleByProject = new Map((myRoleRows ?? []).map((row) => [row.project_id, row.role]));
+		const workspaceRole = workspaces?.find((workspace) => workspace.id === activeWs)?.role;
+		const workspaceManager = workspaceRole === "admin" || workspaceRole === "manager";
+		return editableProjects.filter(
+			(project) => workspaceManager || roleByProject.get(project.id) === "manager",
+		);
+	}, [activeWs, editableProjects, myRoleRows, workspaces]);
 
 	const today = dateInTimeZone(userTimeZone);
 	/** Skupiny přehledu: Dnes / Zítra / Tento týden / Později / Proběhlé. */
@@ -457,6 +470,20 @@ export function Mitingy() {
 			/>
 		);
 	}
+	if (mode === "booking" && activeWs && uid) {
+		return (
+			<InternalBooking
+				workspaceId={activeWs}
+				userId={uid}
+				userLabel={session.user.name?.trim() || session.user.email}
+				timezone={userTimeZone}
+				manageProjects={manageableBookingProjects}
+				members={members}
+				onBack={() => setMode("list")}
+				onOpenMeeting={(id) => openBoard(id)}
+			/>
+		);
+	}
 	const hasAny = (hubMeets ?? []).length > 0 || (detachedMeets ?? []).length > 0;
 
 	return (
@@ -470,6 +497,9 @@ export function Mitingy() {
 				</h1>
 				{mode === "list" && (
 					<div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+						<button type="button" style={BTN_GHOST} onClick={() => setMode("booking")}>
+							{i18n.t("booking.open")}
+						</button>
 						<button
 							type="button"
 							style={BTN_GHOST}

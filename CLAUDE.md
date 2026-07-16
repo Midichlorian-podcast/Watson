@@ -1,6 +1,6 @@
 # Watson — závazný re-audit a implementační plán pro Claude Code
 
-> Stav dokumentu: 2026-07-16 po stabilizaci a průběžných produktových dávkách do migrace 0056.
+> Stav dokumentu: 2026-07-16 po stabilizaci a průběžných produktových dávkách do migrace 0059.
 >
 > CLAUDE CODE: přečti celý soubor před první změnou. Toto je jediný aktuální řídicí dokument. Staré audity, handoffy a plány ve `files/` jsou historické podklady. Pokud odporují tomuto souboru nebo současnému schématu, nemají autoritu.
 
@@ -132,6 +132,10 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
 - Skutečné task přílohy do 20 MB: bezpečný staging při offline-first vytvoření, serverový binární obsah, PowerSync metadata, autorizovaný náhled/download, audit a delete/undo včetně blobu.
 - Přehled, Velín, Reporty, globální hledání a command palette.
 - Meets: atomické plánování, účastníci, přepis, explicitní content ACL, AI návrhy s revizí, commit action items, follow-up a carryover.
+- Interní rezervace nad kalendářem: manager nabízí konkrétní termíny s pevnými
+  účastníky, rezervující zaměstnanec se přidá automaticky a teprve potvrzení atomicky
+  vytvoří skutečný meet. Rezervace respektuje Focus, dostupnost i obsazený kalendář;
+  zrušení bezpečně otevře slot a zachová auditní historii.
 - Workspace pozvánky, role a profilové metadata.
 - Web Push reminder state machine; e-mail reminder je poctivě unavailable, ne fake success.
 - LuckyOS broker s odděleným bridge keyringem, tenant dedup a transakční reconciliation; reálný provider je externí prerequisite.
@@ -428,7 +432,7 @@ Každá produkční funkce musí odpovědět ano na vše relevantní:
 
 Poslední ověření 2026-07-16:
 
-- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 104 TSX.
+- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 105 TSX.
 - `pnpm typecheck`: 6/6 balíčků.
 - `pnpm test`: recurrence 14/14, Quick Add, timezone, recent items, proč-teď, deep linky,
   uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
@@ -441,7 +445,7 @@ Poslední ověření 2026-07-16:
   komentářová spolupráce, bulk commandy, uložené pohledy, projektová přednastavení,
   závislosti, časová osa, přílohy, typovaná vlastní pole, ankety, projektové milníky,
   intake, akceptace urgentních úkolů, jednorázový import,
-  dostupnost, Focus Time, snooze/reminder hold a nouzové výjimky,
+  dostupnost, Focus Time, snooze/reminder hold, nouzové výjimky a interní rezervace,
   meeting ACL/commandy,
   AI policy, task delete/restore, workspace policy, export/restore, manual gate,
   input/observability, rate limit a auth/2FA — vše prošlo.
@@ -492,10 +496,18 @@ Poslední ověření 2026-07-16:
   vícenásobná výjimka přes několik Focus bloků, DB assignment
   a schedule guard, bulk preview, PowerSync 409, atomické odmítnutí porady, tiché hodiny
   přes DST, reminder hold/release bez falešného provider pokusu a auditní časová osa.
+- Migrace 0057–0059: interní booking pages, pevní účastníci, sloty a historické
+  rezervace mají same-project/workspace vazby, CAS verze, přesnou IANA zónu a DB guard
+  délky slotu. Pár meeting/hub se při pozdějším mazání odpojuje atomicky a aktivní
+  rezervovaný meet nelze obejít generickým task delete commandem.
+- Interní rezervace prošly 37 integračními kontrolami: management ACL, fail-closed
+  projektová viditelnost, create/book/cancel replay, reuse ID konflikt, souběžní
+  rezervující, privacy rezervujícího, Focus a busy guard, atomický meeting/hub/
+  assignments zápis, znovuotevření slotu, ruční meeting parity, archive, export a audit.
 - Celý `scripts/ci-api-integration.sh` po opravě korektního ukončení intake verifieru
   proběhl až po produkční 2FA restart a skončil úspěšně.
 - PowerSync po restartu: nový replication stream aktivní, sync-config bez chyby.
-- `pnpm build`: největší JS 341 KiB gzip, precache 5,122 KiB; oba rozpočty splněny;
+- `pnpm build`: největší JS 342 KiB gzip, precache 5,141 KiB; oba rozpočty splněny;
   vlastní pole, ankety, projektové milníky, intake, importní průvodce, Úkoly a Nadcházející jsou oddělené
   lazy-loaded chunky.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
@@ -519,6 +531,10 @@ Poslední ověření 2026-07-16:
   drží a vrací fokus, Escape jej zavře a pozadí je nedosažitelné. Focus Time se po
   skutečném PowerSync round-tripu vykreslil v týdenním kalendáři jako šrafovaná
   netasková vrstva; rychlé Nerušit je dostupné z hlavičky.
+- Cílený Chrome CDP audit interních rezervací: samostatný povrch mimo běžný kalendář
+  prošel na 1440 a 390 px bez overflow či runtime chyby. Mobilní grid regresi odhalil
+  screenshot a následná oprava; ověřeny jsou seznam, create formulář, fallback prázdného
+  jména, potvrzená rezervace, toast, „Moje rezervace“, otevření a zrušení meetu.
 - `NODE_ENV=production LUCKYOS_MOCK=1 ...`: oba produkční mock gates potvrzeně zůstaly vypnuté.
 - `git diff --check`, YAML parser a journal JSON parser: prošly.
 

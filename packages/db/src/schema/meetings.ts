@@ -54,7 +54,7 @@ export const meetings = pgTable(
 	(t) => [
 		check(
 			"meetings_status_valid",
-			sql`${t.status} in ('new', 'scheduled', 'transcribed', 'extracted', 'committed')`,
+			sql`${t.status} in ('new', 'scheduled', 'transcribed', 'extracted', 'committed', 'cancelled')`,
 		),
 		index("meetings_workspace_idx").on(t.workspaceId),
 		index("meetings_hub_task_idx").on(t.hubTaskId),
