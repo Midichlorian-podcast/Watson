@@ -295,6 +295,15 @@ async function buildPlan(
 				code: "custom_fields_block_move",
 				taskIds: customValueRows.map((row) => row.task_id),
 			});
+		const pollRows = (await tx.execute(sql`
+			SELECT DISTINCT task_id FROM task_polls
+			WHERE task_id = ANY(${uuids(affectedIds)})
+		`)) as unknown as { task_id: string }[];
+		if (pollRows.length)
+			conflicts.push({
+				code: "polls_block_move",
+				taskIds: pollRows.map((row) => row.task_id),
+			});
 		const invalidAssignees = (await tx.execute(sql`
 			SELECT DISTINCT a.task_id
 			FROM assignments a

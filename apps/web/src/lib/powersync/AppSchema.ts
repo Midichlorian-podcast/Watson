@@ -107,6 +107,42 @@ const task_custom_field_values = new Table(
 	},
 );
 
+/** Vložitelné task ankety; definice a stav se mění přes auditovaný API command. */
+const task_polls = new Table(
+	{
+		task_id: column.text,
+		project_id: column.text,
+		question: column.text,
+		response_type: column.text,
+		options: column.text,
+		closed_at: column.text,
+		created_by: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{ indexes: { by_task: ["task_id"], by_project: ["project_id"] } },
+);
+
+/** Jedna typovaná odpověď člena na anketu; server drží identitu i validaci. */
+const task_poll_responses = new Table(
+	{
+		poll_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		respondent_id: column.text,
+		value: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: {
+			by_poll: ["poll_id"],
+			by_task: ["task_id"],
+			by_respondent: ["respondent_id"],
+		},
+	},
+);
+
 /** Projekt (barva = tělo karet úkolů, R6); kind=flow|goal|cycle, status 4-stavový. */
 const projects = new Table(
 	{
@@ -578,6 +614,8 @@ export const AppSchema = new Schema({
 	task_dependencies,
 	project_custom_fields,
 	task_custom_field_values,
+	task_polls,
+	task_poll_responses,
 	workspaces,
 	projects,
 	sections,
@@ -615,6 +653,8 @@ export type TaskRow = Database["tasks"];
 export type TaskDependencyRow = Database["task_dependencies"];
 export type ProjectCustomFieldRow = Database["project_custom_fields"];
 export type TaskCustomFieldValueRow = Database["task_custom_field_values"];
+export type TaskPollRow = Database["task_polls"];
+export type TaskPollResponseRow = Database["task_poll_responses"];
 export type WorkspaceRow = Database["workspaces"];
 export type ProjectRow = Database["projects"];
 export type SectionRow = Database["sections"];

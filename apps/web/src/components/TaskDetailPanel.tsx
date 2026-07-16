@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { useAddTask } from "../lib/addTask";
 import { API_URL } from "../lib/api";
 import {
@@ -25,7 +25,13 @@ import { parseOccId, recurrenceKind } from "../lib/occurrences";
 import type { AttachmentRow, TaskRow } from "../lib/powersync/AppSchema";
 import { rescheduleDate } from "../lib/reschedule";
 import { CommentComposer } from "./CommentComposer";
-import { CustomFieldsSection } from "./CustomFieldsSection";
+
+const CustomFieldsSection = lazy(() =>
+	import("./CustomFieldsSection").then((module) => ({ default: module.CustomFieldsSection })),
+);
+const PollsSection = lazy(() =>
+	import("./PollsSection").then((module) => ({ default: module.PollsSection })),
+);
 
 type TimelineKind =
 	| "task_created"
@@ -49,6 +55,12 @@ type TimelineKind =
 	| "attachment_added"
 	| "attachment_removed"
 	| "custom_field_updated"
+	| "poll_created"
+	| "poll_updated"
+	| "poll_closed"
+	| "poll_reopened"
+	| "poll_deleted"
+	| "poll_response_updated"
 	| "dependency_added"
 	| "dependency_removed"
 	| "occurrence_updated"
@@ -224,6 +236,12 @@ const TIMELINE_KIND_KEY: Record<TimelineKind, string> = {
 	attachment_added: "detail.timelineAttachmentAdded",
 	attachment_removed: "detail.timelineAttachmentRemoved",
 	custom_field_updated: "detail.timelineCustomFieldUpdated",
+	poll_created: "detail.timelinePollCreated",
+	poll_updated: "detail.timelinePollUpdated",
+	poll_closed: "detail.timelinePollClosed",
+	poll_reopened: "detail.timelinePollReopened",
+	poll_deleted: "detail.timelinePollDeleted",
+	poll_response_updated: "detail.timelinePollResponseUpdated",
 	dependency_added: "detail.timelineDependencyAdded",
 	dependency_removed: "detail.timelineDependencyRemoved",
 	occurrence_updated: "detail.timelineOccurrenceUpdated",
@@ -802,6 +820,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const myProjectRole = members.find((m) => m.id === session?.user?.id)?.role;
 	const canDecide = myProjectRole === "editor" || myProjectRole === "manager";
 	const canEditCustomFields = myProjectRole === "editor" || myProjectRole === "manager";
+	const canManagePolls = myProjectRole === "editor" || myProjectRole === "manager";
 	const canDeleteAnyAttachment = myProjectRole === "editor" || myProjectRole === "manager";
 	const decisionsByComment = new Map((commentDecisions ?? []).map((d) => [d.comment_id, d]));
 	const mentionIdsByComment = new Map<string, string[]>();
@@ -2521,12 +2540,44 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							)}
 						</div>
 
-						<CustomFieldsSection
-							taskId={realId}
-							projectId={task.project_id ?? ""}
-							members={members}
-							canEdit={canEditCustomFields}
-						/>
+						<Suspense
+							fallback={
+								<div
+									aria-busy="true"
+									className="mt-4 min-h-11 rounded-lg border border-line border-dashed bg-panel-2 px-3 py-3 font-display font-semibold text-ink-3"
+									style={{ fontSize: 11 }}
+								>
+									{t("detail.customFields")}…
+								</div>
+							}
+						>
+							<CustomFieldsSection
+								taskId={realId}
+								projectId={task.project_id ?? ""}
+								members={members}
+								canEdit={canEditCustomFields}
+							/>
+						</Suspense>
+
+						<Suspense
+							fallback={
+								<div
+									aria-busy="true"
+									className="mt-4 min-h-11 rounded-lg border border-line border-dashed bg-panel-2 px-3 py-3 font-display font-semibold text-ink-3"
+									style={{ fontSize: 11 }}
+								>
+									{t("detail.polls")}…
+								</div>
+							}
+						>
+							<PollsSection
+								taskId={realId}
+								members={members}
+								currentUserId={session?.user?.id ?? null}
+								canManage={canManagePolls}
+								isManager={myProjectRole === "manager"}
+							/>
+						</Suspense>
 
 						{/* PŘÍLOHY — metadata offline, obsah přes autorizovanou serverovou route. */}
 						<SectionLabel>

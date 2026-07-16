@@ -20,6 +20,12 @@ export type TimelineKind =
 	| "attachment_added"
 	| "attachment_removed"
 	| "custom_field_updated"
+	| "poll_created"
+	| "poll_updated"
+	| "poll_closed"
+	| "poll_reopened"
+	| "poll_deleted"
+	| "poll_response_updated"
 	| "dependency_added"
 	| "dependency_removed"
 	| "occurrence_updated"
@@ -167,6 +173,14 @@ function kindForAction(entity: string, action: string): TimelineKind | null {
 			return removed ? "attachment_removed" : "attachment_added";
 		case "task_custom_field_values":
 			return "custom_field_updated";
+		case "task_polls":
+			if (removed) return "poll_deleted";
+			if (added) return "poll_created";
+			if (action === "close") return "poll_closed";
+			if (action === "reopen") return "poll_reopened";
+			return "poll_updated";
+		case "task_poll_responses":
+			return "poll_response_updated";
 		case "task_dependencies":
 			return removed ? "dependency_removed" : "dependency_added";
 		case "task_occurrence_overrides":
@@ -246,6 +260,17 @@ export function mapAuditTimelineEvent(
 					newValue: jsonScalarStringOf(diff.value),
 				},
 			],
+		};
+	}
+	if (row.entity === "task_polls") {
+		return { ...common, kind, excerpt: stringOf(data.question) ?? undefined };
+	}
+	if (row.entity === "task_poll_responses") {
+		return {
+			...common,
+			kind,
+			excerpt: stringOf(data.question) ?? undefined,
+			relatedUserId: idOf(data.respondent_id),
 		};
 	}
 	if (row.entity === "task_dependencies") {

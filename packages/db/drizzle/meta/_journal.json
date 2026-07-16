@@ -330,6 +330,20 @@
       "when": 1784172780792,
       "tag": "0046_safe_ravenous",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784179062431,
+      "tag": "0047_wide_lightspeed",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1784180199318,
+      "tag": "0048_minor_dakota_north",
+      "breakpoints": true
     }
   ]
 }

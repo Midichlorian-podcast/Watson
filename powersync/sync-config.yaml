@@ -62,6 +62,14 @@ bucket_definitions:
       - SELECT id, field_id, task_id, project_id, value, updated_by, created_at, updated_at
         FROM task_custom_field_values
         WHERE project_id = bucket.project_id
+      # Samostatné vložitelné ankety a jejich pojmenované odpovědi.
+      - SELECT id, task_id, project_id, question, response_type, options, closed_at,
+               created_by, created_at, updated_at
+        FROM task_polls
+        WHERE project_id = bucket.project_id
+      - SELECT id, poll_id, task_id, project_id, respondent_id, value, created_at, updated_at
+        FROM task_poll_responses
+        WHERE project_id = bucket.project_id
       # task_activity (audit log) se ZÁMĚRNĚ NEsyncuje — je insert-only (klient jen nahrává),
       # detail historie se čte přes GET /api/tasks/:id/activity. Jinak roste do stovek MB/zařízení.
       # Postupy (štafeta) — chains + chain_steps (project-scoped).

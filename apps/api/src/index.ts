@@ -37,6 +37,7 @@ import { employeeRoutes } from "./employee";
 import { env, googleEnabled, pushEnabled } from "./env";
 import { exportRoutes } from "./export";
 import { meetingsRoutes } from "./meetings";
+import { pollRoutes } from "./polls";
 import { powersyncRoutes } from "./powersync";
 import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
@@ -360,6 +361,7 @@ app.route("/", exportRoutes);
 app.route("/", savedViewRoutes);
 app.route("/", attachmentRoutes);
 app.route("/", customFieldRoutes);
+app.route("/", pollRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);
@@ -696,6 +698,7 @@ app.get("/api/tasks/:id/timeline", async (c) => {
 			OR (
 				ae.entity IN ('assignments', 'comments', 'comment_decisions', 'reminders', 'attachments',
 					'task_custom_field_values',
+					'task_polls', 'task_poll_responses',
 					'task_user_colors', 'task_occurrence_overrides')
 				AND COALESCE(ae.diff->>'task_id', ae.before->>'task_id') = ${taskId}
 			)

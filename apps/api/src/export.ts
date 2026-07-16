@@ -39,6 +39,8 @@ export const RESTORE_TABLE_ORDER = [
 	"tasks",
 	"task_dependencies",
 	"task_custom_field_values",
+	"task_polls",
+	"task_poll_responses",
 	"meetings",
 	"assignments",
 	"comments",
@@ -102,6 +104,10 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT d.* FROM task_dependencies d JOIN projects p ON p.id = d.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	task_custom_field_values: (ws) =>
 		sql`SELECT v.* FROM task_custom_field_values v JOIN projects p ON p.id = v.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	task_polls: (ws) =>
+		sql`SELECT poll.* FROM task_polls poll JOIN projects p ON p.id = poll.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	task_poll_responses: (ws) =>
+		sql`SELECT response.* FROM task_poll_responses response JOIN projects p ON p.id = response.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	assignments: (ws) =>
 		sql`SELECT a.* FROM assignments a JOIN projects p ON p.id = a.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	comments: (ws) =>
@@ -416,6 +422,7 @@ async function runRestoreTransaction(input: {
 		return await input.db.transaction(async (tx) => {
 			await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`restore:${input.userId}:${input.checksum}`}))`);
 			await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
+			await tx.execute(sql`SELECT set_config('watson.allow_poll_restore', 'on', true)`);
 
 			const workspaceRows = input.tables.workspaces ?? [];
 			const workspaceIds = workspaceRows.map((row) => String(row.id));

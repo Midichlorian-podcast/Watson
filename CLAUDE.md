@@ -425,7 +425,7 @@ Každá produkční funkce musí odpovědět ano na vše relevantní:
 
 Poslední ověření 2026-07-16:
 
-- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 97 TSX.
+- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 98 TSX.
 - `pnpm typecheck`: 6/6 balíčků.
 - `pnpm test`: recurrence 14/14, Quick Add, timezone, recent items, proč-teď, deep linky,
   uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
@@ -434,17 +434,24 @@ Poslední ověření 2026-07-16:
 - `bash scripts/ci-api-integration.sh`: contract, Drizzle, reminders, LuckyOS reconciliation,
   DB invariants, signing keys, RBAC, sync refs/CAS/idempotency, rozhodnutí,
   komentářová spolupráce, bulk commandy, uložené pohledy, projektová přednastavení,
-  závislosti, časová osa, přílohy, typovaná vlastní pole, meeting ACL/commandy,
+  závislosti, časová osa, přílohy, typovaná vlastní pole, ankety, meeting ACL/commandy,
   AI policy, task delete/restore, workspace policy, export/restore, manual gate,
   input/observability, rate limit a auth/2FA — vše prošlo.
 - Migrace 0046: aplikována; sedm typů projektových polí i jejich task hodnoty mají
   DB validaci, ACL, audit, export/restore, delete/undo a PowerSync kontrakt.
+- Migrace 0047 + dopředná oprava 0048: aplikovány; pět typů vložitelných task anket
+  má stabilní option ID, jednu pojmenovanou odpověď na osobu, uzavření/znovuotevření,
+  DB validaci, ACL, audit bez obsahu odpovědi, export/restore, delete/undo a PowerSync.
 - PowerSync po restartu: nový replication stream aktivní, sync-config bez chyby.
-- `pnpm build`: největší JS 348 KiB gzip, precache 4,956 KiB; oba rozpočty splněny.
+- `pnpm build`: největší JS 348 KiB gzip, precache 4,979 KiB; oba rozpočty splněny;
+  vlastní pole a ankety jsou oddělené lazy-loaded chunky detailu úkolu.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
   44 px, offline zápisem a následným autoritativním uploadem. Jediný zachycený
   network log pocházel z úmyslné simulace offline stavu.
+- Cílený Chrome audit anket: create → hlasování → pojmenované výsledky → uzavření →
+  potvrzený delete prošel na 320/390/768/1440 px bez overflow a runtime chyb; nález
+  32px summary targetu byl opraven na 44 px a celý scénář poté prošel znovu.
 - `NODE_ENV=production LUCKYOS_MOCK=1 ...`: oba produkční mock gates potvrzeně zůstaly vypnuté.
 - `git diff --check`, YAML parser a journal JSON parser: prošly.
 
