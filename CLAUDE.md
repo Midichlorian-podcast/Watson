@@ -429,7 +429,7 @@ Poslední ověření 2026-07-16:
 - `pnpm typecheck`: 6/6 balíčků.
 - `pnpm test`: recurrence 14/14, Quick Add, timezone, recent items, proč-teď, deep linky,
   uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
-  zmínky, Mail claims, chain gate, sync recovery a backup crypto.
+  Waiting Room, zmínky, Mail claims, chain gate, sync recovery a backup crypto.
 - `pnpm --filter @watson/web test:corpus`: 321/321.
 - `bash scripts/ci-api-integration.sh`: contract, Drizzle, reminders, LuckyOS reconciliation,
   DB invariants, signing keys, RBAC, sync refs/CAS/idempotency, rozhodnutí,
@@ -443,7 +443,7 @@ Poslední ověření 2026-07-16:
   má stabilní option ID, jednu pojmenovanou odpověď na osobu, uzavření/znovuotevření,
   DB validaci, ACL, audit bez obsahu odpovědi, export/restore, delete/undo a PowerSync.
 - PowerSync po restartu: nový replication stream aktivní, sync-config bez chyby.
-- `pnpm build`: největší JS 348 KiB gzip, precache 4,979 KiB; oba rozpočty splněny;
+- `pnpm build`: největší JS 349 KiB gzip, precache 4,985 KiB; oba rozpočty splněny;
   vlastní pole a ankety jsou oddělené lazy-loaded chunky detailu úkolu.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
@@ -452,6 +452,9 @@ Poslední ověření 2026-07-16:
 - Cílený Chrome audit anket: create → hlasování → pojmenované výsledky → uzavření →
   potvrzený delete prošel na 320/390/768/1440 px bez overflow a runtime chyb; nález
   32px summary targetu byl opraven na 44 px a celý scénář poté prošel znovu.
+- Waiting Room je odvozený z autoritativních závislostí a aktivních kroků Postupů,
+  bez nové kopie stavu. Oba směry, firemní filtr a proklik prošly cíleným scénářem;
+  karta má na 320/390/768/1440 px targety ≥44 px, bez overflow a runtime chyb.
 - `NODE_ENV=production LUCKYOS_MOCK=1 ...`: oba produkční mock gates potvrzeně zůstaly vypnuté.
 - `git diff --check`, YAML parser a journal JSON parser: prošly.
 

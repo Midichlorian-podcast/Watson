@@ -18,6 +18,7 @@ import { useTaskDetail } from "../lib/taskDetail";
 import { startMinOf, todayISO, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
+import { buildWaitingRoom, type WaitingRoomEntry } from "../lib/waitingRoom";
 import { useWorkspaces } from "../lib/workspace";
 import { useMailDigest, useOpenMailThread } from "../mail/state";
 
@@ -104,6 +105,7 @@ export function Prehled() {
 	const [communicationFilter, setCommunicationFilter] = useState<"all" | "mentions" | "tasks">(
 		"all",
 	);
+	const [waitingSide, setWaitingSide] = useState<"on_me" | "for_others">("on_me");
 	const switchLayout = (v: "grid" | "feed") => {
 		setLayout(v);
 		storageSet("watson.ovLayout", v);
@@ -125,6 +127,18 @@ export function Prehled() {
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
+	const { data: dependencies, isLoading: dependenciesLoading } = usePsQuery<{
+		id: string;
+		blocking_task_id: string | null;
+		blocked_task_id: string | null;
+	}>("SELECT id, blocking_task_id, blocked_task_id FROM task_dependencies");
+	const { data: waitingChainSteps, isLoading: waitingChainStepsLoading } = usePsQuery<{
+		id: string;
+		chain_id: string | null;
+		task_id: string | null;
+		position: number | null;
+		step_state: string | null;
+	}>("SELECT id, chain_id, task_id, position, step_state FROM chain_steps");
 	const { data: allComments, isLoading: commentsLoading } = usePsQuery<{
 		id: string;
 		task_id: string;
@@ -145,8 +159,17 @@ export function Prehled() {
 		listsLoading,
 		itemsLoading,
 		asgLoading,
+		dependenciesLoading,
+		waitingChainStepsLoading,
 		commentsLoading,
 		mentionsLoading,
+	);
+	const waitingReady = useAllReady(
+		projLoading,
+		tasksLoading,
+		asgLoading,
+		dependenciesLoading,
+		waitingChainStepsLoading,
 	);
 
 	const projById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
@@ -292,6 +315,33 @@ export function Prehled() {
 			.filter((item): item is NonNullable<typeof item> => Boolean(item))
 			.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 
+		const waitingAll = userId
+			? buildWaitingRoom({
+					currentUserId: userId,
+					tasks: (allTasks ?? []).map((task) => ({
+						id: task.id,
+						name: task.name,
+						project_id: task.project_id,
+						priority: task.priority,
+						due_date: task.due_date,
+						completed_at: task.completed_at,
+					})),
+					assignments: assignments ?? [],
+					dependencies: dependencies ?? [],
+					chainSteps: waitingChainSteps ?? [],
+				})
+			: { onMe: [], forOthers: [] };
+		const waiting = {
+			onMe: waitingAll.onMe.filter((entry) => {
+				const task = taskById.get(entry.taskId);
+				return Boolean(task && fOk(task));
+			}),
+			forOthers: waitingAll.forOthers.filter((entry) => {
+				const task = taskById.get(entry.taskId);
+				return Boolean(task && fOk(task));
+			}),
+		};
+
 		// Dění týmu: dnes dokončené (kdo = první přiřazený, fallback tvůrce) + aktivní kroky postupů
 		const feed: { key: string; ini: string; txt: string; t: string }[] = [];
 		// completed_at je UTC ISO → formátovat lokálně (slice by ukázal čas o 2 h jinak)
@@ -384,6 +434,7 @@ export function Prehled() {
 			stuck,
 			akce,
 			communication,
+			waiting,
 			feed: feed.slice(0, 5),
 			syn: parts.slice(0, 3).join(" ") || t("prehled.synCalm"),
 		};
@@ -394,6 +445,8 @@ export function Prehled() {
 		allComments,
 		allMentions,
 		assignments,
+		dependencies,
+		waitingChainSteps,
 		digest,
 		projects,
 		projById,
@@ -466,6 +519,19 @@ export function Prehled() {
 					: true,
 		)
 		.slice(0, 6);
+	const waitingRows = (waitingSide === "on_me" ? view.waiting.onMe : view.waiting.forOthers).slice(
+		0,
+		6,
+	);
+	const waitingPeople = (ids: string[], excludeCurrent = false) => {
+		const names = ids
+			.filter((id) => !excludeCurrent || id !== session?.user?.id)
+			.map((id) => members.get(id))
+			.filter((name): name is string => Boolean(name));
+		if (names.length > 0) return names.join(", ");
+		if (excludeCurrent && ids.includes(session?.user?.id ?? "")) return t("prehled.waitingYou");
+		return t("prehled.waitingUnassigned");
+	};
 	const communicationTime = (iso: string) => {
 		if (!iso) return "";
 		const date = new Date(iso);
@@ -688,6 +754,91 @@ export function Prehled() {
 							>
 								{r.due}
 							</span>
+						</OvRow>
+					))}
+				</div>
+
+				{/* Waiting Room — odvozená čekání ze závislostí a aktivních kroků Postupů. */}
+				<div className={cardCls} style={cardStyle}>
+					<CardHead
+						title={t("prehled.waitingRoom")}
+						footLabel={
+							waitingReady
+								? t("prehled.waitingItems", {
+										count: view.waiting.onMe.length + view.waiting.forOthers.length,
+									})
+								: undefined
+						}
+					/>
+					<div className="mx-3 mb-2 grid grid-cols-2 rounded-lg border border-line bg-panel-2 p-[3px]">
+						{(["on_me", "for_others"] as const).map((side) => {
+							const count = side === "on_me" ? view.waiting.onMe.length : view.waiting.forOthers.length;
+							return (
+								<button
+									key={side}
+									type="button"
+									aria-pressed={waitingSide === side}
+									onClick={() => setWaitingSide(side)}
+									className="min-h-11 rounded-md px-2 font-display font-semibold"
+									style={{
+										fontSize: 10.5,
+										background: waitingSide === side ? "var(--w-card)" : "transparent",
+										color: waitingSide === side ? "var(--w-ink)" : "var(--w-ink-3)",
+									}}
+								>
+									{t(side === "on_me" ? "prehled.waitingOnMe" : "prehled.waitingForOthers")} · {waitingReady ? count : "—"}
+								</button>
+							);
+						})}
+					</div>
+					{!waitingReady && <LoadingNote />}
+					{waitingReady && waitingRows.length === 0 && (
+						<div className="px-4 pt-1 pb-4 font-body text-ink-3" style={{ fontSize: 12.5 }}>
+							{t(
+								waitingSide === "on_me"
+									? "prehled.waitingEmptyOnMe"
+									: "prehled.waitingEmptyForOthers",
+							)}
+						</div>
+					)}
+					{waitingReady && waitingRows.map((entry: WaitingRoomEntry) => (
+						<OvRow key={entry.key} onClick={() => open(entry.taskId)}>
+							<span
+								aria-hidden
+								className="h-2 w-2 shrink-0 rounded-full"
+								style={{
+									background:
+										projById.get(entry.projectId ?? "")?.color ?? "var(--w-ink-3)",
+								}}
+							/>
+							<div className="min-w-0 flex-1">
+								<div className="flex items-center gap-1.5">
+									<span className="truncate font-display font-semibold text-ink" style={{ fontSize: 12.5 }}>
+										{entry.taskName}
+									</span>
+									<span className="shrink-0 rounded-full bg-panel-2 px-1.5 py-0.5 font-display font-semibold text-ink-3" style={{ fontSize: 9.5 }}>
+										{t(entry.source === "flow" ? "prehled.waitingFlow" : "prehled.waitingDependency")}
+									</span>
+								</div>
+								<div className="mt-0.5 truncate font-body text-ink-3" style={{ fontSize: 11.5 }}>
+									{t(
+										waitingSide === "on_me"
+											? "prehled.waitingUnlocks"
+											: "prehled.waitingBlocks",
+										{ task: entry.relatedTaskName },
+									)}
+									{" · "}
+									{waitingPeople(
+										waitingSide === "on_me" ? entry.relatedOwnerIds : entry.ownerIds,
+										waitingSide === "on_me",
+									)}
+								</div>
+							</div>
+							{entry.priority === 1 && (
+								<span className="shrink-0 rounded border border-overdue px-1 font-mono text-overdue" style={{ fontSize: 10 }}>
+									P1
+								</span>
+							)}
 						</OvRow>
 					))}
 				</div>
