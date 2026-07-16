@@ -17,7 +17,11 @@ import {
 	workspaceInvitations,
 	workspaces,
 } from "@watson/db";
-import { DEFAULT_LOCALE } from "@watson/shared";
+import {
+	DEFAULT_LOCALE,
+	PROJECT_PRESET_DEFINITIONS,
+	PROJECT_PRESETS,
+} from "@watson/shared";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
@@ -51,12 +55,15 @@ const uuid = z.string().uuid();
 const workspaceRole = z.enum(["admin", "manager", "member", "guest"]);
 const createProjectSchema = z
 	.object({
+		id: uuid.optional(),
 		name: z.string().trim().min(1).max(200),
 		workspaceId: uuid,
 		color: z.string().regex(/^#[0-9a-f]{6}$/i).nullable().optional(),
-		kind: z.enum(["flow", "goal", "cycle"]).optional().default("flow"),
+		kind: z.enum(["flow", "goal", "cycle"]).optional(),
+		preset: z.enum(PROJECT_PRESETS).optional().default("blank"),
 	})
 	.strict();
+class ProjectCreateConflict extends Error {}
 const memberProfileSchema = z
 	.object({
 		areas: z.string().trim().max(500).nullable().optional(),
@@ -422,54 +429,97 @@ app.post("/api/projects", async (c) => {
 	if (!mine) return c.json({ error: "forbidden" }, 403);
 	if (mine.role === "guest") return c.json({ error: "read-only-host" }, 403);
 
-	const kind = body.kind;
+	const preset = PROJECT_PRESET_DEFINITIONS[body.preset];
+	const kind = body.kind ?? preset.kind;
 	// CC-P0-07: projekt, manager a výchozí stavy tvoří jediný DB invariant.
 	// Dílčí selhání musí vrátit vše a klient nesmí dostat napůl vytvořený projekt.
-	const project = await db.transaction(async (tx) => {
-		const [created] = await tx
-			.insert(projects)
-			.values({
-				name,
+	try {
+		const result = await db.transaction(async (tx) => {
+			if (body.id) {
+				await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${body.id}))`);
+				const existing = (
+					await tx.select().from(projects).where(eq(projects.id, body.id))
+				)[0];
+				if (existing) {
+					const existingStatuses = await tx
+						.select({ name: statuses.name, position: statuses.position, isDone: statuses.isDone })
+						.from(statuses)
+						.where(eq(statuses.projectId, existing.id))
+						.orderBy(statuses.position);
+					const sameStatuses =
+						existingStatuses.length === preset.statuses.length &&
+						existingStatuses.every(
+							(status, index) =>
+								status.name === preset.statuses[index]?.name &&
+								status.position === index &&
+								status.isDone === preset.statuses[index]?.isDone,
+						);
+					if (
+						existing.workspaceId !== workspaceId ||
+						existing.ownerId !== session.user.id ||
+						existing.name !== name ||
+						existing.color !== (body.color ?? null) ||
+						existing.kind !== kind ||
+						existing.defaultLayout !== preset.layout ||
+						!sameStatuses
+					)
+						throw new ProjectCreateConflict("project_id_conflict");
+					return { project: existing, replayed: true };
+				}
+			}
+
+			const [created] = await tx
+				.insert(projects)
+				.values({
+					id: body.id,
+					name,
+					workspaceId,
+					color: body.color ?? null,
+					kind,
+					defaultLayout: preset.layout,
+					ownerId: session.user.id,
+				})
+				.returning();
+			if (!created) throw new Error("project_insert_returned_no_row");
+
+			await tx.insert(projectMembers).values({
+				projectId: created.id,
+				userId: session.user.id,
+				role: "manager",
+			});
+			await tx.insert(statuses).values(
+				preset.statuses.map((status, position) => ({
+					scope: "project" as const,
+					projectId: created.id,
+					name: status.name,
+					position,
+					isDone: status.isDone,
+				})),
+			);
+			await tx.insert(auditEvents).values({
 				workspaceId,
-				color: body.color ?? null,
-				kind,
-				ownerId: session.user.id,
-			})
-			.returning();
-		if (!created) throw new Error("project_insert_returned_no_row");
-
-		await tx.insert(projectMembers).values({
-			projectId: created.id,
-			userId: session.user.id,
-			role: "manager",
+				actorUserId: session.user.id,
+				entity: "projects",
+				entityId: created.id,
+				action: "create",
+				diff: {
+					name,
+					kind,
+					preset: body.preset,
+					defaultLayout: preset.layout,
+					statusCount: preset.statuses.length,
+				},
+				requestId: c.get("requestId"),
+			});
+			return { project: created, replayed: false };
 		});
-		await tx.insert(statuses).values([
-			{
-				scope: "project",
-				projectId: created.id,
-				name: "K udělání",
-				position: 0,
-				isDone: false,
-			},
-			{
-				scope: "project",
-				projectId: created.id,
-				name: "Probíhá",
-				position: 1,
-				isDone: false,
-			},
-			{
-				scope: "project",
-				projectId: created.id,
-				name: "Hotovo",
-				position: 2,
-				isDone: true,
-			},
-		]);
-		return created;
-	});
 
-	return c.json({ project });
+		return c.json(result, result.replayed ? 200 : 201);
+	} catch (error) {
+		if (error instanceof ProjectCreateConflict)
+			return c.json({ error: "project_id_conflict" }, 409);
+		throw error;
+	}
 });
 
 /**

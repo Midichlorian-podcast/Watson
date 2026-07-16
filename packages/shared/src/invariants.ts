@@ -68,6 +68,61 @@ export type ProjectLayout = (typeof PROJECT_LAYOUTS)[number];
 export const PROJECT_KINDS = ["flow", "goal", "cycle"] as const;
 export type ProjectKind = (typeof PROJECT_KINDS)[number];
 
+/**
+ * Lehká startovní přednastavení projektu. Nejsou to verzované šablony: pouze při založení
+ * zvolí smysluplný typ, výchozí pohled a sadu stavů; projekt je potom zcela běžný a upravitelný.
+ */
+export const PROJECT_PRESETS = ["blank", "team_pipeline", "delivery", "recurring"] as const;
+export type ProjectPreset = (typeof PROJECT_PRESETS)[number];
+export const PROJECT_PRESET_DEFINITIONS: Record<
+	ProjectPreset,
+	{
+		kind: ProjectKind;
+		layout: ProjectLayout;
+		statuses: ReadonlyArray<{ name: string; isDone: boolean }>;
+	}
+> = {
+	blank: {
+		kind: "flow",
+		layout: "list",
+		statuses: [
+			{ name: "K udělání", isDone: false },
+			{ name: "Probíhá", isDone: false },
+			{ name: "Hotovo", isDone: true },
+		],
+	},
+	team_pipeline: {
+		kind: "flow",
+		layout: "board",
+		statuses: [
+			{ name: "Příjem", isDone: false },
+			{ name: "Naplánováno", isDone: false },
+			{ name: "Probíhá", isDone: false },
+			{ name: "Ke kontrole", isDone: false },
+			{ name: "Hotovo", isDone: true },
+		],
+	},
+	delivery: {
+		kind: "goal",
+		layout: "board",
+		statuses: [
+			{ name: "Plán", isDone: false },
+			{ name: "Probíhá", isDone: false },
+			{ name: "Ke kontrole", isDone: false },
+			{ name: "Hotovo", isDone: true },
+		],
+	},
+	recurring: {
+		kind: "cycle",
+		layout: "calendar",
+		statuses: [
+			{ name: "Připraveno", isDone: false },
+			{ name: "Probíhá", isDone: false },
+			{ name: "Hotovo", isDone: true },
+		],
+	},
+};
+
 /** Stav projektu (Cloud Design): Aktivní / Pozastavený / Archiv / Hotovo. */
 export const PROJECT_STATUSES = [
 	"active",

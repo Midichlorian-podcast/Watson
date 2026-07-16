@@ -2,8 +2,14 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
+import {
+	PROJECT_PRESET_DEFINITIONS,
+	PROJECT_PRESETS,
+	type ProjectKind,
+	type ProjectPreset,
+} from "@watson/shared";
 import { Icon } from "@watson/ui";
-import { type MouseEvent, useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useContextMenu } from "../components/ContextMenu";
 import { DataLoading } from "../components/Loading";
 import { patchProject } from "../components/ProjectDetailPanel";
@@ -22,6 +28,15 @@ type Member = { id: string; name: string; email: string };
 
 type Counts = { open: number; done: number; total: number };
 const ZERO: Counts = { open: 0, done: 0, total: 0 };
+const PROJECT_PRESET_META: Record<ProjectPreset, { title: string; description: string }> = {
+	blank: { title: "projects.presetBlank", description: "projects.presetBlankDesc" },
+	team_pipeline: {
+		title: "projects.presetTeamPipeline",
+		description: "projects.presetTeamPipelineDesc",
+	},
+	delivery: { title: "projects.presetDelivery", description: "projects.presetDeliveryDesc" },
+	recurring: { title: "projects.presetRecurring", description: "projects.presetRecurringDesc" },
+};
 
 /**
  * Projekty — plochý grid karet (design handoff: auto-fill minmax 290px).
@@ -276,9 +291,11 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 	const { t } = useTranslation();
 	const [name, setName] = useState("");
 	const [color, setColor] = useState<string | null>(null);
-	const [kind, setKind] = useState("flow");
+	const [preset, setPreset] = useState<ProjectPreset>("blank");
+	const [kind, setKind] = useState<ProjectKind>("flow");
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string | null>(null);
+	const projectId = useRef(crypto.randomUUID());
 
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
@@ -296,7 +313,14 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ name: name.trim(), workspaceId, color, kind }),
+				body: JSON.stringify({
+					id: projectId.current,
+					name: name.trim(),
+					workspaceId,
+					color,
+					kind,
+					preset,
+				}),
 			});
 			if (r.ok) {
 				onClose();
@@ -323,13 +347,15 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 			/>
 			<div
 				className="pointer-events-none fixed inset-0 flex items-start justify-center"
-				style={{ zIndex: 51, paddingTop: "14vh" }}
+				style={{ zIndex: 51, paddingTop: "max(16px, min(10vh, 96px))" }}
 			>
 				<div
 					className="pointer-events-auto rounded-2xl border border-line bg-card"
 					style={{
 						width: 440,
 						maxWidth: "94vw",
+						maxHeight: "calc(100vh - 32px)",
+						overflowY: "auto",
 						boxShadow: "var(--w-shadow)",
 						padding: "18px 20px",
 					}}
@@ -342,7 +368,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 							type="button"
 							onClick={onClose}
 							aria-label={t("projects.newCancel")}
-							className="grid h-7 w-7 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
+							className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 						>
 							<Icon name="zavrit" size={15} />
 						</button>
@@ -360,6 +386,41 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 						className="mt-3.5 mb-1.5 font-display font-bold text-ink-3 uppercase"
 						style={{ fontSize: 10.5, letterSpacing: ".05em" }}
 					>
+						{t("projects.newPreset")}
+					</div>
+					<div className="grid grid-cols-2 gap-2" data-project-presets>
+						{PROJECT_PRESETS.map((value) => {
+							const meta = PROJECT_PRESET_META[value];
+							const definition = PROJECT_PRESET_DEFINITIONS[value];
+							return (
+								<button
+									key={value}
+									type="button"
+									onClick={() => {
+										setPreset(value);
+										setKind(definition.kind);
+									}}
+									aria-pressed={preset === value}
+									className="min-h-16 rounded-xl border p-2.5 text-left"
+									style={{
+										borderColor: preset === value ? "var(--w-brass)" : "var(--w-line)",
+										background: preset === value ? "var(--w-brass-soft)" : "var(--w-panel-2)",
+									}}
+								>
+									<span className="block font-display font-bold text-ink" style={{ fontSize: 12.5 }}>
+										{t(meta.title)}
+									</span>
+									<span className="mt-0.5 block font-body text-ink-3" style={{ fontSize: 10.5, lineHeight: 1.3 }}>
+										{t(meta.description)}
+									</span>
+								</button>
+							);
+						})}
+					</div>
+					<div
+						className="mt-3.5 mb-1.5 font-display font-bold text-ink-3 uppercase"
+						style={{ fontSize: 10.5, letterSpacing: ".05em" }}
+					>
 						{t("projects.newColor")}
 					</div>
 					<div className="flex flex-wrap gap-1.5">
@@ -367,7 +428,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 							type="button"
 							onClick={() => setColor(null)}
 							aria-label="—"
-							className="h-6 w-6 rounded-full border border-line"
+							className="h-11 w-11 rounded-full border border-line"
 							style={{
 								outline: color === null ? "2px solid var(--w-avatar)" : "none",
 								outlineOffset: 1,
@@ -379,7 +440,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 								type="button"
 								onClick={() => setColor(c)}
 								aria-label={c}
-								className="h-6 w-6 rounded-full"
+								className="h-11 w-11 rounded-full"
 								style={{
 									background: c,
 									outline: color === c ? "2px solid var(--w-avatar)" : "none",
@@ -409,7 +470,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 								key={k}
 								type="button"
 								onClick={() => setKind(k)}
-								className="rounded-lg font-display font-semibold"
+								className="min-h-11 rounded-lg font-display font-semibold"
 								style={{
 									fontSize: 12.5,
 									padding: "6px 13px",
@@ -438,7 +499,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 						<button
 							type="button"
 							onClick={onClose}
-							className="rounded-[9px] border border-line font-display font-semibold text-ink-2 hover:border-ink-3"
+							className="min-h-11 rounded-[9px] border border-line font-display font-semibold text-ink-2 hover:border-ink-3"
 							style={{ padding: "9px 15px", fontSize: 13 }}
 						>
 							{t("projects.newCancel")}
@@ -447,7 +508,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 							type="button"
 							onClick={() => void create()}
 							disabled={!name.trim() || busy}
-							className="rounded-[9px] font-display font-bold text-white hover:brightness-105 disabled:opacity-50"
+							className="min-h-11 rounded-[9px] font-display font-bold text-white hover:brightness-105 disabled:opacity-50"
 							style={{
 								background: "var(--w-brass)",
 								padding: "9px 17px",
