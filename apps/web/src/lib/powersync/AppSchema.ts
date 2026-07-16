@@ -159,11 +159,42 @@ const comments = new Table(
 	{
 		task_id: column.text,
 		project_id: column.text,
+		parent_id: column.text,
 		author_id: column.text,
 		body: column.text,
 		created_at: column.text,
 	},
 	tracked({ indexes: { by_task: ["task_id"] } }),
+);
+
+const mentions = new Table(
+	{
+		comment_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		user_id: column.text,
+		created_by: column.text,
+		created_at: column.text,
+	},
+	tracked({
+		indexes: {
+			by_comment: ["comment_id"],
+			by_task: ["task_id"],
+			by_user: ["user_id"],
+		},
+	}),
+);
+
+const comment_reactions = new Table(
+	{
+		comment_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		user_id: column.text,
+		emoji: column.text,
+		created_at: column.text,
+	},
+	tracked({ indexes: { by_comment: ["comment_id"], by_task: ["task_id"] } }),
 );
 
 const comment_decisions = new Table(
@@ -491,6 +522,8 @@ export const AppSchema = new Schema({
 	assignments,
 	comments,
 	comment_decisions,
+	mentions,
+	comment_reactions,
 	task_occurrence_overrides,
 	task_user_colors,
 	local_rejected_ops,
@@ -522,6 +555,8 @@ export type StatusRow = Database["statuses"];
 export type ProjectMemberRow = Database["project_members"];
 export type AssignmentRow = Database["assignments"];
 export type CommentRow = Database["comments"];
+export type MentionRow = Database["mentions"];
+export type CommentReactionRow = Database["comment_reactions"];
 export type ReminderRow = Database["reminders"];
 export type TaskUserColorRow = Database["task_user_colors"];
 export type TaskActivityRow = Database["task_activity"];

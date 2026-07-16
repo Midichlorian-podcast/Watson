@@ -2,6 +2,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "@watson/i18n";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { logTaskActivity } from "../lib/activity";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { useBulkSelect } from "../lib/bulkSelect";
@@ -11,7 +12,6 @@ import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { type RescheduleKey, rescheduleDate } from "../lib/reschedule";
 import { useTaskDetail } from "../lib/taskDetail";
-import { logTaskActivity } from "../lib/activity";
 import { toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { deleteTasksWithUndo, pushUndo } from "../lib/undo";
@@ -247,6 +247,9 @@ function Bar() {
 	const CHILD_PROJECT_TABLES = [
 		"assignments",
 		"comments",
+		"comment_decisions",
+		"mentions",
+		"comment_reactions",
 		"task_occurrence_overrides",
 		"task_user_colors",
 		"reminders",

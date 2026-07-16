@@ -45,7 +45,7 @@ function CardHead({
 			<span className="flex-1 font-display font-bold text-ink" style={{ fontSize: 13.5 }}>
 				{title}
 			</span>
-			{footLabel && (
+			{footLabel && onFoot && (
 				<button
 					type="button"
 					onClick={onFoot}
@@ -54,6 +54,11 @@ function CardHead({
 				>
 					{footLabel}
 				</button>
+			)}
+			{footLabel && !onFoot && (
+				<span className="font-display font-semibold text-ink-3" style={{ fontSize: 11.5 }}>
+					{footLabel}
+				</span>
 			)}
 		</div>
 	);
@@ -96,6 +101,9 @@ export function Prehled() {
 	const [layout, setLayout] = useState<"grid" | "feed">(() =>
 		storageGet("watson.ovLayout") === "feed" ? "feed" : "grid",
 	);
+	const [communicationFilter, setCommunicationFilter] = useState<"all" | "mentions" | "tasks">(
+		"all",
+	);
 	const switchLayout = (v: "grid" | "feed") => {
 		setLayout(v);
 		storageSet("watson.ovLayout", v);
@@ -117,9 +125,29 @@ export function Prehled() {
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
+	const { data: allComments, isLoading: commentsLoading } = usePsQuery<{
+		id: string;
+		task_id: string;
+		parent_id: string | null;
+		author_id: string | null;
+		body: string;
+		created_at: string | null;
+	}>("SELECT id, task_id, parent_id, author_id, body, created_at FROM comments");
+	const { data: allMentions, isLoading: mentionsLoading } = usePsQuery<{
+		comment_id: string;
+		user_id: string;
+	}>("SELECT comment_id, user_id FROM mentions");
 	// CC-P0-01: 0 / „vše odbaveno" se smí tvrdit až po doběhnutí všech dotazů —
 	// undefined běžícího dotazu není autoritativní prázdno.
-	const ready = useAllReady(projLoading, tasksLoading, listsLoading, itemsLoading, asgLoading);
+	const ready = useAllReady(
+		projLoading,
+		tasksLoading,
+		listsLoading,
+		itemsLoading,
+		asgLoading,
+		commentsLoading,
+		mentionsLoading,
+	);
 
 	const projById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 	const firms = useMemo(() => (workspaces ?? []).filter((w) => !w.isPersonal), [workspaces]);
@@ -226,6 +254,44 @@ export function Prehled() {
 				};
 			});
 
+		const userId = session?.user?.id ?? null;
+		const taskById = new Map((allTasks ?? []).map((task) => [task.id, task]));
+		const commentById = new Map((allComments ?? []).map((comment) => [comment.id, comment]));
+		const assignedTaskIds = new Set(
+			(assignments ?? [])
+				.filter((assignment) => assignment.user_id === userId && assignment.task_id)
+				.map((assignment) => assignment.task_id as string),
+		);
+		const mentionedCommentIds = new Set(
+			(allMentions ?? [])
+				.filter((mention) => mention.user_id === userId)
+				.map((mention) => mention.comment_id),
+		);
+		const communication = (allComments ?? [])
+			.map((comment) => {
+				const task = taskById.get(comment.task_id);
+				if (!task || !fOk(task) || !userId) return null;
+				const mentioned = mentionedCommentIds.has(comment.id);
+				const parent = comment.parent_id ? commentById.get(comment.parent_id) : null;
+				const repliesToMe = parent?.author_id === userId;
+				const concernsMyTask = assignedTaskIds.has(task.id) || task.created_by === userId;
+				if (!mentioned && !repliesToMe && !concernsMyTask) return null;
+				if (comment.author_id === userId && !mentioned) return null;
+				const author = comment.author_id ? (members.get(comment.author_id) ?? "") : "";
+				return {
+					id: comment.id,
+					taskId: task.id,
+					taskName: task.name ?? "",
+					body: comment.body,
+					author,
+					initials: author ? initials(author) : "?",
+					kind: mentioned ? ("mention" as const) : repliesToMe ? ("reply" as const) : ("task" as const),
+					createdAt: comment.created_at ?? "",
+				};
+			})
+			.filter((item): item is NonNullable<typeof item> => Boolean(item))
+			.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
 		// Dění týmu: dnes dokončené (kdo = první přiřazený, fallback tvůrce) + aktivní kroky postupů
 		const feed: { key: string; ini: string; txt: string; t: string }[] = [];
 		// completed_at je UTC ISO → formátovat lokálně (slice by ukázal čas o 2 h jinak)
@@ -317,6 +383,7 @@ export function Prehled() {
 			risk,
 			stuck,
 			akce,
+			communication,
 			feed: feed.slice(0, 5),
 			syn: parts.slice(0, 3).join(" ") || t("prehled.synCalm"),
 		};
@@ -324,6 +391,8 @@ export function Prehled() {
 		allTasks,
 		allLists,
 		allListItems,
+		allComments,
+		allMentions,
 		assignments,
 		digest,
 		projects,
@@ -332,6 +401,7 @@ export function Prehled() {
 		goalsAll,
 		flowsAll,
 		members,
+		session?.user?.id,
 		firm,
 		workspaces,
 		t,
@@ -387,6 +457,23 @@ export function Prehled() {
 		}).format(d);
 		return `${wd} ${d.getDate()}. ${d.getMonth() + 1}.`;
 	}, [i18n.language]);
+	const communicationRows = view.communication
+		.filter((item) =>
+			communicationFilter === "mentions"
+				? item.kind === "mention"
+				: communicationFilter === "tasks"
+					? item.kind !== "mention"
+					: true,
+		)
+		.slice(0, 6);
+	const communicationTime = (iso: string) => {
+		if (!iso) return "";
+		const date = new Date(iso);
+		if (Number.isNaN(date.getTime())) return "";
+		return date.toDateString() === new Date().toDateString()
+			? new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" }).format(date)
+			: new Intl.DateTimeFormat(i18n.language, { day: "numeric", month: "numeric" }).format(date);
+	};
 
 	const synActions: { key: string; label: string; onClick: () => void }[] = [
 		...(view.ovd.length
@@ -600,6 +687,73 @@ export function Prehled() {
 								}}
 							>
 								{r.due}
+							</span>
+						</OvRow>
+					))}
+				</div>
+
+				{/* Komunikace pro mě — zmínky, odpovědi a komentáře k mým úkolům. */}
+				<div className={cardCls} style={cardStyle}>
+					<CardHead
+						title={t("prehled.cardCommunication")}
+						footLabel={
+							view.communication.length > 0
+								? t("prehled.communicationCount", { count: view.communication.length })
+								: undefined
+						}
+					/>
+					<div className="mx-3 mb-2 flex rounded-lg border border-line bg-panel-2 p-[3px]">
+						{(["all", "mentions", "tasks"] as const).map((filter) => (
+							<button
+								key={filter}
+								type="button"
+								aria-pressed={communicationFilter === filter}
+								onClick={() => setCommunicationFilter(filter)}
+								className="min-h-11 flex-1 rounded-md px-2 font-display font-semibold"
+								style={{
+									fontSize: 10.5,
+									background: communicationFilter === filter ? "var(--w-card)" : "transparent",
+									color: communicationFilter === filter ? "var(--w-ink)" : "var(--w-ink-3)",
+								}}
+							>
+								{t(`prehled.communicationFilter${filter.charAt(0).toUpperCase()}${filter.slice(1)}`)}
+							</button>
+						))}
+					</div>
+					{!ready && <LoadingNote />}
+					{ready && communicationRows.length === 0 && (
+						<div className="px-4 pt-1 pb-4 font-body text-ink-3" style={{ fontSize: 12.5 }}>
+							{t("prehled.communicationEmpty")}
+						</div>
+					)}
+					{communicationRows.map((item) => (
+						<OvRow key={item.id} onClick={() => open(item.taskId)}>
+							<span
+									className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-display font-bold text-white"
+									style={{ fontSize: 9, background: "var(--w-avatar)" }}
+							>
+								{item.initials}
+							</span>
+							<div className="min-w-0 flex-1">
+								<div className="flex items-center gap-1.5">
+									{item.kind === "mention" && (
+										<span className="shrink-0 rounded-full bg-brass-soft px-1.5 py-0.5 font-display font-bold text-brass-text" style={{ fontSize: 9.5 }}>
+											@
+										</span>
+									)}
+									<span className="truncate font-display font-semibold text-ink" style={{ fontSize: 12.5 }}>
+										{item.author || t("detail.timelineUnknownUser")}
+									</span>
+									<span className="truncate font-body text-ink-3" style={{ fontSize: 10.5 }}>
+										· {item.taskName}
+									</span>
+								</div>
+								<div className="mt-0.5 truncate font-body text-ink-2" style={{ fontSize: 12 }}>
+									{item.body}
+								</div>
+							</div>
+							<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 10.5 }}>
+								{communicationTime(item.createdAt)}
 							</span>
 						</OvRow>
 					))}

@@ -42,6 +42,7 @@ export const RESTORE_TABLE_ORDER = [
 	"comments",
 	"comment_decisions",
 	"mentions",
+	"comment_reactions",
 	"attachments",
 	"checklist_items",
 	"labels",
@@ -103,6 +104,8 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT d.* FROM comment_decisions d JOIN projects p ON p.id = d.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	mentions: (ws) =>
 		sql`SELECT m.* FROM mentions m JOIN comments c ON c.id = m.comment_id JOIN tasks t ON t.id = c.task_id JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	comment_reactions: (ws) =>
+		sql`SELECT r.* FROM comment_reactions r JOIN projects p ON p.id = r.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	attachments: (ws) =>
 		sql`SELECT a.* FROM attachments a LEFT JOIN tasks t ON t.id = a.task_id LEFT JOIN comments c ON c.id = a.comment_id LEFT JOIN tasks ct ON ct.id = c.task_id JOIN projects p ON p.id = COALESCE(t.project_id, ct.project_id) WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	checklist_items: (ws) =>

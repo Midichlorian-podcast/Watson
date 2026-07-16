@@ -32,11 +32,17 @@ bucket_definitions:
       - SELECT id, task_id, project_id, user_id, completed_at, created_at
         FROM assignments
         WHERE project_id = bucket.project_id
-      - SELECT id, task_id, project_id, author_id, body, created_at
+      - SELECT id, task_id, project_id, parent_id, author_id, body, created_at
         FROM comments
         WHERE project_id = bucket.project_id
       - SELECT id, comment_id, task_id, project_id, marked_by, created_at
         FROM comment_decisions
+        WHERE project_id = bucket.project_id
+      - SELECT id, comment_id, task_id, project_id, user_id, created_by, created_at
+        FROM mentions
+        WHERE project_id = bucket.project_id
+      - SELECT id, comment_id, task_id, project_id, user_id, emoji, created_at
+        FROM comment_reactions
         WHERE project_id = bucket.project_id
       - SELECT id, task_id, project_id, occ_date, done, skipped, created_at
         FROM task_occurrence_overrides

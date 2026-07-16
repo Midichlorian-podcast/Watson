@@ -60,6 +60,7 @@ start_api 0
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:rbac
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:sync-refs
 DECISIONS_API="$API_URL" pnpm --filter @watson/api verify:comment-decisions
+COMMENT_COLLAB_API="$API_URL" pnpm --filter @watson/api verify:comment-collaboration
 SAVED_VIEWS_API="$API_URL" pnpm --filter @watson/api verify:saved-views
 PROJECT_PRESETS_API="$API_URL" pnpm --filter @watson/api verify:project-presets
 TASK_DEPENDENCIES_API="$API_URL" pnpm --filter @watson/api verify:task-dependencies

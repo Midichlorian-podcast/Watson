@@ -6,8 +6,9 @@
  * manifest schématu, checksum i data, která lokální DB nedrží (task_activity,
  * audit_events, mail). Skutečná versioned záloha s ověřeným restore = F3 (CC-P0-14).
  */
-import { powerSync } from "./powersync/db";
+
 import { API_URL } from "./api";
+import { powerSync } from "./powersync/db";
 
 /** Tabulky zahrnuté do zálohy (dle AppSchema; task_activity je insert-only, lokálně není). */
 const BACKUP_TABLES = [
@@ -19,6 +20,8 @@ const BACKUP_TABLES = [
 	"assignments",
 	"comments",
 	"comment_decisions",
+	"mentions",
+	"comment_reactions",
 	"task_occurrence_overrides",
 	"task_user_colors",
 	"reminders",

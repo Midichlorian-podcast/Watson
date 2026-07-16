@@ -4,6 +4,7 @@
  */
 import { sql } from "drizzle-orm";
 import {
+	type AnyPgColumn,
 	bigint,
 	check,
 	foreignKey,
@@ -68,6 +69,10 @@ export const comments = pgTable(
 		projectId: uuid("project_id")
 			.notNull()
 			.references(() => projects.id, { onDelete: "cascade" }),
+		/** Vlákno komentářů. UI zakládá odpovědi pod kořen; DB hlídá stejný task i projekt. */
+		parentId: uuid("parent_id").references((): AnyPgColumn => comments.id, {
+			onDelete: "cascade",
+		}),
 		authorId: uuid("author_id").references(() => users.id, {
 			onDelete: "set null",
 		}),
@@ -77,8 +82,16 @@ export const comments = pgTable(
 		updatedAt: updatedAt(),
 	},
 	(t) => [
+		uniqueIndex("comments_id_task_project_uq").on(t.id, t.taskId, t.projectId),
 		index("comments_task_idx").on(t.taskId),
 		index("comments_project_idx").on(t.projectId),
+		index("comments_parent_idx").on(t.parentId),
+		check("comments_not_self_parent", sql`${t.parentId} is null or ${t.parentId} <> ${t.id}`),
+		foreignKey({
+			name: "comments_parent_same_task_project_fk",
+			columns: [t.parentId, t.taskId, t.projectId],
+			foreignColumns: [t.id, t.taskId, t.projectId],
+		}).onDelete("cascade"),
 	],
 );
 
@@ -150,11 +163,69 @@ export const mentions = pgTable(
 		commentId: uuid("comment_id")
 			.notNull()
 			.references(() => comments.id, { onDelete: "cascade" }),
+		taskId: uuid("task_id").notNull(),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
 		userId: uuid("user_id")
 			.notNull()
 			.references(() => users.id, { onDelete: "cascade" }),
+		createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+		createdAt: createdAt(),
 	},
-	(t) => [uniqueIndex("mentions_comment_user_uq").on(t.commentId, t.userId)],
+	(t) => [
+		uniqueIndex("mentions_comment_user_uq").on(t.commentId, t.userId),
+		index("mentions_user_idx").on(t.userId),
+		index("mentions_task_idx").on(t.taskId),
+		index("mentions_project_idx").on(t.projectId),
+		foreignKey({
+			name: "mentions_comment_same_task_project_fk",
+			columns: [t.commentId, t.taskId, t.projectId],
+			foreignColumns: [comments.id, comments.taskId, comments.projectId],
+		}).onDelete("cascade"),
+		foreignKey({
+			name: "mentions_task_same_project_fk",
+			columns: [t.taskId, t.projectId],
+			foreignColumns: [tasks.id, tasks.projectId],
+		}).onDelete("cascade"),
+	],
+);
+
+/** Lehká reakce na komentář; pevná sada emoji drží UI i analytiku předvídatelnou. */
+export const commentReactions = pgTable(
+	"comment_reactions",
+	{
+		id: pk(),
+		commentId: uuid("comment_id")
+			.notNull()
+			.references(() => comments.id, { onDelete: "cascade" }),
+		taskId: uuid("task_id").notNull(),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		userId: uuid("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		emoji: varchar("emoji", { length: 8 }).notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		uniqueIndex("comment_reactions_user_emoji_uq").on(t.commentId, t.userId, t.emoji),
+		index("comment_reactions_comment_idx").on(t.commentId),
+		index("comment_reactions_task_idx").on(t.taskId),
+		index("comment_reactions_project_idx").on(t.projectId),
+		check("comment_reactions_emoji_valid", sql`${t.emoji} in ('👍', '❤️', '🎉', '👀')`),
+		foreignKey({
+			name: "comment_reactions_comment_same_task_project_fk",
+			columns: [t.commentId, t.taskId, t.projectId],
+			foreignColumns: [comments.id, comments.taskId, comments.projectId],
+		}).onDelete("cascade"),
+		foreignKey({
+			name: "comment_reactions_task_same_project_fk",
+			columns: [t.taskId, t.projectId],
+			foreignColumns: [tasks.id, tasks.projectId],
+		}).onDelete("cascade"),
+	],
 );
 
 export const attachments = pgTable("attachments", {
@@ -239,6 +310,7 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
 
 export type Comment = typeof comments.$inferSelect;
 export type Mention = typeof mentions.$inferSelect;
+export type CommentReaction = typeof commentReactions.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type Reminder = typeof reminders.$inferSelect;
 export type TaskDependency = typeof taskDependencies.$inferSelect;

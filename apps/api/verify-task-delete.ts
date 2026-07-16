@@ -5,12 +5,14 @@ import {
 	assignments,
 	auditEvents,
 	commentDecisions,
+	commentReactions,
 	comments,
 	entityLinks,
 	eq,
 	getDb,
 	meetings,
 	memberships,
+	mentions,
 	projectMembers,
 	projects,
 	sql,
@@ -112,6 +114,8 @@ async function main(): Promise<void> {
 	const assignmentId = crypto.randomUUID();
 	const commentId = crypto.randomUUID();
 	const decisionId = crypto.randomUUID();
+	const mentionId = crypto.randomUUID();
+	const reactionId = crypto.randomUUID();
 	const activityId = crypto.randomUUID();
 	const linkId = crypto.randomUUID();
 	await db.transaction(async (tx) => {
@@ -168,6 +172,22 @@ async function main(): Promise<void> {
 		taskId: childId,
 		projectId: project.id,
 		markedBy: owner.id,
+	});
+	await db.insert(mentions).values({
+		id: mentionId,
+		commentId,
+		taskId: childId,
+		projectId: project.id,
+		userId: editor.id,
+		createdBy: owner.id,
+	});
+	await db.insert(commentReactions).values({
+		id: reactionId,
+		commentId,
+		taskId: childId,
+		projectId: project.id,
+		userId: editor.id,
+		emoji: "👍",
 	});
 	await db.insert(taskActivity).values({
 		id: activityId,
@@ -226,6 +246,9 @@ async function main(): Promise<void> {
 			(await db.select().from(comments).where(eq(comments.id, commentId))).length === 0 &&
 				(await db.select().from(commentDecisions).where(eq(commentDecisions.id, decisionId)))
 					.length === 0 &&
+				(await db.select().from(mentions).where(eq(mentions.id, mentionId))).length === 0 &&
+				(await db.select().from(commentReactions).where(eq(commentReactions.id, reactionId)))
+					.length === 0 &&
 				(await db.select().from(assignments).where(eq(assignments.id, assignmentId))).length === 0 &&
 				(await db.select().from(taskActivity).where(eq(taskActivity.id, activityId))).length === 0 &&
 				(await db.select().from(entityLinks).where(eq(entityLinks.id, linkId))).length === 0,
@@ -259,6 +282,9 @@ async function main(): Promise<void> {
 				(await db.select().from(meetings).where(eq(meetings.id, meetingId))).length === 1 &&
 				(await db.select().from(comments).where(eq(comments.id, commentId))).length === 1 &&
 				(await db.select().from(commentDecisions).where(eq(commentDecisions.id, decisionId)))
+					.length === 1 &&
+				(await db.select().from(mentions).where(eq(mentions.id, mentionId))).length === 1 &&
+				(await db.select().from(commentReactions).where(eq(commentReactions.id, reactionId)))
 					.length === 1 &&
 				(await db.select().from(assignments).where(eq(assignments.id, assignmentId))).length === 1 &&
 				(await db.select().from(taskActivity).where(eq(taskActivity.id, activityId))).length === 1 &&

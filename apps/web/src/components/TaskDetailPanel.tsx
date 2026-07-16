@@ -13,6 +13,7 @@ import { initials } from "../lib/format";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { rescheduleDate } from "../lib/reschedule";
+import { CommentComposer } from "./CommentComposer";
 
 type TimelineKind =
 	| "task_created"
@@ -103,6 +104,51 @@ type Member = {
 	role: "commenter" | "editor" | "manager";
 };
 type AssignMode = "single" | "shared_any" | "shared_all";
+type CommentEntry = {
+	id: string;
+	body: string | null;
+	parent_id: string | null;
+	author_id: string | null;
+	created_at: string | null;
+};
+const COMMENT_REACTIONS = ["👍", "❤️", "🎉", "👀"] as const;
+
+function commentBody(
+	body: string,
+	mentionUserIds: string[],
+	members: Member[],
+): ReactNode[] {
+	const tokens = mentionUserIds
+		.map((id) => members.find((member) => member.id === id))
+		.filter((member): member is Member => Boolean(member))
+		.map((member) => `@${member.name}`)
+		.sort((left, right) => right.length - left.length);
+	if (tokens.length === 0) return [body];
+	const output: ReactNode[] = [];
+	let cursor = 0;
+	let key = 0;
+	while (cursor < body.length) {
+		let next: { at: number; token: string } | null = null;
+		for (const token of tokens) {
+			const at = body.indexOf(token, cursor);
+			if (at >= 0 && (!next || at < next.at || (at === next.at && token.length > next.token.length))) {
+				next = { at, token };
+			}
+		}
+		if (!next) {
+			output.push(body.slice(cursor));
+			break;
+		}
+		if (next.at > cursor) output.push(body.slice(cursor, next.at));
+		output.push(
+			<span key={`mention-${key++}`} className="font-semibold text-brass-text">
+				{next.token}
+			</span>,
+		);
+		cursor = next.at + next.token.length;
+	}
+	return output;
+}
 
 /** Relativní čas komentáře („dnes 8:05" / „12. 6."). */
 function whenLabel(iso: string | null, t: (k: string) => string) {
@@ -394,14 +440,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const depth = depthRows?.[0]?.depth ?? 1;
 
 	const project = useProject(task?.project_id ?? undefined);
-	const { data: comments } = usePsQuery<{
-		id: string;
-		body: string | null;
-		author_id: string | null;
-		created_at: string | null;
-	}>("SELECT id, body, author_id, created_at FROM comments WHERE task_id = ? ORDER BY created_at", [
-		realId,
-	]);
+	const { data: comments } = usePsQuery<CommentEntry>(
+		"SELECT id, body, parent_id, author_id, created_at FROM comments WHERE task_id = ? ORDER BY created_at",
+		[realId],
+	);
 	const { data: commentDecisions } = usePsQuery<{
 		id: string;
 		comment_id: string;
@@ -411,6 +453,16 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		"SELECT id, comment_id, marked_by, created_at FROM comment_decisions WHERE task_id = ? ORDER BY created_at",
 		[realId],
 	);
+	const { data: commentMentions } = usePsQuery<{
+		comment_id: string;
+		user_id: string;
+	}>("SELECT comment_id, user_id FROM mentions WHERE task_id = ?", [realId]);
+	const { data: commentReactions } = usePsQuery<{
+		id: string;
+		comment_id: string;
+		user_id: string;
+		emoji: string;
+	}>("SELECT id, comment_id, user_id, emoji FROM comment_reactions WHERE task_id = ?", [realId]);
 	const { data: assignRows } = usePsQuery<{
 		id: string;
 		user_id: string | null;
@@ -590,6 +642,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const [whyNowOpen, setWhyNowOpen] = useState(false);
 	const [subText, setSubText] = useState("");
 	const [cmtText, setCmtText] = useState("");
+	const [replyTo, setReplyTo] = useState<string | null>(null);
+	const [replyText, setReplyText] = useState("");
+	const [reactionPicker, setReactionPicker] = useState<string | null>(null);
+	const [reactionBusy, setReactionBusy] = useState<string | null>(null);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [assignOpen, setAssignOpen] = useState(false);
 	const [selectedBlockerId, setSelectedBlockerId] = useState("");
@@ -626,6 +682,33 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const myProjectRole = members.find((m) => m.id === session?.user?.id)?.role;
 	const canDecide = myProjectRole === "editor" || myProjectRole === "manager";
 	const decisionsByComment = new Map((commentDecisions ?? []).map((d) => [d.comment_id, d]));
+	const mentionIdsByComment = new Map<string, string[]>();
+	for (const mention of commentMentions ?? []) {
+		const ids = mentionIdsByComment.get(mention.comment_id) ?? [];
+		ids.push(mention.user_id);
+		mentionIdsByComment.set(mention.comment_id, ids);
+	}
+	const reactionsByComment = new Map<string, { emoji: string; count: number; mineId: string | null }[]>();
+	for (const reaction of commentReactions ?? []) {
+		const groups = reactionsByComment.get(reaction.comment_id) ?? [];
+		let group = groups.find((candidate) => candidate.emoji === reaction.emoji);
+		if (!group) {
+			group = { emoji: reaction.emoji, count: 0, mineId: null };
+			groups.push(group);
+		}
+		group.count += 1;
+		if (reaction.user_id === session?.user?.id) group.mineId = reaction.id;
+		reactionsByComment.set(reaction.comment_id, groups);
+	}
+	const commentIds = new Set(cmts.map((comment) => comment.id));
+	const rootComments = cmts.filter((comment) => !comment.parent_id || !commentIds.has(comment.parent_id));
+	const repliesByComment = new Map<string, CommentEntry[]>();
+	for (const comment of cmts) {
+		if (!comment.parent_id || !commentIds.has(comment.parent_id)) continue;
+		const replies = repliesByComment.get(comment.parent_id) ?? [];
+		replies.push(comment);
+		repliesByComment.set(comment.parent_id, replies);
+	}
 	const timelineEvents = Array.from(
 		new Map(
 			(timelineQuery.data?.pages ?? [])
@@ -758,23 +841,67 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			addingSub.current = false;
 		}
 	};
-	const addCmt = async () => {
-		if (!cmtText.trim() || addingCmt.current) return;
+	const addCmt = async (body: string, parentId: string | null, mentionUserIds: string[]) => {
+		const uid = session?.user?.id;
+		if (!body.trim() || !uid || addingCmt.current) return;
 		addingCmt.current = true;
 		try {
-			await powerSync.execute(
-				"INSERT INTO comments (id, task_id, project_id, author_id, body, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
-				[
-					realId,
-					task.project_id,
-					session?.user?.id ?? null,
-					cmtText.trim(),
-					new Date().toISOString(),
-				],
-			);
-			setCmtText("");
+			const commentId = crypto.randomUUID();
+			const createdAt = new Date().toISOString();
+			await powerSync.writeTransaction(async (tx) => {
+				await tx.execute(
+					"INSERT INTO comments (id, task_id, project_id, parent_id, author_id, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+					[commentId, realId, task.project_id, parentId, uid, body.trim(), createdAt],
+				);
+				for (const mentionedUserId of new Set(mentionUserIds)) {
+					await tx.execute(
+						"INSERT INTO mentions (id, comment_id, task_id, project_id, user_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+						[
+							crypto.randomUUID(),
+							commentId,
+							realId,
+							task.project_id,
+							mentionedUserId,
+							uid,
+							createdAt,
+						],
+					);
+				}
+			});
+			if (parentId) {
+				setReplyText("");
+				setReplyTo(null);
+			} else {
+				setCmtText("");
+			}
+		} catch {
+			showToast(t("detail.commentAddFailed"));
 		} finally {
 			addingCmt.current = false;
+		}
+	};
+	const toggleReaction = async (commentId: string, emoji: string) => {
+		const uid = session?.user?.id;
+		const busyKey = `${commentId}:${emoji}`;
+		if (!uid || reactionBusy) return;
+		setReactionBusy(busyKey);
+		try {
+			const mine = reactionsByComment
+				.get(commentId)
+				?.find((group) => group.emoji === emoji)?.mineId;
+			if (mine) {
+				await powerSync.execute("DELETE FROM comment_reactions WHERE id = ?", [mine]);
+			} else {
+				await powerSync.execute(
+					"INSERT INTO comment_reactions (id, comment_id, task_id, project_id, user_id, emoji, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?)",
+					[commentId, realId, task.project_id, uid, emoji, new Date().toISOString()],
+				);
+			}
+			setReactionPicker(null);
+		} catch {
+			showToast(t("detail.reactionFailed"));
+		} finally {
+			setReactionBusy(null);
 		}
 	};
 
@@ -921,6 +1048,141 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			: repKind
 				? repeatByKind[repKind]
 				: null) ?? t("detail.recurringTask");
+	const renderCommentCard = (cm: CommentEntry, isReply = false) => {
+		const author = memberOf(cm.author_id);
+		const decision = decisionsByComment.get(cm.id);
+		const reactionGroups = reactionsByComment.get(cm.id) ?? [];
+		return (
+			<div
+				key={cm.id}
+				data-comment-id={cm.id}
+				className={isReply ? "ml-7 border-line border-l pl-3" : ""}
+				style={{ marginBottom: 8 }}
+			>
+				<div className="flex" style={{ gap: 9 }}>
+					<span
+						className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full font-display font-semibold text-white"
+						style={{ fontSize: 10, background: "var(--w-avatar)" }}
+					>
+						{initials(author?.name ?? "?")}
+					</span>
+					<div className="min-w-0 flex-1">
+						<div className="flex flex-wrap items-center font-display font-semibold text-ink" style={{ fontSize: 12.5, gap: "4px 8px" }}>
+							<span>
+								{author?.name ?? t("detail.timelineUnknownUser")} {" "}
+								<span className="font-body text-ink-3" style={{ fontSize: 11 }}>
+									· {whenLabel(cm.created_at, t)}
+								</span>
+							</span>
+							{decision && !canDecide && (
+								<span className="rounded-full bg-brass-soft px-2 py-1 text-brass-text" style={{ fontSize: 10.5 }}>
+									{t("detail.decision")}
+								</span>
+							)}
+						</div>
+						<div className="mt-0.5 whitespace-pre-wrap break-words font-body text-ink-2" style={{ fontSize: 13 }}>
+							{commentBody(cm.body ?? "", mentionIdsByComment.get(cm.id) ?? [], members)}
+						</div>
+						<div className="mt-1 flex flex-wrap items-center gap-1.5">
+							{reactionGroups.map((group) => (
+								<button
+									key={group.emoji}
+									type="button"
+									aria-pressed={Boolean(group.mineId)}
+									disabled={reactionBusy === `${cm.id}:${group.emoji}`}
+									onClick={() => void toggleReaction(cm.id, group.emoji)}
+									className="min-h-11 min-w-11 rounded-full border px-2 font-display font-semibold hover:border-brass"
+									style={{
+										fontSize: 11,
+										borderColor: group.mineId ? "var(--w-brass)" : "var(--w-line)",
+										background: group.mineId ? "var(--w-brass-soft)" : "transparent",
+									}}
+								>
+									{group.emoji} {group.count}
+								</button>
+							))}
+							<button
+								type="button"
+								aria-expanded={reactionPicker === cm.id}
+								onClick={() => setReactionPicker((current) => (current === cm.id ? null : cm.id))}
+								className="min-h-11 rounded-lg px-2 font-display font-semibold text-ink-3 hover:bg-panel-2 hover:text-ink"
+								style={{ fontSize: 11 }}
+							>
+								{t("detail.react")}
+							</button>
+							{!isReply && (
+								<button
+									type="button"
+									onClick={() => {
+										setReplyTo((current) => (current === cm.id ? null : cm.id));
+										setReplyText("");
+									}}
+									className="min-h-11 rounded-lg px-2 font-display font-semibold text-ink-3 hover:bg-panel-2 hover:text-ink"
+									style={{ fontSize: 11 }}
+								>
+									{t("detail.reply")}
+								</button>
+							)}
+							{canDecide && (
+								<button
+									type="button"
+									aria-pressed={Boolean(decision)}
+									onClick={() => void toggleCommentDecision(cm.id)}
+									className="w-comment-decision min-h-11 rounded-lg border px-2 font-display font-semibold hover:border-brass"
+									style={{
+										fontSize: 10.5,
+										borderColor: decision ? "var(--w-brass)" : "var(--w-line)",
+										background: decision ? "var(--w-brass-soft)" : "transparent",
+										color: decision ? "var(--w-brass-text)" : "var(--w-ink-3)",
+									}}
+								>
+									{decision ? t("detail.decision") : `+ ${t("detail.decision")}`}
+								</button>
+							)}
+						</div>
+						{reactionPicker === cm.id && (
+							<div className="mt-1 flex flex-wrap gap-1.5 rounded-lg border border-line bg-panel-2 p-1.5">
+								{COMMENT_REACTIONS.map((emoji) => (
+									<button
+										key={emoji}
+										type="button"
+										aria-label={t("detail.reactWith", { emoji })}
+										disabled={Boolean(reactionBusy)}
+										onClick={() => void toggleReaction(cm.id, emoji)}
+										className="min-h-11 min-w-11 rounded-lg text-lg hover:bg-card"
+									>
+										{emoji}
+									</button>
+								))}
+							</div>
+						)}
+					</div>
+				</div>
+				{!isReply && (repliesByComment.get(cm.id)?.length ?? 0) > 0 && (
+					<div className="mt-2">
+						{repliesByComment.get(cm.id)?.map((reply) => renderCommentCard(reply, true))}
+					</div>
+				)}
+				{!isReply && replyTo === cm.id && (
+					<div className="mt-2 ml-7 border-line border-l pl-3">
+						<CommentComposer
+							autoFocus
+							value={replyText}
+							onChange={setReplyText}
+							members={members}
+							placeholder={t("detail.replyPlaceholder")}
+							submitLabel={t("detail.replySend")}
+							onCancel={() => {
+								setReplyTo(null);
+								setReplyText("");
+							}}
+							onSubmit={(body, mentionUserIds) => addCmt(body, cm.id, mentionUserIds)}
+						/>
+					</div>
+				)}
+			</div>
+		);
+	};
 
 	return (
 		<>
@@ -2141,84 +2403,14 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						<SectionLabel>
 							{t("detail.comments")} · {cmts.length}
 						</SectionLabel>
-						{cmts.map((cm) => {
-							const m = memberOf(cm.author_id);
-							const decision = decisionsByComment.get(cm.id);
-							return (
-								<div key={cm.id} className="flex" style={{ gap: 9, marginBottom: 11 }}>
-									<span
-										className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
-										style={{
-											width: 26,
-											height: 26,
-											fontSize: 10,
-											color: "#fff",
-											background: "var(--w-avatar)",
-										}}
-									>
-										{initials(m?.name ?? "?")}
-									</span>
-									<div className="min-w-0 flex-1">
-										<div
-											className="flex flex-wrap items-center font-display font-semibold"
-											style={{ fontSize: 12.5, color: "var(--w-ink)", gap: "4px 8px" }}
-										>
-											<span>
-												{m?.name ?? "—"}{" "}
-												<span
-													className="font-body"
-													style={{ fontSize: 11, color: "var(--w-ink-3)" }}
-												>
-													· {whenLabel(cm.created_at, t)}
-												</span>
-											</span>
-											{decision && !canDecide && (
-												<span
-													className="rounded-full bg-brass-soft px-2 py-1 text-brass-text"
-													style={{ fontSize: 10.5 }}
-												>
-													{t("detail.decision")}
-												</span>
-											)}
-										</div>
-										<div
-											className="font-body"
-											style={{
-												fontSize: 13,
-												color: "var(--w-ink-2)",
-												marginTop: 2,
-											}}
-										>
-											{cm.body}
-										</div>
-										{canDecide && (
-											<button
-												type="button"
-												aria-pressed={Boolean(decision)}
-												onClick={() => void toggleCommentDecision(cm.id)}
-												className="w-comment-decision mt-1 inline-flex items-center rounded-full border font-display font-semibold hover:border-brass"
-												style={{
-													fontSize: 10.5,
-													padding: "4px 9px",
-													borderColor: decision ? "var(--w-brass)" : "var(--w-line)",
-													background: decision ? "var(--w-brass-soft)" : "transparent",
-													color: decision ? "var(--w-brass-text)" : "var(--w-ink-3)",
-												}}
-											>
-												{decision ? t("detail.decision") : `+ ${t("detail.decision")}`}
-											</button>
-										)}
-									</div>
-								</div>
-							);
-						})}
-						<input
+						{rootComments.map((comment) => renderCommentCard(comment))}
+						<CommentComposer
 							value={cmtText}
-							onChange={(e) => setCmtText(e.target.value)}
-							onKeyDown={(e) => e.key === "Enter" && void addCmt()}
+							onChange={setCmtText}
+							members={members}
 							placeholder={t("detail.addComment")}
-							className="w-full border border-line bg-panel-2 font-body text-ink outline-none focus:border-brass"
-							style={{ borderRadius: 9, padding: "8px 11px", fontSize: 13 }}
+							submitLabel={t("detail.commentSend")}
+							onSubmit={(body, mentionUserIds) => addCmt(body, null, mentionUserIds)}
 						/>
 						{/* JEDNOTNÁ ČASOVÁ OSA — serverový audit + rozhodnutí + legacy historie bez duplicit. */}
 						<div style={{ marginTop: 22 }}>
