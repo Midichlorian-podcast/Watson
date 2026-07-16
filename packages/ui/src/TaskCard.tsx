@@ -151,19 +151,9 @@ export function TaskCard({
 
 	return (
 		<div
-			onClick={onOpen}
-			role="button"
-			tabIndex={0}
-			onKeyDown={(event) => {
-				if (event.target !== event.currentTarget) return;
-				if (event.key === "Enter" || event.key === " ") {
-					event.preventDefault();
-					event.currentTarget.click();
-				}
-			}}
 			className={cn(
 				// w-taskcard: na ≤480 px se metadata zalomí pod název (CC-P0-17, index.css)
-				"group w-taskcard flex cursor-pointer items-center rounded-[10px] border border-line transition-shadow",
+				"group w-taskcard relative flex cursor-pointer items-center rounded-[10px] border border-line transition-shadow",
 				!rowBg && "hover:bg-panel-2",
 				"hover:shadow-md",
 			)}
@@ -175,10 +165,16 @@ export function TaskCard({
 					done || dormant
 						? "var(--w-shadow-sm)"
 						: `inset 3px 0 0 ${meeting ? "var(--w-brass)" : PRI[priority]}, var(--w-shadow-sm)`,
-				opacity: done ? 0.5 : dormant ? 0.6 : 1,
 				background: rowBg,
 			}}
 		>
+			<button
+				type="button"
+				data-task-open
+				aria-label={name}
+				onClick={onOpen}
+				className="absolute inset-0 z-[1] rounded-[inherit] bg-transparent focus-visible:outline-2 focus-visible:outline-brass focus-visible:outline-offset-[-2px]"
+			/>
 			{/* výběr do hromadných akcí (prototyp data-selbox, ř. 550–551) */}
 			{sel && (
 				<button
@@ -190,7 +186,7 @@ export function TaskCard({
 					title={sel.title}
 					aria-pressed={sel.on}
 					className={cn(
-						"w-taskselbox grid shrink-0 place-items-center border-[1.6px] border-line transition-opacity hover:border-brass",
+						"w-taskselbox relative z-[2] grid shrink-0 place-items-center border-[1.6px] border-line transition-opacity hover:border-brass",
 						// skrytý checkbox nesmí být klikatelný (opacity-0 na dotyku =
 						// neviditelný cíl) → pointer-events-none; hover/focus/vybraný vrací auto
 						sel.on
@@ -222,7 +218,7 @@ export function TaskCard({
 				aria-label={done ? doneLabel : undoneLabel}
 				className={cn(
 					// w-taskcheck: na dotyku dostává 44px hit-area přes ::after (index.css)
-					"w-taskcheck relative grid shrink-0 place-items-center rounded-full",
+					"w-taskcheck relative z-[2] grid shrink-0 place-items-center rounded-full",
 					!done && "hover:border-brass",
 				)}
 				style={{
@@ -260,6 +256,7 @@ export function TaskCard({
 			{/* název + podřádek */}
 			<div className="min-w-0 flex-1">
 				<div
+					data-task-title
 					className={cn(
 						"truncate font-display font-semibold",
 						done ? "text-ink-3 line-through" : "text-ink",
@@ -307,7 +304,7 @@ export function TaskCard({
 									e.stopPropagation();
 									fromMeeting.onClick?.();
 								}}
-								className="inline-flex shrink-0 cursor-pointer items-center border-none font-display font-semibold"
+								className="relative z-[2] inline-flex shrink-0 cursor-pointer items-center border-none font-display font-semibold"
 								style={{
 									gap: 4,
 									fontSize: 10.5,
@@ -439,7 +436,7 @@ export function TaskCard({
 									e.stopPropagation();
 									sched.onShift(it.key);
 								}}
-								className="cursor-pointer whitespace-nowrap rounded-md border border-line bg-card font-mono text-ink-3 hover:border-brass hover:text-brass-text"
+								className="relative z-[2] cursor-pointer whitespace-nowrap rounded-md border border-line bg-card font-mono text-ink-3 hover:border-brass hover:text-brass-text"
 								style={{ fontSize: 9.5, padding: "2px 6px" }}
 							>
 								{it.label}
@@ -591,7 +588,7 @@ export function TaskCard({
 							event.stopPropagation();
 							quickMenu.onOpen(event);
 						}}
-						className="w-taskquick shrink-0 place-items-center rounded-lg border border-line bg-card text-ink-2 hover:border-brass hover:text-brass-text"
+						className="w-taskquick relative z-[2] shrink-0 place-items-center rounded-lg border border-line bg-card text-ink-2 hover:border-brass hover:text-brass-text"
 					>
 						<Icon name="vice" size={18} />
 					</button>
@@ -630,7 +627,7 @@ function FlowChip({ flow }: { flow: NonNullable<TaskCardProps["flow"]> }) {
 				flow.onClick?.();
 			}}
 			title={`${flow.name} · krok ${flow.pos}/${flow.total}`}
-			className="inline-flex max-w-56 shrink-0 items-center font-display font-semibold"
+			className="relative z-[2] inline-flex max-w-56 shrink-0 items-center font-display font-semibold"
 			style={{
 				gap: 5,
 				fontSize: 10.5,

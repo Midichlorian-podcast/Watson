@@ -269,7 +269,7 @@ export function Nadchazejici() {
 					</div>
 					<ul>
 						{list.map((tk) => (
-							<div
+							<li
 								key={tk.id}
 								data-kbsel={kbSel === tk.id || undefined}
 								className="rounded-xl"
@@ -284,7 +284,7 @@ export function Nadchazejici() {
 									project={tk.project_id ? projMap.get(tk.project_id) : undefined}
 									flow={flowSteps.get(tk.id)}
 								/>
-							</div>
+							</li>
 						))}
 					</ul>
 				</section>

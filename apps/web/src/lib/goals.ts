@@ -149,7 +149,7 @@ export function goalElapsed(
 /** Barvy/labely stavů (GSTAT z prototypu): [label, softBg, textColor, barColor]. */
 export const GSTAT: Record<GoalStatusKind, [string, string, string, string]> = {
 	done: ["Splněno", "var(--w-success-soft)", "var(--w-success-ink)", "#2e9c6e"],
-	track: ["Na cestě", "rgba(42,111,219,.13)", "#2a6fdb", "#2a6fdb"],
+	track: ["Na cestě", "rgba(42,111,219,.13)", "var(--w-info-ink)", "#2a6fdb"],
 	risk: [
 		"Ohrožený",
 		"rgba(198,138,62,.16)",

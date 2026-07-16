@@ -699,7 +699,7 @@ export function Prehled() {
 						</div>
 					)}
 					{view.dnes.map((r) => (
-						<OvRow key={r.id} onClick={() => open(r.id)}>
+						<OvRow key={r.id} label={r.name} onClick={() => open(r.id)}>
 							<button
 								type="button"
 								aria-label={t("detail.ariaComplete")}
@@ -707,7 +707,7 @@ export function Prehled() {
 									e.stopPropagation();
 									void toggleTask(r.row, session?.user?.id);
 								}}
-								className="grid shrink-0 place-items-center rounded-full border-[1.6px] border-line bg-card text-transparent hover:border-brass"
+								className="pointer-events-auto relative z-[3] grid shrink-0 place-items-center rounded-full border-[1.6px] border-line bg-card text-transparent hover:border-brass"
 								style={{ width: 17, height: 17 }}
 							>
 								<svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden>
@@ -802,7 +802,7 @@ export function Prehled() {
 						</div>
 					)}
 					{waitingReady && waitingRows.map((entry: WaitingRoomEntry) => (
-						<OvRow key={entry.key} onClick={() => open(entry.taskId)}>
+						<OvRow key={entry.key} label={entry.taskName} onClick={() => open(entry.taskId)}>
 							<span
 								aria-hidden
 								className="h-2 w-2 shrink-0 rounded-full"
@@ -878,7 +878,11 @@ export function Prehled() {
 						</div>
 					)}
 					{communicationRows.map((item) => (
-						<OvRow key={item.id} onClick={() => open(item.taskId)}>
+						<OvRow
+							key={item.id}
+							label={`${item.author || t("detail.timelineUnknownUser")}: ${item.taskName}`}
+							onClick={() => open(item.taskId)}
+						>
 							<span
 									className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-display font-bold text-white"
 									style={{ fontSize: 9, background: "var(--w-avatar)" }}
@@ -949,6 +953,7 @@ export function Prehled() {
 						{digest.items.slice(0, 4).map((mm) => (
 							<OvRow
 								key={mm.id}
+								label={`${mm.from}: ${mm.subj}`}
 								onClick={() =>
 									setPeek({
 										kind: "mail",
@@ -1024,6 +1029,7 @@ export function Prehled() {
 						{view.akce.map((l) => (
 							<OvRow
 								key={l.id}
+								label={l.name}
 								column
 								onClick={() =>
 									setPeek({
@@ -1083,6 +1089,7 @@ export function Prehled() {
 						{view.risk.map((g) => (
 							<OvRow
 								key={g.id}
+								label={g.name}
 								column
 								onClick={() =>
 									setPeek({
@@ -1128,6 +1135,7 @@ export function Prehled() {
 						{view.stuck.map((f) => (
 							<OvRow
 								key={f.id}
+								label={f.name}
 								column
 								onClick={() =>
 									setPeek({
@@ -1253,29 +1261,40 @@ function FirmChip({
 /** Řádek karty (prototyp data-ovrow: hover panel-2, klik). */
 function OvRow({
 	children,
+	label,
 	onClick,
 	column,
 }: {
 	children: ReactNode;
+	label: string;
 	onClick?: () => void;
 	column?: boolean;
 }) {
 	return (
-		<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-			onClick={onClick}
-			className="cursor-pointer border-line border-t hover:bg-panel-2"
-			style={
-				column
-					? { padding: "9px 16px 11px" }
-					: {
-							display: "flex",
-							alignItems: "center",
-							gap: 10,
-							padding: "8px 16px",
-						}
-			}
-		>
-			{children}
+		<div className="relative cursor-pointer border-line border-t hover:bg-panel-2">
+			<button
+				type="button"
+				aria-label={label}
+				onClick={(event) => {
+					event.stopPropagation();
+					onClick?.();
+				}}
+				className="absolute inset-0 z-[1] rounded-[inherit] bg-transparent focus-visible:outline-2 focus-visible:outline-brass focus-visible:outline-offset-[-2px]"
+			/>
+			<div
+				className={
+					column
+						? "pointer-events-none relative z-[2]"
+						: "pointer-events-none relative z-[2] flex items-center"
+				}
+				style={
+					column
+						? { padding: "9px 16px 11px" }
+						: { gap: 10, padding: "8px 16px" }
+				}
+			>
+				{children}
+			</div>
 		</div>
 	);
 }

@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useEffect, useMemo, useState } from "react";
-import { QuickAdd } from "../components/QuickAdd";
 import { DataLoading } from "../components/Loading";
+import { QuickAdd } from "../components/QuickAdd";
 import { RescheduleMenu } from "../components/RescheduleMenu";
 import { TaskItem } from "../components/TaskItem";
 import {
@@ -259,7 +259,7 @@ export function DnesTab() {
 	const card = (task: TaskRow) => {
 		const p = task.project_id ? projMap.get(task.project_id) : undefined;
 		return (
-			<div
+			<li
 				key={task.id}
 				data-kbsel={kbSel === task.id || undefined}
 				className="rounded-xl"
@@ -272,7 +272,7 @@ export function DnesTab() {
 					project={p ? { name: p.name, color: p.color, workspace_id: p.workspace_id } : undefined}
 					flow={flowSteps.get(task.id)}
 				/>
-			</div>
+			</li>
 		);
 	};
 	if (projectsLoading || tasksLoading || assignmentsLoading || stepsLoading) return <DataLoading />;

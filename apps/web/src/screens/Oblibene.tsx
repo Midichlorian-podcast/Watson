@@ -11,8 +11,8 @@ import { useFlowSteps } from "../lib/flowSteps";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjectsWithState } from "../lib/projects";
-import { useViewMode } from "../lib/viewMode";
 import { NOT_MEETING } from "../lib/tasks";
+import { useViewMode } from "../lib/viewMode";
 
 /**
  * Oblíbené — rychlé filtry ze sidebaru: Priorita 1 / Přiřazeno mně (jen reálná přiřazení,
@@ -95,12 +95,13 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 			) : (
 				<ul className="flex flex-col gap-0">
 					{shown.map((tk) => (
-						<TaskItem
-							key={tk.id}
-							task={tk}
-							project={projMap.get(tk.project_id ?? "")}
-							flow={flowSteps.get(tk.id)}
-						/>
+						<li key={tk.id}>
+							<TaskItem
+								task={tk}
+								project={projMap.get(tk.project_id ?? "")}
+								flow={flowSteps.get(tk.id)}
+							/>
+						</li>
 					))}
 				</ul>
 			)}

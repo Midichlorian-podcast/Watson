@@ -32,7 +32,6 @@ const NAV_BASE: CSSProperties = {
 const BADGE: CSSProperties = {
 	fontFamily: "var(--w-font-mono, ui-monospace, monospace)",
 	fontSize: 11,
-	opacity: 0.7,
 };
 
 function NavRow({
@@ -84,11 +83,10 @@ function NavRow({
 					style={{
 						fontSize: 9,
 						letterSpacing: ".05em",
-						color: "var(--w-brass)",
-						border: "1px solid var(--w-brass)",
+						color: "var(--w-sidebar-accent)",
+						border: "1px solid var(--w-sidebar-accent)",
 						borderRadius: 5,
 						padding: "0 4px",
-						opacity: 0.85,
 					}}
 				>
 					{badge}
@@ -545,7 +543,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 											style={{
 												fontSize: 10.5,
 												color: "var(--w-sidebar-ink-2)",
-												opacity: 0.7,
 											}}
 										>
 											{wsProjects.length}
@@ -588,7 +585,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 												<span className="truncate" style={{ flex: 1 }}>
 													{p.name}
 												</span>
-												<span className="font-mono" style={{ fontSize: 11, opacity: 0.7 }}>
+												<span className="font-mono" style={{ fontSize: 11 }}>
 													{projOpen[p.id] ?? 0}
 												</span>
 											</button>

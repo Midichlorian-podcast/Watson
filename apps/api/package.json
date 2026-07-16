@@ -42,7 +42,8 @@
 		"verify:task-acceptances": "tsx verify-task-acceptances.ts",
 		"verify:imports": "tsx verify-imports.ts",
 		"verify:availability": "tsx verify-availability.ts",
-		"verify:bookings": "tsx verify-bookings.ts"
+		"verify:bookings": "tsx verify-bookings.ts",
+		"verify:runtime-a11y": "tsx verify-runtime-a11y.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.111.0",

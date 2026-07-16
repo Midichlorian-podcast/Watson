@@ -19,20 +19,22 @@
 	--w-panel-2: #faf9f6; /* jemně odlišený panel */
 	--w-ink: #16161a;
 	--w-ink-2: #55554f;
-	--w-ink-3: #68665f; /* sekundární text: AA na všech světlých plochách */
+	--w-ink-3: #5f5d57; /* sekundární text: AA i na jemně tónovaných světlých plochách */
 	--w-line: #e7e5df;
 
 	/* ── Sidebar (tmavě navy) ────────────────────────────────── */
 	--w-sidebar: #17283f;
 	--w-sidebar-ink: #ffffff;
-	--w-sidebar-ink-2: rgba(255, 255, 255, 0.62);
+	--w-sidebar-ink-2: rgba(255, 255, 255, 0.72);
+	--w-sidebar-accent: #f0c991;
 	--w-sidebar-line: rgba(255, 255, 255, 0.1);
 
 	/* ── Sémantické ──────────────────────────────────────────── */
 	--w-success: #2e9c6e;
 	--w-success-soft: #eaf6f0;
-	--w-success-ink: #1c7a52;
-	--w-overdue: #c2473c; /* po termínu */
+	--w-success-ink: #146a45;
+	--w-info-ink: #2058b3;
+	--w-overdue: #aa332c; /* po termínu: AA i na tónovaných kartách */
 	--w-overdue-soft: #fbedea;
 	--w-avatar: #17283f;
 
@@ -102,7 +104,8 @@
 	--w-panel-2: #1e2832;
 	--w-sidebar: #0a1019;
 	--w-sidebar-ink: #eef1f4;
-	--w-sidebar-ink-2: rgba(232, 238, 244, 0.56);
+	--w-sidebar-ink-2: rgba(232, 238, 244, 0.68);
+	--w-sidebar-accent: #dcab68;
 	--w-sidebar-line: rgba(255, 255, 255, 0.08);
 	--w-ink: #eceef1;
 	--w-ink-2: #a6aeba;
@@ -114,6 +117,7 @@
 	--w-success: #39ad7d;
 	--w-success-soft: rgba(46, 156, 110, 0.16);
 	--w-success-ink: #6fd2a6;
+	--w-info-ink: #8bb8ff;
 	--w-overdue: #e07365;
 	--w-overdue-soft: rgba(224, 115, 101, 0.17);
 	--w-avatar: #33455f;

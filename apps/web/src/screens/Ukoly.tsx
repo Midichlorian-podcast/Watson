@@ -25,10 +25,10 @@ import { powerSync } from "../lib/powersync/db";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
+import { NOT_MEETING } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
 import { useViewMode } from "../lib/viewMode";
-import { NOT_MEETING } from "../lib/tasks";
 
 /**
  * Vše — záložka sloučeného modulu Úkoly: inventář top-level úkolů po projektech.
@@ -345,13 +345,13 @@ export function VseTab() {
 /** Obal řádku se zvýrazněním klávesového výběru (kbSel ring). */
 function KbRow({ selected, children }: { selected: boolean; children: ReactNode }) {
 	return (
-		<div
+		<li
 			data-kbsel={selected || undefined}
 			className="rounded-xl"
 			style={selected ? { outline: "2px solid var(--w-brass)", outlineOffset: -1 } : undefined}
 		>
 			{children}
-		</div>
+		</li>
 	);
 }
 
@@ -445,7 +445,7 @@ export function ZasobnikTab() {
 						</div>
 						<ul>
 							{list.map((tk) => (
-								<div key={tk.id} className="flex items-center" style={{ gap: 8 }}>
+								<li key={tk.id} className="flex items-center" style={{ gap: 8 }}>
 									<div
 										data-kbsel={kbSel === tk.id || undefined}
 										className="min-w-0 flex-1 rounded-xl"
@@ -467,7 +467,7 @@ export function ZasobnikTab() {
 											onPick={(iso) => void schedule(tk, iso)}
 										/>
 									</div>
-								</div>
+								</li>
 							))}
 						</ul>
 					</section>

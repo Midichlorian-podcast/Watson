@@ -930,10 +930,12 @@ function listTitle(folder: string, fdr: string): string {
 }
 
 export function MailList({
+	listWidth,
 	onOpenDrawer,
 	onSearch,
 	onCompose,
 }: {
+	listWidth: number;
 	onOpenDrawer: () => void;
 	onSearch: () => void;
 	onCompose: () => void;
@@ -962,7 +964,6 @@ export function MailList({
 		lsSet("watson-mail.lines", String(v));
 	};
 	// šířka seznamu z resize táhla (MailScreen) — při mountu se obnoví z localStorage
-	const [listW] = useState<string | undefined>(() => lsGet("watson-mail.listW") || undefined);
 	// AI fronta návrhů (prototyp aiQ + aiDecide, ř. 3316–3336)
 	const [aiQ, setAiQ] = useState<AiQueueItem[]>(aiCache.rows);
 	const [aiOpen, setAiOpenRaw] = useState(aiCache.open);
@@ -1147,7 +1148,7 @@ export function MailList({
 				minHeight: 0,
 				background: "var(--panel)",
 				position: "relative",
-				width: listW,
+				width: listWidth,
 			}}
 		>
 			<div

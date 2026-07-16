@@ -203,7 +203,8 @@ export function TaskItem({
 	const dragAct = sw.dx > 0 ? rightActs[0] : sw.mag === "l2" ? leftActs[1] : leftActs[0];
 
 	return (
-		<li
+		// biome-ignore lint/a11y/noStaticElementInteractions: obal zpracovává pouze dotykové swipe gesto, všechny akce uvnitř zůstávají nativní ovládací prvky
+		<div
 			{...swipe.handlers}
 			onContextMenu={(e) => cm.open(e, ctxItems)}
 			style={{
@@ -376,6 +377,6 @@ export function TaskItem({
 					}}
 				/>
 			</div>
-		</li>
+		</div>
 	);
 }

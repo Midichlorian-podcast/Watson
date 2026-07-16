@@ -57,8 +57,9 @@ export function MailScreen() {
 	const [dragging, setDragging] = useState(false);
 	const lwRef = useRef<string | null>(null);
 	const [listWidth, setListWidth] = useState(() => {
-		const stored = Number.parseInt(storageGet("watson-mail.listW") ?? "340", 10);
-		return Number.isFinite(stored) ? Math.max(300, Math.min(620, stored)) : 340;
+		const stored = Number.parseInt(storageGet("watson-mail.listW") ?? "", 10);
+		if (Number.isFinite(stored)) return Math.max(300, Math.min(620, stored));
+		return Math.round(Math.max(300, Math.min(392, window.innerWidth * 0.27)));
 	});
 	// sbalený panel složek na ikony (prototyp sube, ř. 347–350; persist)
 	const [sube, setSube] = useState(() => {
@@ -111,7 +112,7 @@ export function MailScreen() {
 		const el = document.querySelector<HTMLElement>("[data-listpane]");
 		if (el) el.style.width = "";
 		setLcol(false);
-		setListWidth(340);
+		setListWidth(Math.round(Math.max(300, Math.min(392, window.innerWidth * 0.27))));
 		storageSet("watson-mail.listW", "");
 		showToast("Šířka seznamu vrácena na výchozí.");
 	}, []);
@@ -265,6 +266,7 @@ export function MailScreen() {
 				{m.scr === "mail" ? (
 					<>
 						<MailList
+							listWidth={listWidth}
 							onOpenDrawer={() => setDrawer(true)}
 							onSearch={openSearch}
 							onCompose={() => setNewOn(true)}

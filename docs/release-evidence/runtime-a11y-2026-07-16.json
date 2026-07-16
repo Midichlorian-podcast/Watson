@@ -1,0 +1,56 @@
+{
+  "createdAt": "2026-07-16T22:20:44.337Z",
+  "browsers": ["chromium", "webkit"],
+  "pages": 120,
+  "reducedMotion": true,
+  "keyboard": [
+    {
+      "browser": "chromium",
+      "taskCardLayering": true,
+      "dialogTabStops": 14,
+      "focusRestored": true,
+      "mailThreadKeyboard": true,
+      "separatorBefore": 389,
+      "separatorAfter": 409
+    },
+    {
+      "browser": "webkit",
+      "taskCardLayering": true,
+      "dialogTabStops": 14,
+      "focusRestored": true,
+      "mailThreadKeyboard": true,
+      "separatorBefore": 389,
+      "separatorAfter": 409
+    }
+  ],
+  "reflow": [
+    {
+      "browser": "chromium",
+      "results": [
+        { "route": "/", "overflow": false, "hasMain": true },
+        { "route": "/mail", "overflow": false, "hasMain": true },
+        { "route": "/nastaveni", "overflow": false, "hasMain": true }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "results": [
+        { "route": "/", "overflow": false, "hasMain": true },
+        { "route": "/mail", "overflow": false, "hasMain": true },
+        { "route": "/nastaveni", "overflow": false, "hasMain": true }
+      ]
+    }
+  ],
+  "failureCounts": {
+    "overflow": 0,
+    "missingMain": 0,
+    "violations": 0,
+    "runtimeErrors": 0
+  },
+  "failures": {
+    "overflow": [],
+    "missingMain": [],
+    "violations": [],
+    "runtimeErrors": []
+  }
+}

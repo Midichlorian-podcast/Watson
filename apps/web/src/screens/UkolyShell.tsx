@@ -4,8 +4,8 @@ import { useTranslation } from "@watson/i18n";
 import { useMemo } from "react";
 import { inboxProjectIds } from "../lib/inbox";
 import { useProjects } from "../lib/projects";
-import { parseTaskTab, type TaskTab } from "../lib/taskTabs";
 import { todayISO } from "../lib/tasks";
+import { parseTaskTab, type TaskTab } from "../lib/taskTabs";
 import { DnesTab } from "./Today";
 import { VseTab, ZasobnikTab } from "./Ukoly";
 
@@ -74,7 +74,7 @@ function TaskViewTabs({ active }: { active: TaskTab }) {
 		}) as const;
 
 	const badge = (n: number) => (
-		<span className="font-mono" style={{ fontSize: 10.5, opacity: 0.8 }}>
+		<span className="font-mono" style={{ fontSize: 10.5 }}>
 			{n > 99 ? "99+" : n}
 		</span>
 	);
