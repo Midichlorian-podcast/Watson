@@ -17,6 +17,7 @@ import {
 	projectMembers,
 	projects,
 	reminders,
+	sql,
 	statuses,
 	tasks,
 	users,
@@ -26,6 +27,12 @@ import { scanAndSendDue } from "./src/push";
 
 async function main() {
 	const db = getDb();
+	// Ukliď případný fixture po přerušeném předchozím běhu. Testovací adresy jsou
+	// vyhrazené pouze tomuto skriptu; FK cascade odstraní i jejich workspaces.
+	await db.delete(workspaces).where(sql`${workspaces.ownerId} in (
+		select id from users where email like ${"reminder-%@watson.test"}
+	)`);
+	await db.delete(users).where(sql`${users.email} like ${"reminder-%@watson.test"}`);
 	const stamp = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 	const [user] = await db
 		.insert(users)
@@ -61,6 +68,8 @@ async function main() {
 			name: "Reminder verification task",
 			statusId: status.id,
 			createdBy: user.id,
+			startDate: new Date(Date.now() + 30 * 60_000),
+			startTimezone: "UTC",
 		})
 		.returning({ id: tasks.id, projectId: tasks.projectId });
 	if (!task) throw new Error("test task setup failed");
@@ -85,8 +94,29 @@ async function main() {
 				remindAt: past,
 				channel: "email",
 			},
+			{
+				taskId: task.id,
+				projectId: task.projectId,
+				userId: user.id,
+				type: "relative",
+				offsetMin: 60,
+				channel: "push",
+			},
+			{
+				taskId: task.id,
+				projectId: task.projectId,
+				userId: user.id,
+				type: "relative",
+				offsetMin: 10,
+				channel: "push",
+			},
 		])
-		.returning({ id: reminders.id, channel: reminders.channel });
+		.returning({
+			id: reminders.id,
+			channel: reminders.channel,
+			type: reminders.type,
+			offsetMin: reminders.offsetMin,
+		});
 
 	let failed = 0;
 	try {
@@ -109,7 +139,14 @@ async function main() {
 			} else {
 				console.log(`  ✓ channel=${r.channel}: sent_at NULL — poctivý stav`);
 			}
-			if (r.channel === "push") {
+			if (r.channel === "push" && r.type === "relative" && r.offsetMin === 10) {
+				if (row?.deliveryState !== "pending" || row.attempts !== 0) {
+					failed++;
+					console.error(
+						`  ✗ future relative reminder fired early: state=${row?.deliveryState}, attempts=${row?.attempts}`,
+					);
+				} else console.log("  ✓ pozdější připomínka zůstala nezávisle pending/0");
+			} else if (r.channel === "push") {
 				if (row?.deliveryState !== "retry" || row.attempts !== 1) {
 					failed++;
 					console.error(
@@ -124,7 +161,7 @@ async function main() {
 			} else console.log("  ✓ neimplementovaný email zůstal pending/0");
 		}
 
-		const pushId = inserted.find((row) => row.channel === "push")?.id;
+		const pushId = inserted.find((row) => row.channel === "push" && row.type === "time")?.id;
 		if (!pushId) throw new Error("push reminder nebyl vložen");
 		// Vynutíme čtyři další splatné retry; pátý neúspěch musí skončit dead-letter.
 		for (let attempt = 2; attempt <= 5; attempt++) {

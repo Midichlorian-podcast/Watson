@@ -50,6 +50,14 @@ import { deleteTaskWithUndo } from "../lib/undo";
 import { useOpenMailThread } from "../mail/state";
 import { WHY_NOW_MAX_LENGTH, type WhyNowSignal, whyNowSignals } from "../lib/whyNow";
 import { copyDeepLink } from "../lib/deepLink";
+import {
+	hasEquivalentReminder,
+	type ReminderCandidate,
+	reminderCandidateFireAt,
+	reminderCandidateKey,
+	reminderFireAt,
+	sortReminders,
+} from "../lib/reminders";
 
 type Pri = 1 | 2 | 3 | 4;
 type Member = {
@@ -325,6 +333,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		"SELECT id, type, remind_at, offset_min, channel FROM reminders WHERE task_id = ? AND user_id = ? ORDER BY created_at",
 		[realId, session?.user?.id ?? ""],
 	);
+	const [reminderBusyKey, setReminderBusyKey] = useState<string | null>(null);
 	// Historie úprav (audit log) — čte se z API (task_activity je insert-only, nesyncuje se).
 	const { data: activity } = useQuery({
 		queryKey: ["taskActivity", realId],
@@ -363,31 +372,75 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 				? `${min / 60} ${t("quickadd.unitHour")}`
 				: `${min} ${t("quickadd.unitMin")}`;
 
-	const addReminder = async (opts: {
-		type: "relative" | "time";
-		offsetMin?: number;
-		remindAt?: string;
-	}) => {
+	const reminderTiming = {
+		startDate: task?.start_date ?? null,
+		dueDate: task?.due_date ?? null,
+	};
+	const orderedReminders = sortReminders(reminders ?? [], reminderTiming);
+	const relativeBase = task?.start_date ? "start" : task?.due_date ? "due" : null;
+	const relativeLabel = (offsetMin: number) => {
+		if (offsetMin === 0) {
+			return t(relativeBase === "start" ? "detail.remAtStart" : "detail.remAtDue");
+		}
+		return `${fmtOffset(offsetMin)} ${t(
+			relativeBase === "start" ? "detail.remBeforeStart" : "detail.remBeforeDue",
+		)}`;
+	};
+	const reminderDateLabel = (reminder: (typeof orderedReminders)[number]) => {
+		const timestamp = reminderFireAt(reminder, reminderTiming);
+		if (timestamp == null) return null;
+		return new Intl.DateTimeFormat(i18n.language, {
+			dateStyle: "medium",
+			timeStyle: "short",
+		}).format(timestamp);
+	};
+
+	const addReminder = async (candidate: ReminderCandidate) => {
 		if (!task) return;
 		const uid = session?.user?.id;
 		if (!uid) return;
-		await powerSync.execute(
-			"INSERT INTO reminders (id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, 'push', ?)",
-			[
-				realId,
-				task.project_id,
-				uid,
-				opts.type,
-				opts.remindAt ?? null,
-				opts.offsetMin ?? null,
-				new Date().toISOString(),
-			],
-		);
-		void enablePush(); // vyžádá povolení notifikací v momentě záměru
+		const candidateFireAt = reminderCandidateFireAt(candidate, reminderTiming);
+		if (candidateFireAt == null || candidateFireAt <= Date.now()) {
+			showToast(t("detail.remPast"));
+			return;
+		}
+		if (hasEquivalentReminder(reminders ?? [], candidate)) {
+			showToast(t("detail.remDuplicate"));
+			return;
+		}
+		const busyKey = reminderCandidateKey(candidate);
+		if (reminderBusyKey === busyKey) return;
+		setReminderBusyKey(busyKey);
+		try {
+			await powerSync.execute(
+				"INSERT INTO reminders (id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, 'push', ?)",
+				[
+					realId,
+					task.project_id,
+					uid,
+					candidate.type,
+					candidate.type === "time" ? candidate.remindAt : null,
+					candidate.type === "relative" ? candidate.offsetMin : null,
+					new Date().toISOString(),
+				],
+			);
+			showToast(t("detail.remAdded"));
+			void enablePush(); // vyžádá povolení notifikací v momentě záměru
+		} catch {
+			showToast(t("detail.remAddFailed"));
+		} finally {
+			setReminderBusyKey(null);
+		}
 	};
 
-	const removeReminder = (rid: string) =>
-		powerSync.execute("DELETE FROM reminders WHERE id = ?", [rid]);
+	const removeReminder = async (rid: string) => {
+		try {
+			await powerSync.execute("DELETE FROM reminders WHERE id = ?", [rid]);
+			showToast(t("detail.remRemoved"));
+		} catch {
+			showToast(t("detail.remRemoveFailed"));
+		}
+	};
 
 	const projectId = task?.project_id ?? undefined;
 	const { data: team } = useQuery({
@@ -721,7 +774,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								type="button"
 								onClick={() => setMenuOpen((o) => !o)}
 								aria-label={t("detail.moreActions")}
-								className="grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
+								className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 							>
 								<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
 									<circle cx="8" cy="3.5" r="1.4" />
@@ -733,7 +786,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								<div
 									className="absolute border border-line bg-card"
 									style={{
-										top: 32,
+										top: 44,
 										right: 0,
 										width: 210,
 										borderRadius: 11,
@@ -772,7 +825,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							type="button"
 							onClick={onClose}
 							aria-label={t("common.cancel")}
-							className="grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
+							className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 						>
 							<Icon name="zavrit" size={16} />
 						</button>
@@ -955,7 +1008,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										color: "var(--w-ink-2)",
 									}}
 								>
-									{t("detail.reminder")}
+									{t("detail.remindersCount", { count: reminders?.length ?? 0 })}
 								</span>
 							)}
 							{/* propojení Mail ↔ úkol — mosazný chip „Z mailu · … → otevřít vlákno"
@@ -1623,36 +1676,48 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						)}
 
 						{/* PŘIPOMÍNKY — relativní (před termínem) / absolutní; doručení Web Push. */}
-						<SectionLabel>{t("detail.reminders")}</SectionLabel>
+						<SectionLabel>
+							{t("detail.remindersCount", { count: reminders?.length ?? 0 })}
+						</SectionLabel>
 						<div style={{ marginBottom: 4 }}>
-							{(reminders ?? []).map((r) => (
-								<div
+							{orderedReminders.map((r) => {
+								const dateLabel = reminderDateLabel(r);
+								return (
+									<div
 									key={r.id}
 									className="flex items-center justify-between"
-									style={{ padding: "4px 0", fontSize: 12.5 }}
+									style={{ minHeight: 44, padding: "4px 0", fontSize: 12.5, gap: 8 }}
 								>
-									<span
-										className="inline-flex items-center"
-										style={{ gap: 6, color: "var(--w-ink-2)" }}
-									>
+									<div className="flex min-w-0 items-center" style={{ gap: 8 }}>
 										<span aria-hidden>🔔</span>
-										{r.type === "relative" && r.offset_min != null
-											? `${fmtOffset(r.offset_min)} ${t("detail.remBefore")}`
-											: r.remind_at
-												? `${t("detail.remAt")} ${new Date(r.remind_at).toLocaleString()}`
-												: t("detail.reminder")}
-									</span>
+										<span className="min-w-0" style={{ color: "var(--w-ink-2)" }}>
+											<span className="block font-display font-semibold">
+												{r.type === "relative" && r.offset_min != null
+													? relativeLabel(r.offset_min)
+													: t("detail.remCustom")}
+											</span>
+											{dateLabel && (
+												<span className="block text-ink-3" style={{ fontSize: 11.5 }}>
+													{dateLabel}
+												</span>
+											)}
+										</span>
+									</div>
 									<button
 										type="button"
 										onClick={() => void removeReminder(r.id)}
-										aria-label={t("common.cancel")}
-										className="text-ink-3 hover:text-overdue"
+										aria-label={t("detail.remRemove")}
+										className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-3 hover:bg-panel-2 hover:text-overdue"
 										style={{ fontSize: 13 }}
 									>
 										✕
 									</button>
-								</div>
-							))}
+									</div>
+								);
+							})}
+							<p className="text-ink-3" style={{ fontSize: 11.5, margin: "2px 0 8px" }}>
+								{t("detail.remOptionalHint")}
+							</p>
 							<div
 								className="flex flex-wrap items-center"
 								style={{
@@ -1660,31 +1725,48 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									marginTop: (reminders?.length ?? 0) > 0 ? 6 : 2,
 								}}
 							>
-								{[10, 30, 60, 1440].map((min) => {
-									const noBase = !task.due_date && !task.start_date;
+								{[0, 10, 30, 60, 1440].map((min) => {
+									const noBase = !relativeBase;
+									const candidate = { type: "relative", offsetMin: min } as const;
+									const duplicate = hasEquivalentReminder(reminders ?? [], candidate);
+									const candidateTime = reminderCandidateFireAt(candidate, reminderTiming);
+									const past = candidateTime != null && candidateTime <= Date.now();
+									const busy = reminderBusyKey === reminderCandidateKey(candidate);
 									return (
 										<button
 											key={min}
 											type="button"
-											disabled={noBase}
-											onClick={() => void addReminder({ type: "relative", offsetMin: min })}
-											title={noBase ? t("detail.remNoDue") : undefined}
+											disabled={noBase || duplicate || past || busy}
+											onClick={() => void addReminder(candidate)}
+											title={
+												noBase
+													? t("detail.remNoDue")
+													: duplicate
+														? t("detail.remDuplicate")
+														: past
+															? t("detail.remPast")
+															: undefined
+											}
 											className="font-display font-semibold text-ink-2 hover:border-brass hover:text-brass-text"
 											style={{
 												fontSize: 11.5,
-												padding: "5px 9px",
+												minHeight: 44,
+												padding: "7px 10px",
 												borderRadius: 8,
 												border: "1px solid var(--w-line)",
-												opacity: noBase ? 0.45 : 1,
-												cursor: noBase ? "not-allowed" : "pointer",
+												opacity: noBase || duplicate || past ? 0.45 : 1,
+												cursor: noBase || duplicate || past ? "not-allowed" : "pointer",
 											}}
 										>
-											{fmtOffset(min)} {t("detail.remBefore")}
+											{relativeLabel(min)}
 										</button>
 									);
 								})}
 								<input
 									type="datetime-local"
+									min={new Date(Date.now() - new Date().getTimezoneOffset() * 60_000)
+										.toISOString()
+										.slice(0, 16)}
 									onChange={(e) => {
 										if (e.target.value)
 											void addReminder({
@@ -1694,8 +1776,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										e.target.value = "";
 									}}
 									aria-label={t("detail.remAt")}
-									className="rounded-[7px] border border-line bg-panel-2 font-mono text-ink outline-none"
-									style={{ fontSize: 11, padding: "4px 6px" }}
+									className="min-h-11 rounded-[7px] border border-line bg-panel-2 font-mono text-ink outline-none focus:border-brass"
+									style={{ fontSize: 12, padding: "7px 9px" }}
 								/>
 							</div>
 							{notificationPermission() === "denied" && (
