@@ -30,23 +30,38 @@ function SRow({
 	onClick,
 	title,
 	children,
+	action,
 	pad,
 }: {
 	active: boolean;
 	onClick: () => void;
 	title?: string;
 	children: ReactNode;
+	action?: ReactNode;
 	pad?: string;
 }) {
 	return (
-		<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+		<div
 			data-srow
 			data-active={active || undefined}
-			onClick={onClick}
 			title={title}
 			style={{ ...rowStyle, padding: pad ?? rowStyle.padding }}
 		>
-			{children}
+			<button
+				type="button"
+				aria-label={title ?? "Otevřít položku"}
+				onClick={onClick}
+				style={{
+					position: "absolute",
+					inset: 0,
+					border: 0,
+					borderRadius: "inherit",
+					background: "transparent",
+					cursor: "pointer",
+				}}
+			/>
+			<div style={{ display: "contents", pointerEvents: "none" }}>{children}</div>
+			{action}
 		</div>
 	);
 }
@@ -468,6 +483,31 @@ export function MailSub({
 						onClick={() => m.setFolder(id)}
 						title={mb.short}
 						pad="6px 10px"
+						action={
+							mb.warn && !m.adm.fixed ? (
+								<button
+									type="button"
+									data-sublbl
+									title="Token vyprší za 12 dní — klikem otevřeš Administraci pošty"
+									aria-label="Token vyprší za 12 dní — otevřít Administraci pošty"
+									onClick={() => void navigate({ to: "/nastaveni", hash: "posta-admin" })}
+									style={{
+										position: "relative",
+										zIndex: 1,
+										cursor: "pointer",
+										width: 24,
+										height: 24,
+										display: "grid",
+										placeItems: "center",
+										flex: "none",
+										border: 0,
+										background: "transparent",
+									}}
+								>
+									<span data-health="warn" style={{ width: 7, height: 7, borderRadius: "50%" }} />
+								</button>
+							) : null
+						}
 					>
 						<span
 							data-mbdot={id}
@@ -513,30 +553,6 @@ export function MailSub({
 								}}
 							>
 								AI×
-							</span>
-						)}
-						{mb.warn && !m.adm.fixed && (
-							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-								data-sublbl
-								title="Token vyprší za 12 dní — klikem otevřeš Administraci pošty"
-								aria-label="Token vyprší za 12 dní — otevřít Administraci pošty"
-								onClick={(e) => {
-									e.stopPropagation();
-									void navigate({ to: "/nastaveni", hash: "posta-admin" });
-								}}
-								style={{
-									cursor: "pointer",
-									width: 24,
-									height: 24,
-									display: "grid",
-									placeItems: "center",
-									flex: "none",
-								}}
-							>
-								<span
-									data-health="warn"
-									style={{ width: 7, height: 7, borderRadius: "50%" }}
-								/>
 							</span>
 						)}
 						<Badge>{un.per[id] ?? ""}</Badge>

@@ -396,7 +396,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								flex: "none",
 							}}
 						>
-							VIP odesílatelé <span style={{ opacity: 0.8 }}>— upozorní vždy:</span>
+							VIP odesílatelé <span>— upozorní vždy:</span>
 						</span>
 						{nast.vip.map((addr) => (
 							<span
@@ -414,12 +414,23 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								}}
 							>
 								{addr}
-								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+								<button
+									type="button"
+									aria-label={`Odebrat VIP adresu ${addr}`}
 									onClick={() => setNast({ vip: nast.vip.filter((z) => z !== addr) })}
-									style={{ cursor: "pointer", opacity: 0.6, fontSize: 12, lineHeight: 1 }}
+									style={{
+										width: 44,
+										height: 44,
+										border: 0,
+										background: "transparent",
+										cursor: "pointer",
+										color: "var(--ink-2)",
+										fontSize: 16,
+										lineHeight: 1,
+									}}
 								>
 									×
-								</span>
+								</button>
 							</span>
 						))}
 						<input
@@ -432,6 +443,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 							aria-label="Přidat VIP e-mailovou adresu"
 							style={{
 								width: 150,
+								minHeight: 44,
 								border: "1px dashed var(--line)",
 								background: "transparent",
 								borderRadius: 999,

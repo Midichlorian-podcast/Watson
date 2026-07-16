@@ -7,24 +7,25 @@
  * stavem, per-osoba štítkem „už četl(a)" a chipem úkolu; kontextové prázdné
  * stavy (empties, ř. 3657–3672) a Gatekeeper karty s verdiktem.
  */
+
+import { useNavigate } from "@tanstack/react-router";
 import {
 	type CSSProperties,
 	type MouseEvent,
 	type ReactNode,
+	useEffect,
 	useMemo,
 	useRef,
 	useState,
-	useEffect,
 } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import { showToast } from "../lib/toast";
+import { chipStyle, FilterSectionLabel, pillStyle } from "../components/filterUi";
+import { NotifCenter } from "../components/NotifCenter";
 import { storageGet, storageSet } from "../lib/storage";
+import { showToast } from "../lib/toast";
 import { type SwipeSide, useSwipe } from "../lib/useSwipe";
 import { useWatson } from "../lib/watson";
 import { CtxMenu } from "./CtxMenu";
-import { AI_QUEUE_SEED, type AiQueueItem, GK, MB, P, SLA, STL, type MailThread } from "./data";
-import { chipStyle, FilterSectionLabel, pillStyle } from "../components/filterUi";
-import { NotifCenter } from "../components/NotifCenter";
+import { AI_QUEUE_SEED, type AiQueueItem, GK, type MailThread, MB, P, SLA, STL } from "./data";
 import { type ThreadEff, useMail } from "./state";
 
 /** Ženská příjmení v seed světě (prototyp FEM — „už četla" vs „už četl"). */
@@ -469,11 +470,9 @@ function MailRow({
 		},
 	});
 	return (
-		<div role="button" onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-			onClick={() => {
-				if (swipe.swipedRecently()) return;
-				m.openThread(t.id);
-			}}
+		<div
+			role="group"
+			aria-label={`Vlákno ${t.subj}`}
 			onContextMenu={(ev) => {
 				if (!onCtx) return;
 				ev.preventDefault();
@@ -481,7 +480,6 @@ function MailRow({
 			}}
 			{...swipe.handlers}
 			data-tid={t.id}
-			tabIndex={0}
 			data-mrow
 			data-sel={m.sel === t.id || undefined}
 			data-unread={vm.unread || undefined}
@@ -563,7 +561,22 @@ function MailRow({
 						</span>
 					)}
 				</span>
-				<div style={{ flex: 1, minWidth: 0 }}>
+				<div
+					role="button"
+					tabIndex={0}
+					aria-label={`Otevřít vlákno ${t.subj}`}
+					onClick={() => {
+						if (swipe.swipedRecently()) return;
+						m.openThread(t.id);
+					}}
+					onKeyDown={(event) => {
+						if (event.key === "Enter" || event.key === " ") {
+							event.preventDefault();
+							m.openThread(t.id);
+						}
+					}}
+					style={{ flex: 1, minWidth: 0 }}
+				>
 					<div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
 						{e.pin && (
 							<svg

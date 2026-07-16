@@ -105,8 +105,8 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 							setYm({ y: d.getFullYear(), m: d.getMonth() });
 						}}
 						aria-label={t("calendar.today")}
-						className="rounded-md border border-line font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
-						style={{ fontSize: 10, padding: "2px 8px" }}
+						className="min-h-11 rounded-md border border-line px-3 font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
+						style={{ fontSize: 10 }}
 					>
 						{new Intl.DateTimeFormat(i18n.language, { day: "numeric" }).format(new Date())}.
 					</button>
@@ -115,8 +115,8 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 					type="button"
 					onClick={() => shift(-1)}
 					aria-label={t("calendar.prev")}
-					className="grid place-items-center rounded-md border border-line text-ink-2 hover:border-brass"
-					style={{ width: 22, height: 22, fontSize: 12 }}
+					className="grid size-11 place-items-center rounded-md border border-line text-ink-2 hover:border-brass"
+					style={{ fontSize: 12 }}
 				>
 					‹
 				</button>
@@ -124,8 +124,8 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 					type="button"
 					onClick={() => shift(1)}
 					aria-label={t("calendar.next")}
-					className="grid place-items-center rounded-md border border-line text-ink-2 hover:border-brass"
-					style={{ width: 22, height: 22, fontSize: 12 }}
+					className="grid size-11 place-items-center rounded-md border border-line text-ink-2 hover:border-brass"
+					style={{ fontSize: 12 }}
 				>
 					›
 				</button>
@@ -162,8 +162,8 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 							key={c.iso}
 							type="button"
 							onClick={() => onDay(c.iso)}
-							className="flex flex-col items-center rounded-lg hover:bg-panel-2"
-							style={{ padding: "3px 0 4px", gap: 2, opacity: c.inMonth ? 1 : 0.35 }}
+							className="flex min-h-11 flex-col items-center justify-center rounded-lg hover:bg-panel-2"
+							style={{ padding: "3px 0 4px", gap: 2 }}
 						>
 							<span
 								className="grid place-items-center font-display font-semibold"
@@ -173,7 +173,7 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 									borderRadius: 999,
 									fontSize: 11.5,
 									background: isToday ? "var(--w-brass)" : "transparent",
-									color: isToday ? "#fff" : "var(--w-ink)",
+									color: isToday ? "#fff" : c.inMonth ? "var(--w-ink)" : "var(--w-ink-3)",
 								}}
 							>
 								{c.day}

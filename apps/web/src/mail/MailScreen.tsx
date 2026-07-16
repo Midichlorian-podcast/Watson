@@ -6,6 +6,8 @@
  * a vlastní klávesnice mailu (prototyp kbd, ř. 2740–2769). Motiv se propisuje
  * z aplikace (kontrakt `vzhled`) přes data-wm-theme scope.
  */
+
+import { useSearch } from "@tanstack/react-router";
 import {
 	type KeyboardEvent as ReactKeyboardEvent,
 	type PointerEvent as ReactPointerEvent,
@@ -14,11 +16,10 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { useSearch } from "@tanstack/react-router";
 import { useTheme } from "../layout/useTheme";
 import "./mail.css";
-import { showToast } from "../lib/toast";
 import { storageGet, storageSet } from "../lib/storage";
+import { showToast } from "../lib/toast";
 import { CheatSheet } from "./CheatSheet";
 import { MailDemoBanner } from "./DemoBanner";
 import { DeniScreen } from "./DeniScreen";
@@ -29,9 +30,10 @@ import { MailThread } from "./MailThread";
 import { NastaveniScreen } from "./NastaveniScreen";
 import { NewMessage } from "./NewMessage";
 import { PriruckaScreen } from "./PriruckaScreen";
+import { useMail } from "./state";
+
 /** Hledání = JEDNA globální paleta (⌘K). Mailová lupa/⌘F ji jen otevře. */
 const openSearch = () => window.dispatchEvent(new Event("watson:open-palette"));
-import { useMail } from "./state";
 
 export function MailScreen() {
 	const m = useMail();
@@ -268,13 +270,9 @@ export function MailScreen() {
 							onCompose={() => setNewOn(true)}
 						/>
 						{/* táhlo šířky seznamu + Full Screen čtení (prototyp ř. 779–784) */}
-						<div role="separator" aria-orientation="vertical" aria-label="Šířka seznamu zpráv" aria-valuemin={300} aria-valuemax={620} aria-valuenow={listWidth} tabIndex={0}
+						<div
 							data-rz
 							data-tabup
-							onPointerDown={rzDown}
-							onDoubleClick={rzReset}
-							onKeyDown={rzKey}
-							title="Táhni pro změnu šířky seznamu · dvojklik vrátí výchozí"
 							style={{
 								width: 9,
 								flex: "none",
@@ -284,11 +282,27 @@ export function MailScreen() {
 								zIndex: 6,
 							}}
 						>
-							<span
-								data-rzline
-								style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1 }}
-							/>
-							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+							<div
+								role="separator"
+								aria-orientation="vertical"
+								aria-label="Šířka seznamu zpráv"
+								aria-valuemin={300}
+								aria-valuemax={620}
+								aria-valuenow={listWidth}
+								tabIndex={0}
+								onPointerDown={rzDown}
+								onDoubleClick={rzReset}
+								onKeyDown={rzKey}
+								title="Táhni pro změnu šířky seznamu · dvojklik vrátí výchozí"
+								style={{ position: "absolute", inset: 0, cursor: "col-resize" }}
+							>
+								<span
+									data-rzline
+									style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1 }}
+								/>
+							</div>
+							<button
+								type="button"
 								onClick={() => {
 									const n = !lcol;
 									setLcol(n);
@@ -304,10 +318,11 @@ export function MailScreen() {
 								style={{
 									position: "absolute",
 									top: "50%",
-									left: -4,
+									left: -18,
 									transform: "translateY(-50%)",
-									width: 17,
-									height: 38,
+									width: 44,
+									height: 44,
+									zIndex: 1,
 									borderRadius: 9,
 									border: "1px solid var(--line)",
 									background: "var(--panel)",
@@ -322,7 +337,7 @@ export function MailScreen() {
 								}}
 							>
 								{lcol ? "›" : "‹"}
-							</span>
+							</button>
 						</div>
 						<MailThread />
 					</>

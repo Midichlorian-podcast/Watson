@@ -551,7 +551,7 @@ export function Hledat() {
 					onKeyDown={onSearchKeyDown}
 					placeholder={t("search.placeholder")}
 					aria-label={t("search.placeholder")}
-					className="min-w-0 flex-1 border-none bg-transparent font-body text-ink outline-none"
+					className="min-h-11 min-w-0 flex-1 border-none bg-transparent font-body text-ink outline-none"
 					style={{ fontSize: 15 }}
 					data-search-screen
 				/>

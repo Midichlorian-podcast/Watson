@@ -13,9 +13,9 @@ import { GSTAT, goalElapsed, goalProgress, goalStatus } from "../lib/goals";
 import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
+import { NOT_MEETING } from "../lib/tasks";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
-import { NOT_MEETING } from "../lib/tasks";
 
 type Member = {
 	id: string;
@@ -392,7 +392,7 @@ export function Reporty() {
 							<button
 								type="button"
 								onClick={() => void navigate({ to: "/cile" })}
-								className="font-display font-semibold text-brass-text hover:underline"
+								className="min-h-11 rounded-md px-2 font-display font-semibold text-brass-text hover:bg-panel-2 hover:underline"
 								style={{ fontSize: 12 }}
 							>
 								{t("reports.allGoals")}
@@ -826,7 +826,7 @@ function MemberDetail({
 						<button
 							type="button"
 							onClick={onOpenTasks}
-							className="mt-2 font-display font-semibold text-brass-text hover:underline"
+							className="mt-2 min-h-11 rounded-md px-2 font-display font-semibold text-brass-text hover:bg-panel-2 hover:underline"
 							style={{ fontSize: 12 }}
 						>
 							{t("reports.moreTasks", { count: stats.open.length - 10 })}

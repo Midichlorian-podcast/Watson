@@ -10,8 +10,8 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { SyncProblems } from "../components/SyncProblems";
 import { AvailabilitySettings } from "../components/AvailabilitySettings";
+import { SyncProblems } from "../components/SyncProblems";
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
 import { authClient, signOut, useSession } from "../lib/auth-client";
@@ -873,7 +873,7 @@ export function Nastaveni() {
 							accept="application/json,.json"
 							onChange={(event) => void selectRestoreFile(event.target.files?.[0])}
 							aria-label={t("settings.restoreChoose")}
-							style={{ maxWidth: "100%", fontSize: 12, color: "var(--w-ink-2)" }}
+							style={{ maxWidth: "100%", minHeight: 44, fontSize: 12, color: "var(--w-ink-2)" }}
 						/>
 						<select
 							value={restoreConflictMode}

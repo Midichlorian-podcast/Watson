@@ -9,8 +9,8 @@
  * kontrola přílohy, kolizní hlídka a undo lišta (overlaye prototypu ř. 2207–2230).
  */
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
-import { keyedValues } from "../lib/keyedValues";
 import { copyDeepLink } from "../lib/deepLink";
+import { keyedValues } from "../lib/keyedValues";
 import { showToast } from "../lib/toast";
 import { TEXT_COLORS } from "./colors";
 import { MB, P, SLA, STL, TPL } from "./data";
@@ -1631,7 +1631,6 @@ export function MailThread() {
 						style={{
 							fontFamily: "var(--w-font-mono)",
 							fontSize: 10.5,
-							opacity: 0.85,
 							minWidth: 0,
 							overflow: "hidden",
 							textOverflow: "ellipsis",
@@ -2960,7 +2959,13 @@ export function MailThread() {
 								</div>
 							</div>
 						)}
-						<div style={{ maxHeight: 148, overflow: "auto" }}>
+						<div
+							role="region"
+							// biome-ignore lint/a11y/noNoninteractiveTabindex: Posuvný text musí být dosažitelný klávesnicí (axe scrollable-region-focusable).
+							tabIndex={0}
+							aria-label="Návrh odpovědi od Watsonu"
+							style={{ maxHeight: 148, overflow: "auto" }}
+						>
 							{keyedValues(t.draft ?? [], (paragraph) => paragraph).map(({ key, value: p }) => (
 								<p
 									key={key}

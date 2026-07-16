@@ -50,7 +50,7 @@ function CardHead({
 				<button
 					type="button"
 					onClick={onFoot}
-					className="font-display font-semibold text-brass-text hover:underline"
+					className="min-h-11 rounded-md px-2 font-display font-semibold text-brass-text hover:bg-panel-2 hover:underline"
 					style={{ fontSize: 11.5 }}
 				>
 					{footLabel}

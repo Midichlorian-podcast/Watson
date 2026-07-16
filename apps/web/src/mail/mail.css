@@ -1,10 +1,10 @@
 /* Mail modul — CSS port z design/handoff WatsonMail.dc.html (ř. 13–224). Izolovaný theme scope data-wm-theme — nepřepisuje tokeny aplikace (--w-*). */
-[data-wm-theme] a { color:#a8722e; text-decoration:none; } [data-wm-theme] a:hover { color:#17283f; text-decoration:underline; }
+[data-wm-theme] a { color:#7f4f1a; text-decoration:none; } [data-wm-theme] a:hover { color:#17283f; text-decoration:underline; }
 [data-wm-theme]{
   --bg:#f5f4f0; --panel:#ffffff; --panel-2:#faf9f6; --panel-3:#f3f1ec;
   --sidebar:#17283f; --sidebar-ink:#ffffff; --sidebar-ink-2:rgba(255,255,255,.62); --sidebar-line:rgba(255,255,255,.10);
-  --ink:#16161a; --ink-2:#55554f; --ink-3:#8c8a82; --line:#e7e5df;
-  --brass:#c68a3e; --brass-text:#a8722e; --brass-soft:rgba(198,138,62,.13);
+  --ink:#16161a; --ink-2:#55554f; --ink-3:#68665f; --line:#e7e5df;
+  --brass:#88551c; --brass-text:#7f4f1a; --brass-soft:rgba(136,85,28,.13);
   --success:#2e9c6e; --success-soft:#eaf6f0; --success-ink:#1c7a52;
   --overdue:#c2473c; --overdue-soft:#fbedea; --avatar-navy:#17283f; --navy-soft:rgba(23,40,63,.07);
   --p1:#c2473c; --p1-text:#a83a30; --p1-soft:#faeae7;
@@ -19,10 +19,10 @@
 [data-wm-theme="dark"]{
   --bg:#141519; --panel:#1e2126; --panel-2:#191c20; --panel-3:#272b31;
   --sidebar:#10141c; --sidebar-ink:#ffffff; --sidebar-ink-2:rgba(255,255,255,.6); --sidebar-line:rgba(255,255,255,.09);
-  --ink:#f0eee8; --ink-2:#b7b4ab; --ink-3:#85827b; --line:#2e3238;
-  --brass:#c68a3e; --brass-text:#d9a55e; --brass-soft:rgba(198,138,62,.17);
+  --ink:#f0eee8; --ink-2:#b7b4ab; --ink-3:#a09c94; --line:#2e3238;
+  --brass:#9a6426; --brass-text:#e0b577; --brass-soft:rgba(154,100,38,.17);
   --success:#3fae7f; --success-soft:rgba(46,156,110,.16); --success-ink:#63c79a;
-  --overdue:#d05a4f; --overdue-soft:rgba(194,71,60,.16); --avatar-navy:#3c4f6b; --navy-soft:rgba(130,158,199,.13);
+  --overdue:#e07365; --overdue-soft:rgba(224,115,101,.16); --avatar-navy:#3c4f6b; --navy-soft:rgba(130,158,199,.13);
   --p1:#d0564a; --p1-text:#e28a80; --p1-soft:rgba(194,71,60,.17);
   --p2:#e0a32e; --p2-text:#e7b95f; --p2-soft:rgba(224,163,46,.15);
   --p3:#4d86e0; --p3-text:#8cb0ec; --p3-soft:rgba(77,134,224,.16);
@@ -81,7 +81,7 @@
 [data-swu][data-act="done"] [data-swpill]{ background:var(--success); }
 [data-swu][data-act="pin"] [data-swpill]{ background:var(--brass); }
 [data-swu][data-act="snooze"] [data-swpill]{ background:#24395a; }
-[data-swu][data-act="arch"] [data-swpill]{ background:#8c8a82; }
+[data-swu][data-act="arch"] [data-swpill]{ background:var(--ink-3); }
 [data-swu][data-act="trash"] [data-swpill]{ background:var(--overdue); }
 [data-swu][data-act="unread"] [data-swpill]{ background:var(--avatar-navy); }
 [data-swtxt]{ white-space:nowrap; }
@@ -126,7 +126,7 @@
 [data-chatmsg]{ background:var(--panel); border:1px solid var(--line); border-radius:11px; }
 [data-chatmsg][data-ai="true"]{ background:var(--brass-soft); border-color:transparent; }
 [data-mention]{ background:var(--brass-soft); color:var(--brass-text); border-radius:5px; padding:0 4px; font-weight:600; }
-[data-av="brass"]{ background:var(--brass) !important; } [data-av="ext"]{ background:#8c8a82 !important; }
+[data-av="brass"]{ background:var(--brass) !important; } [data-av="ext"]{ background:var(--avatar-navy) !important; }
 [data-rowbtn]{ width:26px; height:26px; border-radius:7px; display:inline-flex; align-items:center; justify-content:center; color:var(--ink-3); cursor:pointer; flex:none; }
 [data-rowbtn]:hover{ background:var(--brass-soft); color:var(--brass-text); }
 [data-rowbtn][data-on="true"]{ background:var(--brass-soft); color:var(--brass-text); }

@@ -93,22 +93,16 @@ export function useFocusTrap(active: boolean, ref: RefObject<HTMLElement | null>
 			if (e.key !== "Tab") return;
 			const items = focusables();
 			if (items.length === 0) return;
-			const head = items[0] as HTMLElement;
-			const tail = items[items.length - 1] as HTMLElement;
+			e.preventDefault();
 			const current = document.activeElement as HTMLElement | null;
-			// fokus mimo kontejner (klik do pozadí) → přitáhni zpět
-			if (current && !container.contains(current)) {
-				e.preventDefault();
-				head.focus();
-				return;
-			}
-			if (e.shiftKey && current === head) {
-				e.preventDefault();
-				tail.focus();
-			} else if (!e.shiftKey && current === tail) {
-				e.preventDefault();
-				head.focus();
-			}
+			const currentIndex = current ? items.indexOf(current) : -1;
+			const nextIndex =
+				currentIndex < 0
+					? e.shiftKey
+						? items.length - 1
+						: 0
+					: (currentIndex + (e.shiftKey ? -1 : 1) + items.length) % items.length;
+			items[nextIndex]?.focus();
 		};
 		const onFocus = (event: FocusEvent) => {
 			if (trapStack.at(-1) !== container || container.contains(event.target as Node)) return;
