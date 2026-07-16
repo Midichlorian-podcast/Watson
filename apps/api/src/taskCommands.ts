@@ -259,12 +259,13 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 			id: string;
 			workspace_id: string;
 			created_by: string;
-			snapshot: { projectIds?: string[] };
+			snapshot: { type?: string; projectIds?: string[] };
 			restored_at: Date | null;
 			expires_at: Date;
 		}[];
 		const batch = rows[0];
 		if (!batch) return { missing: true as const };
+		if (batch.snapshot.type === "bulk") return { missing: true as const };
 		if (batch.created_by !== session.user.id) return { forbidden: true as const };
 		if (batch.restored_at) return { replay: true as const };
 		if (new Date(batch.expires_at).getTime() <= Date.now()) return { expired: true as const };

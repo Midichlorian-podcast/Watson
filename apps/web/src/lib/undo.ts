@@ -67,7 +67,7 @@ export function pushColumnUndo(
  * snapshot drží pouze server. Lokální více-op upload už nemůže skončit napůl.
  */
 export async function deleteTaskWithUndo(taskId: string): Promise<void> {
-	return deleteTasksWithUndo([taskId]);
+	await deleteTasksWithUndo([taskId]);
 }
 
 async function command(path: "/api/tasks/delete" | "/api/tasks/restore", body: unknown) {
@@ -84,9 +84,9 @@ async function command(path: "/api/tasks/delete" | "/api/tasks/restore", body: u
 	return (await response.json()) as { batchId?: string };
 }
 
-export async function deleteTasksWithUndo(taskIds: string[]): Promise<void> {
+export async function deleteTasksWithUndo(taskIds: string[]): Promise<boolean> {
 	const ids = [...new Set(taskIds)];
-	if (!ids.length) return;
+	if (!ids.length) return false;
 	try {
 		let result = await command("/api/tasks/delete", {
 			taskIds: ids,
@@ -107,7 +107,9 @@ export async function deleteTasksWithUndo(taskIds: string[]): Promise<void> {
 				batchId = result.batchId;
 			},
 		});
+		return true;
 	} catch {
 		showToast(i18n.t("cheat.deleteFailed"));
+		return false;
 	}
 }

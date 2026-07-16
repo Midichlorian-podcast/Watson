@@ -113,6 +113,16 @@ export function TaskItem({
 		? [
 				{ label: t("ctx.open"), onClick: () => open(task.id) },
 				{
+					label: bulk.isSelected(task.id) ? t("bulk.deselect") : t("bulk.select"),
+					on: bulk.isSelected(task.id),
+					onClick: () =>
+						bulk.toggle(
+							task.id,
+							false,
+							navIds.filter((id) => !id.includes("@")),
+						),
+				},
+				{
 					label: doneTask ? t("swipe.revert") : t("bulk.done"),
 					onClick: () => void toggleTask(task, myId),
 				},

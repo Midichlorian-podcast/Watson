@@ -39,6 +39,7 @@ import { powersyncRoutes } from "./powersync";
 import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
 import { savedViewRoutes } from "./savedViews";
+import { taskBulkCommandRoutes } from "./taskBulkCommands";
 import { taskCommandRoutes } from "./taskCommands";
 import {
 	decodeTimelineCursor,
@@ -321,6 +322,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 app.route("/", powersyncRoutes);
 app.route("/", aiPolicyRoutes);
 app.route("/", taskCommandRoutes);
+app.route("/", taskBulkCommandRoutes);
 app.route("/", chainCommandRoutes);
 app.route("/", meetingsRoutes);
 app.route("/", watsonRoutes);
