@@ -432,6 +432,7 @@ Poslední ověření 2026-07-16:
   Waiting Room, projektové milníky, zmínky, importní CSV parser, Mail claims, chain gate, sync recovery
   a backup crypto.
 - `pnpm --filter @watson/web test:corpus`: 321/321.
+- `pnpm audit --audit-level high`: žádná známá zranitelnost v aktuálním lockfile.
 - `bash scripts/ci-api-integration.sh`: contract, Drizzle, reminders, LuckyOS reconciliation,
   DB invariants, signing keys, RBAC, sync refs/CAS/idempotency, rozhodnutí,
   komentářová spolupráce, bulk commandy, uložené pohledy, projektová přednastavení,
@@ -507,7 +508,6 @@ Neověřené v tomto snapshotu:
 - cílený browser screenshot audit intake formulářů, urgentní akceptace a importního průvodce; lokální browser
   runtime skončil před připojením chybou pluginu, proto tyto dávky kryjí statické
   design/accessibility kontrakty, integrační testy a produkční build;
-- čerstvý npm advisory scan kvůli omezení přístupu k registry;
 - skutečný produkční PITR/provider/deployment drill.
 
 ## 12. Go/no-go
