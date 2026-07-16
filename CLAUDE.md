@@ -293,7 +293,7 @@ Každý bod je samostatná issue s měřitelným acceptance gate; nejde o svolen
 2. **Bulk preview a bezpečné hromadné změny.** Předem přesný počet, recurrence scope, konflikty, atomický command a jedno undo batch ID.
 3. **Univerzální quick switcher.** Lidé, projekty, úkoly, meetingy a příkazy; permission-filtered, poslední položky lokálně v šifrovaném store.
 4. **Pracovní hodiny, svátky a snooze.** Per-user timezone/locale, quiet hours a plán reminderů bez posunů přes DST.
-5. **Import wizard.** CSV/Asana/Trello s mapováním, validačním preview, dry-runem, idempotentním import ID a rollbackem.
+5. **Import wizard.** CSV/Asana/Trello/Todoist s mapováním, validačním preview, dry-runem, idempotentním import ID a rollbackem.
 6. **Offline outbox s ruční kontrolou.** Co čeká, co se retryuje, co server odmítl, diff a možnost opravit bez ztráty vstupu.
 7. **Voice inbox.** Lokální nahrání, explicitní upload consent, STT adapter, editovatelný přepis a teprve pak create.
 8. **Denní digest.** Přesný zdroj a freshness, quiet hours, opt-in kanály a deep link na konkrétní problém.
@@ -425,17 +425,18 @@ Každá produkční funkce musí odpovědět ano na vše relevantní:
 
 Poslední ověření 2026-07-16:
 
-- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 101 TSX.
+- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 102 TSX.
 - `pnpm typecheck`: 6/6 balíčků.
 - `pnpm test`: recurrence 14/14, Quick Add, timezone, recent items, proč-teď, deep linky,
   uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
-  Waiting Room, projektové milníky, zmínky, Mail claims, chain gate, sync recovery
+  Waiting Room, projektové milníky, zmínky, importní CSV parser, Mail claims, chain gate, sync recovery
   a backup crypto.
 - `pnpm --filter @watson/web test:corpus`: 321/321.
 - `bash scripts/ci-api-integration.sh`: contract, Drizzle, reminders, LuckyOS reconciliation,
   DB invariants, signing keys, RBAC, sync refs/CAS/idempotency, rozhodnutí,
   komentářová spolupráce, bulk commandy, uložené pohledy, projektová přednastavení,
   závislosti, časová osa, přílohy, typovaná vlastní pole, ankety, projektové milníky,
+  intake, akceptace urgentních úkolů, jednorázový import,
   meeting ACL/commandy,
   AI policy, task delete/restore, workspace policy, export/restore, manual gate,
   input/observability, rate limit a auth/2FA — vše prošlo.
@@ -464,11 +465,22 @@ Poslední ověření 2026-07-16:
   fail-closed tenant/project přístup, DB completion guard, změna priority či řešitele,
   delete/undo, časová osa a audit bez textu soukromé poznámky. Následně prošly i
   regresní sady bulk move/undo, task delete/restore, export/restore a PowerSync kontrakt.
+- Migrace 0052: aplikována a ověřena kompletním během všech migrací do čerstvé
+  prázdné databáze. Import ukládá jen minimální dávkovou stopu, nikoli zdrojové CSV;
+  DB vynucuje workspace/project/task/attachment scope, aktivní fingerprint brání
+  duplicitě a task delete/undo i podepsaný export/restore zachovávají vazby.
+- Jednorázový import CSV/Asana/Trello/Todoist prošel 35 integračními kontrolami:
+  serverem filtrované cílové projekty, fail-closed ACL, stateless dry-run, tříúrovňová
+  hierarchie, členové, termíny, priority, sekce, štítky, dokončení, idempotentní retry,
+  fingerprint deduplikace, zabezpečené přílohy, časová osa, delete/undo a bezpečný
+  rollback odmítající pozdější práci. Klientský parser navíc ověřuje RFC 4180 quoting,
+  BOM, CRLF, delimiter, česká/ISO data, Todoist priority, rodiče podle ID či jednoznačného
+  názvu, řešitele, ztrátu nadbytečných hodnot a stabilní SHA-256.
 - Celý `scripts/ci-api-integration.sh` po opravě korektního ukončení intake verifieru
   proběhl až po produkční 2FA restart a skončil úspěšně.
 - PowerSync po restartu: nový replication stream aktivní, sync-config bez chyby.
-- `pnpm build`: největší JS 332 KiB gzip, precache 5,040 KiB; oba rozpočty splněny;
-  vlastní pole, ankety, projektové milníky, intake, Úkoly a Nadcházející jsou oddělené
+- `pnpm build`: největší JS 336 KiB gzip, precache 5,078 KiB; oba rozpočty splněny;
+  vlastní pole, ankety, projektové milníky, intake, importní průvodce, Úkoly a Nadcházející jsou oddělené
   lazy-loaded chunky.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
@@ -492,7 +504,7 @@ Poslední ověření 2026-07-16:
 Neověřené v tomto snapshotu:
 
 - kompletní R-01 matrix: axe, Safari, keyboard-only, 200% zoom a reduced motion;
-- cílený browser screenshot audit intake formulářů a urgentní akceptace; lokální browser
+- cílený browser screenshot audit intake formulářů, urgentní akceptace a importního průvodce; lokální browser
   runtime skončil před připojením chybou pluginu, proto tyto dávky kryjí statické
   design/accessibility kontrakty, integrační testy a produkční build;
 - čerstvý npm advisory scan kvůli omezení přístupu k registry;

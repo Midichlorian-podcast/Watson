@@ -1,7 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import i18n, { useTranslation } from "@watson/i18n";
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import {
+	type CSSProperties,
+	lazy,
+	type ReactNode,
+	Suspense,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { SyncProblems } from "../components/SyncProblems";
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
@@ -30,6 +38,8 @@ import { useWorkspace } from "../lib/workspace";
 import { AdminScreen } from "../mail/AdminScreen";
 import { MailDemoBanner } from "../mail/DemoBanner";
 import { NastaveniScreen as MailSettings } from "../mail/NastaveniScreen";
+
+const ImportWizard = lazy(() => import("../components/ImportWizard"));
 
 type Workspace = {
 	id: string;
@@ -773,6 +783,19 @@ export function Nastaveni() {
 
 			{/* CC-P0-04 — Centrum problémů se synchronizací (jen když je co řešit) */}
 			<SyncProblems />
+
+			<div className="font-display" style={{ ...SECTION_LABEL, marginTop: 22 }}>
+				{t("settings.importTransfer")}
+			</div>
+			<Suspense
+				fallback={
+					<div style={{ ...CARD, ...ROW, color: "var(--w-ink-3)", fontSize: 12 }}>
+						{t("common.loading")}
+					</div>
+				}
+			>
+				<ImportWizard />
+			</Suspense>
 
 			{/* ZÁLOHY A OBNOVA — serverový podepsaný export + povinný dry-run před apply. */}
 			<div className="font-display" style={{ ...SECTION_LABEL, marginTop: 22 }}>

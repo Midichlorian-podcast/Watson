@@ -365,6 +365,13 @@
       "when": 1784193112067,
       "tag": "0051_overrated_paibok",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1784195644466,
+      "tag": "0052_tired_hulk",
+      "breakpoints": true
     }
   ]
 }

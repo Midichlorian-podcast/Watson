@@ -36,6 +36,7 @@ const TaskAcceptanceSection = lazy(() => import("./TaskAcceptanceSection"));
 
 type TimelineKind =
 	| "task_created"
+	| "task_imported"
 	| "task_updated"
 	| "task_rescheduled"
 	| "task_completed"
@@ -221,6 +222,7 @@ function actFieldLabel(field: string, t: (k: string) => string) {
 
 const TIMELINE_KIND_KEY: Record<TimelineKind, string> = {
 	task_created: "detail.timelineTaskCreated",
+	task_imported: "detail.timelineTaskImported",
 	task_updated: "detail.timelineTaskUpdated",
 	task_rescheduled: "detail.timelineTaskRescheduled",
 	task_completed: "detail.actMarkedDone",

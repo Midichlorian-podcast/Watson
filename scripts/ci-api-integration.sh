@@ -71,6 +71,7 @@ CUSTOM_FIELDS_API="$API_URL" pnpm --filter @watson/api verify:custom-fields
 POLLS_API="$API_URL" pnpm --filter @watson/api verify:polls
 INTAKE_FORMS_API="$API_URL" pnpm --filter @watson/api verify:intake-forms
 TASK_ACCEPTANCES_API="$API_URL" pnpm --filter @watson/api verify:task-acceptances
+IMPORTS_API="$API_URL" pnpm --filter @watson/api verify:imports
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:meet-acl
 MEETING_API="$API_URL" pnpm --filter @watson/api verify:meeting-commands
 AI_POLICY_API="$API_URL" pnpm --filter @watson/api verify:ai-policy

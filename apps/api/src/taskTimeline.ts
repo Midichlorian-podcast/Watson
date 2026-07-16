@@ -1,5 +1,6 @@
 export type TimelineKind =
 	| "task_created"
+	| "task_imported"
 	| "task_updated"
 	| "task_rescheduled"
 	| "task_completed"
@@ -223,7 +224,8 @@ export function mapAuditTimelineEvent(
 	if (row.entity === "tasks") {
 		const { fields, changes } = taskChanges(diff, before);
 		let kind: TimelineKind = "task_updated";
-		if (row.action === "put" || row.action === "create") kind = "task_created";
+		if (row.action === "import_create") kind = "task_imported";
+		else if (row.action === "put" || row.action === "create") kind = "task_created";
 		else if (row.action === "delete") kind = "task_deleted";
 		else if (Object.hasOwn(diff, "completed_at"))
 			kind = diff.completed_at ? "task_completed" : "task_reopened";

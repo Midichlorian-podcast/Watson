@@ -38,7 +38,9 @@ export const RESTORE_TABLE_ORDER = [
 	"project_custom_fields",
 	"intake_forms",
 	"intake_form_fields",
+	"import_batches",
 	"tasks",
+	"import_items",
 	"intake_submissions",
 	"project_milestones",
 	"task_dependencies",
@@ -53,6 +55,7 @@ export const RESTORE_TABLE_ORDER = [
 	"mentions",
 	"comment_reactions",
 	"attachments",
+	"import_attachments",
 	"checklist_items",
 	"labels",
 	"task_labels",
@@ -107,10 +110,14 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT f.* FROM intake_forms f JOIN projects p ON p.id = f.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	intake_form_fields: (ws) =>
 		sql`SELECT field.* FROM intake_form_fields field JOIN intake_forms f ON f.id = field.form_id JOIN projects p ON p.id = f.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	import_batches: (ws) =>
+		sql`SELECT batch.* FROM import_batches batch WHERE batch.workspace_id = ANY(${uuids(ws)})`,
 	project_milestones: (ws) =>
 		sql`SELECT m.* FROM project_milestones m JOIN projects p ON p.id = m.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	tasks: (ws) =>
 		sql`SELECT t.* FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	import_items: (ws) =>
+		sql`SELECT item.* FROM import_items item JOIN import_batches batch ON batch.id = item.batch_id WHERE batch.workspace_id = ANY(${uuids(ws)})`,
 	intake_submissions: (ws) =>
 		sql`SELECT submission.* FROM intake_submissions submission JOIN projects p ON p.id = submission.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	task_dependencies: (ws) =>
@@ -137,6 +144,12 @@ const EXPORT_QUERIES: Record<
 		// Nové interní přílohy bez binárního obsahu nesmíme obnovit jako rozbité odkazy.
 		// Export zde proto zachovává jen případné historické externí URL z doby před M1.
 		sql`SELECT a.* FROM attachments a JOIN projects p ON p.id = a.project_id WHERE p.workspace_id = ANY(${uuids(ws)}) AND a.url NOT LIKE '/api/attachments/%'`,
+	import_attachments: (ws) =>
+		sql`SELECT imported.* FROM import_attachments imported
+		JOIN import_batches batch ON batch.id = imported.batch_id
+		JOIN attachments attachment ON attachment.id = imported.attachment_id
+		WHERE batch.workspace_id = ANY(${uuids(ws)})
+		  AND attachment.url NOT LIKE '/api/attachments/%'`,
 	checklist_items: (ws) =>
 		sql`SELECT ci.* FROM checklist_items ci JOIN projects p ON p.id = ci.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	labels: (ws) => sql`SELECT * FROM labels WHERE workspace_id = ANY(${uuids(ws)})`,
