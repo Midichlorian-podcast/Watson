@@ -58,6 +58,7 @@ import {
 	reminderFireAt,
 	sortReminders,
 } from "../lib/reminders";
+import { taskProgress } from "../lib/taskProgress";
 
 type Pri = 1 | 2 | 3 | 4;
 type Member = {
@@ -92,6 +93,7 @@ const ACT_FIELD_KEY: Record<string, string> = {
 	assignment_mode: "detail.actAssign",
 	status_id: "detail.actStatus",
 	project_id: "detail.actProject",
+	parent_id: "detail.actParent",
 	completed: "detail.actCompleted",
 	created: "detail.actCreated",
 };
@@ -175,26 +177,30 @@ function BrassCheck({
 				e.stopPropagation();
 				onClick();
 			}}
-			className="grid shrink-0 place-items-center hover:border-brass"
-			style={{
-				width: size,
-				height: size,
-				borderRadius: round ? "50%" : 5,
-				border: done ? "none" : "2px solid var(--w-line)",
-				background: done ? "var(--w-brass)" : "transparent",
-			}}
+			className="grid h-11 w-11 shrink-0 place-items-center rounded-lg"
 		>
-			{done && (
-				<svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden>
-					<path
-						d="M2 5.7 L4.3 8 L9 2.7"
-						stroke="#fff"
-						strokeWidth="1.7"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					/>
-				</svg>
-			)}
+			<span
+				className="grid place-items-center hover:border-brass"
+				style={{
+					width: size,
+					height: size,
+					borderRadius: round ? "50%" : 5,
+					border: done ? "none" : "2px solid var(--w-line)",
+					background: done ? "var(--w-brass)" : "transparent",
+				}}
+			>
+				{done && (
+					<svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden>
+						<path
+							d="M2 5.7 L4.3 8 L9 2.7"
+							stroke="#fff"
+							strokeWidth="1.7"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					</svg>
+				)}
+			</span>
 		</button>
 	);
 }
@@ -670,6 +676,32 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		setMenuOpen(false);
 		showToast(t(copied ? "deepLink.copied" : "deepLink.copyFailed"));
 	};
+	const detachFromParent = async () => {
+		const parentId = task.parent_id;
+		if (!parentId) return;
+		const parentLabel = parent?.name ?? parentId;
+		const standaloneLabel = t("detail.standaloneTask");
+		await logActivity("parent_id", parentLabel, standaloneLabel);
+		await patch(realId, { parent_id: null });
+		setMenuOpen(false);
+		showToast(t("detail.detachedFromParent"), {
+			label: t("detail.undo"),
+			onClick: () => {
+				void (async () => {
+					await logTaskActivity(
+						realId,
+						task.project_id,
+						session?.user?.id,
+						"parent_id",
+						standaloneLabel,
+						parentLabel,
+					);
+					await patch(realId, { parent_id: parentId });
+					void qc.invalidateQueries({ queryKey: ["taskActivity", realId] });
+				})();
+			},
+		});
+	};
 	const del = () => {
 		void deleteTaskWithUndo(realId); // mazání s undo (⌘Z)
 		onClose();
@@ -683,6 +715,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			: t("detail.hintAny");
 
 	const due = rowDue(task, t);
+	const subtaskProgress = taskProgress(subs ?? []);
 	// Text opakování (prototyp seriesRepeat ř. 2933): rich label z parseru přednostně,
 	// krátký výběrový label („Denně") mapovat přes recurrence_rule.kind na „Opakuje se …".
 	const repKind = recurrenceKind(task.recurrence_rule);
@@ -799,9 +832,14 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									<MenuItem icon="duplikovat" onClick={() => void duplicate()}>
 										{t("detail.duplicate")}
 									</MenuItem>
-									<MenuItem icon="odkaz" onClick={copyLink}>
-										{t("detail.copyLink")}
+								<MenuItem icon="odkaz" onClick={copyLink}>
+									{t("detail.copyLink")}
+								</MenuItem>
+								{task.parent_id && (
+									<MenuItem icon="ukoly" onClick={() => void detachFromParent()}>
+										{t("detail.detachFromParent")}
 									</MenuItem>
+								)}
 									{/* U výskytu řady „Smazat" skryto — mazalo by CELOU řadu (base úkol),
 									    ne jeden výskyt. Odebrání výskytu = tlačítko „Přeskočit" v patičce. */}
 									{!occ && (
@@ -851,26 +889,27 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								type="button"
 								onClick={toggleDone}
 								aria-label={done ? t("today.doneSection") : t("common.done")}
-								className="grid shrink-0 place-items-center rounded-full hover:border-brass"
-								style={{
-									width: 22,
-									height: 22,
-									marginTop: 2,
-									border: done ? "none" : "2px solid var(--w-line)",
-									background: done ? "var(--w-brass)" : "transparent",
-								}}
+								className="grid h-11 w-11 shrink-0 place-items-center rounded-lg"
 							>
-								{done && (
-									<svg width="12" height="12" viewBox="0 0 11 11" fill="none" aria-hidden>
-										<path
-											d="M2 5.7 L4.3 8 L9 2.7"
-											stroke="#fff"
-											strokeWidth="1.7"
-											strokeLinecap="round"
-											strokeLinejoin="round"
-										/>
-									</svg>
-								)}
+								<span
+									className="grid h-[22px] w-[22px] place-items-center rounded-full hover:border-brass"
+									style={{
+										border: done ? "none" : "2px solid var(--w-line)",
+										background: done ? "var(--w-brass)" : "transparent",
+									}}
+								>
+									{done && (
+										<svg width="12" height="12" viewBox="0 0 11 11" fill="none" aria-hidden>
+											<path
+												d="M2 5.7 L4.3 8 L9 2.7"
+												stroke="#fff"
+												strokeWidth="1.7"
+												strokeLinecap="round"
+												strokeLinejoin="round"
+											/>
+										</svg>
+									)}
+								</span>
 							</button>
 							<input
 								ref={nameRef}
@@ -1568,9 +1607,38 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
               řádek s prioritním okrajem, počty vlastních podúkolů a klikem do vlastního detailu. */}
 						<SectionLabel>
 							{t("detail.subtasks")}
-							{(subs?.length ?? 0) > 0 &&
-								` · ${(subs ?? []).filter((s) => s.completed_at).length}/${subs?.length}`}
+							{subtaskProgress.total > 0 && ` · ${subtaskProgress.done}/${subtaskProgress.total}`}
 						</SectionLabel>
+						{subtaskProgress.total > 0 && (
+							<div className="mb-2 rounded-lg bg-panel-2 p-3">
+								<div className="mb-2 flex items-center justify-between" style={{ gap: 8 }}>
+									<span className="font-body text-ink-2" style={{ fontSize: 12 }}>
+										{t("detail.subtaskProgress")}
+									</span>
+									<strong className="font-mono text-ink" style={{ fontSize: 12 }}>
+										{subtaskProgress.percent}%
+									</strong>
+								</div>
+								<div
+									role="progressbar"
+									aria-label={t("detail.subtaskProgress")}
+									aria-valuemin={0}
+									aria-valuemax={100}
+									aria-valuenow={subtaskProgress.percent}
+									className="h-2 overflow-hidden rounded-full bg-card"
+								>
+									<div
+										className="h-full rounded-full bg-brass transition-[width] duration-200"
+										style={{ width: `${subtaskProgress.percent}%` }}
+									/>
+								</div>
+								{subtaskProgress.isComplete && !done && (
+									<p className="mt-2 font-body text-ink-3" style={{ fontSize: 11.5 }}>
+										{t("detail.subtasksCompleteParentOpen")}
+									</p>
+								)}
+							</div>
+						)}
 						<ul>
 							{(subs ?? []).map((s) => {
 								const sd = Boolean(s.completed_at);
@@ -1645,7 +1713,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									onChange={(e) => setSubText(e.target.value)}
 									onKeyDown={(e) => e.key === "Enter" && void addSub()}
 									placeholder={t("detail.addSubtask")}
-									className="min-w-0 flex-1 rounded-lg border border-line border-dashed bg-transparent px-3 py-1.5 text-sm outline-none focus:border-brass"
+									className="min-h-11 min-w-0 flex-1 rounded-lg border border-line border-dashed bg-transparent px-3 py-2 text-sm outline-none focus:border-brass"
 								/>
 								{/* plné přidání s atributy — otevře modal s parent_id (termín/deadline/…) */}
 								<button
@@ -1659,7 +1727,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									}
 									title={t("detail.addSubtaskFull")}
 									aria-label={t("detail.addSubtaskFull")}
-									className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line text-ink-3 hover:border-brass hover:text-brass-text"
+									className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-line text-ink-3 hover:border-brass hover:text-brass-text"
 								>
 									<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
 										<path
@@ -2004,7 +2072,7 @@ function MenuItem({
 	onClick,
 	children,
 }: {
-	icon: "duplikovat" | "odkaz" | "smazat";
+	icon: "duplikovat" | "odkaz" | "smazat" | "ukoly";
 	danger?: boolean;
 	onClick: () => void;
 	children: ReactNode;
@@ -2019,7 +2087,8 @@ function MenuItem({
 			}`}
 			style={{
 				gap: 9,
-				padding: "8px 10px",
+				minHeight: 44,
+				padding: "10px",
 				fontSize: 13,
 				color: danger ? "var(--w-overdue)" : "var(--w-ink)",
 			}}
