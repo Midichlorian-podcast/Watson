@@ -1,18 +1,28 @@
 {
-  "status": "passed",
+  "status": "passed_with_warnings",
   "environment": "local-docker-isolated-database",
-  "startedAt": "2026-07-15T20:55:08Z",
+  "startedAt": "2026-07-16T23:46:12Z",
   "durationSeconds": 2,
   "rtoTargetSeconds": 7200,
   "encryptedRoundTrip": true,
-  "migrations": 42,
-  "users": 31,
-  "tasks": 100,
+  "migrations": 62,
+  "users": 92,
+  "tasks": 131,
   "orphans": {
     "tasks": 0,
     "assignments": 0,
     "comments": 0,
     "meetings": 0,
-    "memberships": 0
+    "memberships": 0,
+    "projectMembers": 0,
+    "accessMembershipScope": 0,
+    "taskParentScope": 0,
+    "meetingTaskScope": 0,
+    "availabilityScope": 0,
+    "bookingScope": 0,
+    "intakeScope": 0
+  },
+  "warnings": {
+    "legacyAssignmentMembershipScope": 4
   }
 }

@@ -17,13 +17,13 @@ The product has two separate recovery layers. They must not be conflated:
 ## Quarterly restore drill
 
 1. Provision a new isolated PostgreSQL instance with network access restricted to the operator/CI job.
-2. Set `RESTORE_TARGET_DATABASE_URL`; set `ALLOW_DESTRUCTIVE_RESTORE_DRILL=YES` only after confirming it is not the production URL.
+2. Set `RESTORE_TARGET_DATABASE_URL` and the exact isolated database name in `RESTORE_EXPECTED_DATABASE`; set `ALLOW_DESTRUCTIVE_RESTORE_DRILL=YES` only after confirming both. The drill has no non-empty-target override.
 3. Download one encrypted dump and its `.sha256` sidecar from off-site storage.
-4. Run `restore-drill.sh`. It refuses a non-empty target by default, verifies the encrypted checksum and dump catalog, restores with `--exit-on-error`, checks key orphan invariants, and fails when RTO exceeds 7,200 seconds.
+4. Run `restore-drill.sh`. It refuses a non-empty target by default, verifies the encrypted checksum and dump catalog, restores with `--exit-on-error`, checks orphan plus cross-tenant access, assignment, meeting, availability, booking, and intake invariants, and fails when the full checksum/decrypt/restore/validation interval exceeds 7,200 seconds.
 5. Run API integration tests and a read-only smoke login against the restored environment. Store the generated JSON report with the incident/release evidence, not with the user data.
 6. Destroy the isolated database and any decrypted temporary storage.
 
-For a no-install local rehearsal, run `local-docker-drill.sh` while the repository's PostgreSQL container is healthy. It creates a uniquely named isolated database in the same container, performs an authenticated-encryption round trip, restores and validates it, writes `RESTORE_DRILL_LOCAL.json`, then drops the drill database. This is useful evidence that the dump and schema are restorable, but it does not prove production object-storage retention or WAL/PITR.
+For a no-install local rehearsal, run `local-docker-drill.sh` while the repository's PostgreSQL container is healthy. It creates a uniquely named isolated database in the same container, performs an authenticated-encryption round trip, restores and validates it, atomically writes a private `RESTORE_DRILL_LOCAL.json`, then drops the drill database. Historical dev fixtures with an assignee outside project membership are retained as an explicit warning because silently deleting the assignment or granting access would both be unsafe; the production `restore-drill.sh` rejects the same condition. This local evidence proves that the current dump, schema, and tenant/ACL relations are restorable, but it does not prove production object-storage retention or WAL/PITR.
 
 ## Incident restore
 

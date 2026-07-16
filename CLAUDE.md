@@ -594,6 +594,15 @@ Poslední ověření 2026-07-16:
 - SLO observability: unit klasifikace 5xx/auth/sync/504, fail-closed constant-time
   bearer auth a živý PostgreSQL integrační průchod `/ops/slo` jsou zelené; provider
   timeout se nově odlišuje jako 504 a provozní panely/alerty mají runbook.
+- Produkční konfigurační preflight kontroluje HTTPS a rezervované hosty, invite-only/2FA/proxy
+  politiku, sílu a oddělení tajemství, PowerSync/LuckyOS keyringy i úplnost providerů.
+  Šest kontraktních scénářů ověřuje fail-closed návratový kód, sanitizovaný report bez
+  hodnot tajemství a atomický artifact s právy `0600`; rotace má samostatný runbook.
+- Čerstvý lokální encrypted PostgreSQL restore drill obnovil všech 62 migračních záznamů
+  do izolované databáze za 2 sekundy, ověřil nulové orphan/cross-tenant odchylky pro
+  tasky, projekty, meetingy, dostupnost, booking a intake a cílovou DB po sobě odstranil.
+  Čtyři historická dev přiřazení bez projektového členství jsou explicitní varování;
+  lokální drill kvůli nim svévolně nemaže data ani neuděluje přístup, produkční drill je odmítá.
 
 Neověřené v tomto snapshotu:
 
@@ -604,7 +613,8 @@ Neověřené v tomto snapshotu:
 - cílený browser screenshot audit intake formulářů, urgentní akceptace a importního průvodce; lokální browser
   runtime skončil před připojením chybou pluginu, proto tyto dávky kryjí statické
   design/accessibility kontrakty, integrační testy a produkční build;
-- skutečný produkční PITR/provider/deployment drill.
+- skutečný produkční PITR/provider/deployment drill; lokální restore důkaz nenahrazuje
+  WAL archivaci, off-site retention, secret manager, TLS ani produkční alert routing.
 
 ## 12. Go/no-go
 
