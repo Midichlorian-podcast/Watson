@@ -38,6 +38,7 @@ export const MAIN_NAV: NavItem[] = [
 		count: true,
 	},
 	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
+	{ to: "/prijem-prace", icon: "schranka", labelKey: "nav.intake" },
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists", count: true },
 	{ to: "/cile", icon: "cile", labelKey: "nav.goals" },
 	{ to: "/reporty", icon: "reporty", labelKey: "nav.reports" },

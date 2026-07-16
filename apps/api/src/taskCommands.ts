@@ -175,6 +175,10 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 				'customFieldValues', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_custom_field_values x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'polls', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_polls x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'pollResponses', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_poll_responses x WHERE x.task_id IN (SELECT id FROM task_ids)),
+				'intakeSubmissions', (
+					SELECT COALESCE(jsonb_agg(jsonb_build_object('id', x.id, 'task_id', x.task_id)), '[]'::jsonb)
+					FROM intake_submissions x WHERE x.task_id IN (SELECT id FROM task_ids)
+				),
 				'occurrences', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_occurrence_overrides x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'colors', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_user_colors x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'chainSteps', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM chain_steps x WHERE x.task_id IN (SELECT id FROM task_ids)),
@@ -331,6 +335,11 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 		await tx.execute(sql`INSERT INTO task_polls SELECT * FROM jsonb_populate_recordset(null::task_polls, ${snapshot}->'polls') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`SELECT set_config('watson.allow_poll_restore', 'on', true)`);
 		await tx.execute(sql`INSERT INTO task_poll_responses SELECT * FROM jsonb_populate_recordset(null::task_poll_responses, ${snapshot}->'pollResponses') ON CONFLICT DO NOTHING`);
+		await tx.execute(sql`
+			UPDATE intake_submissions submission SET task_id = restored.task_id
+			FROM jsonb_to_recordset(${snapshot}->'intakeSubmissions') AS restored(id uuid, task_id uuid)
+			WHERE submission.id = restored.id AND submission.task_id IS NULL
+		`);
 		await tx.execute(sql`INSERT INTO task_occurrence_overrides SELECT * FROM jsonb_populate_recordset(null::task_occurrence_overrides, ${snapshot}->'occurrences') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO task_user_colors SELECT * FROM jsonb_populate_recordset(null::task_user_colors, ${snapshot}->'colors') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO chain_steps SELECT * FROM jsonb_populate_recordset(null::chain_steps, ${snapshot}->'chainSteps') ON CONFLICT DO NOTHING`);

@@ -425,7 +425,7 @@ Každá produkční funkce musí odpovědět ano na vše relevantní:
 
 Poslední ověření 2026-07-16:
 
-- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 99 TSX.
+- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 100 TSX.
 - `pnpm typecheck`: 6/6 balíčků.
 - `pnpm test`: recurrence 14/14, Quick Add, timezone, recent items, proč-teď, deep linky,
   uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
@@ -448,9 +448,17 @@ Poslední ověření 2026-07-16:
   (`task_completed`, `completed_count`, `all_tasks_completed`). DB guard odmítá uzavření
   i pozdější regresi cílového projektu, task reference chrání delete/move a auditovaný
   API command pokrývá ACL, idempotenci, přesné potvrzení smazání a lokalizovaný výchozí milník.
+- Migrace 0050: aplikována; interní formuláře pro příjem práce vytvářejí úkol a
+  neměnný snapshot otázek/odpovědí v jedné transakci. Správa respektuje projektové
+  role, běžný člen smí použít týmový formulář a cizí tenant dostává fail-closed 404.
+  Historie zůstává dohledatelná po smazání úkolu a undo vazbu bezpečně obnoví.
+- Intake formuláře prošly 26 integračními kontrolami: ACL, typed validace, CAS,
+  idempotentní create i submit/retry, same-project DB guard, archive/delete, audit
+  bez obsahu odpovědí, task delete/undo a bezpečný odkaz pouze při aktuálním přístupu.
 - PowerSync po restartu: nový replication stream aktivní, sync-config bez chyby.
-- `pnpm build`: největší JS 350 KiB gzip, precache 4,999 KiB; oba rozpočty splněny;
-  vlastní pole, ankety a projektové milníky jsou oddělené lazy-loaded chunky.
+- `pnpm build`: největší JS 330 KiB gzip, precache 5,028 KiB; oba rozpočty splněny;
+  vlastní pole, ankety, projektové milníky, intake, Úkoly a Nadcházející jsou oddělené
+  lazy-loaded chunky.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
   44 px, offline zápisem a následným autoritativním uploadem. Jediný zachycený
@@ -473,6 +481,8 @@ Poslední ověření 2026-07-16:
 Neověřené v tomto snapshotu:
 
 - kompletní R-01 matrix: axe, Safari, keyboard-only, 200% zoom a reduced motion;
+- cílený browser screenshot audit intake formulářů; lokální browser runtime skončil
+  před připojením chybou pluginu, proto tuto dávku kryjí kontrakty, integrační testy a build;
 - čerstvý npm advisory scan kvůli omezení přístupu k registry;
 - skutečný produkční PITR/provider/deployment drill.
 

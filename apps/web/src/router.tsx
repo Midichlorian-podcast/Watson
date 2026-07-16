@@ -1,10 +1,9 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { lazy } from "react";
 import { AppLayout } from "./layout/AppLayout";
-// Core obrazovky (navštěvované pořád) = eager. Ostatní = code-split přes lazy() → menší main chunk
+import { parseTaskTab, type TaskTab } from "./lib/taskTabs";
+// Layout zůstává eager; obrazovky se načítají po vstupu → menší main chunk.
 // (Suspense boundary je kolem <Outlet/> v AppLayout).
-import { Nadchazejici } from "./screens/Nadchazejici";
-import { parseTab, type TaskTab, UkolyShell } from "./screens/UkolyShell";
 
 const named = <K extends string>(
 	loader: () => Promise<Record<K, React.ComponentType>>,
@@ -13,16 +12,21 @@ const named = <K extends string>(
 
 const Cile = named(() => import("./screens/Cile"), "Cile");
 const Hledat = named(() => import("./screens/Hledat"), "Hledat");
+const Intake = named(() => import("./screens/Intake"), "Intake");
 const Prehled = named(() => import("./screens/Prehled"), "Prehled");
 const Seznamy = named(() => import("./screens/Seznamy"), "Seznamy");
 const Velin = named(() => import("./screens/Velin"), "Velin");
 const Mail = named(() => import("./screens/Mail"), "Mail");
 const Mitingy = named(() => import("./screens/Mitingy"), "Mitingy");
+const Nadchazejici = named(() => import("./screens/Nadchazejici"), "Nadchazejici");
 const Nastaveni = named(() => import("./screens/Nastaveni"), "Nastaveni");
 const Postupy = named(() => import("./screens/Postupy"), "Postupy");
 const Projekty = named(() => import("./screens/Projekty"), "Projekty");
 const Reporty = named(() => import("./screens/Reporty"), "Reporty");
 const Schranka = named(() => import("./screens/Schranka"), "Schranka");
+const UkolyShell = lazy(() =>
+	import("./screens/UkolyShell").then((module) => ({ default: module.UkolyShell })),
+);
 const Oblibene = lazy(() => import("./screens/Oblibene").then((m) => ({ default: m.Oblibene })));
 
 const rootRoute = createRootRoute({ component: AppLayout });
@@ -75,7 +79,7 @@ const indexRoute = createRoute({
 	path: "/",
 	component: () => <UkolyShell defaultTab="dnes" />,
 	validateSearch: (s: Record<string, unknown>): { tab?: TaskTab } => ({
-		tab: parseTab(s.tab),
+		tab: parseTaskTab(s.tab),
 	}),
 });
 const ukolyRoute = createRoute({
@@ -89,7 +93,7 @@ const ukolyRoute = createRoute({
 		// deep-link z „Kopírovat odkaz" — otevře detail úkolu
 		ukol: typeof s.ukol === "string" ? s.ukol : undefined,
 		// aktivní záložka modulu (dnes | vse | zasobnik); default vse na /ukoly
-		tab: parseTab(s.tab),
+		tab: parseTaskTab(s.tab),
 		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
 	}),
 });
@@ -121,6 +125,14 @@ const hledatRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/hledat",
 	component: Hledat,
+});
+const intakeRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/prijem-prace",
+	component: Intake,
+	validateSearch: (s: Record<string, unknown>): { formular?: string } => ({
+		formular: typeof s.formular === "string" ? s.formular : undefined,
+	}),
 });
 const cileRoute = createRoute({
 	getParentRoute: () => rootRoute,
@@ -176,6 +188,7 @@ const routeTree = rootRoute.addChildren([
 	nadchRoute,
 	schrankaRoute,
 	hledatRoute,
+	intakeRoute,
 	cileRoute,
 	reportyRoute,
 	postupyRoute,

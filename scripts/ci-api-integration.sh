@@ -69,6 +69,7 @@ TASK_TIMELINE_API="$API_URL" pnpm --filter @watson/api verify:task-timeline
 ATTACHMENTS_API="$API_URL" pnpm --filter @watson/api verify:attachments
 CUSTOM_FIELDS_API="$API_URL" pnpm --filter @watson/api verify:custom-fields
 POLLS_API="$API_URL" pnpm --filter @watson/api verify:polls
+INTAKE_FORMS_API="$API_URL" pnpm --filter @watson/api verify:intake-forms
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:meet-acl
 MEETING_API="$API_URL" pnpm --filter @watson/api verify:meeting-commands
 AI_POLICY_API="$API_URL" pnpm --filter @watson/api verify:ai-policy

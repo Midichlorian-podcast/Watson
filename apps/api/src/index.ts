@@ -37,6 +37,7 @@ import { customFieldRoutes } from "./customFields";
 import { employeeRoutes } from "./employee";
 import { env, googleEnabled, pushEnabled } from "./env";
 import { exportRoutes } from "./export";
+import { intakeFormRoutes } from "./intakeForms";
 import { meetingsRoutes } from "./meetings";
 import { pollRoutes } from "./polls";
 import { powersyncRoutes } from "./powersync";
@@ -367,6 +368,7 @@ app.route("/", attachmentRoutes);
 app.route("/", customFieldRoutes);
 app.route("/", pollRoutes);
 app.route("/", projectMilestoneRoutes);
+app.route("/", intakeFormRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);

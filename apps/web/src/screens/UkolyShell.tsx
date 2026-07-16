@@ -4,6 +4,7 @@ import { useTranslation } from "@watson/i18n";
 import { useMemo } from "react";
 import { inboxProjectIds } from "../lib/inbox";
 import { useProjects } from "../lib/projects";
+import { parseTaskTab, type TaskTab } from "../lib/taskTabs";
 import { todayISO } from "../lib/tasks";
 import { DnesTab } from "./Today";
 import { VseTab, ZasobnikTab } from "./Ukoly";
@@ -14,16 +15,11 @@ import { VseTab, ZasobnikTab } from "./Ukoly";
  * - `?tab=dnes|vse|zasobnik` řídí aktivní záložku; default se liší dle domovské routy.
  * - `?projekt=` (drill-down projektu) = fokusovaný pohled BEZ záložek (má vlastní baner).
  */
-export type TaskTab = "dnes" | "vse" | "zasobnik";
-
-export const parseTab = (x: unknown): TaskTab | undefined =>
-	x === "dnes" || x === "vse" || x === "zasobnik" ? x : undefined;
-
 export function UkolyShell({ defaultTab }: { defaultTab: TaskTab }) {
 	const search = useSearch({ strict: false }) as { tab?: string; projekt?: string };
 	// Projektový drill-down = fokusovaný pohled bez záložek (VseTab si projekt čte sám ze search).
 	if (search.projekt) return <VseTab />;
-	const tab = parseTab(search.tab) ?? defaultTab;
+	const tab = parseTaskTab(search.tab) ?? defaultTab;
 	return (
 		<>
 			<TaskViewTabs active={tab} />

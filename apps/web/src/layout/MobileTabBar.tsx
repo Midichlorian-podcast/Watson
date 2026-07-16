@@ -29,6 +29,7 @@ const MORE: { to: string; icon: IconName; labelKey: string }[] = [
 	// P1-13: Meets byl na mobilu nedosažitelný (jen v desktop sidebaru)
 	{ to: "/meets", icon: "tym", labelKey: "nav.meetings" },
 	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
+	{ to: "/prijem-prace", icon: "schranka", labelKey: "nav.intake" },
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
 	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox" },
