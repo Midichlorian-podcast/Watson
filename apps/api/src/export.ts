@@ -37,6 +37,7 @@ export const RESTORE_TABLE_ORDER = [
 	"statuses",
 	"project_custom_fields",
 	"tasks",
+	"project_milestones",
 	"task_dependencies",
 	"task_custom_field_values",
 	"task_polls",
@@ -98,6 +99,8 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT st.* FROM statuses st LEFT JOIN projects p ON p.id = st.project_id WHERE p.workspace_id = ANY(${uuids(ws)}) OR st.workspace_id = ANY(${uuids(ws)})`,
 	project_custom_fields: (ws) =>
 		sql`SELECT f.* FROM project_custom_fields f JOIN projects p ON p.id = f.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	project_milestones: (ws) =>
+		sql`SELECT m.* FROM project_milestones m JOIN projects p ON p.id = m.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	tasks: (ws) =>
 		sql`SELECT t.* FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	task_dependencies: (ws) =>

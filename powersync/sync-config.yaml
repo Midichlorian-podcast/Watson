@@ -15,8 +15,8 @@ bucket_definitions:
         WHERE project_id = bucket.project_id
       # Projekt sám (barva projektu = tělo karet úkolů, R6) + jeho struktura.
       - SELECT id, workspace_id, name, color, icon, default_layout, visibility,
-        kind, owner_id, status, delivery_date, definition_of_done,
-        archived_at, created_at
+        kind, owner_id, status, delivery_date, definition_of_done, milestones_enabled,
+        archived_at, created_at, updated_at
         FROM projects
         WHERE id = bucket.project_id
       - SELECT id, project_id, name, position, created_at
@@ -69,6 +69,11 @@ bucket_definitions:
         WHERE project_id = bucket.project_id
       - SELECT id, poll_id, task_id, project_id, respondent_id, value, created_at, updated_at
         FROM task_poll_responses
+        WHERE project_id = bucket.project_id
+      # Volitelné projektové milníky; splnění se odvozuje z úkolů, neukládá se.
+      - SELECT id, project_id, title, condition_type, task_id, target_count, due_date,
+               position, created_by, created_at, updated_at
+        FROM project_milestones
         WHERE project_id = bucket.project_id
       # task_activity (audit log) se ZÁMĚRNĚ NEsyncuje — je insert-only (klient jen nahrává),
       # detail historie se čte přes GET /api/tasks/:id/activity. Jinak roste do stovek MB/zařízení.

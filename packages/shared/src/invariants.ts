@@ -132,6 +132,17 @@ export const PROJECT_STATUSES = [
 ] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
+/**
+ * Volitelné podmíněné milníky projektu. Stav milníku se nikdy neukládá ručně:
+ * vždy se odvozuje z autoritativních úkolů projektu.
+ */
+export const PROJECT_MILESTONE_CONDITIONS = [
+	"task_completed",
+	"completed_count",
+	"all_tasks_completed",
+] as const;
+export type ProjectMilestoneCondition = (typeof PROJECT_MILESTONE_CONDITIONS)[number];
+
 /** Postupy (štafeta) — stav běžící instance řetězce. */
 export const CHAIN_STATES = ["active", "done", "canceled", "on_hold"] as const;
 export type ChainState = (typeof CHAIN_STATES)[number];

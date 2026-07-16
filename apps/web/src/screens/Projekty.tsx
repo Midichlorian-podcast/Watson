@@ -15,14 +15,14 @@ import { DataLoading } from "../components/Loading";
 import { patchProject } from "../components/ProjectDetailPanel";
 import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
-import { initials } from "../lib/format";
 import { focusOnMount } from "../lib/focusOnMount";
+import { initials } from "../lib/format";
 import { inboxProjectIds } from "../lib/inbox";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjectsWithState } from "../lib/projects";
-import { useWorkspace, useWorkspaces } from "../lib/workspace";
 import { NOT_MEETING } from "../lib/tasks";
+import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
 
@@ -293,6 +293,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 	const [color, setColor] = useState<string | null>(null);
 	const [preset, setPreset] = useState<ProjectPreset>("blank");
 	const [kind, setKind] = useState<ProjectKind>("flow");
+	const [milestonesEnabled, setMilestonesEnabled] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string | null>(null);
 	const projectId = useRef(crypto.randomUUID());
@@ -320,6 +321,8 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 					color,
 					kind,
 					preset,
+					milestonesEnabled,
+					defaultMilestoneTitle: t("projects.milestoneDefaultTitle"),
 				}),
 			});
 			if (r.ok) {
@@ -482,6 +485,22 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 							</button>
 						))}
 					</div>
+					<label className="mt-3 flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border border-line bg-panel-2 px-3 py-2.5">
+						<input
+							type="checkbox"
+							checked={milestonesEnabled}
+							onChange={(event) => setMilestonesEnabled(event.target.checked)}
+							className="mt-0.5 h-4 w-4 accent-[var(--w-brass)]"
+						/>
+						<span>
+							<span className="block font-display font-semibold text-ink text-sm">
+								{t("projects.newMilestone")}
+							</span>
+							<span className="mt-0.5 block text-ink-3 text-xs leading-snug">
+								{t("projects.newMilestoneHelp")}
+							</span>
+						</span>
+					</label>
 					{err && (
 						<p
 							className="mt-3 rounded-[9px] font-body"

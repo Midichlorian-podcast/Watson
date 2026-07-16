@@ -3,8 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { CopyLinkButton } from "./CopyLinkButton";
+import { lazy, type ReactNode, Suspense, useCallback, useEffect, useState } from "react";
 import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
 import { initials } from "../lib/format";
@@ -12,8 +11,15 @@ import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjectDetail } from "../lib/projectDetail";
 import { showToast } from "../lib/toast";
+import { CopyLinkButton } from "./CopyLinkButton";
 
-type Member = { id: string; name: string; email: string; image: string | null };
+type Member = {
+	id: string;
+	name: string;
+	email: string;
+	image: string | null;
+	role?: "manager" | "editor" | "commenter";
+};
 const KINDS = [
 	["flow", "kindFlow"],
 	["goal", "kindGoal"],
@@ -25,6 +31,7 @@ const STATUSES = [
 	["archive", "statusArchived"],
 	["done", "statusDone"],
 ] as const;
+const ProjectMilestonesSection = lazy(() => import("./ProjectMilestonesSection"));
 
 /** Patch sloupců projektu (write-path: tabulka `projects`, self-členství). */
 export async function patchProject(id: string, data: Record<string, unknown>) {
@@ -76,13 +83,13 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		[id],
 	);
 	const { data: team } = useQuery({
-		queryKey: ["projMembers", id],
+		queryKey: ["projectDetailMembers", id],
 		queryFn: async () => {
 			const r = await fetch(`${API_URL}/api/projects/${id}/members`, {
 				credentials: "include",
 			});
 			if (!r.ok) throw new Error("members");
-			return (await r.json()).members as Member[];
+			return (await r.json()) as { members: Member[]; canEdit: boolean; canManage: boolean };
 		},
 	});
 	// roster prostoru — Vlastník i Členové nabízejí VŠECHNY lidi prostoru (prototyp ř. 3134/3138)
@@ -117,7 +124,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			);
 			if (!r.ok) throw new Error("member");
 		},
-		onSuccess: () => void qc.invalidateQueries({ queryKey: ["projMembers", id] }),
+		onSuccess: () => void qc.invalidateQueries({ queryKey: ["projectDetailMembers", id] }),
 		onError: () => showToast(t("projects.memberChangeError")),
 	});
 
@@ -131,6 +138,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const [ownerId, setOwnerId] = useState<string | null>(null);
 	const [statusDraft, setStatusDraft] = useState<string>("active");
 	const [delivery, setDelivery] = useState<string>("");
+	const [milestonesEnabled, setMilestonesEnabled] = useState(false);
+	const [saving, setSaving] = useState(false);
 	// členové: null = nedotčeno (platí serverový stav)
 	const [memberDraft, setMemberDraft] = useState<Set<string> | null>(null);
 	const resetDraft = useCallback(() => {
@@ -142,6 +151,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		setOwnerId(project.owner_id ?? null);
 		setStatusDraft(project.status ?? "active");
 		setDelivery(project.delivery_date ? project.delivery_date.slice(0, 10) : "");
+		setMilestonesEnabled(Boolean(project.milestones_enabled));
 		setMemberDraft(null);
 	}, [project]);
 	// re-seed jen při přepnutí projektu — příchozí sync nesmí přepsat rozepsaný draft
@@ -154,7 +164,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const total = stats?.[0]?.total ?? 0;
 	const done = stats?.[0]?.done ?? 0;
 	const openCount = total - done;
-	const members = team ?? [];
+	const members = team?.members ?? [];
+	const canEdit = team?.canEdit ?? false;
+	const canManage = team?.canManage ?? false;
 	const people = roster ?? [];
 	const serverMemberIds = new Set(members.map((m) => m.id));
 	const memberIds = memberDraft ?? serverMemberIds;
@@ -171,6 +183,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		ownerId !== (project.owner_id ?? null) ||
 		status !== (project.status ?? "active") ||
 		delivery !== (project.delivery_date ? project.delivery_date.slice(0, 10) : "") ||
+		milestonesEnabled !== Boolean(project.milestones_enabled) ||
 		(memberDraft != null &&
 			(memberDraft.size !== serverMemberIds.size ||
 				[...memberDraft].some((x) => !serverMemberIds.has(x))));
@@ -191,16 +204,56 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		}
 		if (delivery !== (project.delivery_date ? project.delivery_date.slice(0, 10) : ""))
 			patch.delivery_date = delivery || null;
-		if (Object.keys(patch).length > 0) await patchProject(id, patch);
-		if (memberDraft) {
-			for (const m of people) {
-				const want = memberDraft.has(m.id);
-				const has = serverMemberIds.has(m.id);
-				if (want !== has) await memberMut.mutateAsync({ userId: m.id, isMember: has });
+		if (milestonesEnabled !== Boolean(project.milestones_enabled))
+			patch.milestonesEnabled = milestonesEnabled;
+		setSaving(true);
+		try {
+			if (Object.keys(patch).length > 0) {
+				if (!project.updated_at) {
+					showToast(t("projects.settingsStale"));
+					return;
+				}
+				const settings: Record<string, unknown> = { expectedUpdatedAt: project.updated_at };
+				if ("name" in patch) settings.name = patch.name;
+				if ("definition_of_done" in patch)
+					settings.definitionOfDone = patch.definition_of_done;
+				if ("color" in patch) settings.color = patch.color;
+				if ("kind" in patch) settings.kind = patch.kind;
+				if ("owner_id" in patch) settings.ownerId = patch.owner_id;
+				if ("status" in patch) settings.status = patch.status;
+				if ("delivery_date" in patch) settings.deliveryDate = patch.delivery_date;
+				if ("milestonesEnabled" in patch)
+					settings.milestonesEnabled = patch.milestonesEnabled;
+				const response = await fetch(`${API_URL}/api/projects/${id}/settings`, {
+					method: "PATCH",
+					credentials: "include",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(settings),
+				});
+				if (!response.ok) {
+					const data = (await response.json().catch(() => null)) as { error?: string } | null;
+					if (data?.error === "project_milestones_incomplete")
+						showToast(t("projects.milestonesIncomplete"));
+					else if (data?.error === "stale_project_settings")
+						showToast(t("projects.settingsStale"));
+					else showToast(t("projects.settingsSaveError"));
+					return;
+				}
 			}
-			setMemberDraft(null);
+			if (memberDraft) {
+				for (const m of people) {
+					const want = memberDraft.has(m.id);
+					const has = serverMemberIds.has(m.id);
+					if (want !== has) await memberMut.mutateAsync({ userId: m.id, isMember: has });
+				}
+				setMemberDraft(null);
+			}
+			showToast(t("detail.saved"));
+		} catch {
+			showToast(t("projects.settingsSaveError"));
+		} finally {
+			setSaving(false);
 		}
-		showToast(t("detail.saved"));
 	};
 
 	return (
@@ -246,6 +299,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						{t("projects.nameLabel")}
 					</div>
 					<input
+						disabled={!canEdit}
 						value={name}
 						onChange={(e) => setName(e.target.value)}
 						className="w-full rounded-[9px] border border-line bg-panel-2 font-display font-bold text-ink outline-none focus:border-brass"
@@ -257,8 +311,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						<div className="flex flex-wrap gap-1.5">
 							<button
 								type="button"
+								disabled={!canEdit}
 								onClick={() => setColor(null)}
-								className="grid h-6 w-6 place-items-center rounded-md border border-line text-ink-3"
+								className="grid h-11 w-11 place-items-center rounded-lg border border-line text-ink-3 disabled:cursor-not-allowed"
 								style={{ background: "var(--w-card)" }}
 								aria-label={t("projects.colorDefault")}
 							>
@@ -268,8 +323,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								<button
 									key={c}
 									type="button"
+									disabled={!canEdit}
 									onClick={() => setColor(c)}
-									className="h-6 w-6 rounded-md"
+									className="h-11 w-11 rounded-lg disabled:cursor-not-allowed"
 									style={{
 										background: c,
 										outline: color === c ? "2px solid var(--w-avatar)" : "none",
@@ -285,7 +341,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					<Section label={t("projects.type")}>
 						<div className="inline-flex flex-wrap gap-1 rounded-lg border border-line bg-panel-2 p-[3px]">
 							{KINDS.map(([k, lbl]) => (
-								<Seg key={k} active={kind === k} onClick={() => setKindDraft(k)}>
+								<Seg key={k} active={kind === k} disabled={!canEdit} onClick={() => setKindDraft(k)}>
 									{t(`projects.${lbl}`)}
 								</Seg>
 							))}
@@ -300,6 +356,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									key={m.id}
 									name={m.name}
 									on={m.id === ownerId}
+									disabled={!canManage}
 									onClick={() => setOwnerId(m.id)}
 								/>
 							))}
@@ -310,7 +367,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					<Section label={t("projects.status")}>
 						<div className="inline-flex flex-wrap gap-1 rounded-lg border border-line bg-panel-2 p-[3px]">
 							{STATUSES.map(([s, lbl]) => (
-								<Seg key={s} active={status === s} onClick={() => setStatusDraft(s)}>
+								<Seg key={s} active={status === s} disabled={!canManage} onClick={() => setStatusDraft(s)}>
 									{t(`projects.${lbl}`)}
 								</Seg>
 							))}
@@ -323,21 +380,33 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							<Section label={t("projects.delivery")}>
 								<input
 									type="date"
+									disabled={!canEdit}
 									value={delivery}
 									onChange={(e) => setDelivery(e.target.value)}
-									className="rounded-lg border border-line bg-panel-2 px-2.5 py-2 font-mono text-ink text-xs outline-none focus:border-brass"
+									className="min-h-11 rounded-lg border border-line bg-panel-2 px-2.5 py-2 font-mono text-ink text-xs outline-none focus:border-brass"
 								/>
 							</Section>
 							<Section label={t("projects.dod")}>
 								<input
+									disabled={!canEdit}
 									value={dod}
 									onChange={(e) => setDod(e.target.value)}
 									placeholder={t("projects.dodPlaceholder")}
-									className="w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-ink text-sm outline-none focus:border-brass"
+									className="min-h-11 w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-ink text-sm outline-none focus:border-brass"
 								/>
 							</Section>
 						</>
 					)}
+
+					<Suspense fallback={<div className="mt-4 h-16 animate-pulse rounded-xl bg-panel-2" />}>
+						<ProjectMilestonesSection
+							projectId={id}
+							enabled={milestonesEnabled}
+							onEnabledChange={setMilestonesEnabled}
+							canEdit={canEdit}
+							canManage={canManage}
+						/>
+					</Suspense>
 
 					{/* ČLENOVÉ — toggle avatarů celého rosteru (prototyp ř. 1255–1257 + toggleProjMember ř. 2380) */}
 					<Section label={`${t("projects.membersLabel")} · ${members.length}`}>
@@ -349,6 +418,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										key={m.id}
 										name={m.name}
 										on={isMember}
+										disabled={!canManage}
 										onClick={() =>
 											setMemberDraft((prev) => {
 												const next = new Set(prev ?? serverMemberIds);
@@ -382,19 +452,19 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							onClose();
 							void navigate({ to: "/ukoly", search: { projekt: id } });
 						}}
-						className="mb-2 w-full rounded-lg border border-line px-4 py-2 font-display font-semibold text-ink text-sm hover:border-brass"
+						className="mb-2 min-h-11 w-full rounded-lg border border-line px-4 py-2 font-display font-semibold text-ink text-sm hover:border-brass"
 					>
 						{t("projects.viewTasks")}
 					</button>
 					<div className="flex gap-2">
 						<button
 							type="button"
-							disabled={!dirty}
+							disabled={!dirty || saving}
 							onClick={() => void save()}
-							className="flex-1 rounded-lg px-4 py-2 font-display font-semibold text-sm text-white hover:brightness-105 disabled:opacity-45"
+							className="min-h-11 flex-1 rounded-lg px-4 py-2 font-display font-semibold text-sm text-white hover:brightness-105 disabled:opacity-45"
 							style={{ background: "var(--w-brass)" }}
 						>
-							{t("projects.saveChanges")}
+							{saving ? t("common.saving") : t("projects.saveChanges")}
 						</button>
 						<button
 							type="button"
@@ -402,7 +472,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								resetDraft();
 								onClose();
 							}}
-							className="rounded-lg border border-line px-4 py-2 font-display font-semibold text-ink text-sm hover:border-brass"
+							className="min-h-11 rounded-lg border border-line px-4 py-2 font-display font-semibold text-ink text-sm hover:border-brass"
 						>
 							{t("common.cancel")}
 						</button>
@@ -426,18 +496,21 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
 
 function Seg({
 	active,
+	disabled = false,
 	onClick,
 	children,
 }: {
 	active: boolean;
+	disabled?: boolean;
 	onClick: () => void;
 	children: ReactNode;
 }) {
 	return (
 		<button
 			type="button"
+			disabled={disabled}
 			onClick={onClick}
-			className="rounded-md px-3 py-1.5 font-display font-semibold text-xs"
+			className="min-h-11 rounded-md px-3 py-1.5 font-display font-semibold text-xs disabled:cursor-not-allowed disabled:opacity-55"
 			style={{
 				border: active ? "1px solid var(--w-brass)" : "1px solid transparent",
 				background: active ? "var(--w-brass-soft)" : "transparent",
@@ -450,13 +523,24 @@ function Seg({
 }
 
 /** Klikací avatar osoby — data-person vzor prototypu (CSS ř. 97–98: off opacity .5, on brass ring). */
-function PersonAvatar({ name, on, onClick }: { name: string; on: boolean; onClick: () => void }) {
+function PersonAvatar({
+	name,
+	on,
+	disabled = false,
+	onClick,
+}: {
+	name: string;
+	on: boolean;
+	disabled?: boolean;
+	onClick: () => void;
+}) {
 	return (
 		<button
 			type="button"
+			disabled={disabled}
 			title={name}
 			onClick={onClick}
-			className="grid h-[30px] w-[30px] place-items-center rounded-full font-display font-semibold text-[11px] text-white"
+			className="grid h-11 w-11 place-items-center rounded-full font-display font-semibold text-[11px] text-white disabled:cursor-not-allowed"
 			style={{
 				background: "var(--w-avatar)",
 				opacity: on ? 1 : 0.5,

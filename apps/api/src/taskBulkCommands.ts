@@ -304,6 +304,15 @@ async function buildPlan(
 				code: "polls_block_move",
 				taskIds: pollRows.map((row) => row.task_id),
 			});
+		const milestoneRows = (await tx.execute(sql`
+			SELECT DISTINCT task_id FROM project_milestones
+			WHERE task_id = ANY(${uuids(affectedIds)})
+		`)) as unknown as { task_id: string }[];
+		if (milestoneRows.length)
+			conflicts.push({
+				code: "milestones_block_move",
+				taskIds: milestoneRows.map((row) => row.task_id),
+			});
 		const invalidAssignees = (await tx.execute(sql`
 			SELECT DISTINCT a.task_id
 			FROM assignments a
@@ -333,6 +342,15 @@ async function buildPlan(
 			conflicts.push({
 				code: "workflow_items_block_delete",
 				taskIds: workflowRows.map((row) => row.id),
+			});
+		const milestoneRows = (await tx.execute(sql`
+			SELECT DISTINCT task_id FROM project_milestones
+			WHERE task_id = ANY(${uuids(rows.map((row) => row.id))})
+		`)) as unknown as { task_id: string }[];
+		if (milestoneRows.length)
+			conflicts.push({
+				code: "milestones_block_delete",
+				taskIds: milestoneRows.map((row) => row.task_id),
 			});
 		if (conflicts.length) applyRows = [];
 	}

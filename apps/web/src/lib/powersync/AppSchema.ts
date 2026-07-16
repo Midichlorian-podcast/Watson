@@ -143,6 +143,23 @@ const task_poll_responses = new Table(
 	},
 );
 
+/** Projektové milníky; splnění se odvozuje lokálně i serverově z úkolů. */
+const project_milestones = new Table(
+	{
+		project_id: column.text,
+		title: column.text,
+		condition_type: column.text,
+		task_id: column.text,
+		target_count: column.integer,
+		due_date: column.text,
+		position: column.integer,
+		created_by: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{ indexes: { by_project: ["project_id"], by_task: ["task_id"] } },
+);
+
 /** Projekt (barva = tělo karet úkolů, R6); kind=flow|goal|cycle, status 4-stavový. */
 const projects = new Table(
 	{
@@ -157,8 +174,10 @@ const projects = new Table(
 		status: column.text,
 		delivery_date: column.text,
 		definition_of_done: column.text,
+		milestones_enabled: column.integer,
 		archived_at: column.text,
 		created_at: column.text,
+		updated_at: column.text,
 	},
 	trackAllPrevious,
 );
@@ -616,6 +635,7 @@ export const AppSchema = new Schema({
 	task_custom_field_values,
 	task_polls,
 	task_poll_responses,
+	project_milestones,
 	workspaces,
 	projects,
 	sections,
@@ -655,6 +675,7 @@ export type ProjectCustomFieldRow = Database["project_custom_fields"];
 export type TaskCustomFieldValueRow = Database["task_custom_field_values"];
 export type TaskPollRow = Database["task_polls"];
 export type TaskPollResponseRow = Database["task_poll_responses"];
+export type ProjectMilestoneRow = Database["project_milestones"];
 export type WorkspaceRow = Database["workspaces"];
 export type ProjectRow = Database["projects"];
 export type SectionRow = Database["sections"];

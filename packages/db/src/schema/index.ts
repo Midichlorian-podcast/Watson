@@ -14,6 +14,7 @@ export * from "./goals";
 export * from "./lists";
 export * from "./meetings";
 export * from "./polls";
+export * from "./projectMilestones";
 export * from "./structured";
 export * from "./system";
 export * from "./task";

@@ -14,6 +14,7 @@ import { powerSync } from "./powersync/db";
 const BACKUP_TABLES = [
 	"tasks",
 	"projects",
+	"project_milestones",
 	"sections",
 	"statuses",
 	"project_members",

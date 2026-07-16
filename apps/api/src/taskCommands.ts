@@ -129,6 +129,18 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 		)
 			return { forbidden: true as const };
 
+		// Konkrétní úkol použitý jako podmíněný milník nelze tiše smazat (ani přes
+		// smazání rodiče). Uživatel musí nejdřív změnit či odstranit milník.
+		const milestoneReferences = (await tx.execute(sql`
+			WITH RECURSIVE tree AS (
+				SELECT id FROM tasks WHERE id = ANY(${uuids(taskIds)})
+				UNION SELECT child.id FROM tasks child JOIN tree parent ON child.parent_id = parent.id
+			)
+			SELECT m.task_id FROM project_milestones m JOIN tree ON tree.id = m.task_id
+			LIMIT 1
+		`)) as unknown as { task_id: string }[];
+		if (milestoneReferences[0]) return { milestoneReference: true as const };
+
 		const snapshots = (await tx.execute(sql`
 			WITH RECURSIVE tree_raw AS (
 				SELECT t.*, 0 AS _depth FROM tasks t WHERE t.id = ANY(${uuids(taskIds)})
@@ -248,6 +260,8 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 	if ("conflict" in result) return c.json({ error: "operation_id_reused" }, 409);
 	if ("missing" in result) return c.json({ error: "task_not_found" }, 404);
 	if ("forbidden" in result) return c.json({ error: "forbidden" }, 403);
+	if ("milestoneReference" in result)
+		return c.json({ error: "project_milestone_task_reference" }, 409);
 	if ("multipleWorkspaces" in result)
 		return c.json({ error: "cross_workspace_batch_not_allowed" }, 422);
 	return c.json({ ok: true, batchId: result.batchId, replay: result.replay });

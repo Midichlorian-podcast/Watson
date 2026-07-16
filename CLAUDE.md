@@ -1,6 +1,6 @@
 # Watson — závazný re-audit a implementační plán pro Claude Code
 
-> Stav dokumentu: 2026-07-15 po druhém hloubkovém auditu a opravách migrací 0030–0039.
+> Stav dokumentu: 2026-07-16 po stabilizaci a průběžných produktových dávkách do migrace 0049.
 >
 > CLAUDE CODE: přečti celý soubor před první změnou. Toto je jediný aktuální řídicí dokument. Staré audity, handoffy a plány ve `files/` jsou historické podklady. Pokud odporují tomuto souboru nebo současnému schématu, nemají autoritu.
 
@@ -425,16 +425,18 @@ Každá produkční funkce musí odpovědět ano na vše relevantní:
 
 Poslední ověření 2026-07-16:
 
-- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 98 TSX.
+- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 99 TSX.
 - `pnpm typecheck`: 6/6 balíčků.
 - `pnpm test`: recurrence 14/14, Quick Add, timezone, recent items, proč-teď, deep linky,
   uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
-  Waiting Room, zmínky, Mail claims, chain gate, sync recovery a backup crypto.
+  Waiting Room, projektové milníky, zmínky, Mail claims, chain gate, sync recovery
+  a backup crypto.
 - `pnpm --filter @watson/web test:corpus`: 321/321.
 - `bash scripts/ci-api-integration.sh`: contract, Drizzle, reminders, LuckyOS reconciliation,
   DB invariants, signing keys, RBAC, sync refs/CAS/idempotency, rozhodnutí,
   komentářová spolupráce, bulk commandy, uložené pohledy, projektová přednastavení,
-  závislosti, časová osa, přílohy, typovaná vlastní pole, ankety, meeting ACL/commandy,
+  závislosti, časová osa, přílohy, typovaná vlastní pole, ankety, projektové milníky,
+  meeting ACL/commandy,
   AI policy, task delete/restore, workspace policy, export/restore, manual gate,
   input/observability, rate limit a auth/2FA — vše prošlo.
 - Migrace 0046: aplikována; sedm typů projektových polí i jejich task hodnoty mají
@@ -442,9 +444,13 @@ Poslední ověření 2026-07-16:
 - Migrace 0047 + dopředná oprava 0048: aplikovány; pět typů vložitelných task anket
   má stabilní option ID, jednu pojmenovanou odpověď na osobu, uzavření/znovuotevření,
   DB validaci, ACL, audit bez obsahu odpovědi, export/restore, delete/undo a PowerSync.
+- Migrace 0049: aplikována; volitelné projektové milníky odvozují stav z úkolů
+  (`task_completed`, `completed_count`, `all_tasks_completed`). DB guard odmítá uzavření
+  i pozdější regresi cílového projektu, task reference chrání delete/move a auditovaný
+  API command pokrývá ACL, idempotenci, přesné potvrzení smazání a lokalizovaný výchozí milník.
 - PowerSync po restartu: nový replication stream aktivní, sync-config bez chyby.
-- `pnpm build`: největší JS 349 KiB gzip, precache 4,985 KiB; oba rozpočty splněny;
-  vlastní pole a ankety jsou oddělené lazy-loaded chunky detailu úkolu.
+- `pnpm build`: největší JS 350 KiB gzip, precache 4,999 KiB; oba rozpočty splněny;
+  vlastní pole, ankety a projektové milníky jsou oddělené lazy-loaded chunky.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
   44 px, offline zápisem a následným autoritativním uploadem. Jediný zachycený
@@ -455,6 +461,12 @@ Poslední ověření 2026-07-16:
 - Waiting Room je odvozený z autoritativních závislostí a aktivních kroků Postupů,
   bez nové kopie stavu. Oba směry, firemní filtr a proklik prošly cíleným scénářem;
   karta má na 320/390/768/1440 px targety ≥44 px, bez overflow a runtime chyb.
+- Projektové milníky prošly 20 integračními kontrolami: ACL a fail-closed 404,
+  idempotentní create, CAS konflikt nastavení i milníku, same-project FK, DB
+  completion/regression guard, blokovaný task delete/move, update/delete confirmation,
+  výchozí milník a audit. Editor byl vizuálně
+  zkontrolován na 320/390/768/1440 px bez overflow či runtime chyb; formulář a ovládání
+  mají 44px cíle a UI respektuje efektivní editor/manager oprávnění.
 - `NODE_ENV=production LUCKYOS_MOCK=1 ...`: oba produkční mock gates potvrzeně zůstaly vypnuté.
 - `git diff --check`, YAML parser a journal JSON parser: prošly.
 

@@ -277,11 +277,12 @@ export const TABLES: Record<string, TableDef> = {
 			status: "text",
 			delivery_date: "ts",
 			definition_of_done: "text",
+			milestones_enabled: "bool",
 			archived_at: "ts",
 		},
 		hasUpdatedAt: true,
 		// Přejmenování/barvu smí editor; převod vlastnictví, viditelnost a archivaci jen manager.
-		managerCols: ["owner_id", "visibility", "status", "archived_at"],
+		managerCols: ["owner_id", "visibility", "status", "milestones_enabled", "archived_at"],
 		projectVia: { kind: "self" },
 	},
 	statuses: {

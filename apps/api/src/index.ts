@@ -10,6 +10,7 @@ import {
 	memberships,
 	ne,
 	projectMembers,
+	projectMilestones,
 	projects,
 	sql,
 	statuses,
@@ -39,6 +40,7 @@ import { exportRoutes } from "./export";
 import { meetingsRoutes } from "./meetings";
 import { pollRoutes } from "./polls";
 import { powersyncRoutes } from "./powersync";
+import { projectMilestoneRoutes } from "./projectMilestones";
 import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
 import { savedViewRoutes } from "./savedViews";
@@ -73,6 +75,8 @@ const createProjectSchema = z
 		color: z.string().regex(/^#[0-9a-f]{6}$/i).nullable().optional(),
 		kind: z.enum(["flow", "goal", "cycle"]).optional(),
 		preset: z.enum(PROJECT_PRESETS).optional().default("blank"),
+		milestonesEnabled: z.boolean().optional().default(false),
+		defaultMilestoneTitle: z.string().trim().min(1).max(200).optional(),
 	})
 	.strict();
 class ProjectCreateConflict extends Error {}
@@ -362,6 +366,7 @@ app.route("/", savedViewRoutes);
 app.route("/", attachmentRoutes);
 app.route("/", customFieldRoutes);
 app.route("/", pollRoutes);
+app.route("/", projectMilestoneRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);
@@ -531,6 +536,7 @@ app.post("/api/projects", async (c) => {
 
 	const preset = PROJECT_PRESET_DEFINITIONS[body.preset];
 	const kind = body.kind ?? preset.kind;
+	const defaultMilestoneTitle = body.defaultMilestoneTitle ?? "Všechny úkoly hotové";
 	// CC-P0-07: projekt, manager a výchozí stavy tvoří jediný DB invariant.
 	// Dílčí selhání musí vrátit vše a klient nesmí dostat napůl vytvořený projekt.
 	try {
@@ -552,8 +558,17 @@ app.post("/api/projects", async (c) => {
 							(status, index) =>
 								status.name === preset.statuses[index]?.name &&
 								status.position === index &&
-								status.isDone === preset.statuses[index]?.isDone,
+							status.isDone === preset.statuses[index]?.isDone,
 						);
+					const existingMilestones = await tx
+						.select({ title: projectMilestones.title, conditionType: projectMilestones.conditionType })
+						.from(projectMilestones)
+						.where(eq(projectMilestones.projectId, existing.id));
+					const sameMilestones = body.milestonesEnabled
+						? existingMilestones.length === 1 &&
+							existingMilestones[0]?.title === defaultMilestoneTitle &&
+							existingMilestones[0]?.conditionType === "all_tasks_completed"
+						: existingMilestones.length === 0;
 					if (
 						existing.workspaceId !== workspaceId ||
 						existing.ownerId !== session.user.id ||
@@ -561,6 +576,8 @@ app.post("/api/projects", async (c) => {
 						existing.color !== (body.color ?? null) ||
 						existing.kind !== kind ||
 						existing.defaultLayout !== preset.layout ||
+						existing.milestonesEnabled !== body.milestonesEnabled ||
+						!sameMilestones ||
 						!sameStatuses
 					)
 						throw new ProjectCreateConflict("project_id_conflict");
@@ -578,6 +595,7 @@ app.post("/api/projects", async (c) => {
 					kind,
 					defaultLayout: preset.layout,
 					ownerId: session.user.id,
+					milestonesEnabled: body.milestonesEnabled,
 				})
 				.returning();
 			if (!created) throw new Error("project_insert_returned_no_row");
@@ -596,6 +614,14 @@ app.post("/api/projects", async (c) => {
 					isDone: status.isDone,
 				})),
 			);
+			if (body.milestonesEnabled) {
+				await tx.insert(projectMilestones).values({
+					projectId: created.id,
+					title: defaultMilestoneTitle,
+					conditionType: "all_tasks_completed",
+					createdBy: session.user.id,
+				});
+			}
 			await tx.insert(auditEvents).values({
 				workspaceId,
 				actorUserId: session.user.id,
@@ -608,6 +634,8 @@ app.post("/api/projects", async (c) => {
 					preset: body.preset,
 					defaultLayout: preset.layout,
 					statusCount: preset.statuses.length,
+					milestonesEnabled: body.milestonesEnabled,
+					defaultMilestoneTitle: body.milestonesEnabled ? defaultMilestoneTitle : null,
 				},
 				requestId: c.get("requestId"),
 			});
@@ -1095,7 +1123,12 @@ app.get("/api/projects/:id/members", async (c) => {
 		.from(projectMembers)
 		.innerJoin(users, eq(projectMembers.userId, users.id))
 		.where(eq(projectMembers.projectId, pid));
-	return c.json({ members: rows });
+	const management = await canManageProjectMembers(db, pid, session.user.id);
+	return c.json({
+		members: rows,
+		canManage: management.ok,
+		canEdit: management.ok || mine[0]?.r === "editor" || mine[0]?.r === "manager",
+	});
 });
 
 /** Přidání člena projektu (toggle avatarů v detailu projektu, prototyp ř. 1255–1257). */

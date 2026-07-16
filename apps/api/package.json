@@ -36,7 +36,8 @@
 		"verify:task-bulk": "tsx verify-task-bulk.ts",
 		"verify:attachments": "tsx verify-attachments.ts",
 		"verify:custom-fields": "tsx verify-custom-fields.ts",
-		"verify:polls": "tsx verify-polls.ts"
+		"verify:polls": "tsx verify-polls.ts",
+		"verify:project-milestones": "tsx verify-project-milestones.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.111.0",

@@ -133,6 +133,8 @@ export const projects = pgTable("projects", {
 	deliveryDate: timestamp("delivery_date", { withTimezone: true }),
 	/** Definice hotového (jen goal/cycle). */
 	definitionOfDone: text("definition_of_done"),
+	/** Volitelné podmíněné projektové milníky; jejich stav se odvozuje z úkolů. */
+	milestonesEnabled: boolean("milestones_enabled").notNull().default(false),
 	/** R5 — restricted projekt je neviditelný nečlenům. */
 	visibility: projectVisibilityEnum("visibility").notNull().default("team"),
 	/** null = nearchivováno (legacy; nově řídí `status`). */
