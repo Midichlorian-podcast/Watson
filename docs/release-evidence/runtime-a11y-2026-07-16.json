@@ -1,6 +1,9 @@
 {
-  "createdAt": "2026-07-16T22:20:44.337Z",
-  "browsers": ["chromium", "webkit"],
+  "createdAt": "2026-07-16T22:53:02.198Z",
+  "browsers": [
+    "chromium",
+    "webkit"
+  ],
   "pages": 120,
   "reducedMotion": true,
   "keyboard": [
@@ -27,17 +30,41 @@
     {
       "browser": "chromium",
       "results": [
-        { "route": "/", "overflow": false, "hasMain": true },
-        { "route": "/mail", "overflow": false, "hasMain": true },
-        { "route": "/nastaveni", "overflow": false, "hasMain": true }
+        {
+          "route": "/",
+          "overflow": false,
+          "hasMain": true
+        },
+        {
+          "route": "/mail",
+          "overflow": false,
+          "hasMain": true
+        },
+        {
+          "route": "/nastaveni",
+          "overflow": false,
+          "hasMain": true
+        }
       ]
     },
     {
       "browser": "webkit",
       "results": [
-        { "route": "/", "overflow": false, "hasMain": true },
-        { "route": "/mail", "overflow": false, "hasMain": true },
-        { "route": "/nastaveni", "overflow": false, "hasMain": true }
+        {
+          "route": "/",
+          "overflow": false,
+          "hasMain": true
+        },
+        {
+          "route": "/mail",
+          "overflow": false,
+          "hasMain": true
+        },
+        {
+          "route": "/nastaveni",
+          "overflow": false,
+          "hasMain": true
+        }
       ]
     }
   ],

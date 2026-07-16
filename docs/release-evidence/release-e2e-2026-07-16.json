@@ -1,0 +1,39 @@
+{
+  "createdAt": "2026-07-16T22:49:26.200Z",
+  "browsers": [
+    "chromium",
+    "webkit"
+  ],
+  "results": [
+    {
+      "browser": "chromium",
+      "signIn": true,
+      "initialSync": true,
+      "offlineLocalCreate": true,
+      "serverWriteHeldOffline": true,
+      "reconnectUpload": true,
+      "editRoundTrip": true,
+      "moveRoundTrip": true,
+      "rejectionCaptured": true,
+      "rejectionDiscarded": true,
+      "retryResolved": true,
+      "addDialogA11y": true,
+      "taskDetailA11y": true
+    },
+    {
+      "browser": "webkit",
+      "signIn": true,
+      "initialSync": true,
+      "offlineLocalCreate": true,
+      "serverWriteHeldOffline": true,
+      "reconnectUpload": true,
+      "editRoundTrip": true,
+      "moveRoundTrip": true,
+      "rejectionCaptured": true,
+      "rejectionDiscarded": true,
+      "retryResolved": true,
+      "addDialogA11y": true,
+      "taskDetailA11y": true
+    }
+  ]
+}

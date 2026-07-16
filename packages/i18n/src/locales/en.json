@@ -193,6 +193,8 @@
 	},
 	"detail": {
 		"properties": "Properties",
+		"dialogLabel": "Task details",
+		"nameLabel": "Task name",
 		"saved": "Saved",
 		"undo": "Undo",
 		"history": "Edit history",

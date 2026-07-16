@@ -696,6 +696,7 @@ export function AddTaskModal({
 	// Úkol nelze vytvořit s prázdným VYČIŠTĚNÝM názvem (README ř. 48 — po vytažení formulí).
 	const cantSubmit = draft.name.trim().length === 0;
 	const disabled = cantSubmit || deadlineBad;
+	const submitDisabled = disabled || !draft.project || uploading;
 
 	const assignHint =
 		nAssign === 0
@@ -1983,6 +1984,8 @@ export function AddTaskModal({
 					<button
 						type="button"
 						onClick={() => void submit()}
+						disabled={submitDisabled}
+						aria-busy={uploading}
 						className={`${captureMode ? "flex-1" : ""} min-h-11 cursor-pointer border-none font-display font-bold hover:brightness-106`}
 						style={{
 							fontSize: 13,
@@ -1990,8 +1993,7 @@ export function AddTaskModal({
 							background: "var(--w-brass)",
 							borderRadius: 10,
 							padding: "9px 16px",
-							opacity: disabled ? 0.4 : 1,
-							pointerEvents: disabled ? "none" : undefined,
+							opacity: submitDisabled ? 0.4 : 1,
 						}}
 					>
 						{uploading ? t("addmodal.attachUploading") : t("addmodal.submit")}

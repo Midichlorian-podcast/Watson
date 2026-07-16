@@ -1357,6 +1357,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					tabIndex={-1}
 					role="dialog"
 					aria-modal="true"
+					aria-label={t("detail.dialogLabel")}
 					className="pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-line bg-card outline-none"
 					style={{
 						width: 560,
@@ -1509,6 +1510,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							</button>
 							<input
 								ref={nameRef}
+								aria-label={t("detail.nameLabel")}
 								value={name}
 								onChange={(e) => setName(e.target.value)}
 								onBlur={() =>

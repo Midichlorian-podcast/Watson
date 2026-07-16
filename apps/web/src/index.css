@@ -105,8 +105,20 @@ body {
 	animation: watson-spin 0.7s linear infinite;
 }
 @media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+	html *,
+	html *::before,
+	html *::after {
+		animation-duration: 1ms !important;
+		animation-iteration-count: 1 !important;
+		transition-delay: 0ms !important;
+		transition-duration: 1ms !important;
+	}
 	.watson-spin {
-		animation-duration: 2s;
+		animation-duration: 2s !important;
+		animation-iteration-count: infinite !important;
 	}
 }
 
