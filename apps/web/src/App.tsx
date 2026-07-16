@@ -2,6 +2,7 @@ import { PowerSyncContext } from "@powersync/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { retryPendingAttachmentFinalizations } from "./lib/attachments";
 import { useSession } from "./lib/auth-client";
 import { initPowerSyncForUser, powerSync } from "./lib/powersync/db";
 import { router } from "./router";
@@ -15,6 +16,33 @@ function safeDbErrorChain(error: unknown) {
 		current = current.cause;
 	}
 	return chain;
+}
+
+function AttachmentFinalizationRecovery() {
+	useEffect(() => {
+		let active = true;
+		let running = false;
+		const retry = async () => {
+			if (!active || running) return;
+			running = true;
+			try {
+				await retryPendingAttachmentFinalizations();
+			} catch (error) {
+				if (import.meta.env.DEV) console.warn("[attachments] retry selhal", error);
+			} finally {
+				running = false;
+			}
+		};
+		void retry();
+		window.addEventListener("online", retry);
+		const interval = window.setInterval(retry, 15_000);
+		return () => {
+			active = false;
+			window.removeEventListener("online", retry);
+			window.clearInterval(interval);
+		};
+	}, []);
+	return null;
 }
 
 export function App() {
@@ -85,6 +113,7 @@ export function App() {
 	return (
 		<ErrorBoundary>
 			<PowerSyncContext.Provider value={powerSync}>
+				<AttachmentFinalizationRecovery />
 				<RouterProvider router={router} />
 			</PowerSyncContext.Provider>
 		</ErrorBoundary>

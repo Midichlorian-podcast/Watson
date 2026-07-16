@@ -3,6 +3,8 @@ import "./src/env";
 import {
 	and,
 	assignments,
+	attachmentBlobs,
+	attachments,
 	auditEvents,
 	commentDecisions,
 	commentReactions,
@@ -118,6 +120,8 @@ async function main(): Promise<void> {
 	const reactionId = crypto.randomUUID();
 	const activityId = crypto.randomUUID();
 	const linkId = crypto.randomUUID();
+	const attachmentId = crypto.randomUUID();
+	const attachmentBytes = new TextEncoder().encode("undo must restore this attachment");
 	await db.transaction(async (tx) => {
 		await tx.insert(tasks).values([
 			{
@@ -206,6 +210,18 @@ async function main(): Promise<void> {
 		toId: actionId,
 		relation: "derived_from",
 	});
+	await db.insert(attachments).values({
+		id: attachmentId,
+		taskId: childId,
+		projectId: project.id,
+		url: `/api/attachments/${attachmentId}/content`,
+		fileName: "undo-proof.txt",
+		sha256: "1".repeat(64),
+		mime: "text/plain",
+		sizeBytes: attachmentBytes.byteLength,
+		uploadedBy: owner.id,
+	});
+	await db.insert(attachmentBlobs).values({ attachmentId, data: attachmentBytes });
 
 	try {
 		const ownerCookie = await login(owner.email);
@@ -250,6 +266,9 @@ async function main(): Promise<void> {
 				(await db.select().from(commentReactions).where(eq(commentReactions.id, reactionId)))
 					.length === 0 &&
 				(await db.select().from(assignments).where(eq(assignments.id, assignmentId))).length === 0 &&
+				(await db.select().from(attachments).where(eq(attachments.id, attachmentId))).length === 0 &&
+				(await db.select().from(attachmentBlobs).where(eq(attachmentBlobs.attachmentId, attachmentId)))
+					.length === 0 &&
 				(await db.select().from(taskActivity).where(eq(taskActivity.id, activityId))).length === 0 &&
 				(await db.select().from(entityLinks).where(eq(entityLinks.id, linkId))).length === 0,
 		);
@@ -287,6 +306,11 @@ async function main(): Promise<void> {
 				(await db.select().from(commentReactions).where(eq(commentReactions.id, reactionId)))
 					.length === 1 &&
 				(await db.select().from(assignments).where(eq(assignments.id, assignmentId))).length === 1 &&
+				(await db.select().from(attachments).where(eq(attachments.id, attachmentId))).length === 1 &&
+				new TextDecoder().decode(
+					(await db.select().from(attachmentBlobs).where(eq(attachmentBlobs.attachmentId, attachmentId)))[0]
+						?.data,
+				) === "undo must restore this attachment" &&
 				(await db.select().from(taskActivity).where(eq(taskActivity.id, activityId))).length === 1 &&
 				(await db.select().from(entityLinks).where(eq(entityLinks.id, linkId))).length === 1 &&
 				(await db.select().from(tasks).where(eq(tasks.id, actionId)))[0]?.meetingId === meetingId,

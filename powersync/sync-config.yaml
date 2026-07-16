@@ -35,6 +35,11 @@ bucket_definitions:
       - SELECT id, task_id, project_id, parent_id, author_id, body, created_at
         FROM comments
         WHERE project_id = bucket.project_id
+      # Přílohy: pouze metadata; binární obsah zůstává v server-only attachment_blobs.
+      - SELECT id, task_id, project_id, comment_id, url, file_name, sha256, version,
+               mime, size_bytes, uploaded_by, created_at
+        FROM attachments
+        WHERE project_id = bucket.project_id
       - SELECT id, comment_id, task_id, project_id, marked_by, created_at
         FROM comment_decisions
         WHERE project_id = bucket.project_id

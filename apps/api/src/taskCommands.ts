@@ -150,6 +150,13 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 				'mentions', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM mentions x WHERE x.comment_id IN (SELECT id FROM comment_ids)),
 				'commentReactions', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM comment_reactions x WHERE x.comment_id IN (SELECT id FROM comment_ids)),
 				'attachments', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM attachments x WHERE x.task_id IN (SELECT id FROM task_ids) OR x.comment_id IN (SELECT id FROM comment_ids)),
+				'attachmentBlobs', (
+					SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM attachment_blobs x
+					WHERE x.attachment_id IN (
+						SELECT id FROM attachments
+						WHERE task_id IN (SELECT id FROM task_ids) OR comment_id IN (SELECT id FROM comment_ids)
+					)
+				),
 				'reminders', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM reminders x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'taskActivity', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_activity x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'taskDependencies', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_dependencies x WHERE x.blocking_task_id IN (SELECT id FROM task_ids) OR x.blocked_task_id IN (SELECT id FROM task_ids)),
@@ -299,6 +306,7 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 		await tx.execute(sql`INSERT INTO mentions SELECT * FROM jsonb_populate_recordset(null::mentions, ${snapshot}->'mentions') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO comment_reactions SELECT * FROM jsonb_populate_recordset(null::comment_reactions, ${snapshot}->'commentReactions') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO attachments SELECT * FROM jsonb_populate_recordset(null::attachments, ${snapshot}->'attachments') ON CONFLICT DO NOTHING`);
+		await tx.execute(sql`INSERT INTO attachment_blobs SELECT * FROM jsonb_populate_recordset(null::attachment_blobs, ${snapshot}->'attachmentBlobs') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO reminders SELECT * FROM jsonb_populate_recordset(null::reminders, ${snapshot}->'reminders') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO task_activity SELECT * FROM jsonb_populate_recordset(null::task_activity, ${snapshot}->'taskActivity') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO task_dependencies SELECT * FROM jsonb_populate_recordset(null::task_dependencies, ${snapshot}->'taskDependencies') ON CONFLICT DO NOTHING`);

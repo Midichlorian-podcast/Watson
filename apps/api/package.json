@@ -33,7 +33,8 @@
 		"verify:task-dependencies": "tsx verify-task-dependencies.ts",
 		"verify:task-timeline": "tsx verify-task-timeline.ts",
 		"verify:comment-collaboration": "tsx verify-comment-collaboration.ts",
-		"verify:task-bulk": "tsx verify-task-bulk.ts"
+		"verify:task-bulk": "tsx verify-task-bulk.ts",
+		"verify:attachments": "tsx verify-attachments.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.111.0",

@@ -107,7 +107,9 @@ const EXPORT_QUERIES: Record<
 	comment_reactions: (ws) =>
 		sql`SELECT r.* FROM comment_reactions r JOIN projects p ON p.id = r.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	attachments: (ws) =>
-		sql`SELECT a.* FROM attachments a LEFT JOIN tasks t ON t.id = a.task_id LEFT JOIN comments c ON c.id = a.comment_id LEFT JOIN tasks ct ON ct.id = c.task_id JOIN projects p ON p.id = COALESCE(t.project_id, ct.project_id) WHERE p.workspace_id = ANY(${uuids(ws)})`,
+		// Nové interní přílohy bez binárního obsahu nesmíme obnovit jako rozbité odkazy.
+		// Export zde proto zachovává jen případné historické externí URL z doby před M1.
+		sql`SELECT a.* FROM attachments a JOIN projects p ON p.id = a.project_id WHERE p.workspace_id = ANY(${uuids(ws)}) AND a.url NOT LIKE '/api/attachments/%'`,
 	checklist_items: (ws) =>
 		sql`SELECT ci.* FROM checklist_items ci JOIN projects p ON p.id = ci.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	labels: (ws) => sql`SELECT * FROM labels WHERE workspace_id = ANY(${uuids(ws)})`,
@@ -229,7 +231,7 @@ exportRoutes.get("/api/export", async (c) => {
 		checksum,
 		limitations: {
 			meetingContent: "only creator or participant; other meeting rows are restored with redacted content",
-			attachmentFiles: "metadata/URL only; external object storage requires its own backup",
+			attachmentFiles: "server-stored attachment files and their metadata require a separate binary backup and are excluded",
 			authAndSecrets: "accounts, sessions, tokens, push subscriptions and calendar credentials excluded",
 		},
 	};

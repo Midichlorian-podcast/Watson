@@ -7,6 +7,7 @@ import {
 	type AnyPgColumn,
 	bigint,
 	check,
+	customType,
 	foreignKey,
 	index,
 	integer,
@@ -22,6 +23,10 @@ import { users } from "./auth";
 import { notificationChannelEnum, reminderTypeEnum } from "./enums";
 import { tasks } from "./task";
 import { projects } from "./workspace";
+
+const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({
+	dataType: () => "bytea",
+});
 
 /**
  * Orientovaná závislost: blocking_task_id musí být dokončen dřív než blocked_task_id.
@@ -228,22 +233,108 @@ export const commentReactions = pgTable(
 	],
 );
 
-export const attachments = pgTable("attachments", {
-	id: pk(),
-	taskId: uuid("task_id").references(() => tasks.id, { onDelete: "cascade" }),
-	commentId: uuid("comment_id").references(() => comments.id, {
-		onDelete: "cascade",
-	}),
-	url: text("url").notNull(),
-	/** F2 — verzování až v2; default 1. */
-	version: integer("version").notNull().default(1),
-	mime: varchar("mime", { length: 160 }),
-	sizeBytes: bigint("size_bytes", { mode: "number" }),
-	uploadedBy: uuid("uploaded_by").references(() => users.id, {
-		onDelete: "set null",
-	}),
-	createdAt: createdAt(),
-});
+export const attachments = pgTable(
+	"attachments",
+	{
+		id: pk(),
+		/** Vlastnící úkol je povinný i u budoucí přílohy komentáře. */
+		taskId: uuid("task_id").notNull(),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		commentId: uuid("comment_id").references(() => comments.id, {
+			onDelete: "cascade",
+		}),
+		/** Interní, autorizovaná content route; nikdy přímý veřejný object URL. */
+		url: text("url").notNull(),
+		fileName: varchar("file_name", { length: 255 }).notNull(),
+		sha256: varchar("sha256", { length: 64 }).notNull(),
+		/** F2 — verzování až v2; default 1. */
+		version: integer("version").notNull().default(1),
+		mime: varchar("mime", { length: 160 }).notNull(),
+		sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+		uploadedBy: uuid("uploaded_by").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		index("attachments_task_idx").on(t.taskId),
+		index("attachments_project_idx").on(t.projectId),
+		index("attachments_comment_idx").on(t.commentId),
+		check("attachments_size_valid", sql`${t.sizeBytes} > 0 and ${t.sizeBytes} <= 20971520`),
+		check("attachments_sha256_valid", sql`${t.sha256} ~ '^[0-9a-f]{64}$'`),
+		foreignKey({
+			name: "attachments_task_same_project_fk",
+			columns: [t.taskId, t.projectId],
+			foreignColumns: [tasks.id, tasks.projectId],
+		}).onDelete("cascade"),
+		foreignKey({
+			name: "attachments_comment_same_task_project_fk",
+			columns: [t.commentId, t.taskId, t.projectId],
+			foreignColumns: [comments.id, comments.taskId, comments.projectId],
+		}).onDelete("cascade"),
+	],
+);
+
+/** Binární obsah je server-only a nesmí do PowerSync bucketu. */
+export const attachmentBlobs = pgTable(
+	"attachment_blobs",
+	{
+		attachmentId: uuid("attachment_id")
+			.primaryKey()
+			.references(() => attachments.id, { onDelete: "cascade" }),
+		data: bytea("data").notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		check(
+			"attachment_blobs_size_valid",
+			sql`octet_length(${t.data}) > 0 and octet_length(${t.data}) <= 20971520`,
+		),
+	],
+);
+
+/**
+ * Upload před vznikem offline-first task řádku. Po syncu se atomicky převede na attachment;
+ * nedokončené stagingy expirují a nejsou viditelné ostatním členům projektu.
+ */
+export const attachmentUploadStages = pgTable(
+	"attachment_upload_stages",
+	{
+		id: pk(),
+		desiredTaskId: uuid("desired_task_id").notNull(),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		createdBy: uuid("created_by")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		/** Idempotentní receipt po finalizaci; bajty jsou pak uvolněné. */
+		finalizedAttachmentId: uuid("finalized_attachment_id"),
+		fileName: varchar("file_name", { length: 255 }).notNull(),
+		sha256: varchar("sha256", { length: 64 }).notNull(),
+		mime: varchar("mime", { length: 160 }).notNull(),
+		sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+		data: bytea("data"),
+		expiresAt: timestamp("expires_at", { withTimezone: true })
+			.notNull()
+			.default(sql`now() + interval '24 hours'`),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		index("attachment_upload_stages_expiry_idx").on(t.expiresAt),
+		index("attachment_upload_stages_creator_idx").on(t.createdBy),
+		check(
+			"attachment_upload_stages_size_valid",
+			sql`${t.sizeBytes} > 0 and ${t.sizeBytes} <= 20971520 and (
+				(${t.finalizedAttachmentId} is null and ${t.data} is not null and octet_length(${t.data}) = ${t.sizeBytes})
+				or (${t.finalizedAttachmentId} is not null and ${t.data} is null)
+			)`,
+		),
+		check("attachment_upload_stages_sha256_valid", sql`${t.sha256} ~ '^[0-9a-f]{64}$'`),
+	],
+);
 
 /** E1 — připomínky; výchozí offset per uživatel (drženo na uživateli). */
 export const reminders = pgTable(
@@ -312,6 +403,8 @@ export type Comment = typeof comments.$inferSelect;
 export type Mention = typeof mentions.$inferSelect;
 export type CommentReaction = typeof commentReactions.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
+export type AttachmentBlob = typeof attachmentBlobs.$inferSelect;
+export type AttachmentUploadStage = typeof attachmentUploadStages.$inferSelect;
 export type Reminder = typeof reminders.$inferSelect;
 export type TaskDependency = typeof taskDependencies.$inferSelect;
 export type PushSubscription = typeof pushSubscriptions.$inferSelect;

@@ -66,6 +66,7 @@ SAVED_VIEWS_API="$API_URL" pnpm --filter @watson/api verify:saved-views
 PROJECT_PRESETS_API="$API_URL" pnpm --filter @watson/api verify:project-presets
 TASK_DEPENDENCIES_API="$API_URL" pnpm --filter @watson/api verify:task-dependencies
 TASK_TIMELINE_API="$API_URL" pnpm --filter @watson/api verify:task-timeline
+ATTACHMENTS_API="$API_URL" pnpm --filter @watson/api verify:attachments
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:meet-acl
 MEETING_API="$API_URL" pnpm --filter @watson/api verify:meeting-commands
 AI_POLICY_API="$API_URL" pnpm --filter @watson/api verify:ai-policy

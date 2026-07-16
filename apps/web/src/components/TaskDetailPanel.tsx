@@ -6,12 +6,23 @@ import { Icon } from "@watson/ui";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useAddTask } from "../lib/addTask";
 import { API_URL } from "../lib/api";
+import {
+	ATTACHMENT_MAX_BYTES,
+	ATTACHMENT_MAX_SELECTION,
+	attachmentContentUrl,
+	attachmentSizeLabel,
+	deleteAttachment,
+	finalizeAttachment,
+	isAttachmentPreviewable,
+	rememberAttachmentFinalization,
+	stageAttachment,
+} from "../lib/attachments";
 import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
 import { focusOnMount } from "../lib/focusOnMount";
 import { initials } from "../lib/format";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
-import type { TaskRow } from "../lib/powersync/AppSchema";
+import type { AttachmentRow, TaskRow } from "../lib/powersync/AppSchema";
 import { rescheduleDate } from "../lib/reschedule";
 import { CommentComposer } from "./CommentComposer";
 
@@ -34,6 +45,8 @@ type TimelineKind =
 	| "reminder_added"
 	| "reminder_updated"
 	| "reminder_removed"
+	| "attachment_added"
+	| "attachment_removed"
 	| "dependency_added"
 	| "dependency_removed"
 	| "occurrence_updated"
@@ -206,6 +219,8 @@ const TIMELINE_KIND_KEY: Record<TimelineKind, string> = {
 	reminder_added: "detail.timelineReminderAdded",
 	reminder_updated: "detail.timelineReminderUpdated",
 	reminder_removed: "detail.timelineReminderRemoved",
+	attachment_added: "detail.timelineAttachmentAdded",
+	attachment_removed: "detail.timelineAttachmentRemoved",
 	dependency_added: "detail.timelineDependencyAdded",
 	dependency_removed: "detail.timelineDependencyRemoved",
 	occurrence_updated: "detail.timelineOccurrenceUpdated",
@@ -279,6 +294,50 @@ function SectionLabel({ children }: { children: ReactNode }) {
 		>
 			{children}
 		</div>
+	);
+}
+
+/** CSP záměrně nepovoluje cizí image origin. Obsah proto načteme autorizovaně a
+ * obrázek zobrazíme jen z krátkodobého device-local blob URL. */
+function AttachmentImagePreview({ path }: { path: string }) {
+	const [blobUrl, setBlobUrl] = useState<string | null>(null);
+	const [failed, setFailed] = useState(false);
+	useEffect(() => {
+		let active = true;
+		let localUrl: string | null = null;
+		setBlobUrl(null);
+		setFailed(false);
+		void fetch(attachmentContentUrl(path), { credentials: "include" })
+			.then((response) => {
+				if (!response.ok) throw new Error("attachment_preview");
+				return response.blob();
+			})
+			.then((blob) => {
+				if (!active) return;
+				localUrl = URL.createObjectURL(blob);
+				setBlobUrl(localUrl);
+			})
+			.catch(() => {
+				if (active) setFailed(true);
+			});
+		return () => {
+			active = false;
+			if (localUrl) URL.revokeObjectURL(localUrl);
+		};
+	}, [path]);
+	if (!blobUrl || failed) {
+		return (
+			<span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-line bg-card font-display font-bold text-ink-3 text-[10px]">
+				{failed ? "IMG" : "…"}
+			</span>
+		);
+	}
+	return (
+		<img
+			src={blobUrl}
+			alt=""
+			className="h-12 w-12 shrink-0 rounded-lg border border-line bg-card object-cover"
+		/>
 	);
 }
 
@@ -444,6 +503,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		"SELECT id, body, parent_id, author_id, created_at FROM comments WHERE task_id = ? ORDER BY created_at",
 		[realId],
 	);
+	const { data: attachments } = usePsQuery<AttachmentRow>(
+		"SELECT * FROM attachments WHERE task_id = ? ORDER BY created_at, id",
+		[realId],
+	);
 	const { data: commentDecisions } = usePsQuery<{
 		id: string;
 		comment_id: string;
@@ -479,6 +542,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		[realId, session?.user?.id ?? ""],
 	);
 	const [reminderBusyKey, setReminderBusyKey] = useState<string | null>(null);
+	const [attachmentBusy, setAttachmentBusy] = useState(false);
+	const [attachmentDeleteConfirm, setAttachmentDeleteConfirm] = useState<string | null>(null);
 	const { data: incomingDependencies } = usePsQuery<{
 		id: string;
 		task_id: string;
@@ -622,6 +687,58 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		}
 	};
 
+	const uploadTaskAttachments = async (selected: File[]) => {
+		if (!task || attachmentBusy || selected.length === 0) return;
+		if (!navigator.onLine) {
+			showToast(t("detail.attachmentOffline"));
+			return;
+		}
+		const valid = selected
+			.filter((file) => file.size > 0 && file.size <= ATTACHMENT_MAX_BYTES)
+			.slice(0, ATTACHMENT_MAX_SELECTION);
+		if (valid.length !== selected.length) showToast(t("detail.attachmentInvalidSize"));
+		if (valid.length === 0) return;
+		setAttachmentBusy(true);
+		let completed = 0;
+		try {
+			for (const file of valid) {
+				const staged = await stageAttachment(realId, task.project_id ?? "", file);
+				try {
+					await finalizeAttachment(staged.stageId);
+					completed += 1;
+				} catch {
+					await rememberAttachmentFinalization(staged.stageId, realId);
+					completed += 1;
+				}
+			}
+			showToast(t("detail.attachmentUploaded", { count: completed }));
+			void qc.invalidateQueries({ queryKey: ["taskTimeline", realId] });
+		} catch {
+			showToast(t("detail.attachmentUploadFailed"));
+		} finally {
+			setAttachmentBusy(false);
+		}
+	};
+
+	const removeAttachment = async (attachmentId: string) => {
+		if (attachmentDeleteConfirm !== attachmentId) {
+			setAttachmentDeleteConfirm(attachmentId);
+			showToast(t("detail.attachmentDeleteConfirm"));
+			return;
+		}
+		setAttachmentBusy(true);
+		try {
+			await deleteAttachment(attachmentId);
+			setAttachmentDeleteConfirm(null);
+			showToast(t("detail.attachmentDeleted"));
+			void qc.invalidateQueries({ queryKey: ["taskTimeline", realId] });
+		} catch {
+			showToast(t("detail.attachmentDeleteFailed"));
+		} finally {
+			setAttachmentBusy(false);
+		}
+	};
+
 	const projectId = task?.project_id ?? undefined;
 	const { data: team } = useQuery({
 		queryKey: ["projMembers", projectId],
@@ -681,6 +798,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const memberOf = (uid: string | null) => members.find((m) => m.id === uid);
 	const myProjectRole = members.find((m) => m.id === session?.user?.id)?.role;
 	const canDecide = myProjectRole === "editor" || myProjectRole === "manager";
+	const canDeleteAnyAttachment = myProjectRole === "editor" || myProjectRole === "manager";
 	const decisionsByComment = new Map((commentDecisions ?? []).map((d) => [d.comment_id, d]));
 	const mentionIdsByComment = new Map<string, string[]>();
 	for (const mention of commentMentions ?? []) {
@@ -2392,11 +2510,88 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									style={{ fontSize: 12, padding: "7px 9px" }}
 								/>
 							</div>
-							{notificationPermission() === "denied" && (
+						{notificationPermission() === "denied" && (
 								<div className="font-body text-overdue" style={{ fontSize: 11, marginTop: 6 }}>
 									{t("detail.remPushDenied")}
 								</div>
 							)}
+						</div>
+
+						{/* PŘÍLOHY — metadata offline, obsah přes autorizovanou serverovou route. */}
+						<SectionLabel>
+							{t("detail.attachments")} · {attachments?.length ?? 0}
+						</SectionLabel>
+						<div className="space-y-2">
+							{(attachments ?? []).map((attachment) => {
+								const mime = attachment.mime ?? "application/octet-stream";
+								const previewable = isAttachmentPreviewable(mime);
+								const image = mime.startsWith("image/") && previewable;
+								const mayDelete =
+									canDeleteAnyAttachment || attachment.uploaded_by === session?.user?.id;
+								return (
+									<div
+										key={attachment.id}
+										className="flex min-h-14 items-center rounded-xl border border-line bg-panel-2 p-2"
+										style={{ gap: 10 }}
+									>
+										{image ? (
+											<AttachmentImagePreview path={attachment.url ?? ""} />
+										) : (
+											<span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-line bg-card font-display font-bold text-ink-3 text-xs">
+												{mime === "application/pdf" ? "PDF" : mime.startsWith("text/") ? "TXT" : "FILE"}
+											</span>
+										)}
+										<div className="min-w-0 flex-1">
+											<p className="truncate font-display font-semibold text-ink" style={{ fontSize: 12.5 }}>
+												{attachment.file_name}
+											</p>
+											<p className="font-mono text-ink-3" style={{ fontSize: 10.5 }}>
+												{attachmentSizeLabel(Number(attachment.size_bytes ?? 0))}
+											</p>
+										</div>
+										<a
+											href={attachmentContentUrl(attachment.url ?? "", !previewable)}
+											target={previewable ? "_blank" : undefined}
+											rel={previewable ? "noopener noreferrer" : undefined}
+											className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 font-display font-semibold text-brass-text hover:bg-card"
+											style={{ fontSize: 11.5 }}
+										>
+											{t(previewable ? "detail.attachmentPreview" : "detail.attachmentDownload")}
+										</a>
+										{mayDelete && (
+											<button
+												type="button"
+												disabled={attachmentBusy}
+												onClick={() => void removeAttachment(attachment.id)}
+												aria-label={t("detail.attachmentDelete")}
+												className={`grid h-11 shrink-0 place-items-center rounded-lg px-2 ${attachmentDeleteConfirm === attachment.id ? "bg-overdue-soft text-overdue" : "text-ink-3 hover:bg-card hover:text-overdue"}`}
+											>
+												{attachmentDeleteConfirm === attachment.id ? t("detail.attachmentDelete") : "✕"}
+											</button>
+										)}
+									</div>
+								);
+							})}
+							<label
+								className={`flex min-h-11 w-full items-center justify-center rounded-xl border border-line border-dashed px-3 font-display font-semibold ${attachmentBusy ? "cursor-wait opacity-60" : "cursor-pointer text-ink-2 hover:border-brass hover:text-brass-text"}`}
+								style={{ fontSize: 12, gap: 7 }}
+							>
+								<Icon name="priloha" size={16} />
+								{attachmentBusy ? t("detail.attachmentUploading") : t("detail.attachmentAdd")}
+								<input
+									type="file"
+									multiple
+									disabled={attachmentBusy}
+									className="sr-only"
+									onChange={(event) => {
+										void uploadTaskAttachments(Array.from(event.target.files ?? []));
+										event.target.value = "";
+									}}
+								/>
+							</label>
+							<p className="font-body text-ink-3" style={{ fontSize: 11 }}>
+								{t("detail.attachmentHint")}
+							</p>
 						</div>
 
 						{/* KOMENTÁŘE · N (ř. 1062–1071) */}

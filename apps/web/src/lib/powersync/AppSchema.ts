@@ -167,6 +167,33 @@ const comments = new Table(
 	tracked({ indexes: { by_task: ["task_id"] } }),
 );
 
+/**
+ * Přílohy — do offline cache patří jen bezpečná metadata. Binární obsah se čte
+ * autorizovanou API route a klient do této tabulky nikdy nezapisuje přímo.
+ */
+const attachments = new Table(
+	{
+		task_id: column.text,
+		project_id: column.text,
+		comment_id: column.text,
+		url: column.text,
+		file_name: column.text,
+		sha256: column.text,
+		version: column.integer,
+		mime: column.text,
+		size_bytes: column.integer,
+		uploaded_by: column.text,
+		created_at: column.text,
+	},
+	{
+		indexes: {
+			by_task: ["task_id"],
+			by_project: ["project_id"],
+			by_comment: ["comment_id"],
+		},
+	},
+);
+
 const mentions = new Table(
 	{
 		comment_id: column.text,
@@ -521,6 +548,7 @@ export const AppSchema = new Schema({
 	project_members,
 	assignments,
 	comments,
+	attachments,
 	comment_decisions,
 	mentions,
 	comment_reactions,
@@ -555,6 +583,7 @@ export type StatusRow = Database["statuses"];
 export type ProjectMemberRow = Database["project_members"];
 export type AssignmentRow = Database["assignments"];
 export type CommentRow = Database["comments"];
+export type AttachmentRow = Database["attachments"];
 export type MentionRow = Database["mentions"];
 export type CommentReactionRow = Database["comment_reactions"];
 export type ReminderRow = Database["reminders"];

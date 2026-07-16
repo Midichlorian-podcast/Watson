@@ -13,9 +13,18 @@ import {
 } from "react";
 import { logTaskActivity } from "../lib/activity";
 import { API_URL } from "../lib/api";
+import {
+	ATTACHMENT_MAX_BYTES,
+	ATTACHMENT_MAX_SELECTION,
+	AttachmentApiError,
+	attachmentSizeLabel,
+	cancelAttachmentStage,
+	finalizeAttachment,
+	rememberAttachmentFinalization,
+	stageAttachment,
+} from "../lib/attachments";
 import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
-import { useFocusTrap } from "../lib/useFocusTrap";
 import { initials } from "../lib/format";
 import type { ChainRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
@@ -25,6 +34,7 @@ import { parseQuick } from "../lib/quickadd";
 import { todayISO } from "../lib/tasks";
 import { deviceTimeZone, zonedDateTimeToIso } from "../lib/timeZone";
 import { showToast } from "../lib/toast";
+import { useFocusTrap } from "../lib/useFocusTrap";
 import { useWorkspace } from "../lib/workspace";
 
 /**
@@ -199,7 +209,7 @@ function ChipBtn({
 		<button
 			type="button"
 			onClick={onClick}
-			className="cursor-pointer font-display font-semibold hover:border-brass"
+			className="min-h-11 cursor-pointer font-display font-semibold hover:border-brass md:min-h-0"
 			style={{
 				fontSize: 12,
 				padding: "6px 12px",
@@ -235,7 +245,7 @@ function FieldPill({
 		<button
 			type="button"
 			onClick={onClick}
-			className="inline-flex cursor-pointer items-center font-display font-semibold hover:border-brass"
+			className="inline-flex min-h-11 cursor-pointer items-center font-display font-semibold hover:border-brass md:min-h-0"
 			style={{
 				gap: 6,
 				fontSize: 12.5,
@@ -340,6 +350,8 @@ export function AddTaskModal({
 		return d;
 	});
 	const [captureMode, setCaptureMode] = useState(Boolean(initial?.capture));
+	const [files, setFiles] = useState<File[]>([]);
+	const [uploading, setUploading] = useState(false);
 	// Výchozí projekt = inbox (R8), jakmile jsou projekty načtené.
 	useEffect(() => {
 		if (!draft.project && inbox) setDraft((d) => ({ ...d, project: d.project ?? inbox.id }));
@@ -628,8 +640,11 @@ export function AddTaskModal({
 		{
 			key: "priloha",
 			icon: "priloha",
-			disp: t("addmodal.fieldAttach"),
-			on: false,
+			disp:
+				files.length > 0
+					? `${t("addmodal.fieldAttach")} · ${files.length}`
+					: t("addmodal.fieldAttach"),
+			on: files.length > 0,
 		},
 		...(flowOptions.length
 			? [
@@ -703,6 +718,7 @@ export function AddTaskModal({
 		hasRep
 			? `${t("addmodal.fieldRepeat")}: ${draft.repeatLabel || repLbl[draft.repeat]}`
 			: null,
+		files.length > 0 ? `${t("addmodal.fieldAttach")}: ${files.length}` : null,
 	].filter((item): item is string => Boolean(item));
 
 	/* ── submit (submitTask prototypu → PowerSync insert) ── */
@@ -712,8 +728,11 @@ export function AddTaskModal({
 		submitting.current = true;
 		try {
 			await doSubmit(name);
+		} catch {
+			showToast(t("addmodal.saveFailed"));
 		} finally {
 			submitting.current = false;
+			setUploading(false);
 		}
 	}
 
@@ -747,7 +766,25 @@ export function AddTaskModal({
 			recurrenceRule = JSON.stringify(base);
 			recurrenceLabel = draft.repeatLabel || repLbl[draft.repeat];
 		}
-		await powerSync.execute(
+		const staged = [] as Awaited<ReturnType<typeof stageAttachment>>[];
+		if (files.length > 0) {
+			if (!navigator.onLine) {
+				showToast(t("addmodal.attachOffline"));
+				return;
+			}
+			setUploading(true);
+			try {
+				for (const file of files) staged.push(await stageAttachment(id, draft.project, file));
+			} catch (error) {
+				await Promise.allSettled(staged.map((item) => cancelAttachmentStage(item.stageId)));
+				if (error instanceof AttachmentApiError && error.code === "attachment_too_large")
+					showToast(t("addmodal.attachTooLarge"));
+				else showToast(t("addmodal.attachUploadFailed"));
+				return;
+			}
+		}
+		try {
+			await powerSync.execute(
 			`INSERT INTO tasks (id, project_id, parent_id, name, description, priority, color, due_date, start_date, start_timezone,
         deadline, duration_min, days, recurrence, recurrence_rule, recurrence_basis, assignment_mode, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -773,55 +810,83 @@ export function AddTaskModal({
 				session?.user?.id ?? null,
 				new Date().toISOString(),
 			],
-		);
-		// historie: vytvoření úkolu (dřív se logoval jen edit v detailu, ne create)
-		void logTaskActivity(id, draft.project, session?.user?.id, "created", null, null);
-		for (const uid of draft.assignees) {
-			await powerSync.execute(
-				"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (?, ?, ?, ?, ?)",
-				[crypto.randomUUID(), id, draft.project, uid, new Date().toISOString()],
 			);
+		} catch (error) {
+			await Promise.allSettled(staged.map((item) => cancelAttachmentStage(item.stageId)));
+			throw error;
 		}
-		// R6 — zvolená barva jako per-user overlay (konzistentně s detailem přes task_user_colors),
-		// aby týž úkol mohl každý vidět v jiné barvě a nešířila se sdíleně celému týmu.
-		if (draft.color !== "none" && session?.user?.id) {
-			await powerSync.execute(
-				"INSERT INTO task_user_colors (id, task_id, project_id, user_id, color, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-				[
-					crypto.randomUUID(),
-					id,
-					draft.project,
-					session.user.id,
-					draft.color,
-					new Date().toISOString(),
-				],
-			);
-		}
-		// Připojení jako další krok postupu (prototyp: flowAttach → append step).
-		if (draft.flowAttach) {
-			const steps = await powerSync.getAll<{
-				position: number;
-				step_state: string | null;
-			}>("SELECT position, step_state FROM chain_steps WHERE chain_id = ? ORDER BY position", [
-				draft.flowAttach,
-			]);
-			const maxPos = steps.reduce((m, s) => Math.max(m, s.position ?? 0), 0);
-			const allDone = steps.every((s) => s.step_state === "done" || s.step_state === "skipped");
-			await powerSync.execute(
-				`INSERT INTO chain_steps (id, chain_id, task_id, project_id, position, gate, step_state, created_at)
-         VALUES (?, ?, ?, ?, ?, 'after_previous', ?, ?)`,
-				[
-					crypto.randomUUID(),
+		try {
+			// historie: vytvoření úkolu (dřív se logoval jen edit v detailu, ne create)
+			void logTaskActivity(id, draft.project, session?.user?.id, "created", null, null);
+			for (const uid of draft.assignees) {
+				await powerSync.execute(
+					"INSERT INTO assignments (id, task_id, project_id, user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+					[crypto.randomUUID(), id, draft.project, uid, new Date().toISOString()],
+				);
+			}
+			// R6 — zvolená barva jako per-user overlay (konzistentně s detailem přes task_user_colors),
+			// aby týž úkol mohl každý vidět v jiné barvě a nešířila se sdíleně celému týmu.
+			if (draft.color !== "none" && session?.user?.id) {
+				await powerSync.execute(
+					"INSERT INTO task_user_colors (id, task_id, project_id, user_id, color, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+					[
+						crypto.randomUUID(),
+						id,
+						draft.project,
+						session.user.id,
+						draft.color,
+						new Date().toISOString(),
+					],
+				);
+			}
+			// Připojení jako další krok postupu (prototyp: flowAttach → append step).
+			if (draft.flowAttach) {
+				const steps = await powerSync.getAll<{
+					position: number;
+					step_state: string | null;
+				}>("SELECT position, step_state FROM chain_steps WHERE chain_id = ? ORDER BY position", [
 					draft.flowAttach,
-					id,
-					draft.project,
-					maxPos + 1,
-					// bug fix: platný enum je dormant (ne "waiting" — tam se štafeta zasekla)
-					allDone ? "active" : "dormant",
-					new Date().toISOString(),
-				],
-			);
+				]);
+				const maxPos = steps.reduce((m, s) => Math.max(m, s.position ?? 0), 0);
+				const allDone = steps.every((s) => s.step_state === "done" || s.step_state === "skipped");
+				await powerSync.execute(
+					`INSERT INTO chain_steps (id, chain_id, task_id, project_id, position, gate, step_state, created_at)
+         VALUES (?, ?, ?, ?, ?, 'after_previous', ?, ?)`,
+					[
+						crypto.randomUUID(),
+						draft.flowAttach,
+						id,
+						draft.project,
+						maxPos + 1,
+						// bug fix: platný enum je dormant (ne "waiting" — tam se štafeta zasekla)
+						allDone ? "active" : "dormant",
+						new Date().toISOString(),
+					],
+				);
+			}
+		} catch {
+			// Jádro úkolu už je bezpečně uložené. Doplňkové vazby nesmí vyvolat druhý
+			// pokus a duplicitní úkol; odmítnutý zápis ukáže standardní sync recovery.
+			showToast(t("addmodal.partialSave"));
 		}
+		let pendingUploads = 0;
+		for (const item of staged) {
+			try {
+				await finalizeAttachment(item.stageId);
+			} catch (error) {
+				if (
+					!(error instanceof AttachmentApiError) ||
+					error.code === "attachment_task_not_synced" ||
+					error.status >= 500
+				) {
+					await rememberAttachmentFinalization(item.stageId, id);
+					pendingUploads += 1;
+				} else {
+					showToast(t("addmodal.attachUploadFailed"));
+				}
+			}
+		}
+		if (pendingUploads > 0) showToast(t("addmodal.attachFinishing"));
 		onClose();
 	}
 
@@ -1087,7 +1152,7 @@ export function AddTaskModal({
 					<button
 						type="button"
 						onClick={() => patch({ descOpen: true })}
-						className="inline-flex cursor-pointer items-center font-body text-ink-3 hover:text-brass-text"
+						className="inline-flex min-h-11 cursor-pointer items-center font-body text-ink-3 hover:text-brass-text md:min-h-0"
 						style={{ gap: 5, fontSize: 12, marginTop: 6, marginLeft: 19 }}
 					>
 						{t("addmodal.addDesc")}
@@ -1122,7 +1187,7 @@ export function AddTaskModal({
 					<button
 						type="button"
 						onClick={() => patch({ more: !draft.more })}
-						className="inline-flex cursor-pointer items-center font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
+						className="inline-flex min-h-11 cursor-pointer items-center font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text md:min-h-0"
 						style={{
 							gap: 4,
 							fontSize: 12.5,
@@ -1750,12 +1815,66 @@ export function AddTaskModal({
 						)}
 
 						{draft.pop === "priloha" && (
-							<div
-								role="status"
-								className="rounded-lg border border-line bg-panel-2 font-body text-ink-2"
-								style={{ fontSize: 12, padding: "9px 11px" }}
-							>
-								{t("addmodal.attachUnavailable")}
+							<div>
+								<label className="flex min-h-11 cursor-pointer items-center justify-center rounded-lg border border-line border-dashed bg-card px-3 font-display font-semibold text-ink-2 hover:border-brass hover:text-brass-text">
+									<Icon name="priloha" size={16} className="mr-2" />
+									{t("addmodal.attachChoose")}
+									<input
+										type="file"
+										multiple
+										className="sr-only"
+										onChange={(event) => {
+											const selected = Array.from(event.target.files ?? []);
+											const valid = selected.filter(
+												(file) => file.size > 0 && file.size <= ATTACHMENT_MAX_BYTES,
+											);
+											if (valid.length !== selected.length) showToast(t("addmodal.attachTooLarge"));
+											setFiles((current) => {
+												const merged = [...current];
+												for (const file of valid) {
+													const duplicate = merged.some(
+														(item) =>
+															item.name === file.name &&
+															item.size === file.size &&
+															item.lastModified === file.lastModified,
+													);
+													if (!duplicate && merged.length < ATTACHMENT_MAX_SELECTION) merged.push(file);
+												}
+												return merged;
+											});
+											event.target.value = "";
+										}}
+									/>
+								</label>
+								<p className="mt-2 font-body text-ink-3" style={{ fontSize: 11.5 }}>
+									{t("addmodal.attachHint")}
+								</p>
+								{files.length > 0 && (
+									<ul className="mt-2 space-y-1">
+										{files.map((file, index) => (
+											<li
+												key={`${file.name}:${file.size}:${file.lastModified}`}
+												className="flex min-h-11 items-center rounded-lg bg-panel px-2"
+												style={{ gap: 8 }}
+											>
+												<span className="min-w-0 flex-1 truncate font-body text-ink" style={{ fontSize: 12.5 }}>
+													{file.name}
+												</span>
+												<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 10.5 }}>
+													{attachmentSizeLabel(file.size)}
+												</span>
+												<button
+													type="button"
+													aria-label={t("addmodal.attachRemove")}
+													onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+													className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-3 hover:text-overdue"
+												>
+													✕
+												</button>
+											</li>
+										))}
+									</ul>
+								)}
 							</div>
 						)}
 
@@ -1855,6 +1974,7 @@ export function AddTaskModal({
 					<button
 						type="button"
 						onClick={onClose}
+						disabled={uploading}
 						className={`${captureMode ? "flex-1" : ""} min-h-11 cursor-pointer border border-line bg-panel-2 font-display font-semibold text-ink-2`}
 						style={{ fontSize: 13, borderRadius: 10, padding: "9px 14px" }}
 					>
@@ -1874,7 +1994,7 @@ export function AddTaskModal({
 							pointerEvents: disabled ? "none" : undefined,
 						}}
 					>
-						{t("addmodal.submit")}
+						{uploading ? t("addmodal.attachUploading") : t("addmodal.submit")}
 					</button>
 				</div>
 			</div>

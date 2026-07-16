@@ -389,6 +389,7 @@ const MOVE_CHILD_TABLES = [
 	"comment_decisions",
 	"mentions",
 	"comment_reactions",
+	"attachments",
 	"task_occurrence_overrides",
 	"task_user_colors",
 	"reminders",

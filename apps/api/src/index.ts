@@ -29,6 +29,7 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { z } from "zod";
 import { aiPolicyRoutes } from "./aiPolicy";
+import { ATTACHMENT_MAX_BYTES, attachmentRoutes } from "./attachments";
 import { auth } from "./auth";
 import { chainCommandRoutes } from "./chainCommands";
 import { employeeRoutes } from "./employee";
@@ -186,6 +187,9 @@ app.use(
 	"/*",
 	secureHeaders({
 		contentSecurityPolicy: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
+		// Web a API jsou oddělené originy stejného Watson webu. Same-site dovolí
+		// autorizované <img> náhledy příloh, ale ne vložení na cizí web.
+		crossOriginResourcePolicy: "same-site",
 	}),
 );
 // CC-P0-16 — globální strop velikosti těla: největší legitimní payload je přepis
@@ -199,8 +203,17 @@ const restoreBodyLimit = bodyLimit({
 	maxSize: 25 * 1024 * 1024,
 	onError: (c) => c.json({ error: "restore_file_too_large", maxBytes: 25 * 1024 * 1024 }, 413),
 });
+const attachmentBodyLimit = bodyLimit({
+	// Multipart hlavičky mají malou režii nad limitem samotného souboru.
+	maxSize: ATTACHMENT_MAX_BYTES + 1024 * 1024,
+	onError: (c) => c.json({ error: "attachment_too_large", maxBytes: ATTACHMENT_MAX_BYTES }, 413),
+});
 app.use("/*", (c, next) =>
-	c.req.path === "/api/restore" ? restoreBodyLimit(c, next) : standardBodyLimit(c, next),
+	c.req.path === "/api/restore"
+		? restoreBodyLimit(c, next)
+		: c.req.path === "/api/attachments/stage"
+			? attachmentBodyLimit(c, next)
+			: standardBodyLimit(c, next),
 );
 
 app.use(
@@ -234,6 +247,14 @@ app.use(
 app.use(
 	"/api/employee/*",
 	rateLimit({ name: "employee", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
+);
+app.use(
+	"/api/attachments/*",
+	rateLimit({ name: "attachments", windowMs: 60_000, max: 60, scope: "session-or-ip" }),
+);
+app.use(
+	"/api/attachment-stages/*",
+	rateLimit({ name: "attachment-stages", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
 );
 
 // CC-P0-11 — privilegovaný účet bez 2FA smí číst data a otevřít Nastavení, ale
@@ -328,6 +349,7 @@ app.route("/", meetingsRoutes);
 app.route("/", watsonRoutes);
 app.route("/", exportRoutes);
 app.route("/", savedViewRoutes);
+app.route("/", attachmentRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);
@@ -662,7 +684,7 @@ app.get("/api/tasks/:id/timeline", async (c) => {
 		AND (
 			(ae.entity = 'tasks' AND ae.entity_id = ${taskId})
 			OR (
-				ae.entity IN ('assignments', 'comments', 'comment_decisions', 'reminders',
+				ae.entity IN ('assignments', 'comments', 'comment_decisions', 'reminders', 'attachments',
 					'task_user_colors', 'task_occurrence_overrides')
 				AND COALESCE(ae.diff->>'task_id', ae.before->>'task_id') = ${taskId}
 			)

@@ -126,6 +126,7 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
 - Rychlé přidání přirozenou češtinou: datum, čas, délka, recurrence, projekt a lidé; parser má corpus 321/321.
 - Seznam, board, den/týden/měsíc kalendář, drag/resize, Dnes, Nadcházející, Oblíbené a Inbox.
 - Projekty, projektové role, členové, cíle, seznamy/checklisty, postupy/řetězy, komentáře a audit aktivity.
+- Skutečné task přílohy do 20 MB: bezpečný staging při offline-first vytvoření, serverový binární obsah, PowerSync metadata, autorizovaný náhled/download, audit a delete/undo včetně blobu.
 - Přehled, Velín, Reporty, globální hledání a command palette.
 - Meets: atomické plánování, účastníci, přepis, explicitní content ACL, AI návrhy s revizí, commit action items, follow-up a carryover.
 - Workspace pozvánky, role a profilové metadata.
@@ -140,7 +141,6 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
 - AI meeting extraction bez klíče je dostupná pouze v non-production ukázkovém režimu a musí být označena `mock`. Produkce bez klíče vrací 503.
 - LuckyOS canned data lze zapnout pouze mimo produkci. Produkce bez base URL vrací 503.
 - E-mail reminders nejsou implementované; write path odmítá `channel=email` 422.
-- Přílohy při vytvoření úkolu nejsou implementované a UI je nesmí vydávat za uložené.
 - Přesun jednoho virtuálního výskytu recurrence tažením není implementovaný; UI nyní vrací jasnou informaci místo tichého no-opu.
 
 ### 2.3 Technická architektura
