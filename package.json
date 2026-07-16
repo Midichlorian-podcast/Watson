@@ -17,6 +17,7 @@
     "verify:db": "pnpm --filter @watson/api verify:contract && pnpm --filter @watson/api verify:drizzle && pnpm --filter @watson/api verify:reminders",
     "verify:runtime-a11y": "pnpm --filter @watson/api verify:runtime-a11y",
     "verify:release-e2e": "pnpm --filter @watson/api verify:release-e2e",
+    "verify:dependency-audit": "node scripts/write-dependency-audit.mjs",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\""

@@ -30,8 +30,17 @@ jobs:
       - run: pnpm test
       - run: pnpm --filter @watson/web test:corpus
       - run: pnpm build
-      # produkční závislosti bez known high/critical (F0 gate; moderate zatím tolerujeme)
-      - run: pnpm audit --prod --audit-level high
+      # Produkční závislosti bez known high/critical. Sanitizovaný report se
+      # uchová i při stop-ship nálezu, aby release rozhodnutí mělo důkaz.
+      - run: pnpm verify:dependency-audit
+      - name: Upload dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dependency-audit-production
+          path: artifacts/dependency-audit.json
+          if-no-files-found: error
+          retention-days: 30
 
   api-integration:
     runs-on: ubuntu-latest

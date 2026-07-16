@@ -350,7 +350,7 @@ Acceptance:
 
 ### R-02 — dependency advisory evidence
 
-Lokální `pnpm audit --prod --audit-level high` dne 2026-07-16 registry úspěšně kontaktoval a nad aktuálním lockfilem vrátil `No known vulnerabilities found`. CI už audit spouští; release ještě musí uchovat jeho reprodukovaný výsledek jako artifact.
+Reprodukovatelný `pnpm verify:dependency-audit` dne 2026-07-16 registry úspěšně kontaktoval, zapsal sanitizovaný report svázaný se SHA-256 aktuálního lockfile a vrátil nula high/critical advisories. Lokální evidence je v `docs/release-evidence/dependency-audit-2026-07-16.json`. CI stejný blokující runner spouští a report archivuje přes immutable-pinned `upload-artifact`; R-02 lze úplně uzavřít až po prvním skutečně uchovaném CI artifactu.
 
 Acceptance: úspěšný CI artifact se seznamem advisories; high/critical = stop-ship nebo explicitní časově omezená výjimka s kompenzační kontrolou.
 
@@ -377,7 +377,7 @@ Pořadí je závazné. Jedna epika aktivní, další nezačíná před acceptanc
 ### F0 — uzavřít release evidence (2–4 dny)
 
 1. Udržet kritické release E2E scénáře R-01 zelené; Chromium + WebKit axe/keyboard/reflow, task/offline recovery, 2FA, meeting commit a backup/restore jsou hotové.
-2. Uložit reprodukovaný CI dependency audit R-02; lokální snapshot je čistý.
+2. Udržet dependency audit R-02 zelený; runner, lokální evidence i CI upload jsou hotové, první uchovaný CI běh zůstává release podmínkou.
 3. Opravit každý runtime nález stejnou vertikální disciplínou.
 4. Znovu spustit celý gate a uložit artifacty.
 
@@ -588,11 +588,16 @@ Poslední ověření 2026-07-16:
   jména, potvrzená rezervace, toast, „Moje rezervace“, otevření a zrušení meetu.
 - `NODE_ENV=production LUCKYOS_MOCK=1 ...`: oba produkční mock gates potvrzeně zůstaly vypnuté.
 - `git diff --check`, YAML parser a journal JSON parser: prošly.
+- `pnpm verify:dependency-audit`: produkční registry scan je svázaný s lockfile SHA,
+  high/critical = 0; sanitizovaný lokální artifact je uložený a CI má blokující
+  runner i immutable-pinned archivaci výsledku.
 
 Neověřené v tomto snapshotu:
 
 - nativní Safari smoke zůstává volitelným doplňkem k zelenému podporovanému
   Chromium + WebKit matrixu;
+- první skutečně uchovaný dependency audit artifact z CI pipeline; lokální report
+  a jeho blokující/archivační workflow jsou zelené;
 - cílený browser screenshot audit intake formulářů, urgentní akceptace a importního průvodce; lokální browser
   runtime skončil před připojením chybou pluginu, proto tyto dávky kryjí statické
   design/accessibility kontrakty, integrační testy a produkční build;
