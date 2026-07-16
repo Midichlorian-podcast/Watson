@@ -90,6 +90,8 @@ const settingsSchema = z
 		deliveryDate: date.nullable().optional(),
 		definitionOfDone: z.string().max(10_000).nullable().optional(),
 		milestonesEnabled: z.boolean().optional(),
+		urgentAcceptanceEnabled: z.boolean().optional(),
+		urgentAcceptancePriority: z.number().int().min(1).max(2).optional(),
 	})
 	.strict()
 	.refine((body) => Object.keys(body).some((key) => key !== "expectedUpdatedAt"), "nothing_to_update");
@@ -382,7 +384,9 @@ projectMilestoneRoutes.patch("/api/projects/:projectId/settings", async (c) => {
 			if (
 				parsed.ownerId !== undefined ||
 				parsed.status !== undefined ||
-				parsed.milestonesEnabled !== undefined
+				parsed.milestonesEnabled !== undefined ||
+				parsed.urgentAcceptanceEnabled !== undefined ||
+				parsed.urgentAcceptancePriority !== undefined
 			)
 				requireManager(access.role);
 			if (parsed.ownerId) {
@@ -410,6 +414,10 @@ projectMilestoneRoutes.patch("/api/projects/:projectId/settings", async (c) => {
 				values.definitionOfDone = parsed.definitionOfDone;
 			if (parsed.milestonesEnabled !== undefined)
 				values.milestonesEnabled = parsed.milestonesEnabled;
+			if (parsed.urgentAcceptanceEnabled !== undefined)
+				values.urgentAcceptanceEnabled = parsed.urgentAcceptanceEnabled;
+			if (parsed.urgentAcceptancePriority !== undefined)
+				values.urgentAcceptancePriority = parsed.urgentAcceptancePriority;
 			const [updated] = await tx
 				.update(projects)
 				.set(values)
@@ -435,6 +443,8 @@ projectMilestoneRoutes.patch("/api/projects/:projectId/settings", async (c) => {
 						ownerId: current.ownerId,
 						status: current.status,
 						milestonesEnabled: current.milestonesEnabled,
+						urgentAcceptanceEnabled: current.urgentAcceptanceEnabled,
+						urgentAcceptancePriority: current.urgentAcceptancePriority,
 					},
 					after: {
 						name: updated.name,
@@ -442,6 +452,8 @@ projectMilestoneRoutes.patch("/api/projects/:projectId/settings", async (c) => {
 						ownerId: updated.ownerId,
 						status: updated.status,
 						milestonesEnabled: updated.milestonesEnabled,
+						urgentAcceptanceEnabled: updated.urgentAcceptanceEnabled,
+						urgentAcceptancePriority: updated.urgentAcceptancePriority,
 					},
 				},
 				requestId: c.get("requestId"),

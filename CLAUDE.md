@@ -425,7 +425,7 @@ Každá produkční funkce musí odpovědět ano na vše relevantní:
 
 Poslední ověření 2026-07-16:
 
-- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 100 TSX.
+- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 101 TSX.
 - `pnpm typecheck`: 6/6 balíčků.
 - `pnpm test`: recurrence 14/14, Quick Add, timezone, recent items, proč-teď, deep linky,
   uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
@@ -455,8 +455,19 @@ Poslední ověření 2026-07-16:
 - Intake formuláře prošly 26 integračními kontrolami: ACL, typed validace, CAS,
   idempotentní create i submit/retry, same-project DB guard, archive/delete, audit
   bez obsahu odpovědí, task delete/undo a bezpečný odkaz pouze při aktuálním přístupu.
+- Migrace 0051: aplikována a ověřena i kompletním během všech migrací do čerstvé
+  prázdné databáze. Volitelná projektová politika vyžádá akceptaci P1 nebo P1–P2
+  od každého řešitele kromě autora; systémové request/cancel události mají vlastní
+  `system` actor type a dokončení bez platného přijetí blokuje autoritativní DB trigger.
+- Akceptace urgentních úkolů prošla 38 integračními kontrolami: manager ACL,
+  default-off a threshold policy, per-assignee lifecycle, CAS a přesný retry,
+  fail-closed tenant/project přístup, DB completion guard, změna priority či řešitele,
+  delete/undo, časová osa a audit bez textu soukromé poznámky. Následně prošly i
+  regresní sady bulk move/undo, task delete/restore, export/restore a PowerSync kontrakt.
+- Celý `scripts/ci-api-integration.sh` po opravě korektního ukončení intake verifieru
+  proběhl až po produkční 2FA restart a skončil úspěšně.
 - PowerSync po restartu: nový replication stream aktivní, sync-config bez chyby.
-- `pnpm build`: největší JS 330 KiB gzip, precache 5,028 KiB; oba rozpočty splněny;
+- `pnpm build`: největší JS 332 KiB gzip, precache 5,040 KiB; oba rozpočty splněny;
   vlastní pole, ankety, projektové milníky, intake, Úkoly a Nadcházející jsou oddělené
   lazy-loaded chunky.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
@@ -481,8 +492,9 @@ Poslední ověření 2026-07-16:
 Neověřené v tomto snapshotu:
 
 - kompletní R-01 matrix: axe, Safari, keyboard-only, 200% zoom a reduced motion;
-- cílený browser screenshot audit intake formulářů; lokální browser runtime skončil
-  před připojením chybou pluginu, proto tuto dávku kryjí kontrakty, integrační testy a build;
+- cílený browser screenshot audit intake formulářů a urgentní akceptace; lokální browser
+  runtime skončil před připojením chybou pluginu, proto tyto dávky kryjí statické
+  design/accessibility kontrakty, integrační testy a produkční build;
 - čerstvý npm advisory scan kvůli omezení přístupu k registry;
 - skutečný produkční PITR/provider/deployment drill.
 

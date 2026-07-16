@@ -175,6 +175,8 @@ const projects = new Table(
 		delivery_date: column.text,
 		definition_of_done: column.text,
 		milestones_enabled: column.integer,
+		urgent_acceptance_enabled: column.integer,
+		urgent_acceptance_priority: column.integer,
 		archived_at: column.text,
 		created_at: column.text,
 		updated_at: column.text,
@@ -242,6 +244,28 @@ const assignments = new Table(
 			by_user: ["user_id"], // Sidebar „Přiřazeno mně" / rowMeta agregace
 		},
 		trackPrevious: true,
+	},
+);
+
+/** Rozhodnutí řešitele o převzetí urgentního úkolu; zapisuje se jen auditovaným API commandem. */
+const task_acceptances = new Table(
+	{
+		task_id: column.text,
+		project_id: column.text,
+		assignee_id: column.text,
+		requested_by: column.text,
+		status: column.text,
+		note: column.text,
+		requested_at: column.text,
+		responded_at: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: {
+			by_task: ["task_id"],
+			by_assignee_status: ["assignee_id", "status"],
+		},
 	},
 );
 
@@ -642,6 +666,7 @@ export const AppSchema = new Schema({
 	statuses,
 	project_members,
 	assignments,
+	task_acceptances,
 	comments,
 	attachments,
 	comment_decisions,
@@ -682,6 +707,7 @@ export type SectionRow = Database["sections"];
 export type StatusRow = Database["statuses"];
 export type ProjectMemberRow = Database["project_members"];
 export type AssignmentRow = Database["assignments"];
+export type TaskAcceptanceRow = Database["task_acceptances"];
 export type CommentRow = Database["comments"];
 export type AttachmentRow = Database["attachments"];
 export type MentionRow = Database["mentions"];

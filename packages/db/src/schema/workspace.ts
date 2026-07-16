@@ -135,13 +135,23 @@ export const projects = pgTable("projects", {
 	definitionOfDone: text("definition_of_done"),
 	/** Volitelné podmíněné projektové milníky; jejich stav se odvozuje z úkolů. */
 	milestonesEnabled: boolean("milestones_enabled").notNull().default(false),
+	/** Volitelná druhostranná akceptace pouze pro urgentní úkoly. */
+	urgentAcceptanceEnabled: boolean("urgent_acceptance_enabled").notNull().default(false),
+	/** Nejnižší zahrnutá urgence: 1 = pouze P1, 2 = P1 a P2. */
+	urgentAcceptancePriority: integer("urgent_acceptance_priority").notNull().default(1),
 	/** R5 — restricted projekt je neviditelný nečlenům. */
 	visibility: projectVisibilityEnum("visibility").notNull().default("team"),
 	/** null = nearchivováno (legacy; nově řídí `status`). */
 	archivedAt: timestamp("archived_at", { withTimezone: true }),
 	createdAt: createdAt(),
 	updatedAt: updatedAt(),
-}, (t) => [index("projects_workspace_idx").on(t.workspaceId)]);
+}, (t) => [
+	index("projects_workspace_idx").on(t.workspaceId),
+	check(
+		"projects_urgent_acceptance_priority_valid",
+		sql`${t.urgentAcceptancePriority} between 1 and 2`,
+	),
+]);
 
 export const projectMembers = pgTable(
 	"project_members",

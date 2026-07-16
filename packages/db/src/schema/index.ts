@@ -19,4 +19,5 @@ export * from "./projectMilestones";
 export * from "./structured";
 export * from "./system";
 export * from "./task";
+export * from "./taskAcceptances";
 export * from "./workspace";

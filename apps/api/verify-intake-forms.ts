@@ -431,6 +431,7 @@ async function main() {
 
   if (failed > 0) throw new Error(`${failed} intake checks failed`);
   console.log("\nIntake forms: všechny kontroly prošly.");
+  process.exit(0);
 }
 
 void main().catch((error) => {

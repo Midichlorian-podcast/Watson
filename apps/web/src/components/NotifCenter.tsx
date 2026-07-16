@@ -2,6 +2,7 @@
  * Notifikační centrum aplikace (feedback 2026-07-11: „zásadní část aplikace")
  * — jedna ucelená karta pod zvonkem v hlavičce, agreguje VŠECHNY signály:
  *   · štafeta — kroky postupů, které čekají na mě
+ *   · akceptace — urgentní úkoly čekající na moje rozhodnutí
  *   · po termínu — nejstarší zpožděné úkoly (klik = detail)
  *   · pošta — běžící SLA P1/P2, zmínky v interní diskusi, nedoručené, Gatekeeper
  * Klik položku vyřídí NA MÍSTĚ (detail úkolu / mail peek), „viděno" se drží
@@ -118,6 +119,20 @@ export function useNotifItems(): { items: NotifItem[]; unseen: number } {
 		 ORDER BY due_date, priority LIMIT 3`,
 		[todayISO()],
 	);
+	const { data: pendingAcceptances } = usePsQuery<{
+		id: string;
+		task_id: string;
+		name: string | null;
+		priority: number | null;
+		requested_at: string | null;
+	}>(
+		`SELECT acceptance.id, acceptance.task_id, task.name, task.priority, acceptance.requested_at
+		 FROM task_acceptances acceptance
+		 JOIN tasks task ON task.id = acceptance.task_id AND task.completed_at IS NULL
+		 WHERE acceptance.assignee_id = ? AND acceptance.status = 'pending'
+		 ORDER BY task.priority, acceptance.requested_at`,
+		[myId],
+	);
 
 	// Nadcházející porady, kde jsem účastník (dnes/zítra) — „termín se ukáže lidem"
 	// (Meets Fáze 3). Řízeno malou tabulkou meetings, ne skenem tasks dle kind.
@@ -160,6 +175,15 @@ export function useNotifItems(): { items: NotifItem[]; unseen: number } {
 			title: h.task_name ?? "",
 			sub: `${t("shell.notifWaiting")} · ${h.chain_name ?? ""}`,
 			action: { type: "flow", chainId: h.chain_id },
+		});
+	}
+	for (const acceptance of pendingAcceptances ?? []) {
+		items.push({
+			key: `acceptance:${acceptance.id}:${acceptance.requested_at ?? ""}`,
+			kind: "task",
+			title: acceptance.name ?? "",
+			sub: t("notif.acceptancePending", { priority: acceptance.priority ?? 1 }),
+			action: { type: "task", taskId: acceptance.task_id },
 		});
 	}
 	for (const tk of overdue ?? []) {

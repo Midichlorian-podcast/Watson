@@ -14,6 +14,10 @@ export type TimelineKind =
 	| "assignment_added"
 	| "assignment_updated"
 	| "assignment_removed"
+	| "acceptance_requested"
+	| "acceptance_accepted"
+	| "acceptance_declined"
+	| "acceptance_cancelled"
 	| "reminder_added"
 	| "reminder_updated"
 	| "reminder_removed"
@@ -167,6 +171,11 @@ function kindForAction(entity: string, action: string): TimelineKind | null {
 			return removed ? "decision_unmarked" : "decision_marked";
 		case "assignments":
 			return removed ? "assignment_removed" : added ? "assignment_added" : "assignment_updated";
+		case "task_acceptances":
+			if (action === "requested") return "acceptance_requested";
+			if (action === "accepted") return "acceptance_accepted";
+			if (action === "declined") return "acceptance_declined";
+			return "acceptance_cancelled";
 		case "reminders":
 			return removed ? "reminder_removed" : added ? "reminder_added" : "reminder_updated";
 		case "attachments":
@@ -243,6 +252,9 @@ export function mapAuditTimelineEvent(
 	}
 	if (row.entity === "assignments") {
 		return { ...common, kind, relatedUserId: idOf(data.user_id) };
+	}
+	if (row.entity === "task_acceptances") {
+		return { ...common, kind, relatedUserId: idOf(data.assignee_id) };
 	}
 	if (row.entity === "attachments") {
 		return { ...common, kind, excerpt: stringOf(data.file_name) ?? undefined };

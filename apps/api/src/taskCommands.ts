@@ -157,6 +157,7 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 				'tasks', (SELECT COALESCE(jsonb_agg(to_jsonb(tree) - '_depth' ORDER BY _depth, created_at, id), '[]'::jsonb) FROM tree),
 				'meetings', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM meetings x WHERE x.id IN (SELECT id FROM meeting_ids)),
 				'assignments', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM assignments x WHERE x.task_id IN (SELECT id FROM task_ids)),
+				'taskAcceptances', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_acceptances x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'comments', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM comments x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'commentDecisions', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM comment_decisions x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'mentions', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM mentions x WHERE x.comment_id IN (SELECT id FROM comment_ids)),
@@ -321,7 +322,9 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 		const snapshot = sql`${JSON.stringify(batch.snapshot)}::jsonb`;
 		await tx.execute(sql`INSERT INTO tasks SELECT * FROM jsonb_populate_recordset(null::tasks, ${snapshot}->'tasks') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO meetings SELECT * FROM jsonb_populate_recordset(null::meetings, ${snapshot}->'meetings') ON CONFLICT DO NOTHING`);
+		await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'on', true)`);
 		await tx.execute(sql`INSERT INTO assignments SELECT * FROM jsonb_populate_recordset(null::assignments, ${snapshot}->'assignments') ON CONFLICT DO NOTHING`);
+		await tx.execute(sql`INSERT INTO task_acceptances SELECT * FROM jsonb_populate_recordset(null::task_acceptances, COALESCE(${snapshot}->'taskAcceptances', '[]'::jsonb)) ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO comments SELECT * FROM jsonb_populate_recordset(null::comments, ${snapshot}->'comments') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO comment_decisions SELECT * FROM jsonb_populate_recordset(null::comment_decisions, ${snapshot}->'commentDecisions') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO mentions SELECT * FROM jsonb_populate_recordset(null::mentions, ${snapshot}->'mentions') ON CONFLICT DO NOTHING`);
@@ -347,6 +350,11 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 		await tx.execute(sql`INSERT INTO checklist_items SELECT * FROM jsonb_populate_recordset(null::checklist_items, ${snapshot}->'checklistItems') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO task_labels SELECT * FROM jsonb_populate_recordset(null::task_labels, ${snapshot}->'taskLabels') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO entity_links SELECT * FROM jsonb_populate_recordset(null::entity_links, ${snapshot}->'entityLinks') ON CONFLICT DO NOTHING`);
+		await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'off', true)`);
+		await tx.execute(sql`
+			SELECT watson_reconcile_task_acceptances(restored.id)
+			FROM jsonb_to_recordset(${snapshot}->'tasks') AS restored(id uuid)
+		`);
 		await tx.execute(sql`
 			UPDATE tasks t SET meeting_id = x.meeting_id
 			FROM jsonb_to_recordset(${snapshot}->'detachedMeetingTasks') AS x(id uuid, meeting_id text)

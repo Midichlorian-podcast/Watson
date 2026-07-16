@@ -19,6 +19,7 @@ const BACKUP_TABLES = [
 	"statuses",
 	"project_members",
 	"assignments",
+	"task_acceptances",
 	"comments",
 	"comment_decisions",
 	"mentions",

@@ -46,6 +46,7 @@ import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
 import { savedViewRoutes } from "./savedViews";
 import { taskBulkCommandRoutes } from "./taskBulkCommands";
+import { taskAcceptanceRoutes } from "./taskAcceptances";
 import { taskCommandRoutes } from "./taskCommands";
 import {
 	decodeTimelineCursor,
@@ -359,6 +360,7 @@ app.route("/", powersyncRoutes);
 app.route("/", aiPolicyRoutes);
 app.route("/", taskCommandRoutes);
 app.route("/", taskBulkCommandRoutes);
+app.route("/", taskAcceptanceRoutes);
 app.route("/", chainCommandRoutes);
 app.route("/", meetingsRoutes);
 app.route("/", watsonRoutes);
@@ -726,9 +728,10 @@ app.get("/api/tasks/:id/timeline", async (c) => {
 		AND (
 			(ae.entity = 'tasks' AND ae.entity_id = ${taskId})
 			OR (
-				ae.entity IN ('assignments', 'comments', 'comment_decisions', 'reminders', 'attachments',
+					ae.entity IN ('assignments', 'comments', 'comment_decisions', 'reminders', 'attachments',
 					'task_custom_field_values',
 					'task_polls', 'task_poll_responses',
+					'task_acceptances',
 					'task_user_colors', 'task_occurrence_overrides')
 				AND COALESCE(ae.diff->>'task_id', ae.before->>'task_id') = ${taskId}
 			)

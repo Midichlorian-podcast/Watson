@@ -139,6 +139,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const [statusDraft, setStatusDraft] = useState<string>("active");
 	const [delivery, setDelivery] = useState<string>("");
 	const [milestonesEnabled, setMilestonesEnabled] = useState(false);
+	const [urgentAcceptanceEnabled, setUrgentAcceptanceEnabled] = useState(false);
+	const [urgentAcceptancePriority, setUrgentAcceptancePriority] = useState<1 | 2>(1);
 	const [saving, setSaving] = useState(false);
 	// členové: null = nedotčeno (platí serverový stav)
 	const [memberDraft, setMemberDraft] = useState<Set<string> | null>(null);
@@ -152,6 +154,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		setStatusDraft(project.status ?? "active");
 		setDelivery(project.delivery_date ? project.delivery_date.slice(0, 10) : "");
 		setMilestonesEnabled(Boolean(project.milestones_enabled));
+		setUrgentAcceptanceEnabled(Boolean(project.urgent_acceptance_enabled));
+		setUrgentAcceptancePriority(project.urgent_acceptance_priority === 2 ? 2 : 1);
 		setMemberDraft(null);
 	}, [project]);
 	// re-seed jen při přepnutí projektu — příchozí sync nesmí přepsat rozepsaný draft
@@ -184,6 +188,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		status !== (project.status ?? "active") ||
 		delivery !== (project.delivery_date ? project.delivery_date.slice(0, 10) : "") ||
 		milestonesEnabled !== Boolean(project.milestones_enabled) ||
+		urgentAcceptanceEnabled !== Boolean(project.urgent_acceptance_enabled) ||
+		urgentAcceptancePriority !== (project.urgent_acceptance_priority === 2 ? 2 : 1) ||
 		(memberDraft != null &&
 			(memberDraft.size !== serverMemberIds.size ||
 				[...memberDraft].some((x) => !serverMemberIds.has(x))));
@@ -206,6 +212,10 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			patch.delivery_date = delivery || null;
 		if (milestonesEnabled !== Boolean(project.milestones_enabled))
 			patch.milestonesEnabled = milestonesEnabled;
+		if (urgentAcceptanceEnabled !== Boolean(project.urgent_acceptance_enabled))
+			patch.urgentAcceptanceEnabled = urgentAcceptanceEnabled;
+		if (urgentAcceptancePriority !== (project.urgent_acceptance_priority === 2 ? 2 : 1))
+			patch.urgentAcceptancePriority = urgentAcceptancePriority;
 		setSaving(true);
 		try {
 			if (Object.keys(patch).length > 0) {
@@ -222,8 +232,11 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 				if ("owner_id" in patch) settings.ownerId = patch.owner_id;
 				if ("status" in patch) settings.status = patch.status;
 				if ("delivery_date" in patch) settings.deliveryDate = patch.delivery_date;
-				if ("milestonesEnabled" in patch)
-					settings.milestonesEnabled = patch.milestonesEnabled;
+				if ("milestonesEnabled" in patch) settings.milestonesEnabled = patch.milestonesEnabled;
+				if ("urgentAcceptanceEnabled" in patch)
+					settings.urgentAcceptanceEnabled = patch.urgentAcceptanceEnabled;
+				if ("urgentAcceptancePriority" in patch)
+					settings.urgentAcceptancePriority = patch.urgentAcceptancePriority;
 				const response = await fetch(`${API_URL}/api/projects/${id}/settings`, {
 					method: "PATCH",
 					credentials: "include",
@@ -407,6 +420,54 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							canManage={canManage}
 						/>
 					</Suspense>
+
+					<Section label={t("projects.urgentAcceptance")}>
+						<button
+							type="button"
+							role="switch"
+							aria-checked={urgentAcceptanceEnabled}
+							disabled={!canManage}
+							onClick={() => setUrgentAcceptanceEnabled((enabled) => !enabled)}
+							className="flex min-h-11 w-full items-center rounded-xl border border-line bg-panel-2 px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-55"
+						>
+							<span className="min-w-0 flex-1">
+								<span className="block font-display font-semibold text-ink text-sm">
+									{t("projects.urgentAcceptanceToggle")}
+								</span>
+								<span className="mt-0.5 block font-body text-ink-3 text-xs leading-relaxed">
+									{t("projects.urgentAcceptanceHelp")}
+								</span>
+							</span>
+							<span
+								aria-hidden
+								className="ml-3 flex h-6 w-11 shrink-0 items-center rounded-full p-0.5"
+								style={{ background: urgentAcceptanceEnabled ? "var(--w-brass)" : "var(--w-line)" }}
+							>
+								<span
+									className="h-5 w-5 rounded-full bg-card shadow-sm transition-transform"
+									style={{ transform: urgentAcceptanceEnabled ? "translateX(20px)" : "none" }}
+								/>
+							</span>
+						</button>
+						{urgentAcceptanceEnabled && (
+							<div className="mt-2 inline-flex flex-wrap gap-1 rounded-lg border border-line bg-panel-2 p-[3px]">
+								<Seg
+									active={urgentAcceptancePriority === 1}
+									disabled={!canManage}
+									onClick={() => setUrgentAcceptancePriority(1)}
+								>
+									{t("projects.urgentAcceptanceP1")}
+								</Seg>
+								<Seg
+									active={urgentAcceptancePriority === 2}
+									disabled={!canManage}
+									onClick={() => setUrgentAcceptancePriority(2)}
+								>
+									{t("projects.urgentAcceptanceP2")}
+								</Seg>
+							</div>
+						)}
+					</Section>
 
 					{/* ČLENOVÉ — toggle avatarů celého rosteru (prototyp ř. 1255–1257 + toggleProjMember ř. 2380) */}
 					<Section label={`${t("projects.membersLabel")} · ${members.length}`}>

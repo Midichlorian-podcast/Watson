@@ -39,6 +39,29 @@ async function dependencyAllowsCompletion(taskId: string): Promise<boolean> {
 	return false;
 }
 
+/** UX preflight stejného invariantního pravidla, které autoritativně hlídá PostgreSQL trigger. */
+async function acceptanceAllowsCompletion(taskId: string, onlyUserId?: string | null) {
+	const rows = await powerSync.getAll<{ user_id: string; status: string | null }>(
+		`SELECT assignment.user_id, acceptance.status
+		 FROM tasks task
+		 JOIN projects project ON project.id = task.project_id
+		 JOIN assignments assignment ON assignment.task_id = task.id
+		 LEFT JOIN task_acceptances acceptance
+		   ON acceptance.task_id = task.id AND acceptance.assignee_id = assignment.user_id
+		 WHERE task.id = ?
+		   AND project.urgent_acceptance_enabled = 1
+		   AND task.kind = 'task'
+		   AND task.priority <= COALESCE(project.urgent_acceptance_priority, 1)
+		   AND (task.created_by IS NULL OR task.created_by <> assignment.user_id)
+		   AND (? = '' OR assignment.user_id = ?)`,
+		[taskId, onlyUserId ?? "", onlyUserId ?? ""],
+	);
+	const unresolved = rows.filter((row) => row.status !== "accepted");
+	if (unresolved.length === 0) return true;
+	showToast(i18n.t("detail.acceptanceCompletionBlocked", { count: unresolved.length }));
+	return false;
+}
+
 const pad = (n: number) => String(n).padStart(2, "0");
 export const todayISO = () => {
 	const d = new Date();
@@ -183,6 +206,7 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 	const occ = parseOccId(task.id);
 	if (occ) {
 		const nowDone = !task.completed_at;
+		if (nowDone && !(await acceptanceAllowsCompletion(occ.taskId, actorId))) return;
 		if (nowDone && !(await dependencyAllowsCompletion(occ.taskId))) return;
 		await setOccurrenceOverride(occ.taskId, task.project_id, occ.iso, {
 			done: nowDone,
@@ -207,6 +231,7 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 		// a tasks.completed_at nastavit jen ODVOZENĚ; un-toggle symetricky vše zruší.
 		if (asg.length > 0 && !mine) {
 			const nowDone = !task.completed_at;
+			if (nowDone && !(await acceptanceAllowsCompletion(task.id))) return;
 			if (nowDone && !(await dependencyAllowsCompletion(task.id))) return;
 			// R4 — u opakovaného úkolu je dokončení posunem řady (+ reset per-osoba účastí),
 			// ne trvalé nastavení completed_at všem.
@@ -261,6 +286,7 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 		// obecná větev nastavila jen tasks.completed_at a mou účast nechala null.
 		if (asg.length >= 1 && mine) {
 			const nowMineDone = !mine.completed_at;
+			if (nowMineDone && !(await acceptanceAllowsCompletion(task.id, actorId))) return;
 			if (nowMineDone && !(await dependencyAllowsCompletion(task.id))) return;
 			const allDone = asg.every((a) => (a.id === mine.id ? nowMineDone : !!a.completed_at));
 			// R4 — pokud mou účastí spadli všichni a úkol se opakuje, posuň řadu + reset účastí.
@@ -303,6 +329,7 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 	}
 
 	const nowDone = !task.completed_at;
+	if (nowDone && !(await acceptanceAllowsCompletion(task.id))) return;
 	if (nowDone && !(await dependencyAllowsCompletion(task.id))) return;
 	// R4 — dokončení opakovaného úkolu = posun řady na další výskyt (ne trvalé dokončení).
 	if (nowDone && (await advanceRecurrence(task))) return;
@@ -435,6 +462,7 @@ export async function toggleAssignmentDone(task: TaskRow, assignmentId: string) 
 	const nowDone = !target.completed_at;
 	// Detail umožňuje přepnout konkrétní účast mimo hlavní checkbox. Musí projít
 	// stejnou závislostní branou, jinak by tento povrch obešel warning/strict UX.
+	if (nowDone && !(await acceptanceAllowsCompletion(task.id, target.user_id))) return;
 	if (nowDone && !(await dependencyAllowsCompletion(task.id))) return;
 	const allDone = asg.every((a) => (a.id === assignmentId ? nowDone : !!a.completed_at));
 	// R4 — poslední dokončení u opakovaného úkolu = posun řady + reset účastí.

@@ -234,8 +234,8 @@ export const AI_SUGGESTION_STATUS = [
 ] as const;
 export type AiSuggestionStatus = (typeof AI_SUGGESTION_STATUS)[number];
 
-/** Aktér auditní události (člověk vs AI). */
-export const ACTOR_TYPES = ["user", "ai"] as const;
+/** Aktér auditní události (člověk, AI nebo automatická systémová změna). */
+export const ACTOR_TYPES = ["user", "ai", "system"] as const;
 export type ActorType = (typeof ACTOR_TYPES)[number];
 
 /** Vlastník uloženého filtru / palety. */

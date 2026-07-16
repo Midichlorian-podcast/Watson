@@ -16,6 +16,7 @@ bucket_definitions:
       # Projekt sám (barva projektu = tělo karet úkolů, R6) + jeho struktura.
       - SELECT id, workspace_id, name, color, icon, default_layout, visibility,
         kind, owner_id, status, delivery_date, definition_of_done, milestones_enabled,
+        urgent_acceptance_enabled, urgent_acceptance_priority,
         archived_at, created_at, updated_at
         FROM projects
         WHERE id = bucket.project_id
@@ -31,6 +32,10 @@ bucket_definitions:
       # Detail úkolu (task-children, denormalizovaný project_id pro scoping).
       - SELECT id, task_id, project_id, user_id, completed_at, created_at
         FROM assignments
+        WHERE project_id = bucket.project_id
+      - SELECT id, task_id, project_id, assignee_id, requested_by, status, note,
+               requested_at, responded_at, created_at, updated_at
+        FROM task_acceptances
         WHERE project_id = bucket.project_id
       - SELECT id, task_id, project_id, parent_id, author_id, body, created_at
         FROM comments

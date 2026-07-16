@@ -32,6 +32,7 @@ const CustomFieldsSection = lazy(() =>
 const PollsSection = lazy(() =>
 	import("./PollsSection").then((module) => ({ default: module.PollsSection })),
 );
+const TaskAcceptanceSection = lazy(() => import("./TaskAcceptanceSection"));
 
 type TimelineKind =
 	| "task_created"
@@ -49,6 +50,10 @@ type TimelineKind =
 	| "assignment_added"
 	| "assignment_updated"
 	| "assignment_removed"
+	| "acceptance_requested"
+	| "acceptance_accepted"
+	| "acceptance_declined"
+	| "acceptance_cancelled"
 	| "reminder_added"
 	| "reminder_updated"
 	| "reminder_removed"
@@ -230,6 +235,10 @@ const TIMELINE_KIND_KEY: Record<TimelineKind, string> = {
 	assignment_added: "detail.timelineAssignmentAdded",
 	assignment_updated: "detail.timelineAssignmentUpdated",
 	assignment_removed: "detail.timelineAssignmentRemoved",
+	acceptance_requested: "detail.timelineAcceptanceRequested",
+	acceptance_accepted: "detail.timelineAcceptanceAccepted",
+	acceptance_declined: "detail.timelineAcceptanceDeclined",
+	acceptance_cancelled: "detail.timelineAcceptanceCancelled",
 	reminder_added: "detail.timelineReminderAdded",
 	reminder_updated: "detail.timelineReminderUpdated",
 	reminder_removed: "detail.timelineReminderRemoved",
@@ -2011,6 +2020,39 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								</div>
 							)}
 						</div>
+
+						<Suspense
+							fallback={
+								<div
+									aria-busy="true"
+									className="mt-4 min-h-11 rounded-lg border border-line border-dashed bg-panel-2 px-3 py-3 font-display font-semibold text-ink-3"
+									style={{ fontSize: 11 }}
+								>
+									{t("detail.acceptanceTitle")}…
+								</div>
+							}
+						>
+							<TaskAcceptanceSection
+								taskId={realId}
+								required={
+									task.kind === "task" &&
+									Boolean(project?.urgent_acceptance_enabled) &&
+									(task.priority ?? 4) <= (project?.urgent_acceptance_priority === 2 ? 2 : 1)
+								}
+								creatorId={task.created_by ?? null}
+								assignees={asg.flatMap((assignment) => {
+									if (!assignment.user_id) return [];
+									return [
+										{
+											userId: assignment.user_id,
+											name: memberOf(assignment.user_id)?.name ?? "—",
+										},
+									];
+								})}
+								currentUserId={session?.user?.id ?? null}
+								taskCompleted={Boolean(task.completed_at)}
+							/>
+						</Suspense>
 
 						{/* Watson hint (ř. 1018–1021) */}
 						<div

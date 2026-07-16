@@ -421,6 +421,7 @@ taskBulkCommandRoutes.post("/api/tasks/bulk/preview", async (c) => {
 
 const MOVE_CHILD_TABLES = [
 	"assignments",
+	"task_acceptances",
 	"comments",
 	"comment_decisions",
 	"mentions",
@@ -437,6 +438,7 @@ type StateRow = Record<string, unknown>;
 type BulkState = {
 	tasks: StateRow[];
 	assignments?: StateRow[];
+	acceptances?: StateRow[];
 	children?: Record<string, StateRow[]>;
 	dependencies?: StateRow[];
 };
@@ -459,7 +461,10 @@ async function currentState(tx: Tx, action: BulkAction, taskIds: string[]): Prom
 		const assignments = (await tx.execute(sql`
 			SELECT * FROM assignments WHERE task_id = ANY(${uuids(taskIds)}) ORDER BY task_id, user_id, id
 		`)) as unknown as StateRow[];
-		return { tasks, assignments };
+		const acceptances = (await tx.execute(sql`
+			SELECT * FROM task_acceptances WHERE task_id = ANY(${uuids(taskIds)}) ORDER BY task_id, assignee_id, id
+		`)) as unknown as StateRow[];
+		return { tasks, assignments, acceptances };
 	}
 	if (action.kind === "move") {
 		const children: Record<string, StateRow[]> = {};
@@ -509,6 +514,7 @@ async function applyAction(tx: Tx, action: BulkAction, taskIds: string[]) {
 		return;
 	}
 	if (action.kind === "assign") {
+		await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'on', true)`);
 		await tx.execute(sql`DELETE FROM assignments WHERE task_id = ANY(${uuids(taskIds)})`);
 		await tx.execute(sql`
 			INSERT INTO assignments (id, task_id, project_id, user_id, created_at)
@@ -519,6 +525,9 @@ async function applyAction(tx: Tx, action: BulkAction, taskIds: string[]) {
 			UPDATE tasks SET assignment_mode = 'single', updated_at = now()
 			WHERE id = ANY(${uuids(taskIds)})
 		`);
+		await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'off', true)`);
+		for (const id of taskIds)
+			await tx.execute(sql`SELECT watson_reconcile_task_acceptances(${id})`);
 		return;
 	}
 	if (action.kind === "move") {
@@ -537,6 +546,8 @@ async function applyAction(tx: Tx, action: BulkAction, taskIds: string[]) {
 			UPDATE task_dependencies SET project_id = ${action.projectId}
 			WHERE blocking_task_id = ANY(${uuids(taskIds)}) OR blocked_task_id = ANY(${uuids(taskIds)})
 		`);
+		for (const id of taskIds)
+			await tx.execute(sql`SELECT watson_reconcile_task_acceptances(${id})`);
 		return;
 	}
 	throw new BulkCommandError("delete_uses_task_delete_command");
@@ -563,7 +574,9 @@ async function restoreState(tx: Tx, action: BulkAction, before: BulkState) {
 	}
 	if (action.kind === "assign") {
 		const ids = before.tasks.map((row) => String(row.id));
+		await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'on', true)`);
 		await tx.execute(sql`DELETE FROM assignments WHERE task_id = ANY(${uuids(ids)})`);
+		await tx.execute(sql`DELETE FROM task_acceptances WHERE task_id = ANY(${uuids(ids)})`);
 		if ((before.assignments?.length ?? 0) > 0) {
 			await tx.execute(sql`
 				INSERT INTO assignments
@@ -572,10 +585,21 @@ async function restoreState(tx: Tx, action: BulkAction, before: BulkState) {
 				)
 			`);
 		}
+		if ((before.acceptances?.length ?? 0) > 0) {
+			await tx.execute(sql`
+				INSERT INTO task_acceptances
+				SELECT * FROM jsonb_populate_recordset(
+					null::task_acceptances, ${JSON.stringify(before.acceptances)}::jsonb
+				)
+			`);
+		}
+		await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'off', true)`);
 		for (const row of before.tasks)
 			await tx.execute(sql`
 				UPDATE tasks SET assignment_mode = ${row.assignment_mode}, updated_at = now() WHERE id = ${row.id}
 			`);
+		for (const id of ids)
+			await tx.execute(sql`SELECT watson_reconcile_task_acceptances(${id})`);
 		return;
 	}
 	if (action.kind === "move") {
@@ -594,6 +618,8 @@ async function restoreState(tx: Tx, action: BulkAction, before: BulkState) {
 		}
 		for (const row of before.dependencies ?? [])
 			await tx.execute(sql`UPDATE task_dependencies SET project_id = ${row.project_id} WHERE id = ${row.id}`);
+		for (const row of before.tasks)
+			await tx.execute(sql`SELECT watson_reconcile_task_acceptances(${String(row.id)})`);
 		return;
 	}
 	throw new BulkCommandError("delete_uses_task_restore_command");

@@ -38,7 +38,8 @@
 		"verify:custom-fields": "tsx verify-custom-fields.ts",
 		"verify:polls": "tsx verify-polls.ts",
 		"verify:project-milestones": "tsx verify-project-milestones.ts",
-		"verify:intake-forms": "tsx verify-intake-forms.ts"
+		"verify:intake-forms": "tsx verify-intake-forms.ts",
+		"verify:task-acceptances": "tsx verify-task-acceptances.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.111.0",

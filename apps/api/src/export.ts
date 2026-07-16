@@ -47,6 +47,7 @@ export const RESTORE_TABLE_ORDER = [
 	"task_poll_responses",
 	"meetings",
 	"assignments",
+	"task_acceptances",
 	"comments",
 	"comment_decisions",
 	"mentions",
@@ -122,6 +123,8 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT response.* FROM task_poll_responses response JOIN projects p ON p.id = response.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	assignments: (ws) =>
 		sql`SELECT a.* FROM assignments a JOIN projects p ON p.id = a.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	task_acceptances: (ws) =>
+		sql`SELECT acceptance.* FROM task_acceptances acceptance JOIN projects p ON p.id = acceptance.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	comments: (ws) =>
 		sql`SELECT c.* FROM comments c JOIN tasks t ON t.id = c.task_id JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	comment_decisions: (ws) =>
@@ -435,6 +438,7 @@ async function runRestoreTransaction(input: {
 			await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`restore:${input.userId}:${input.checksum}`}))`);
 			await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
 			await tx.execute(sql`SELECT set_config('watson.allow_poll_restore', 'on', true)`);
+			await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'on', true)`);
 
 			const workspaceRows = input.tables.workspaces ?? [];
 			const workspaceIds = workspaceRows.map((row) => String(row.id));
@@ -494,6 +498,13 @@ async function runRestoreTransaction(input: {
 					throw new Error(`restore_conflict:${table}`);
 				}
 			}
+			await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'off', true)`);
+			const restoredTaskIds = (input.tables.tasks ?? []).map((row) => String(row.id));
+			if (restoredTaskIds.length > 0)
+				await tx.execute(sql`
+					SELECT watson_reconcile_task_acceptances(id)
+					FROM tasks WHERE id = ANY(${uuids(restoredTaskIds)})
+				`);
 
 			// Vynutí deferred FK i naše constraint triggers už v dry-runu, ještě před rollbackem.
 			await tx.execute(sql`SET CONSTRAINTS ALL IMMEDIATE`);
