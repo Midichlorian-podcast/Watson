@@ -274,7 +274,7 @@ async function main(): Promise<void> {
 			{ status: response.status, restoreReplay },
 		);
 		const events = await db
-			.select({ action: auditEvents.action })
+			.select({ action: auditEvents.action, diff: auditEvents.diff })
 			.from(auditEvents)
 			.where(
 				and(
@@ -287,6 +287,14 @@ async function main(): Promise<void> {
 			events.filter((event) => event.action === "delete").length === 1 &&
 				events.filter((event) => event.action === "restore").length === 1,
 			events,
+		);
+		const restoreAudit = events.find((event) => event.action === "restore")?.diff as
+			| { rootTaskIds?: unknown }
+			| undefined;
+		check(
+			"restore audit zachová vazbu na obnovený kořen časové osy",
+			Array.isArray(restoreAudit?.rootTaskIds) && restoreAudit.rootTaskIds.includes(hubId),
+			restoreAudit,
 		);
 	} finally {
 		await db.delete(workspaces).where(eq(workspaces.id, workspace.id));

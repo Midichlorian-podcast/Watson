@@ -268,6 +268,13 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 		if (batch.restored_at) return { replay: true as const };
 		if (new Date(batch.expires_at).getTime() <= Date.now()) return { expired: true as const };
 		const projectIds = Array.isArray(batch.snapshot.projectIds) ? batch.snapshot.projectIds : [];
+		const rootTaskIds = Array.isArray(
+			(batch.snapshot as { rootTaskIds?: unknown }).rootTaskIds,
+		)
+			? ((batch.snapshot as { rootTaskIds: unknown[] }).rootTaskIds.filter(
+					(value): value is string => typeof value === "string",
+				) as string[])
+			: [];
 		const access = (await tx.execute(sql`
 			SELECT p.id AS project_id, p.workspace_id, pm.role::text AS project_role,
 			       wm.role::text AS workspace_role, w.owner_id, p.id::text AS id
@@ -320,7 +327,7 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 			entity: "task_delete_batch",
 			entityId: batch.id,
 			action: "restore",
-			diff: { projectIds },
+			diff: { projectIds, rootTaskIds },
 			requestId: c.get("requestId") ?? null,
 		});
 		return { replay: false as const };

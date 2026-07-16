@@ -588,6 +588,7 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 				participantCount: participantIds.length,
 				previousMeetingId: body.prevMeetingId ?? null,
 				carryCount: carryTaskIds.length,
+				carryTaskIds,
 				commandHash: planHash,
 			},
 			requestId: c.get("requestId") ?? null,

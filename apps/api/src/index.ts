@@ -40,6 +40,13 @@ import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
 import { savedViewRoutes } from "./savedViews";
 import { taskCommandRoutes } from "./taskCommands";
+import {
+	decodeTimelineCursor,
+	encodeTimelineCursor,
+	mergeTaskTimeline,
+	type RawAuditTimelineRow,
+	type RawLegacyTimelineRow,
+} from "./taskTimeline";
 import { watsonRoutes } from "./watson";
 
 /** Pořadí workspace rolí (R5) pro kontrolu eskalace práv — owner se řeší zvlášť (99). */
@@ -600,6 +607,114 @@ app.get("/api/tasks/:id/activity", async (c) => {
 		LIMIT 200
 	`);
 	return c.json({ activity: rows });
+});
+
+/**
+ * Jednotná časová osa úkolu. Autoritou jsou transakční audit_events; starší
+ * task_activity doplňuje pouze události, které v autoritativním auditu chybí.
+ * Cursor je stabilní dvojice created_at + globálně prefixované id.
+ */
+app.get("/api/tasks/:id/timeline", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const taskId = c.req.param("id");
+	if (!uuid.safeParse(taskId).success) return c.json({ error: "invalid_task_id" }, 422);
+	const limitParsed = z.coerce.number().int().min(10).max(100).default(50).safeParse(c.req.query("limit"));
+	if (!limitParsed.success) return c.json({ error: "invalid_limit" }, 422);
+	const cursorRaw = c.req.query("cursor") ?? null;
+	const cursor = decodeTimelineCursor(cursorRaw);
+	if (cursorRaw && !cursor) return c.json({ error: "invalid_cursor" }, 422);
+
+	const db = getDb();
+	const access = (await db.execute(sql`
+		SELECT t.project_id, p.workspace_id
+		FROM tasks t
+		JOIN projects p ON p.id = t.project_id
+		JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = ${session.user.id}
+		WHERE t.id = ${taskId}
+		LIMIT 1
+	`)) as { project_id: string; workspace_id: string }[];
+	// 404 neprozrazuje existenci restricted úkolu uživateli mimo projekt.
+	if (!access[0]) return c.json({ error: "not_found" }, 404);
+
+	const queryLimit = limitParsed.data * 5 + 1;
+	const auditCursor = cursor
+		? sql`AND (
+			ae.created_at < ${cursor.at}::timestamptz
+			OR (ae.created_at = ${cursor.at}::timestamptz AND ('audit:' || ae.id::text) < ${cursor.id})
+			)`
+		: sql``;
+	const legacyCursor = cursor
+		? sql`AND (
+			ta.created_at < ${cursor.at}::timestamptz
+			OR (ta.created_at = ${cursor.at}::timestamptz AND ('legacy:' || ta.id::text) < ${cursor.id})
+			)`
+		: sql``;
+
+	const auditRows = (await db.execute(sql`
+		SELECT ae.id, ae.entity, ae.entity_id, ae.action, ae.diff, ae.before,
+		       ae.actor_type, ae.actor_user_id, u.name AS actor_name, ae.created_at
+		FROM audit_events ae
+		LEFT JOIN users u ON u.id = ae.actor_user_id
+		WHERE ae.workspace_id = ${access[0].workspace_id}
+		AND (
+			(ae.entity = 'tasks' AND ae.entity_id = ${taskId})
+			OR (
+				ae.entity IN ('assignments', 'comments', 'comment_decisions', 'reminders',
+					'task_user_colors', 'task_occurrence_overrides')
+				AND COALESCE(ae.diff->>'task_id', ae.before->>'task_id') = ${taskId}
+			)
+			OR (
+				ae.entity = 'task_dependencies'
+				AND (
+					COALESCE(ae.diff->>'blocking_task_id', ae.before->>'blocking_task_id') = ${taskId}
+					OR COALESCE(ae.diff->>'blocked_task_id', ae.before->>'blocked_task_id') = ${taskId}
+				)
+			)
+			OR (
+				ae.entity = 'meetings'
+				AND (
+					ae.diff->>'hubTaskId' = ${taskId}
+					OR COALESCE(ae.diff->'taskIds', '[]'::jsonb) ? ${taskId}
+					OR COALESCE(ae.diff->'carryTaskIds', '[]'::jsonb) ? ${taskId}
+					OR ae.entity_id IN (SELECT m.id FROM meetings m WHERE m.hub_task_id = ${taskId})
+				)
+			)
+			OR (
+				ae.entity = 'employee_reconcile'
+				AND COALESCE(ae.diff->'createdTaskIds', '[]'::jsonb) ? ${taskId}
+			)
+			OR (
+				ae.entity = 'task_delete_batch'
+				AND COALESCE(ae.diff->'rootTaskIds', '[]'::jsonb) ? ${taskId}
+			)
+		)
+		${auditCursor}
+		ORDER BY ae.created_at DESC, ('audit:' || ae.id::text) DESC
+		LIMIT ${queryLimit}
+	`)) as RawAuditTimelineRow[];
+	const legacyRows = (await db.execute(sql`
+		SELECT ta.id, ta.field, ta.old_value, ta.new_value, ta.user_id,
+		       u.name AS user_name, ta.created_at
+		FROM task_activity ta
+		LEFT JOIN users u ON u.id = ta.user_id
+		WHERE ta.task_id = ${taskId}
+		${legacyCursor}
+		ORDER BY ta.created_at DESC, ('legacy:' || ta.id::text) DESC
+		LIMIT ${queryLimit}
+	`)) as RawLegacyTimelineRow[];
+
+	const merged = mergeTaskTimeline(auditRows, legacyRows, taskId);
+	const events = merged.slice(0, limitParsed.data);
+	const mayHaveMore =
+		merged.length > limitParsed.data ||
+		auditRows.length === queryLimit ||
+		legacyRows.length === queryLimit;
+	const last = events.at(-1);
+	return c.json({
+		events,
+		nextCursor: mayHaveMore && last ? encodeTimelineCursor(last) : null,
+	});
 });
 
 /** Členové workspace (jen pro člena) — Nastavení → Tým a role. */

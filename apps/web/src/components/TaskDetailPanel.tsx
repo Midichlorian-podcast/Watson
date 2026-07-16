@@ -1,6 +1,6 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -8,48 +8,61 @@ import { useAddTask } from "../lib/addTask";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
-import { initials } from "../lib/format";
 import { focusOnMount } from "../lib/focusOnMount";
+import { initials } from "../lib/format";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
-import { rescheduleDate } from "../lib/reschedule";
 import type { TaskRow } from "../lib/powersync/AppSchema";
+import { rescheduleDate } from "../lib/reschedule";
 
-/** Řádek historie z API /api/tasks/:id/activity (task_activity se nesyncuje). */
-type ActivityEntry = {
+type TimelineKind =
+	| "task_created"
+	| "task_updated"
+	| "task_rescheduled"
+	| "task_completed"
+	| "task_reopened"
+	| "task_deleted"
+	| "task_restored"
+	| "comment_added"
+	| "comment_updated"
+	| "comment_deleted"
+	| "decision_marked"
+	| "decision_unmarked"
+	| "assignment_added"
+	| "assignment_updated"
+	| "assignment_removed"
+	| "reminder_added"
+	| "reminder_updated"
+	| "reminder_removed"
+	| "dependency_added"
+	| "dependency_removed"
+	| "occurrence_updated"
+	| "meeting_updated"
+	| "integration_created";
+type TimelineEvent = {
 	id: string;
-	field: string | null;
-	old_value: string | null;
-	new_value: string | null;
-	user_id: string | null;
-	created_at: string | null;
-	user_name?: string | null;
+	source: "audit" | "legacy";
+	kind: TimelineKind;
+	actorType: "user" | "ai" | "system";
+	actorUserId: string | null;
+	actorName: string | null;
+	createdAt: string;
+	changedFields: string[];
+	changes: { field: string; oldValue?: string | null; newValue?: string | null }[];
+	commentId?: string;
+	excerpt?: string;
+	relatedTaskId?: string;
+	relatedUserId?: string;
+	direction?: "blocked_by" | "blocks";
 };
-import { powerSync } from "../lib/powersync/db";
-import { enablePush, notificationPermission } from "../lib/push";
-import { useProject } from "../lib/projects";
-import { useFocusTrap } from "../lib/useFocusTrap";
-import { useRowMeta } from "../lib/rowMeta";
-import { useTaskDetail } from "../lib/taskDetail";
-import {
-	occLabel,
-	rowDue,
-	setOccurrenceOverride,
-	todayISO,
-	toggleAssignmentDone,
-	toggleTask,
-} from "../lib/tasks";
-import { showToast } from "../lib/toast";
-import {
-	dateInTimeZone,
-	deviceTimeZone,
-	wallTimeFromInstant,
-	zonedDateTimeToIso,
-} from "../lib/timeZone";
+type TimelinePage = { events: TimelineEvent[]; nextCursor: string | null };
+type TimelineFilter = "all" | "changes" | "decisions";
+
 import { logTaskActivity } from "../lib/activity";
-import { deleteTaskWithUndo } from "../lib/undo";
-import { useOpenMailThread } from "../mail/state";
-import { WHY_NOW_MAX_LENGTH, type WhyNowSignal, whyNowSignals } from "../lib/whyNow";
 import { copyDeepLink } from "../lib/deepLink";
+import { wouldCreateDependencyCycle } from "../lib/dependencies";
+import { powerSync } from "../lib/powersync/db";
+import { useProject } from "../lib/projects";
+import { enablePush, notificationPermission } from "../lib/push";
 import {
 	hasEquivalentReminder,
 	type ReminderCandidate,
@@ -58,8 +71,28 @@ import {
 	reminderFireAt,
 	sortReminders,
 } from "../lib/reminders";
+import { useRowMeta } from "../lib/rowMeta";
+import { useTaskDetail } from "../lib/taskDetail";
 import { taskProgress } from "../lib/taskProgress";
-import { wouldCreateDependencyCycle } from "../lib/dependencies";
+import {
+	occLabel,
+	rowDue,
+	setOccurrenceOverride,
+	todayISO,
+	toggleAssignmentDone,
+	toggleTask,
+} from "../lib/tasks";
+import {
+	dateInTimeZone,
+	deviceTimeZone,
+	wallTimeFromInstant,
+	zonedDateTimeToIso,
+} from "../lib/timeZone";
+import { showToast } from "../lib/toast";
+import { deleteTaskWithUndo } from "../lib/undo";
+import { useFocusTrap } from "../lib/useFocusTrap";
+import { WHY_NOW_MAX_LENGTH, type WhyNowSignal, whyNowSignals } from "../lib/whyNow";
+import { useOpenMailThread } from "../mail/state";
 
 type Pri = 1 | 2 | 3 | 4;
 type Member = {
@@ -88,19 +121,55 @@ const ACT_FIELD_KEY: Record<string, string> = {
 	why_now: "detail.actWhyNow",
 	due_date: "detail.actDue",
 	start_date: "detail.actTime",
+	start_timezone: "detail.actTime",
 	duration_min: "detail.actTime",
+	days: "detail.actDuration",
 	deadline: "detail.actDeadline",
 	priority: "detail.actPriority",
+	color: "detail.actColor",
+	recurrence: "detail.actRecurrence",
+	recurrence_rule: "detail.actRecurrence",
 	assignment_mode: "detail.actAssign",
 	status_id: "detail.actStatus",
 	project_id: "detail.actProject",
 	parent_id: "detail.actParent",
 	completed: "detail.actCompleted",
+	completed_at: "detail.actCompleted",
 	created: "detail.actCreated",
 };
 function actFieldLabel(field: string, t: (k: string) => string) {
 	return t(ACT_FIELD_KEY[field] ?? "detail.actField");
 }
+
+const TIMELINE_KIND_KEY: Record<TimelineKind, string> = {
+	task_created: "detail.timelineTaskCreated",
+	task_updated: "detail.timelineTaskUpdated",
+	task_rescheduled: "detail.timelineTaskRescheduled",
+	task_completed: "detail.actMarkedDone",
+	task_reopened: "detail.actMarkedUndone",
+	task_deleted: "detail.timelineTaskDeleted",
+	task_restored: "detail.timelineTaskRestored",
+	comment_added: "detail.timelineCommentAdded",
+	comment_updated: "detail.timelineCommentUpdated",
+	comment_deleted: "detail.timelineCommentDeleted",
+	decision_marked: "detail.actMarkedDecision",
+	decision_unmarked: "detail.actUnmarkedDecision",
+	assignment_added: "detail.timelineAssignmentAdded",
+	assignment_updated: "detail.timelineAssignmentUpdated",
+	assignment_removed: "detail.timelineAssignmentRemoved",
+	reminder_added: "detail.timelineReminderAdded",
+	reminder_updated: "detail.timelineReminderUpdated",
+	reminder_removed: "detail.timelineReminderRemoved",
+	dependency_added: "detail.timelineDependencyAdded",
+	dependency_removed: "detail.timelineDependencyRemoved",
+	occurrence_updated: "detail.timelineOccurrenceUpdated",
+	meeting_updated: "detail.timelineMeetingUpdated",
+	integration_created: "detail.timelineIntegrationCreated",
+};
+
+const isDecisionTimelineEvent = (event: TimelineEvent) => event.kind.startsWith("decision_");
+const isChangeTimelineEvent = (event: TimelineEvent) =>
+	!event.kind.startsWith("comment_") && !event.kind.startsWith("decision_");
 
 const WHY_NOW_SIGNAL_KEY: Record<WhyNowSignal, string> = {
 	due_overdue: "detail.whyNowDueOverdue",
@@ -116,7 +185,12 @@ function fmtActVal(field: string, val: unknown): string | null {
 	if (val == null || val === "") return null;
 	if (field === "priority") return `P${val}`;
 	if (field === "duration_min") return `${val} min`;
-	if (field === "due_date" || field === "start_date" || field === "deadline") {
+	if (field === "due_date" || field === "deadline") {
+		const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(val));
+		if (dateOnly) return `${Number(dateOnly[3])}. ${Number(dateOnly[2])}.`;
+		return String(val);
+	}
+	if (field === "start_date") {
 		const d = new Date(String(val));
 		if (Number.isNaN(d.getTime())) return String(val);
 		const date = `${d.getDate()}. ${d.getMonth() + 1}.`;
@@ -127,6 +201,16 @@ function fmtActVal(field: string, val: unknown): string | null {
 		return date + hm;
 	}
 	return String(val);
+}
+
+function fmtTimelineActVal(field: string, val: unknown, t: (key: string) => string): string | null {
+	if (
+		field === "assignment_mode" &&
+		(val === "single" || val === "shared_any" || val === "shared_all")
+	) {
+		return t(`assignment.${val}`);
+	}
+	return fmtActVal(field, val);
 }
 
 /** Patch sloupců úkolu lokálně (PowerSync upload → generický write-path). */
@@ -227,6 +311,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	// Výskyt řady: virtuální id `base@ISO` → base úkol + banner + per-výskyt akce.
 	const occ = parseOccId(id);
 	const realId = occ?.taskId ?? id;
+	const [histOpen, setHistOpen] = useState(false);
+	const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
 
 	// Esc zavře detail (jen když nad ním není vyšší vrstva); ↑/↓ (j/k) přepíná úkoly.
 	useEffect(() => {
@@ -371,17 +457,22 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		"SELECT id, name, completed_at FROM tasks WHERE project_id = ? AND id <> ? AND kind = 'task' ORDER BY completed_at IS NOT NULL, name LIMIT 500",
 		[task?.project_id ?? "", realId],
 	);
-	// Historie úprav (audit log) — čte se z API (task_activity je insert-only, nesyncuje se).
-	const { data: activity } = useQuery({
-		queryKey: ["taskActivity", realId],
+	// Jedna autoritativní časová osa: audit_events + deduplikovaná legacy historie.
+	const timelineQuery = useInfiniteQuery({
+		queryKey: ["taskTimeline", realId],
 		enabled: !!realId,
-		queryFn: async () => {
-			const r = await fetch(`${API_URL}/api/tasks/${realId}/activity`, {
+		initialPageParam: null as string | null,
+		queryFn: async ({ pageParam }): Promise<TimelinePage> => {
+			const params = new URLSearchParams({ limit: "50" });
+			if (pageParam) params.set("cursor", pageParam);
+			const response = await fetch(`${API_URL}/api/tasks/${realId}/timeline?${params}`, {
 				credentials: "include",
 			});
-			if (!r.ok) return [] as ActivityEntry[];
-			return ((await r.json()).activity ?? []) as ActivityEntry[];
+			if (!response.ok) throw new Error("task_timeline");
+			return (await response.json()) as TimelinePage;
 		},
+		getNextPageParam: (page) => page.nextCursor ?? undefined,
+		refetchInterval: histOpen ? 5_000 : false,
 	});
 	const { data: statusRows } = usePsQuery<{
 		name: string | null;
@@ -506,7 +597,6 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	// Vlastnosti (priorita/termín/deadline/čas/trvání/barva) rovnou viditelné —
 	// kompletní přehledné menu i pro podúkoly (dřív schované za klikem na chip).
 	const [editOpen, setEditOpen] = useState(true);
-	const [histOpen, setHistOpen] = useState(false);
 	// V3 save-UX: čas posledního uložení (zpětná vazba „Uloženo ✓ HH:MM").
 	const [savedAt, setSavedAt] = useState<number | null>(null);
 	const nameRef = useRef<HTMLInputElement>(null);
@@ -536,7 +626,20 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const myProjectRole = members.find((m) => m.id === session?.user?.id)?.role;
 	const canDecide = myProjectRole === "editor" || myProjectRole === "manager";
 	const decisionsByComment = new Map((commentDecisions ?? []).map((d) => [d.comment_id, d]));
-	const acts = activity ?? [];
+	const timelineEvents = Array.from(
+		new Map(
+			(timelineQuery.data?.pages ?? [])
+				.flatMap((page) => page.events)
+				.map((event) => [event.id, event] as const),
+		).values(),
+	);
+	const filteredTimeline = timelineEvents.filter((event) =>
+		timelineFilter === "decisions"
+			? isDecisionTimelineEvent(event)
+			: timelineFilter === "changes"
+				? isChangeTimelineEvent(event)
+				: true,
+	);
 	const relevanceSignals = whyNowSignals(task, { deviceTimeZone: deviceTimeZone() });
 
 	// Zápis jednoho záznamu do historie úprav.
@@ -545,8 +648,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		if (!task || !uid) return;
 		// sdílený zapisovač (lib/activity) — stejná historie i pro create/bulk/toggle
 		await logTaskActivity(realId, task.project_id, uid, field, oldVal, newVal);
-		// task_activity se nesyncuje (insert-only) → po zápisu refetchni historii z API.
-		void qc.invalidateQueries({ queryKey: ["taskActivity", realId] });
+		// API timeline si po uploadu vezme autoritativní audit a legacy řádek deduplikuje.
+		void qc.invalidateQueries({ queryKey: ["taskTimeline", realId] });
 	};
 
 	/** Rozhodnutí je samostatný auditovatelný objekt; text komentáře zůstává nedotčený. */
@@ -2117,91 +2220,188 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							className="w-full border border-line bg-panel-2 font-body text-ink outline-none focus:border-brass"
 							style={{ borderRadius: 9, padding: "8px 11px", fontSize: 13 }}
 						/>
-						{/* HISTORIE ÚPRAV · N — sbalitelné, nenápadné, na rozkliknutí (audit) */}
-						{acts.length > 0 && (
-							<div style={{ marginTop: 22 }}>
-								<button
-									type="button"
-									onClick={() => setHistOpen((o) => !o)}
-									className="flex w-full items-center font-display font-bold text-ink-3 uppercase hover:text-ink-2"
-									style={{ fontSize: 11, letterSpacing: ".06em", gap: 6 }}
+						{/* JEDNOTNÁ ČASOVÁ OSA — serverový audit + rozhodnutí + legacy historie bez duplicit. */}
+						<div style={{ marginTop: 22 }}>
+							<button
+								type="button"
+								onClick={() => setHistOpen((open) => !open)}
+								aria-expanded={histOpen}
+								className="flex min-h-11 w-full items-center font-display font-bold text-ink-3 uppercase hover:text-ink-2"
+								style={{ fontSize: 11, letterSpacing: ".06em", gap: 6 }}
+							>
+								<span
+									aria-hidden
+									style={{
+										display: "inline-block",
+										transform: histOpen ? "rotate(90deg)" : "none",
+										transition: "transform .15s",
+									}}
 								>
-									<span
-										style={{
-											display: "inline-block",
-											transform: histOpen ? "rotate(90deg)" : "none",
-											transition: "transform .15s",
-										}}
-									>
-										›
-									</span>
-									{t("detail.history")} · {acts.length}
-								</button>
-								{histOpen && (
-									<div style={{ marginTop: 11 }}>
-										{acts.map((a) => {
-											const m = memberOf(a.user_id);
-											const field = a.field ?? "";
-											const verb =
-												field === "completed"
-													? a.new_value
-														? t("detail.actMarkedDone")
-														: t("detail.actMarkedUndone")
-													: field === "comment_decision"
-														? a.new_value
-															? t("detail.actMarkedDecision")
-															: t("detail.actUnmarkedDecision")
-														: `${t("detail.actChanged")} ${actFieldLabel(field, t)}`;
-											const diff =
-												field !== "completed" && field !== "comment_decision" && a.new_value
-													? a.old_value
-														? `${a.old_value} → ${a.new_value}`
-														: `→ ${a.new_value}`
-													: null;
+									›
+								</span>
+								{t("detail.timeline")} · {timelineEvents.length}
+								{timelineQuery.hasNextPage ? "+" : ""}
+							</button>
+							{histOpen && (
+								<div style={{ marginTop: 8 }}>
+									<div className="mb-3 flex rounded-lg border border-line bg-panel-2 p-[3px]">
+										{(["all", "changes", "decisions"] as const).map((filter) => (
+											<button
+												key={filter}
+												type="button"
+												onClick={() => setTimelineFilter(filter)}
+												aria-pressed={timelineFilter === filter}
+												className="min-h-11 flex-1 rounded-md px-2 font-display font-semibold"
+												style={{
+													fontSize: 11,
+													background: timelineFilter === filter ? "var(--w-card)" : "transparent",
+													color: timelineFilter === filter ? "var(--w-ink)" : "var(--w-ink-3)",
+												}}
+											>
+												{t(`detail.timelineFilter${filter[0]?.toUpperCase()}${filter.slice(1)}`)}
+											</button>
+										))}
+									</div>
+
+									{timelineQuery.isLoading && (
+										<p className="py-3 text-center font-body text-ink-3 text-xs" role="status">
+											{t("detail.timelineLoading")}
+										</p>
+									)}
+									{timelineQuery.isError && (
+										<div className="rounded-lg border border-line bg-panel-2 p-3 text-ink-3 text-xs">
+											{t("detail.timelineError")}
+											<button
+												type="button"
+												onClick={() => void timelineQuery.refetch()}
+												className="ml-2 min-h-11 font-display font-semibold text-brass-text"
+											>
+												{t("detail.timelineRetry")}
+											</button>
+										</div>
+									)}
+									{!timelineQuery.isLoading && !timelineQuery.isError && filteredTimeline.length === 0 && (
+										<p className="py-3 text-center font-body text-ink-3 text-xs">
+											{t("detail.timelineEmpty")}
+										</p>
+									)}
+									<div className="relative">
+										{filteredTimeline.map((event, index) => {
+											const actorName =
+												event.actorName ??
+												memberOf(event.actorUserId)?.name ??
+												(event.actorType === "ai"
+													? t("detail.timelineAi")
+													: event.actorType === "user"
+														? t("detail.timelineUnknownUser")
+														: t("detail.timelineSystem"));
+											const commentText =
+												event.excerpt ??
+												cmts.find((comment) => comment.id === event.commentId)?.body ??
+												null;
+											const relatedTaskName = event.relatedTaskId
+												? dependencyCandidates?.find((candidate) => candidate.id === event.relatedTaskId)?.name
+												: null;
+											const relatedUserName = event.relatedUserId
+												? memberOf(event.relatedUserId)?.name
+												: null;
+											const fieldLabels = event.changedFields
+												.filter(
+													(field) =>
+														field !== "completed_at" &&
+														!event.changes.some(
+															(change) =>
+																change.field === field &&
+																Boolean(
+																	fmtTimelineActVal(change.field, change.oldValue, t) ??
+																		fmtTimelineActVal(change.field, change.newValue, t),
+																),
+														),
+												)
+												.map((field) => actFieldLabel(field, t));
 											return (
-												<div key={a.id} className="flex" style={{ gap: 8, marginBottom: 10 }}>
+												<div key={event.id} className="relative flex pb-4" style={{ gap: 9 }}>
+													{index < filteredTimeline.length - 1 && (
+														<span
+															aria-hidden
+															className="absolute bg-line"
+															style={{ left: 13, top: 28, bottom: 0, width: 1 }}
+														/>
+													)}
 													<span
-														className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
+														className="relative z-[1] flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-display font-semibold"
 														style={{
-															width: 21,
-															height: 21,
-															fontSize: 8.5,
+															fontSize: 9,
 															color: "#fff",
-															background: "var(--w-avatar)",
+															background: isDecisionTimelineEvent(event)
+																? "var(--w-brass)"
+																: "var(--w-avatar)",
 														}}
 													>
-														{initials(m?.name ?? "?")}
+														{event.actorType === "ai" ? "AI" : initials(actorName)}
 													</span>
-													<div className="min-w-0" style={{ fontSize: 12 }}>
-														<span
-															className="font-display font-semibold text-ink"
-															style={{ fontSize: 12 }}
-														>
-															{m?.name ?? "—"}
-														</span>{" "}
-														<span className="font-body text-ink-2" style={{ fontSize: 12 }}>
-															{verb}
-														</span>
-														<span className="font-body text-ink-3" style={{ fontSize: 11 }}>
-															{" · "}
-															{whenLabel(a.created_at, t)}
-														</span>
-														{diff && (
-															<div
-																className="truncate font-mono text-ink-3"
-																style={{ fontSize: 11, marginTop: 1 }}
-															>
-																{diff}
-															</div>
+													<div className="min-w-0 flex-1 pt-1" style={{ fontSize: 12 }}>
+														<div>
+															<span className="font-display font-semibold text-ink">{actorName}</span>{" "}
+															<span className="font-body text-ink-2">{t(TIMELINE_KIND_KEY[event.kind])}</span>
+															<span className="font-body text-ink-3" style={{ fontSize: 11 }}>
+																{" · "}
+																{whenLabel(event.createdAt, t)}
+															</span>
+														</div>
+														{fieldLabels.length > 0 && (
+															<p className="mt-0.5 truncate font-body text-ink-3" style={{ fontSize: 11 }}>
+																{fieldLabels.join(" · ")}
+															</p>
+														)}
+														{event.changes.map((change) => {
+															const oldValue = fmtTimelineActVal(change.field, change.oldValue, t);
+															const newValue = fmtTimelineActVal(change.field, change.newValue, t);
+															if (!oldValue && !newValue) return null;
+															return (
+																<p key={change.field} className="mt-0.5 truncate font-mono text-ink-3" style={{ fontSize: 11 }}>
+																	{actFieldLabel(change.field, t)}: {" "}
+																	{oldValue ? `${oldValue} → ` : "→ "}
+																	{newValue ?? "—"}
+																</p>
+															);
+														})}
+														{commentText && (
+															<p className="mt-1 line-clamp-2 rounded-md bg-panel-2 px-2 py-1.5 font-body text-ink-2" style={{ fontSize: 11.5 }}>
+																{commentText}
+															</p>
+														)}
+														{relatedTaskName && (
+															<p className="mt-0.5 truncate font-body text-ink-3" style={{ fontSize: 11 }}>
+																{event.direction === "blocked_by" ? "←" : "→"} {relatedTaskName}
+															</p>
+														)}
+														{relatedUserName && (
+															<p className="mt-0.5 font-body text-ink-3" style={{ fontSize: 11 }}>
+																{relatedUserName}
+															</p>
 														)}
 													</div>
 												</div>
 											);
 										})}
 									</div>
-								)}
-							</div>
-						)}
+									{timelineQuery.hasNextPage && timelineFilter === "all" && (
+										<button
+											type="button"
+											disabled={timelineQuery.isFetchingNextPage}
+											onClick={() => void timelineQuery.fetchNextPage()}
+											className="min-h-11 w-full rounded-lg border border-line bg-panel-2 font-display font-semibold text-ink-2 hover:border-brass disabled:opacity-60"
+											style={{ fontSize: 11.5 }}
+										>
+											{timelineQuery.isFetchingNextPage
+												? t("detail.timelineLoading")
+												: t("detail.timelineOlder")}
+										</button>
+									)}
+								</div>
+							)}
+						</div>
 					</div>
 
 					{/* footer akce (ř. 1073–1077) */}

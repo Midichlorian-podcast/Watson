@@ -30,7 +30,8 @@
 		"verify:comment-decisions": "tsx verify-comment-decisions.ts",
 		"verify:saved-views": "tsx verify-saved-views.ts",
 		"verify:project-presets": "tsx verify-project-presets.ts",
-		"verify:task-dependencies": "tsx verify-task-dependencies.ts"
+		"verify:task-dependencies": "tsx verify-task-dependencies.ts",
+		"verify:task-timeline": "tsx verify-task-timeline.ts"
 	},
 	"dependencies": {
 		"@anthropic-ai/sdk": "^0.111.0",
