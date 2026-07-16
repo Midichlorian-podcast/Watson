@@ -35,6 +35,7 @@ const fail = (msg: string) => {
 const typeOk = (reg: string, pg: string): boolean => {
 	if (reg === "int") return ["integer", "bigint", "smallint", "numeric"].includes(pg);
 	if (reg === "bool") return pg === "boolean";
+	if (reg === "json") return pg === "jsonb" || pg === "json";
 	if (reg === "ts")
 		return ["timestamp with time zone", "timestamp without time zone", "date"].includes(pg);
 	// text: uuid, varchar, text, enumy (USER-DEFINED) i jsonb se posílají jako string

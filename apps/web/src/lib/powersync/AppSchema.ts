@@ -72,6 +72,41 @@ const task_dependencies = new Table(
 	tracked({ indexes: { by_blocking: ["blocking_task_id"], by_blocked: ["blocked_task_id"] } }),
 );
 
+/** Projektové definice vlastních polí; zápis jde přes validující API commandy. */
+const project_custom_fields = new Table(
+	{
+		project_id: column.text,
+		name: column.text,
+		field_type: column.text,
+		options: column.text,
+		position: column.integer,
+		created_by: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{ indexes: { by_project: ["project_id"] } },
+);
+
+/** Typovaná hodnota úkolu; JSON scalar validuje server i DB trigger. */
+const task_custom_field_values = new Table(
+	{
+		field_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		value: column.text,
+		updated_by: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: {
+			by_task: ["task_id"],
+			by_project: ["project_id"],
+		},
+		trackPrevious: true,
+	},
+);
+
 /** Projekt (barva = tělo karet úkolů, R6); kind=flow|goal|cycle, status 4-stavový. */
 const projects = new Table(
 	{
@@ -541,6 +576,8 @@ const filters = new Table(
 export const AppSchema = new Schema({
 	tasks,
 	task_dependencies,
+	project_custom_fields,
+	task_custom_field_values,
 	workspaces,
 	projects,
 	sections,
@@ -576,6 +613,8 @@ export const AppSchema = new Schema({
 export type Database = (typeof AppSchema)["types"];
 export type TaskRow = Database["tasks"];
 export type TaskDependencyRow = Database["task_dependencies"];
+export type ProjectCustomFieldRow = Database["project_custom_fields"];
+export type TaskCustomFieldValueRow = Database["task_custom_field_values"];
 export type WorkspaceRow = Database["workspaces"];
 export type ProjectRow = Database["projects"];
 export type SectionRow = Database["sections"];

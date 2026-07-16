@@ -13,6 +13,7 @@ export * from "./flow";
 export * from "./goals";
 export * from "./lists";
 export * from "./meetings";
+export * from "./structured";
 export * from "./system";
 export * from "./task";
 export * from "./workspace";

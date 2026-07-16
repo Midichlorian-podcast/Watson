@@ -92,7 +92,7 @@ powersyncRoutes.get("/api/powersync/token", async (c) => {
 // Registr zapisovatelných tabulek
 // ─────────────────────────────────────────────────────────────────────────────
 
-type ColType = "text" | "int" | "bool" | "ts";
+type ColType = "text" | "int" | "bool" | "ts" | "json";
 
 interface TableDef {
 	/** Zapisovatelné sloupce → typ (pro správný cast SQLite→Postgres). `id` se řeší zvlášť. */
@@ -240,6 +240,20 @@ export const TABLES: Record<string, TableDef> = {
 			{ col: "blocking_task_id", table: "tasks" },
 			{ col: "blocked_task_id", table: "tasks" },
 		],
+	},
+	task_custom_field_values: {
+		columns: {
+			field_id: "text",
+			task_id: "text",
+			project_id: "text",
+			value: "json",
+			updated_by: "text",
+		},
+		hasUpdatedAt: true,
+		ownerCol: "updated_by",
+		minRole: "editor",
+		projectVia: { kind: "task", col: "task_id" },
+		refProjectCols: [{ col: "field_id", table: "project_custom_fields" }],
 	},
 	sections: {
 		columns: { project_id: "text", name: "text", position: "int" },
@@ -693,17 +707,26 @@ function coerce(type: ColType, v: unknown): unknown {
 	if (v == null) return null;
 	if (type === "int") return typeof v === "number" ? v : Number(v);
 	if (type === "bool") return v === true || v === 1 || v === "1" || v === "true";
+	if (type === "json") return typeof v === "string" ? v : JSON.stringify(v);
 	return String(v); // text + ts (ISO string → timestamptz cast Postgresem)
 }
 
 /** Sjednotí SQLite snapshot a Postgres hodnotu pro optimistický compare-and-swap. */
-function comparable(type: ColType, value: unknown): unknown {
+function comparable(type: ColType, value: unknown, serializedJson = false): unknown {
 	if (value == null) return null;
 	if (type === "bool") return value === true || value === 1 || value === "1" || value === "true";
 	if (type === "int") return Number(value);
 	if (type === "ts") {
 		const date = value instanceof Date ? value : new Date(String(value));
 		return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
+	}
+	if (type === "json") {
+		if (!serializedJson || typeof value !== "string") return canonicalJson(value);
+		try {
+			return canonicalJson(JSON.parse(value));
+		} catch {
+			return canonicalJson(value);
+		}
 	}
 	return String(value);
 }
@@ -886,20 +909,24 @@ async function applyWrite(
 		return;
 	}
 
-	const set: { col: string; val: unknown }[] = Object.keys(def.columns)
+	const set: { col: string; val: unknown; type: ColType }[] = Object.keys(def.columns)
 		// U CREATE autoritu identity drží server. Klientský lokální řádek může
 		// `created_by` obsahovat kvůli optimistickému UI, nesmí ale vytvořit druhý
 		// stejnojmenný INSERT sloupec ani podvrhnout jiného autora.
 		.filter((c) => c in data && !(op === "PUT" && c === def.creatorCol))
 		.flatMap((c) => {
 			const type = def.columns[c];
-			return type ? [{ col: c, val: coerce(type, data[c]) }] : [];
+			return type ? [{ col: c, val: coerce(type, data[c]), type }] : [];
 		});
-	if (op === "PUT" && def.creatorCol) set.push({ col: def.creatorCol, val: userId });
+	if (op === "PUT" && def.creatorCol)
+		set.push({ col: def.creatorCol, val: userId, type: "text" });
 
 	if (op === "PUT") {
 		const cols = ["id", ...set.map((s) => s.col)];
-		const vals = [sql`${id}`, ...set.map((s) => sql`${s.val}`)];
+		const vals = [
+			sql`${id}`,
+			...set.map((s) => (s.type === "json" ? sql`${s.val}::jsonb` : sql`${s.val}`)),
+		];
 		// PowerSync PUT je CREATE, nikoli upsert. Nová operace se stejným business id
 		// skončí 409; legitimní retry pozná auditedWrite podle idempotency receipt.
 		await db.execute(sql`
@@ -913,7 +940,11 @@ async function applyWrite(
 	}
 
 	// PATCH — jen sloupce přítomné v datech
-	const updates = set.map((s) => sql`${sql.raw(s.col)} = ${s.val}`);
+	const updates = set.map((s) =>
+		s.type === "json"
+			? sql`${sql.raw(s.col)} = ${s.val}::jsonb`
+			: sql`${sql.raw(s.col)} = ${s.val}`,
+	);
 	if (def.hasUpdatedAt) updates.push(sql`updated_at = now()`);
 	if (updates.length === 0) return;
 	await db.execute(
@@ -986,7 +1017,7 @@ async function auditedWrite(
 			if (!before) throw new SyncWriteConflict("row_missing");
 			for (const [columnName, type] of Object.entries(def.columns)) {
 				const expected = ctx.previous?.[columnName];
-				if (!Object.is(comparable(type, before[columnName]), comparable(type, expected))) {
+				if (!Object.is(comparable(type, before[columnName]), comparable(type, expected, true))) {
 					throw new SyncWriteConflict("stale_write");
 				}
 			}
@@ -995,8 +1026,28 @@ async function auditedWrite(
 		// task_activity JE už audit (per-úkol historie) — neaudituj audit, jen šum.
 		if (table === "task_activity") return "applied" as const;
 		const action = op === "PUT" ? "put" : op === "PATCH" ? "patch" : "delete";
-		const diff = op === "DELETE" ? null : sql`${JSON.stringify(data)}::jsonb`;
-		const beforeJson = before ? sql`${JSON.stringify(before)}::jsonb` : null;
+		let auditData: Record<string, unknown> = data;
+		let auditBefore: Record<string, unknown> | null = before;
+		if (table === "task_custom_field_values") {
+			const fieldId = String(data.field_id ?? before?.field_id ?? "");
+			const fieldRows = (await tx.execute(sql`
+				SELECT name, field_type FROM project_custom_fields WHERE id = ${fieldId} LIMIT 1
+			`)) as Rows;
+			const field = fieldRows[0];
+			auditData = {
+				...data,
+				field_name: field?.name ?? null,
+				field_type: field?.field_type ?? null,
+			};
+			if (before)
+				auditBefore = {
+					...before,
+					field_name: field?.name ?? null,
+					field_type: field?.field_type ?? null,
+				};
+		}
+		const diff = op === "DELETE" ? null : sql`${JSON.stringify(auditData)}::jsonb`;
+		const beforeJson = auditBefore ? sql`${JSON.stringify(auditBefore)}::jsonb` : null;
 		await tx.execute(sql`
       INSERT INTO audit_events (id, workspace_id, actor_type, actor_user_id, entity, entity_id, action, diff, before, request_id, created_at)
       VALUES (${crypto.randomUUID()}, ${ctx.workspaceId}, 'user', ${userId}, ${table}, ${id}, ${action}, ${diff}, ${beforeJson}, ${ctx.requestId}, now())

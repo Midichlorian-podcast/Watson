@@ -55,6 +55,13 @@ bucket_definitions:
       - SELECT id, project_id, blocking_task_id, blocked_task_id, created_by, created_at
         FROM task_dependencies
         WHERE project_id = bucket.project_id
+      # Typovaná vlastní pole: projektové definice + hodnoty úkolů, jen read model.
+      - SELECT id, project_id, name, field_type, options, position, created_by, created_at, updated_at
+        FROM project_custom_fields
+        WHERE project_id = bucket.project_id
+      - SELECT id, field_id, task_id, project_id, value, updated_by, created_at, updated_at
+        FROM task_custom_field_values
+        WHERE project_id = bucket.project_id
       # task_activity (audit log) se ZÁMĚRNĚ NEsyncuje — je insert-only (klient jen nahrává),
       # detail historie se čte přes GET /api/tasks/:id/activity. Jinak roste do stovek MB/zařízení.
       # Postupy (štafeta) — chains + chain_steps (project-scoped).

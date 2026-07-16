@@ -19,6 +19,7 @@ export type TimelineKind =
 	| "reminder_removed"
 	| "attachment_added"
 	| "attachment_removed"
+	| "custom_field_updated"
 	| "dependency_added"
 	| "dependency_removed"
 	| "occurrence_updated"
@@ -117,6 +118,18 @@ const stringOf = (value: unknown, max = 240): string | null => {
 	return normalized.slice(0, max);
 };
 
+/** PowerSync audit drží JSON scalar jako serializovaný text, API command jako scalar. */
+const jsonScalarStringOf = (value: unknown): string | null => {
+	if (typeof value === "string") {
+		try {
+			return stringOf(JSON.parse(value));
+		} catch {
+			return stringOf(value);
+		}
+	}
+	return stringOf(value);
+};
+
 const idOf = (value: unknown): string | undefined => {
 	const candidate = stringOf(value, 64);
 	return candidate && /^[0-9a-f-]{36}$/i.test(candidate) ? candidate : undefined;
@@ -152,6 +165,8 @@ function kindForAction(entity: string, action: string): TimelineKind | null {
 			return removed ? "reminder_removed" : added ? "reminder_added" : "reminder_updated";
 		case "attachments":
 			return removed ? "attachment_removed" : "attachment_added";
+		case "task_custom_field_values":
+			return "custom_field_updated";
 		case "task_dependencies":
 			return removed ? "dependency_removed" : "dependency_added";
 		case "task_occurrence_overrides":
@@ -217,6 +232,21 @@ export function mapAuditTimelineEvent(
 	}
 	if (row.entity === "attachments") {
 		return { ...common, kind, excerpt: stringOf(data.file_name) ?? undefined };
+	}
+	if (row.entity === "task_custom_field_values") {
+		return {
+			...common,
+			kind,
+			excerpt: stringOf(data.field_name) ?? undefined,
+			changedFields: ["custom_field"],
+			changes: [
+				{
+					field: "custom_field",
+					oldValue: jsonScalarStringOf(before.value),
+					newValue: jsonScalarStringOf(diff.value),
+				},
+			],
+		};
 	}
 	if (row.entity === "task_dependencies") {
 		const blocking = idOf(data.blocking_task_id);

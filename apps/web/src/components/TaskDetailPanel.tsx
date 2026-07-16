@@ -25,6 +25,7 @@ import { parseOccId, recurrenceKind } from "../lib/occurrences";
 import type { AttachmentRow, TaskRow } from "../lib/powersync/AppSchema";
 import { rescheduleDate } from "../lib/reschedule";
 import { CommentComposer } from "./CommentComposer";
+import { CustomFieldsSection } from "./CustomFieldsSection";
 
 type TimelineKind =
 	| "task_created"
@@ -47,6 +48,7 @@ type TimelineKind =
 	| "reminder_removed"
 	| "attachment_added"
 	| "attachment_removed"
+	| "custom_field_updated"
 	| "dependency_added"
 	| "dependency_removed"
 	| "occurrence_updated"
@@ -221,6 +223,7 @@ const TIMELINE_KIND_KEY: Record<TimelineKind, string> = {
 	reminder_removed: "detail.timelineReminderRemoved",
 	attachment_added: "detail.timelineAttachmentAdded",
 	attachment_removed: "detail.timelineAttachmentRemoved",
+	custom_field_updated: "detail.timelineCustomFieldUpdated",
 	dependency_added: "detail.timelineDependencyAdded",
 	dependency_removed: "detail.timelineDependencyRemoved",
 	occurrence_updated: "detail.timelineOccurrenceUpdated",
@@ -798,6 +801,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const memberOf = (uid: string | null) => members.find((m) => m.id === uid);
 	const myProjectRole = members.find((m) => m.id === session?.user?.id)?.role;
 	const canDecide = myProjectRole === "editor" || myProjectRole === "manager";
+	const canEditCustomFields = myProjectRole === "editor" || myProjectRole === "manager";
 	const canDeleteAnyAttachment = myProjectRole === "editor" || myProjectRole === "manager";
 	const decisionsByComment = new Map((commentDecisions ?? []).map((d) => [d.comment_id, d]));
 	const mentionIdsByComment = new Map<string, string[]>();
@@ -2516,6 +2520,13 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								</div>
 							)}
 						</div>
+
+						<CustomFieldsSection
+							taskId={realId}
+							projectId={task.project_id ?? ""}
+							members={members}
+							canEdit={canEditCustomFields}
+						/>
 
 						{/* PŘÍLOHY — metadata offline, obsah přes autorizovanou serverovou route. */}
 						<SectionLabel>

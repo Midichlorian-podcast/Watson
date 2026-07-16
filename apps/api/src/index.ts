@@ -32,6 +32,7 @@ import { aiPolicyRoutes } from "./aiPolicy";
 import { ATTACHMENT_MAX_BYTES, attachmentRoutes } from "./attachments";
 import { auth } from "./auth";
 import { chainCommandRoutes } from "./chainCommands";
+import { customFieldRoutes } from "./customFields";
 import { employeeRoutes } from "./employee";
 import { env, googleEnabled, pushEnabled } from "./env";
 import { exportRoutes } from "./export";
@@ -256,6 +257,14 @@ app.use(
 	"/api/attachment-stages/*",
 	rateLimit({ name: "attachment-stages", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
 );
+app.use(
+	"/api/custom-fields/*",
+	rateLimit({ name: "custom-fields", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
+);
+app.use(
+	"/api/projects/:projectId/custom-fields",
+	rateLimit({ name: "custom-fields-create", windowMs: 60_000, max: 60, scope: "session-or-ip" }),
+);
 
 // CC-P0-11 — privilegovaný účet bez 2FA smí číst data a otevřít Nastavení, ale
 // v produkčním režimu nesmí provést žádný zápis. Auth endpointy zůstávají volné,
@@ -350,6 +359,7 @@ app.route("/", watsonRoutes);
 app.route("/", exportRoutes);
 app.route("/", savedViewRoutes);
 app.route("/", attachmentRoutes);
+app.route("/", customFieldRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);
@@ -685,6 +695,7 @@ app.get("/api/tasks/:id/timeline", async (c) => {
 			(ae.entity = 'tasks' AND ae.entity_id = ${taskId})
 			OR (
 				ae.entity IN ('assignments', 'comments', 'comment_decisions', 'reminders', 'attachments',
+					'task_custom_field_values',
 					'task_user_colors', 'task_occurrence_overrides')
 				AND COALESCE(ae.diff->>'task_id', ae.before->>'task_id') = ${taskId}
 			)

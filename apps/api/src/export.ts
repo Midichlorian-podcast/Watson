@@ -35,8 +35,10 @@ export const RESTORE_TABLE_ORDER = [
 	"project_members",
 	"sections",
 	"statuses",
+	"project_custom_fields",
 	"tasks",
 	"task_dependencies",
+	"task_custom_field_values",
 	"meetings",
 	"assignments",
 	"comments",
@@ -92,10 +94,14 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT s.* FROM sections s JOIN projects p ON p.id = s.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	statuses: (ws) =>
 		sql`SELECT st.* FROM statuses st LEFT JOIN projects p ON p.id = st.project_id WHERE p.workspace_id = ANY(${uuids(ws)}) OR st.workspace_id = ANY(${uuids(ws)})`,
+	project_custom_fields: (ws) =>
+		sql`SELECT f.* FROM project_custom_fields f JOIN projects p ON p.id = f.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	tasks: (ws) =>
 		sql`SELECT t.* FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	task_dependencies: (ws) =>
 		sql`SELECT d.* FROM task_dependencies d JOIN projects p ON p.id = d.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	task_custom_field_values: (ws) =>
+		sql`SELECT v.* FROM task_custom_field_values v JOIN projects p ON p.id = v.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	assignments: (ws) =>
 		sql`SELECT a.* FROM assignments a JOIN projects p ON p.id = a.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	comments: (ws) =>
