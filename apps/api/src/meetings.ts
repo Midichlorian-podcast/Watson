@@ -99,6 +99,7 @@ function mockExtract(transcript: string, roster: RosterRow[]): TaskProposal[] {
 			return first && first.length > 2 && low.includes(first);
 		});
 		const pMatch = low.match(/\bp([1-4])\b/);
+		const isDecision = /\b(rozhodnutí|rozhodli|schválili|dohodli)\b/i.test(title);
 		out.push({
 			title,
 			note: null,
@@ -108,7 +109,7 @@ function mockExtract(transcript: string, roster: RosterRow[]): TaskProposal[] {
 			due: null,
 			projectHint: null,
 			parentIndex: null,
-			kind: who ? "action" : "unclear",
+			kind: isDecision ? "decision" : who ? "action" : "unclear",
 			evidence: raw.slice(0, 300),
 		});
 		if (out.length >= 40) break;

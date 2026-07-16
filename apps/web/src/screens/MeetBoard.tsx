@@ -124,9 +124,8 @@ const secStyle = (tone: "hot" | "dim" | "base"): CSSProperties => ({
 	border: `1px solid ${tone === "hot" ? "var(--w-brass)" : "var(--w-line)"}`,
 	borderRadius: 13,
 	padding: "13px 15px 14px",
-	boxShadow: "var(--w-shadow-sm)",
-	opacity: tone === "dim" ? 0.68 : 1,
-	transition: "border-color .18s ease, opacity .18s ease",
+	boxShadow: tone === "dim" ? "none" : "var(--w-shadow-sm)",
+	transition: "border-color .18s ease, box-shadow .18s ease",
 });
 
 const dayLbl = (iso: string) => shortDayLabel(iso, i18n.language);
@@ -963,11 +962,13 @@ export function MeetBoard({
 									if (e.key === "Enter") void addPrep();
 								}}
 								placeholder="Přidat bod přípravy… ⏎"
+								aria-label="Nový bod přípravy"
 								style={INPUT}
 							/>
 							<button
 								type="button"
 								style={{ ...BTN_PRIMARY, opacity: prepText.trim() ? 1 : 0.5 }}
+								disabled={!prepText.trim()}
 								onClick={() => void addPrep()}
 							>
 								Přidat
@@ -1089,6 +1090,7 @@ export function MeetBoard({
 														value={p.title}
 														onChange={(e) => upd(i, { title: e.target.value })}
 														placeholder="Co se má udělat…"
+														aria-label="Název akčního bodu"
 														style={{ ...INPUT, fontWeight: 600 }}
 													/>
 													{p.evidence && (
@@ -1579,6 +1581,7 @@ export function MeetBoard({
 								}}
 								rows={8}
 								placeholder="Vlož přepis / zápis z porady…"
+								aria-label="Přepis porady"
 								style={{ ...INPUT, resize: "vertical", lineHeight: 1.55, marginTop: 4 }}
 							/>
 						)}

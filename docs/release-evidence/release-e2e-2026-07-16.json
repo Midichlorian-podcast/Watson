@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-07-16T22:49:26.200Z",
+  "createdAt": "2026-07-16T23:09:23.039Z",
   "browsers": [
     "chromium",
     "webkit"
@@ -18,7 +18,15 @@
       "rejectionDiscarded": true,
       "retryResolved": true,
       "addDialogA11y": true,
-      "taskDetailA11y": true
+      "taskDetailA11y": true,
+      "twoFactorEnrollment": true,
+      "twoFactorRecoveryRotation": true,
+      "meetingPlanTranscriptCommit": true,
+      "meetingDecisionLog": true,
+      "meetingReviewA11y": true,
+      "backupEncryptedDownload": true,
+      "backupDryRun": true,
+      "backupRestoreApply": true
     },
     {
       "browser": "webkit",
@@ -33,7 +41,15 @@
       "rejectionDiscarded": true,
       "retryResolved": true,
       "addDialogA11y": true,
-      "taskDetailA11y": true
+      "taskDetailA11y": true,
+      "twoFactorEnrollment": true,
+      "twoFactorRecoveryRotation": true,
+      "meetingPlanTranscriptCommit": true,
+      "meetingDecisionLog": true,
+      "meetingReviewA11y": true,
+      "backupEncryptedDownload": true,
+      "backupDryRun": true,
+      "backupRestoreApply": true
     }
   ]
 }

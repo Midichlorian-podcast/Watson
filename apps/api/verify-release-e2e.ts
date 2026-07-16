@@ -6,7 +6,8 @@
  * po selhání. Scénář záměrně používá naplněnou offline CRUD frontu.
  */
 import "./src/env";
-import { writeFile } from "node:fs/promises";
+import { createHmac } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import {
 	accounts,
 	eq,
@@ -56,6 +57,29 @@ type BrowserResult = {
 	retryResolved: boolean;
 	addDialogA11y: boolean;
 	taskDetailA11y: boolean;
+	twoFactorEnrollment: boolean;
+	twoFactorRecoveryRotation: boolean;
+	meetingPlanTranscriptCommit: boolean;
+	meetingDecisionLog: boolean;
+	meetingReviewA11y: boolean;
+	backupEncryptedDownload: boolean;
+	backupDryRun: boolean;
+	backupRestoreApply: boolean;
+};
+
+type TwoFactorState = {
+	two_factor_enabled: boolean;
+	verified: boolean;
+	backup_codes: string | null;
+};
+
+type MeetingState = {
+	id: string;
+	hub_task_id: string;
+	status: string;
+	transcript: string | null;
+	extraction: unknown;
+	hub_description: string | null;
 };
 
 const db = getDb();
@@ -150,6 +174,71 @@ async function serverTaskPrecondition(id: string): Promise<Record<string, unknow
 	return row;
 }
 
+const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+function decodeBase32(value: string) {
+	let bits = "";
+	for (const char of value.replace(/=+$/g, "").toUpperCase()) {
+		const index = BASE32.indexOf(char);
+		if (index < 0) throw new Error("release_totp_secret_invalid");
+		bits += index.toString(2).padStart(5, "0");
+	}
+	const bytes: number[] = [];
+	for (let offset = 0; offset + 8 <= bits.length; offset += 8) {
+		bytes.push(Number.parseInt(bits.slice(offset, offset + 8), 2));
+	}
+	return Buffer.from(bytes);
+}
+
+function totp(secret: string) {
+	const counter = Math.floor(Date.now() / 30_000);
+	const input = Buffer.alloc(8);
+	input.writeBigUInt64BE(BigInt(counter));
+	const digest = createHmac("sha1", decodeBase32(secret)).update(input).digest();
+	const offset = (digest.at(-1) ?? 0) & 0x0f;
+	const binary =
+		(((digest[offset] ?? 0) & 0x7f) << 24) |
+		(((digest[offset + 1] ?? 0) & 0xff) << 16) |
+		(((digest[offset + 2] ?? 0) & 0xff) << 8) |
+		((digest[offset + 3] ?? 0) & 0xff);
+	return String(binary % 1_000_000).padStart(6, "0");
+}
+
+async function twoFactorState(userId: string): Promise<TwoFactorState | null> {
+	const rows = (await db.execute(sql`
+		SELECT u.two_factor_enabled, tf.verified, tf.backup_codes
+		FROM users u LEFT JOIN two_factors tf ON tf.user_id = u.id
+		WHERE u.id = ${userId}::uuid LIMIT 1
+	`)) as TwoFactorState[];
+	return rows[0] ?? null;
+}
+
+async function serverMeetingByTitle(title: string): Promise<MeetingState | null> {
+	const rows = (await db.execute(sql`
+		SELECT m.id, m.hub_task_id, m.status, m.transcript, m.extraction,
+		       hub.description AS hub_description
+		FROM meetings m
+		JOIN tasks hub ON hub.id = m.hub_task_id
+		WHERE m.title = ${title} LIMIT 1
+	`)) as MeetingState[];
+	return rows[0] ?? null;
+}
+
+async function meetingActionCount(meetingId: string, name: string) {
+	const rows = (await db.execute(sql`
+		SELECT count(*)::int AS count FROM tasks
+		WHERE meeting_id = ${meetingId} AND name = ${name}
+	`)) as { count: number }[];
+	return Number(rows[0]?.count ?? 0);
+}
+
+async function restoreAuditCount(userId: string) {
+	const rows = (await db.execute(sql`
+		SELECT count(*)::int AS count FROM audit_events
+		WHERE actor_user_id = ${userId}::uuid AND entity = 'backup' AND action = 'restore'
+	`)) as { count: number }[];
+	return Number(rows[0]?.count ?? 0);
+}
+
 async function navigate(page: Page, route: string) {
 	await page.evaluate((path) => {
 		window.history.pushState({}, "", path);
@@ -192,6 +281,163 @@ async function assertAxeClean(page: Page, label: string) {
 		);
 	});
 	if (violations.length > 0) throw new Error(`release_axe_${label}_${violations.join(",")}`);
+}
+
+async function verifyTwoFactor(page: Page, fixture: Fixture) {
+	await navigate(page, "/nastaveni");
+	const password = page.getByLabel("Aktuální heslo (pokud ho účet používá)", {
+		exact: true,
+	});
+	await password.fill(fixture.password);
+	await page.getByRole("button", { name: "Nastavit 2FA", exact: true }).click();
+	const uriNode = page.locator("code").filter({ hasText: "otpauth://" }).first();
+	await uriNode.waitFor();
+	const uri = (await uriNode.textContent())?.trim();
+	if (!uri) throw new Error("release_totp_uri_missing");
+	const secret = new URL(uri).searchParams.get("secret");
+	if (!secret) throw new Error("release_totp_secret_missing");
+	await page.getByLabel("Kódy mám uložené mimo toto zařízení", { exact: true }).check();
+	const remainingMs = 30_000 - (Date.now() % 30_000);
+	if (remainingMs < 3_000) await page.waitForTimeout(remainingMs + 250);
+	await page.getByLabel("Šestimístný kód", { exact: true }).fill(totp(secret));
+	await page.getByRole("button", { name: "Ověřit a zapnout", exact: true }).click();
+	await page.getByText("Zapnuto", { exact: true }).waitFor();
+	const enrolled = await eventually(
+		"two_factor_enrolled",
+		() => twoFactorState(fixture.userId),
+		(value) => Boolean(value?.two_factor_enabled && value.verified && value.backup_codes),
+	);
+	if (!enrolled?.backup_codes) throw new Error("release_two_factor_state_missing");
+	const originalBackupCodes = enrolled.backup_codes;
+
+	await password.fill(fixture.password);
+	await page.getByRole("button", { name: "Vygenerovat nové kódy", exact: true }).click();
+	await page.getByText("Nové jednorázové kódy", { exact: true }).waitFor();
+	const rotated = await eventually(
+		"two_factor_recovery_rotated",
+		() => twoFactorState(fixture.userId),
+		(value) => Boolean(value?.backup_codes && value.backup_codes !== originalBackupCodes),
+	);
+	if (!rotated?.backup_codes) throw new Error("release_two_factor_rotation_missing");
+	await page.getByLabel("Kódy mám uložené mimo toto zařízení", { exact: true }).check();
+	await page.getByRole("button", { name: "Hotovo", exact: true }).click();
+}
+
+async function verifyMeeting(page: Page, fixture: Fixture, browserName: BrowserName) {
+	const meetingTitle = `Release porada ${browserName} ${crypto.randomUUID().slice(0, 8)}`;
+	const actionTitle = `Release připraví podklady ${crypto.randomUUID().slice(0, 6)} p2`;
+	const decisionTitle = "Rozhodnutí: schválili jsme variantu B.";
+	const transcript = `- ${actionTitle}\n- ${decisionTitle}`;
+	const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+	const policyStatus = await page.evaluate(
+		async ({ api, workspaceId }) => {
+			const response = await fetch(`${api}/api/ai/policies`, {
+				method: "PUT",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					workspaceId,
+					capability: "meeting_extract",
+					level: "suggest",
+					vendorConsent: true,
+					dailyLimit: 10,
+				}),
+			});
+			return response.status;
+		},
+		{ api: API, workspaceId: fixture.workspaceId },
+	);
+	if (policyStatus !== 200) throw new Error(`release_ai_policy_${policyStatus}`);
+
+	await navigate(page, "/meets");
+	await page.getByRole("button", { name: "+ Naplánovat meet", exact: true }).click();
+	await page.getByLabel("Název porady", { exact: true }).fill(meetingTitle);
+	await page.getByLabel("Datum porady", { exact: true }).fill(tomorrow);
+	await page.getByRole("button", { name: `Release ${browserName} (ty)`, exact: true }).waitFor();
+	await assertAxeClean(page, "meeting_plan");
+	await page.getByRole("button", { name: "Naplánovat meet", exact: true }).click();
+	const planned = await eventually(
+		"meeting_planned",
+		() => serverMeetingByTitle(meetingTitle),
+		(value) => value?.status === "scheduled",
+	);
+	if (!planned) throw new Error("release_meeting_plan_missing");
+
+	const meetingRow = page.getByRole("button").filter({ hasText: meetingTitle });
+	await meetingRow.waitFor();
+	await meetingRow.click();
+	await page.getByText(meetingTitle, { exact: true }).first().waitFor();
+	await page.getByRole("button", { name: "Vložit zápis", exact: true }).click();
+	await page.getByLabel("Přepis porady", { exact: true }).fill(transcript);
+	page.once("dialog", (dialog) => dialog.accept());
+	await page.getByRole("button", { name: "Vytáhnout akční body →", exact: true }).click();
+	const actionInput = page.getByLabel("Název akčního bodu", { exact: true });
+	await actionInput.waitFor({ timeout: 120_000 });
+	const reviewedActionTitle = await actionInput.inputValue();
+	if (!/podklad/i.test(reviewedActionTitle)) {
+		throw new Error("release_meeting_action_review_mismatch");
+	}
+	await page
+		.getByText("Rozhodnutí — uloží se k poradě", { exact: true })
+		.waitFor({ timeout: 120_000 });
+	await assertAxeClean(page, "meeting_review");
+	await page.getByRole("button", { name: /Založit \d+ akční/ }).click();
+	await page.getByText(/Porada je zpracovaná/).waitFor();
+	const committed = await eventually(
+		"meeting_committed",
+		() => serverMeetingByTitle(meetingTitle),
+		(value) => value?.status === "committed",
+	);
+	if (!committed) throw new Error("release_meeting_commit_missing");
+	if (committed.transcript !== transcript) throw new Error("release_meeting_transcript_mismatch");
+	if (!committed.hub_description?.includes("Rozhodnutí z porady")) {
+		throw new Error("release_meeting_decision_log_missing");
+	}
+	if ((await meetingActionCount(committed.id, reviewedActionTitle)) < 1) {
+		throw new Error("release_meeting_action_missing");
+	}
+	return committed.id;
+}
+
+async function verifyBackupRestore(page: Page, fixture: Fixture) {
+	await navigate(page, "/nastaveni");
+	const passphrase = `Release-backup-${crypto.randomUUID()}`;
+	await page.getByLabel("Heslo exportu a obnovy", { exact: true }).fill(passphrase);
+	const [download] = await Promise.all([
+		page.waitForEvent("download", { timeout: 30_000 }),
+		page.getByRole("button", { name: "Stáhnout export", exact: true }).click(),
+	]);
+	const downloadPath = await download.path();
+	if (!downloadPath) throw new Error("release_backup_download_missing");
+	const encrypted = JSON.parse(await readFile(downloadPath, "utf8")) as {
+		kind?: string;
+		ciphertext?: string;
+		tables?: unknown;
+	};
+	if (
+		encrypted.kind !== "encrypted-server-export" ||
+		typeof encrypted.ciphertext !== "string" ||
+		encrypted.ciphertext.length < 100 ||
+		encrypted.tables !== undefined
+	) {
+		throw new Error("release_backup_not_encrypted");
+	}
+
+	await page
+		.getByLabel("Vybrat JSON export pro obnovu", { exact: true })
+		.setInputFiles(downloadPath);
+	await page.getByText(/Vybráno:/).waitFor();
+	await page.getByRole("button", { name: "Zkontrolovat bez změn", exact: true }).click();
+	await page.getByRole("status").filter({ hasText: "Dry-run:" }).waitFor();
+	const auditBefore = await restoreAuditCount(fixture.userId);
+	page.once("dialog", (dialog) => dialog.accept());
+	await page.getByRole("button", { name: "Obnovit chybějící data", exact: true }).click();
+	await page.getByRole("status").filter({ hasText: "Obnova:" }).waitFor();
+	await eventually(
+		"backup_restore_audit",
+		() => restoreAuditCount(fixture.userId),
+		(value) => value === auditBefore + 1,
+	);
 }
 
 async function localTaskByName(page: Page, name: string): Promise<ServerTask | null> {
@@ -424,6 +670,10 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			throw new Error("release_retry_receipt_missing");
 		}
 
+		await verifyTwoFactor(page, fixture);
+		await verifyMeeting(page, fixture, browserName);
+		await verifyBackupRestore(page, fixture);
+
 		await context.close();
 		return {
 			browser: browserName,
@@ -439,6 +689,14 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			retryResolved: true,
 			addDialogA11y: true,
 			taskDetailA11y: true,
+			twoFactorEnrollment: true,
+			twoFactorRecoveryRotation: true,
+			meetingPlanTranscriptCommit: true,
+			meetingDecisionLog: true,
+			meetingReviewA11y: true,
+			backupEncryptedDownload: true,
+			backupDryRun: true,
+			backupRestoreApply: true,
 		};
 	} finally {
 		await browser?.close().catch(() => undefined);
@@ -458,7 +716,7 @@ async function main() {
 	};
 	await writeFile(ARTIFACT, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
 	console.log(
-		`Release E2E: ${results.length}/${BROWSERS.length} browserů, sign-in + offline/reconnect + edit/move + rejected-sync recovery prošly.`,
+		`Release E2E: ${results.length}/${BROWSERS.length} browserů, task/offline recovery + 2FA + meeting commit + backup/restore prošly.`,
 	);
 	console.log(`Artifact: ${ARTIFACT}`);
 }

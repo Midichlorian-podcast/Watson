@@ -800,6 +800,7 @@ export function Mitingy() {
 							value={pTitle}
 							onChange={(e) => setPTitle(e.target.value)}
 							placeholder="např. Provozní porada"
+							aria-label="Název porady"
 							style={INPUT}
 						/>
 					</div>
@@ -809,6 +810,7 @@ export function Mitingy() {
 							<select
 								value={pProject}
 								onChange={(e) => setPProject(e.target.value)}
+								aria-label="Projekt porady"
 								style={{ ...INPUT, ...INPUT_SM }}
 							>
 								{editableProjects.map((p) => (
@@ -824,6 +826,7 @@ export function Mitingy() {
 								type="date"
 								value={pDate}
 								onChange={(e) => setPDate(e.target.value)}
+								aria-label="Datum porady"
 								style={{ ...INPUT, ...INPUT_SM }}
 							/>
 						</div>
@@ -833,6 +836,7 @@ export function Mitingy() {
 								type="time"
 								value={pTime}
 								onChange={(e) => setPTime(e.target.value)}
+								aria-label="Čas porady"
 								style={{ ...INPUT, ...INPUT_SM }}
 							/>
 						</div>
