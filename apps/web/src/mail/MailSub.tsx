@@ -657,7 +657,9 @@ export function MailSub({
 				</SRow>
 				<SRow
 					active={false}
-					onClick={() => void navigate({ to: "/nastaveni" })}
+					onClick={() =>
+						void navigate({ to: "/nastaveni", search: { sekce: "integrace" } })
+					}
 					title="Nastavení pošty — teď v jednom Nastavení (sekce Pošta)"
 				>
 					<svg

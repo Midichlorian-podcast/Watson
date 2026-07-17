@@ -43,6 +43,15 @@ const ROUTES = [
 ] as const;
 const WIDTHS = [390, 1440] as const;
 const THEMES = ["light", "dark"] as const;
+const SETTINGS_SECTIONS = [
+	"profil",
+	"tym",
+	"zabezpeceni",
+	"data",
+	"integrace",
+	"oznameni",
+	"vzhled",
+] as const;
 const selectedRoutes = process.env.WATSON_RUNTIME_ROUTES
 	? ROUTES.filter((route) => process.env.WATSON_RUNTIME_ROUTES?.split(",").includes(route))
 	: ROUTES;
@@ -136,7 +145,18 @@ async function navigate(page: Page, route: string) {
 		window.history.pushState({}, "", path);
 		window.dispatchEvent(new PopStateEvent("popstate"));
 	}, route);
-	await page.waitForFunction((path) => location.pathname === path, route, { timeout: 5_000 });
+	await page.waitForFunction(
+		(path) => {
+			const target = new URL(path, location.origin);
+			return (
+				location.pathname === target.pathname &&
+				location.search === target.search &&
+				location.hash === target.hash
+			);
+		},
+		route,
+		{ timeout: 5_000 },
+	);
 	await page.waitForSelector("main", { timeout: 15_000 });
 	await page.waitForTimeout(700);
 }
@@ -280,6 +300,73 @@ async function reflowAudit(page: Page) {
 	return results;
 }
 
+async function settingsSectionsAudit(page: Page, events: RuntimeEvent[]) {
+	const results: {
+		section: (typeof SETTINGS_SECTIONS)[number];
+		width: 390 | 1440;
+		urlSection: string | null;
+		activeLink: boolean;
+		heading: boolean;
+		overflow: boolean;
+		violations: Violation[];
+		events: RuntimeEvent[];
+	}[] = [];
+	for (const width of [390, 1440] as const) {
+		await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+		for (const section of SETTINGS_SECTIONS) {
+			const eventStart = events.length;
+			await navigate(page, `/nastaveni?sekce=${section}`);
+			const result = await axeAudit(page);
+			results.push({
+				section,
+				width,
+				urlSection: await page.evaluate(() => new URL(location.href).searchParams.get("sekce")),
+				activeLink: (await page.locator('.w-settings-nav [aria-current="page"]').count()) === 1,
+				heading: (await page.locator(`#settings-section-${section}`).count()) === 1,
+				overflow: result.overflow,
+				violations: result.violations,
+				events: events.slice(eventStart),
+			});
+		}
+	}
+	await page.evaluate(() => {
+		window.history.pushState({}, "", "/nastaveni#posta-admin");
+		window.dispatchEvent(new PopStateEvent("popstate"));
+	});
+	await page.waitForFunction(
+		() => new URL(location.href).searchParams.get("sekce") === "integrace",
+		undefined,
+		{ timeout: 5_000 },
+	);
+	if (
+		results.some(
+			(result) =>
+				result.urlSection !== result.section ||
+				!result.activeLink ||
+				!result.heading ||
+				result.overflow ||
+				result.violations.length > 0 ||
+				result.events.length > 0,
+		)
+	)
+		throw new Error("runtime_settings_sections_failed");
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await navigate(page, "/nastaveni?sekce=tym");
+	const roleTrigger = page.locator('[aria-haspopup="menu"]:not([disabled])').first();
+	let roleMenuEscapeFocus: boolean | null = null;
+	if ((await roleTrigger.count()) > 0) {
+		await roleTrigger.focus();
+		await page.keyboard.press("Enter");
+		const roleMenu = page.getByRole("menu").first();
+		await roleMenu.waitFor({ state: "visible", timeout: 5_000 });
+		await page.keyboard.press("Escape");
+		await roleMenu.waitFor({ state: "hidden", timeout: 5_000 });
+		roleMenuEscapeFocus = await roleTrigger.evaluate((node) => node === document.activeElement);
+		if (!roleMenuEscapeFocus) throw new Error("runtime_settings_role_menu_focus_failed");
+	}
+	return { results, legacyMailAdminLink: true, roleMenuEscapeFocus };
+}
+
 async function auditBrowser(
 	browserName: BrowserName,
 	launcher: typeof chromium | typeof webkit,
@@ -322,7 +409,8 @@ async function auditBrowser(
 		}
 		const keyboard = await keyboardAudit(page);
 		const reflow = await reflowAudit(page);
-		return { browser: browserName, matrix, keyboard, reflow };
+		const settings = await settingsSectionsAudit(page, events);
+		return { browser: browserName, matrix, keyboard, reflow, settings };
 	} finally {
 		await context?.close().catch(() => undefined);
 		await browser?.close().catch(() => undefined);
@@ -348,6 +436,17 @@ async function main() {
 		missingMain: matrix.filter((item) => !item.hasMain),
 		violations: matrix.flatMap((item) => item.violations.map((violation) => ({ ...violation, browser: item.browser, theme: item.theme, width: item.width, route: item.route }))),
 		runtimeErrors: matrix.filter((item) => item.events.length > 0),
+		settings: audits.flatMap((audit) =>
+			audit.settings.results.filter(
+				(result) =>
+					result.urlSection !== result.section ||
+					!result.activeLink ||
+					!result.heading ||
+					result.overflow ||
+					result.violations.length > 0 ||
+					result.events.length > 0,
+			),
+		),
 	};
 	const report = {
 		createdAt: new Date().toISOString(),
@@ -356,6 +455,7 @@ async function main() {
 		reducedMotion: true,
 		keyboard: audits.map((audit) => ({ browser: audit.browser, ...audit.keyboard })),
 		reflow: audits.map((audit) => ({ browser: audit.browser, results: audit.reflow })),
+		settings: audits.map((audit) => ({ browser: audit.browser, ...audit.settings })),
 		failureCounts: Object.fromEntries(Object.entries(failures).map(([key, value]) => [key, value.length])),
 		failures,
 	};

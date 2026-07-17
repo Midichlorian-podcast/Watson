@@ -1,14 +1,12 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { lazy } from "react";
 import { AppLayout } from "./layout/AppLayout";
+import { parseSettingsSection, type SettingsSection } from "./lib/settingsSections";
 import { parseTaskTab, type TaskTab } from "./lib/taskTabs";
 // Layout zůstává eager; obrazovky se načítají po vstupu → menší main chunk.
 // (Suspense boundary je kolem <Outlet/> v AppLayout).
 
-const named = <K extends string>(
-	loader: () => Promise<Record<K, React.ComponentType>>,
-	key: K,
-) => lazy(() => loader().then((m) => ({ default: m[key] })));
+const named = <K extends string>(loader: () => Promise<Record<K, React.ComponentType>>, key: K) => lazy(() => loader().then((m) => ({ default: m[key] })));
 
 const Cile = named(() => import("./screens/Cile"), "Cile");
 const Hledat = named(() => import("./screens/Hledat"), "Hledat");
@@ -24,9 +22,7 @@ const Postupy = named(() => import("./screens/Postupy"), "Postupy");
 const Projekty = named(() => import("./screens/Projekty"), "Projekty");
 const Reporty = named(() => import("./screens/Reporty"), "Reporty");
 const Schranka = named(() => import("./screens/Schranka"), "Schranka");
-const UkolyShell = lazy(() =>
-	import("./screens/UkolyShell").then((module) => ({ default: module.UkolyShell })),
-);
+const UkolyShell = lazy(() => import("./screens/UkolyShell").then((module) => ({ default: module.UkolyShell })));
 const Oblibene = lazy(() => import("./screens/Oblibene").then((m) => ({ default: m.Oblibene })));
 
 const rootRoute = createRootRoute({ component: AppLayout });
@@ -63,9 +59,7 @@ const mitingyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/meets",
 	// ?meet= otevře board porady (deep-link); ?focus=zapis skočí na vkládání zápisu.
-	validateSearch: (
-		s: Record<string, unknown>,
-	): { meet?: string; focus?: "zapis"; prostor?: string } => ({
+	validateSearch: (s: Record<string, unknown>): { meet?: string; focus?: "zapis"; prostor?: string } => ({
 		meet: typeof s.meet === "string" ? s.meet : undefined,
 		focus: s.focus === "zapis" ? "zapis" : undefined,
 		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
@@ -86,9 +80,7 @@ const ukolyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/ukoly",
 	component: () => <UkolyShell defaultTab="vse" />,
-	validateSearch: (
-		s: Record<string, unknown>,
-	): { projekt?: string; ukol?: string; tab?: TaskTab; prostor?: string } => ({
+	validateSearch: (s: Record<string, unknown>): { projekt?: string; ukol?: string; tab?: TaskTab; prostor?: string } => ({
 		projekt: typeof s.projekt === "string" ? s.projekt : undefined,
 		// deep-link z „Kopírovat odkaz" — otevře detail úkolu
 		ukol: typeof s.ukol === "string" ? s.ukol : undefined,
@@ -110,6 +102,9 @@ const nastaveniRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/nastaveni",
 	component: Nastaveni,
+	validateSearch: (search: Record<string, unknown>): { sekce?: SettingsSection } => ({
+		sekce: parseSettingsSection(search.sekce),
+	}),
 });
 const nadchRoute = createRoute({
 	getParentRoute: () => rootRoute,
@@ -156,9 +151,7 @@ const reportyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/reporty",
 	component: Reporty,
-	validateSearch: (
-		s: Record<string, unknown>,
-	): { tab?: string; clen?: string; prostor?: string } => ({
+	validateSearch: (s: Record<string, unknown>): { tab?: string; clen?: string; prostor?: string } => ({
 		tab: typeof s.tab === "string" ? s.tab : undefined,
 		clen: typeof s.clen === "string" ? s.clen : undefined,
 		prostor: typeof s.prostor === "string" ? s.prostor : undefined,

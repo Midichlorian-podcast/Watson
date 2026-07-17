@@ -198,6 +198,7 @@ export function TrustStateBanner() {
 					{notice.key === "sync_problems" && (
 						<Link
 							to="/nastaveni"
+							search={{ sekce: "data" }}
 							hash="sync-problems-title"
 							className="font-display font-bold underline underline-offset-2"
 						>

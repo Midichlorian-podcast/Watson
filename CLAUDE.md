@@ -415,9 +415,18 @@ Pořadí: trust-state primitive → overlay primitive → Nastavení routes → 
    ale stránku správně neinertují. Sémantická z-index stupnice nahradila náhodná
    globální čísla; statický kontrakt zakazuje návrat starého focus trapu i druhý
    body scroll lock. Těžké detaily úkolu a projektu jsou lazy-loaded.
-3. **Nastavení routes — další aktivní krok.** Zachovat jedno Nastavení a současné
-   funkční formuláře, rozdělit je do adresovatelných sekcí Profil, Tým,
-   Zabezpečení, Data a zálohy, Integrace, Notifikace a Vzhled bez ztráty stavu.
+3. **Nastavení routes — dokončeno 2026-07-17.** Jediná routa zachovává všechny
+   funkční formuláře, ale URL-validované `?sekce=` dělí povrch na Profil, Tým,
+   Zabezpečení, Data a zálohy, Integrace a poštu, Oznámení a Vzhled. Kontextové
+   vstupy vedou rovnou do správné sekce; staré hash odkazy se bezpečně převádějí.
+   Desktop má sticky lokální navigaci, mobil 44px horizontální přepínač a profilová
+   karta se na úzkém displeji skládá bez ořezu. Menu rolí používá sdílenou popover
+   vrstvu a vrací fokus po Escape.
+4. **Mobilní karta a navigace — další aktivní krok.** Nejdřív znovu zmapovat již
+   hotové mobilní task actions, spodní lištu a mailovou navigaci; ponechat funkční
+   části, odstranit duplicitní taxonomii a ověřit 320/360/390 px i 200% reflow.
+5. **Definice KPI — čeká po mobilním auditu.** Každá metrika musí uvádět scope,
+   období, timezone, vyloučená data a freshness přímo v rozhraní.
 
 Acceptance: vizuální regression snapshots, keyboard/axe gate, žádná změna doménové logiky bez testu.
 
@@ -552,7 +561,7 @@ Poslední ověření 2026-07-16:
 - Celý `scripts/ci-api-integration.sh` po opravě korektního ukončení intake verifieru
   proběhl až po produkční 2FA restart a skončil úspěšně.
 - PowerSync po restartu: nový replication stream aktivní, sync-config bez chyby.
-- `pnpm build`: největší JS 325 KiB gzip, precache 5,153 KiB; oba rozpočty splněny;
+- `pnpm build`: největší JS 325 KiB gzip, precache 5,158 KiB; oba rozpočty splněny;
   vlastní pole, ankety, projektové milníky, intake, importní průvodce, Úkoly a Nadcházející jsou oddělené
   lazy-loaded chunky.
 - Celý `pnpm gate` po runtime opravách znovu prošel: typecheck 6/6, lint bez warnings,
@@ -604,6 +613,13 @@ Poslední ověření 2026-07-16:
   nechtěného překrytí. Artifacty jsou v
   `docs/release-evidence/overlay-e2e-2026-07-17.json` a
   `docs/release-evidence/overlay-runtime-a11y-2026-07-17.json`.
+- F2 Nastavení zachovalo jeden povrch i existující formuláře a přidalo sedm
+  adresovatelných sekcí s validovaným URL kontraktem a kompatibilitou starých hash
+  odkazů. Kontextové vstupy ze synchronizace, Mailu a Lidé míří do správného místa.
+  Chromium i WebKit ověřily všech 7 sekcí při 390/1440 px (28/28 stavů), návrat
+  fokusu menu rolí, legacy mail-admin redirect, 0 axe WCAG A/AA nálezů, 0 overflow
+  a 0 runtime chyb. Důkaz je v
+  `docs/release-evidence/settings-runtime-a11y-2026-07-17.json`.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
   44 px, offline zápisem a následným autoritativním uploadem. Jediný zachycený

@@ -6,32 +6,32 @@
 
 /* Mapování brand tokenů do Tailwind v4 témata (utility jako bg-paper, text-navy...). */
 @theme {
-  --color-navy: var(--w-navy);
-  --color-navy-2: var(--w-navy-2);
-  --color-brass: var(--w-brass);
-  --color-brass-text: var(--w-brass-text);
-  --color-paper: var(--w-paper);
-  --color-card: var(--w-card);
-  --color-ink: var(--w-ink);
-  --color-ink-2: var(--w-ink-2);
-  --color-ink-3: var(--w-ink-3);
-  --color-line: var(--w-line);
-  --color-success: var(--w-success);
-  --color-overdue: var(--w-overdue);
-  --color-panel-2: var(--w-panel-2);
-  --color-sidebar: var(--w-sidebar);
-  --color-sidebar-ink: var(--w-sidebar-ink);
-  --color-brass-soft: var(--w-brass-soft);
-  --color-success-soft: var(--w-success-soft);
-  --color-overdue-soft: var(--w-overdue-soft);
-  --color-p1: var(--w-p1);
-  --color-p2: var(--w-p2);
-  --color-p3: var(--w-p3);
-  --color-p4: var(--w-p4);
+	--color-navy: var(--w-navy);
+	--color-navy-2: var(--w-navy-2);
+	--color-brass: var(--w-brass);
+	--color-brass-text: var(--w-brass-text);
+	--color-paper: var(--w-paper);
+	--color-card: var(--w-card);
+	--color-ink: var(--w-ink);
+	--color-ink-2: var(--w-ink-2);
+	--color-ink-3: var(--w-ink-3);
+	--color-line: var(--w-line);
+	--color-success: var(--w-success);
+	--color-overdue: var(--w-overdue);
+	--color-panel-2: var(--w-panel-2);
+	--color-sidebar: var(--w-sidebar);
+	--color-sidebar-ink: var(--w-sidebar-ink);
+	--color-brass-soft: var(--w-brass-soft);
+	--color-success-soft: var(--w-success-soft);
+	--color-overdue-soft: var(--w-overdue-soft);
+	--color-p1: var(--w-p1);
+	--color-p2: var(--w-p2);
+	--color-p3: var(--w-p3);
+	--color-p4: var(--w-p4);
 
-  --font-display: var(--w-font-display);
-  --font-body: var(--w-font-body);
-  --font-mono: var(--w-font-mono);
+	--font-display: var(--w-font-display);
+	--font-body: var(--w-font-body);
+	--font-mono: var(--w-font-mono);
 }
 
 html,
@@ -47,6 +47,61 @@ body {
 	font-family: var(--w-font-body);
 	line-height: 1.55;
 	-webkit-font-smoothing: antialiased;
+}
+
+/* Jediný povrch Nastavení: adresovatelné sekce s pevnou navigací na desktopu
+   a horizontálním, klávesnicí dostupným přepínačem na malém displeji. */
+.w-settings-shell {
+	max-width: 1080px;
+	margin: 0 auto;
+	padding: 24px 24px 90px;
+}
+.w-settings-layout {
+	display: grid;
+	grid-template-columns: 210px minmax(0, 680px);
+	gap: 32px;
+	align-items: start;
+}
+.w-settings-nav {
+	position: sticky;
+	top: 16px;
+	display: grid;
+	gap: 4px;
+}
+.w-settings-content {
+	min-width: 0;
+}
+@media (max-width: 780px) {
+	.w-settings-shell {
+		padding: 18px 14px 90px;
+	}
+	.w-settings-layout {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 20px;
+	}
+	.w-settings-nav {
+		position: static;
+		display: flex;
+		overflow-x: auto;
+		padding: 2px 0 8px;
+		scrollbar-width: thin;
+	}
+	.w-settings-nav > a {
+		min-width: max-content;
+	}
+}
+@media (max-width: 520px) {
+	.w-settings-account-card {
+		flex-wrap: wrap;
+	}
+	.w-settings-account-actions {
+		width: 100%;
+		flex-wrap: wrap;
+	}
+	.w-settings-account-actions > button {
+		min-height: 44px;
+		flex: 1 1 150px;
+	}
 }
 
 /* Tweaks (#39) — hustota řádků. Zhuštěno na přání uživatele (víc karet na obrazovku,

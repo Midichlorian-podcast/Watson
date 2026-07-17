@@ -444,7 +444,7 @@ export function Reporty() {
 						</span>
 						<button
 							type="button"
-							onClick={() => void navigate({ to: "/nastaveni" })}
+							onClick={() => void navigate({ to: "/nastaveni", search: { sekce: "tym" } })}
 							className="ml-auto inline-flex items-center gap-1.5 rounded-[9px] border border-line font-display font-semibold text-ink-2 hover:border-brass"
 							style={{ padding: "7px 12px", fontSize: 12.5 }}
 						>
