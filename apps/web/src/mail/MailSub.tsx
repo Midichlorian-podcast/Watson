@@ -112,16 +112,34 @@ export function MailSub({
 	onCloseDrawer,
 	sube,
 	onToggleSube,
+	personalSummary,
 }: {
 	drawer: boolean;
 	onCloseDrawer: () => void;
 	/** Rozbalený panel složek; false = režim ikon 58 px (prototyp sube, CSS ≥1100 px). */
 	sube: boolean;
 	onToggleSube: () => void;
+	personalSummary: {
+		accounts: Array<{ emailAddress: string }>;
+		unreadCount: number;
+		syncing: boolean;
+	};
 }) {
 	const m = useMail();
 	const navigate = useNavigate();
 	const un = m.unreadStats();
+	const personalLabel =
+		personalSummary.accounts.length === 0
+			? "Připojit osobní účet"
+			: personalSummary.accounts.length === 1
+				? (personalSummary.accounts[0]?.emailAddress ?? "Osobní účet")
+				: `${personalSummary.accounts.length} osobní účty`;
+	const personalSubtitle =
+		personalSummary.accounts.length === 0
+			? "zatím nepřipojeno"
+			: personalSummary.syncing
+				? "bezpečně synchronizuji…"
+				: "skutečný sjednocený inbox";
 
 	const team = m.threads.filter((t) => !t.personal);
 	const isDor = (t: (typeof team)[number]) => {
@@ -586,14 +604,14 @@ export function MailSub({
 				<SRow
 					active={isF("osobni")}
 					onClick={() => m.setFolder("osobni")}
-					title="kosir.adam@gmail.com — osobní sféra (demo), bez AI"
+					title={`${personalLabel} — owner-only osobní pošta`}
 					pad="6px 10px"
 				>
 					<span
 						data-mbdot="osobni"
 						style={{ width: 9, height: 9, borderRadius: "50%", flex: "none" }}
 					/>
-					<span data-mbini="osobni">KA</span>
+					<span data-mbini="osobni">{personalSummary.accounts.length === 1 ? mbIni(personalLabel) : "OS"}</span>
 					<div data-sublbl style={{ flex: 1, minWidth: 0 }}>
 						<div
 							style={{
@@ -605,20 +623,20 @@ export function MailSub({
 								whiteSpace: "nowrap",
 							}}
 						>
-							kosir.adam@gmail.com
+							{personalLabel}
 						</div>
 						<div
 							style={{
 								fontFamily: "var(--w-font-body)",
 								fontSize: 10,
-								color: "var(--mb-osobni)",
+								color: personalSummary.accounts.length ? "var(--success-ink)" : "var(--ink-3)",
 								marginTop: 1,
 							}}
 						>
-							demo · bez AI
+							{personalSubtitle}
 						</div>
 					</div>
-					<Badge>{un.pers || ""}</Badge>
+					<Badge>{personalSummary.unreadCount || ""}</Badge>
 				</SRow>
 
 				{/* Správa — vnitřní obrazovky Administrace + Nastavení (prototyp ř. 431–440) */}

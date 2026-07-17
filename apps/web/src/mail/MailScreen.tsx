@@ -29,14 +29,17 @@ import { MailSub } from "./MailSub";
 import { MailThread } from "./MailThread";
 import { NastaveniScreen } from "./NastaveniScreen";
 import { NewMessage } from "./NewMessage";
+import { PersonalMailWorkspace } from "./PersonalMailWorkspace";
 import { PriruckaScreen } from "./PriruckaScreen";
 import { useMail } from "./state";
+import { usePersonalMail } from "./usePersonalMail";
 
 /** Hledání = JEDNA globální paleta (⌘K). Mailová lupa/⌘F ji jen otevře. */
 const openSearch = () => window.dispatchEvent(new Event("watson:open-palette"));
 
 export function MailScreen() {
 	const m = useMail();
+	const personalMail = usePersonalMail(m.scr === "mail" && m.folder === "osobni");
 	const search = useSearch({ from: "/mail" });
 	const { theme } = useTheme();
 	const deepLinkedThread = useRef<string | null>(null);
@@ -47,7 +50,7 @@ export function MailScreen() {
 		if (handledConnection.current === key) return;
 		handledConnection.current = key;
 		if (search.mailConnection === "success") {
-			showToast("Google účet je připojený a bezpečný sync běží na pozadí; hlavní Mail UI je zatím demo.");
+			showToast("Google účet je připojený a bezpečný sync běží na pozadí. Skutečné zprávy najdeš v Osobní poště.");
 		} else {
 			const messages: Record<string, string> = {
 				mail_oauth_denied: "Google souhlas byl zrušen. Žádný účet ani credential nevznikl.",
@@ -202,6 +205,9 @@ export function MailScreen() {
 			}
 			// zkratky seznamu jen na obrazovce "mail"
 			if (mail.scr !== "mail") return;
+			// Skutečná osobní pošta má oddělený read-only model. Demo commandy ani
+			// zkratky nad seed vlákny do něj nesmí omylem zasahovat.
+			if (mail.folder === "osobni") return;
 			if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
 			// otevřený overlay = klávesy seznamu nereagují (kaskáda prototypu)
 			if (document.querySelector("[data-esc-layer]")) return;
@@ -289,10 +295,23 @@ export function MailScreen() {
 					onCloseDrawer={() => setDrawer(false)}
 					sube={sube}
 					onToggleSube={toggleSube}
+					personalSummary={{
+						accounts: personalMail.accounts,
+						unreadCount: personalMail.unreadCount,
+						syncing: personalMail.accounts.some((account) => {
+							const status = personalMail.runtime[account.id]?.sync?.status;
+							return status === "pending" || status === "running";
+						}),
+					}}
 				/>
 				{/* vnitřní obrazovky nahrazují seznam+vlákno; panel složek zůstává */}
 				{m.scr === "mail" ? (
-					<>
+					m.folder === "osobni" ? (
+						<PersonalMailWorkspace
+							model={personalMail}
+							onOpenDrawer={() => setDrawer(true)}
+						/>
+					) : <>
 						<MailList
 							listWidth={listWidth}
 							onOpenDrawer={() => setDrawer(true)}

@@ -1593,8 +1593,8 @@
 		"manualActivationError": "Ruční krok se nepodařilo spustit ({{code}}). Zkontroluj předchozí kroky a připojení."
 	},
 	"mail": {
-		"demoBadge": "DEMO",
-		"demoBanner": "obsah zpráv a mailové akce jsou simulace; připojený účet ještě poštu nesynchronizuje",
+		"demoBadge": "ČÁSTEČNĚ DEMO",
+		"demoBanner": "týmové schránky a mailové akce jsou simulace; osobní Gmail má skutečný šifrovaný náhled",
 		"taskCreatedToast": "Úkol z mailu přidán do Schránky — termín dnes",
 		"taskCreatedOpen": "Otevřít",
 		"taskNoInbox": "Nenašel jsem inbox projekt — úkol nezaložen"

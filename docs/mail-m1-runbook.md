@@ -3,8 +3,9 @@
 ## Rozsah
 
 Tato etapa provozuje osobní Gmail / Google Workspace účty. Skutečné jsou OAuth
-lifecycle, šifrovaný inbound sync a owner-only read API. Hlavní Mail UI, odesílání,
-IMAP/SMTP a týmové schránky zůstávají mimo tento runbook a musí být označené jako demo.
+lifecycle, šifrovaný inbound sync, owner-only read API a osobní read-only inbox ve webu.
+Odesílání, poštovní akce, IMAP/SMTP a týmové schránky zůstávají mimo tento runbook a
+musí být označené jako demo.
 
 ## Povinná konfigurace
 
@@ -30,8 +31,13 @@ Google OAuth verifikaci a podle způsobu ukládání také požadované bezpečn
    smaže až po úspěšném dokončení celé nové generace.
 6. V clear indexu jsou jen opaque provider ID, interní čas, system/provider label ID a
    velikost. Předmět, adresy, snippet, těla a metadata příloh jsou ciphertext.
-7. Read endpoint je owner-only, stránkovaný a nevrací surové HTML. Přílohy se v této etapě
-   nestahují; vrací se pouze jejich zašifrovaná metadata.
+7. Souhrnný read endpoint je owner-only a stránkovaný; nevrací tělo ani metadata příloh.
+   Oddělený detail vrátí textovou část až po otevření konkrétní zprávy. Ani jeden endpoint
+   nikdy nevrací surové HTML.
+8. Web slučuje první stránky aktivních osobních účtů, deduplikuje je podle účtu a zprávy,
+   každou minutu obnoví serverový read model a neukládá obsah do `localStorage` ani jiné
+   nešifrované offline cache. Přílohy se v této etapě nestahují; detail ukazuje jen jejich
+   dešifrovaná metadata.
 
 ## Stavy a reakce
 
@@ -40,7 +46,8 @@ Google OAuth verifikaci a podle způsobu ukládání také požadované bezpečn
 - `retry`: dočasný timeout, 429 nebo 5xx; exponenciální backoff, nejvýše 60 minut.
 - `dead`: provider kontrakt nebo opakovaná provozní chyba vyžaduje zásah. Sleduj
   strukturovaný event `mail_sync_job_failed`; log neobsahuje obsah zprávy ani token.
-- `reauth_required`: refresh token byl odmítnut. Uživatel musí znovu projít Google OAuth.
+- `reauth_required`: refresh token byl odmítnut. Inbox přizná stav a odkáže uživatele na
+  obnovení Google souhlasu; už synchronizovaný obsah zůstává ownerovi čitelný.
 - `mail_history_expired`: očekávaná recovery událost; worker automaticky přejde na full.
 
 Nikdy neopravuj stav ručním přepisem zpráv. Po odstranění příčiny použij owner sync command
@@ -71,4 +78,13 @@ Odstranění starého klíče před bodem 3 je destruktivní a záměrně fail-c
   s keyringem.
 - Rotuj mail keyring odděleně od PowerSync, Better Auth a LuckyOS klíčů.
 - Po obnově vynucuj nový consent dotčených účtů a kontroluj tenant/owner scope.
-- Demo banner lze odstranit až po samostatném E2E důkazu skutečného read/send UI.
+- Částečný demo banner lze odstranit až po samostatném E2E důkazu skutečného read/send UI
+  a odstranění seedovaných týmových schránek.
+
+## Ověření webového read modelu
+
+S lokálním Google stubem, API a webem spusť `pnpm --filter @watson/api
+verify:personal-mail-ui`. Verifier vytvoří izolovaného uživatele a dokáže v Chromiu i
+WebKitu skutečný OAuth callback, encrypted sync, počty, lazy detail, zákaz demo akcí,
+bezpečný chybový stav, mobilní list/detail reflow, nulový horizontální overflow a axe
+WCAG A/AA. Testovací screenshoty lze zapnout přes `PERSONAL_MAIL_UI_SCREENSHOT_DIR`.

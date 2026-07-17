@@ -218,3 +218,16 @@
 [data-mailapp][data-embedded="true"] [data-appside]{ display:none !important; }
 [data-mailapp][data-embedded="true"] [data-mailmain]{ height:auto !important; }
 [data-mailapp][data-embedded="true"] [data-moseg]{ display:none !important; }
+[data-personal-mobile-menu]{ display:none; }
+[data-personal-message-row][data-unread="true"]{ background:linear-gradient(var(--navy-soft), var(--navy-soft)) var(--panel) !important; }
+[data-personal-message-row]:hover{ background:var(--panel-2) !important; }
+[data-personal-message-row][data-selected="true"]{ background:var(--brass-soft) !important; box-shadow:inset 3px 0 0 var(--brass); }
+@media (max-width:879px){
+  [data-personal-mail]{ width:100%; }
+  [data-personal-list]{ width:100% !important; min-width:0 !important; max-width:none !important; border-right:0 !important; }
+  [data-personal-mobile-menu]{ display:inline-grid !important; place-items:center; }
+  [data-personal-mail][data-detail-open="false"] [data-personal-detail]{ display:none !important; }
+  [data-personal-mail][data-detail-open="true"] [data-personal-list]{ display:none !important; }
+  [data-personal-mail][data-detail-open="true"] [data-personal-detail]{ display:block !important; width:100%; padding:14px !important; }
+}
+@media (min-width:880px){ [data-personal-back]{ display:none !important; } }

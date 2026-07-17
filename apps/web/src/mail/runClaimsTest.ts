@@ -1,7 +1,7 @@
 /**
  * Regresní test CC-P0-08: obsah a akce Mailu jsou demo a nesmí tvrdit
- * neověřený stav. Úzký account-lifecycle M1 má explicitní allowlist claimů,
- * které dokládá API E2E + mail static contract.
+ * neověřený stav. Account lifecycle a owner-only inbound read M1 mají explicitní
+ * allowlist claimů, které dokládá API E2E + mail static contract.
  *
  * 1) Žádný UI text v src/mail nesmí tvrdit „odesláno / doručeno / připojeno /
  *    (za)šifrováno" bez explicitního demo/simulace kontextu NA STEJNÉM řádku.
@@ -22,6 +22,10 @@ const ALLOWED = /(dem[ou]|simulac|nešifrov|neopustil|993)/i;
 const VERIFIED_ACCOUNT_CLAIMS: Record<string, RegExp[]> = {
 	"AdminScreen.tsx": [/Pošta přes skutečný OAuth a šifrovaný vault/],
 	"NastaveniScreen.tsx": [/Google účet připojíš přes OAuth; heslo Watson nikdy nevidí a credential ukládá šifrovaně/],
+	"MailSub.tsx": [/zatím nepřipojeno/],
+	"PersonalMailWorkspace.tsx": [
+		/Watson zprávy synchronizuje šifrovaně\. Heslo nevidí a obsah zpřístupní jen vlastníkovi účtu/,
+	],
 };
 
 let failed = 0;

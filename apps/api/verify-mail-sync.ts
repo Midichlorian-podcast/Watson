@@ -159,6 +159,13 @@ async function main() {
 		);
 		const rows = await db.select().from(mailMessages).where(eq(mailMessages.accountId, account.id));
 		check("full sync uložil všech 28 provider zpráv", rows.length === 28, rows.length);
+		let response = await request(ownerCookie, `/api/mail/accounts/${account.id}/sync`);
+		const counts = response.body.counts as Record<string, unknown> | undefined;
+		check(
+			"sync stav vrací ownerovi přesné souhrnné počty pro UI",
+			response.status === 200 && counts?.total === 28 && counts?.unread === 14 && counts?.inbox === 28,
+			response,
+		);
 		const databaseText = JSON.stringify(rows);
 		check(
 			"DB index neobsahuje předmět, adresu ani tělo v plaintextu",
@@ -167,7 +174,7 @@ async function main() {
 				!databaseText.includes("Text zprávy"),
 		);
 
-		let response = await request(ownerCookie, `/api/mail/accounts/${account.id}/messages?limit=10`);
+		response = await request(ownerCookie, `/api/mail/accounts/${account.id}/messages?limit=10`);
 		const firstPage = response.body.messages as Array<Record<string, unknown>> | undefined;
 		check(
 			"owner dostane dešifrovanou stránku bez surového HTML",

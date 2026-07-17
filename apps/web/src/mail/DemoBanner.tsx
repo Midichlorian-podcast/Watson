@@ -2,9 +2,10 @@ import { useTranslation } from "@watson/i18n";
 
 /**
  * CC-P0-08 — permanentní, nezaměnitelné označení demo stavu Mailu (rozhodnutí §15/2,
- * varianta B: modul viditelný, ale nesmí tvrdit reálné připojení/odeslání/šifrování).
+ * varianta B: týmový seed a akce zůstávají viditelně demo. Osobní Gmail read model
+ * už je skutečný, banner proto přesně odděluje reálný náhled od simulovaných akcí.
  * Musí být vidět bez scrollu na každé mailové obrazovce i v composerech; zmizí až
- * až s ověřeným message sync/send backendem, ne po pouhém připojení účtu.
+ * s ověřeným read/send UI pro celý modul.
  * Regresi hlídá src/mail/runClaimsTest.ts.
  */
 export function MailDemoBanner({ compact }: { compact?: boolean }) {

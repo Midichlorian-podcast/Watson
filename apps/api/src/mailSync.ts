@@ -1002,8 +1002,8 @@ mailSyncRoutes.get("/api/mail/accounts/:accountId/sync", async (c) => {
 	if (!accountId.success) return c.json({ error: "invalid_account_id" }, 422);
 	const account = await ownerAccount(accountId.data, session.user.id);
 	if (!account) return c.json({ error: "mail_account_not_found" }, 404);
-	const state = (
-		await getDb()
+	const [stateRows, countRows] = await Promise.all([
+		getDb()
 			.select({
 				status: mailSyncStates.status,
 				mode: mailSyncStates.syncMode,
@@ -1013,12 +1013,23 @@ mailSyncRoutes.get("/api/mail/accounts/:accountId/sync", async (c) => {
 			})
 			.from(mailSyncStates)
 			.where(eq(mailSyncStates.accountId, account.id))
-			.limit(1)
-	)[0];
+			.limit(1),
+		getDb()
+			.select({
+				total: sql<number>`count(*)::int`,
+				unread: sql<number>`count(*) filter (where ${mailMessages.labelIds} ? 'UNREAD')::int`,
+				inbox: sql<number>`count(*) filter (where ${mailMessages.labelIds} ? 'INBOX')::int`,
+			})
+			.from(mailMessages)
+			.where(eq(mailMessages.accountId, account.id)),
+	]);
+	const state = stateRows[0];
+	const counts = countRows[0] ?? { total: 0, unread: 0, inbox: 0 };
 	return c.json({
 		sync: state
 			? { ...state, lastSuccessAt: state.lastSuccessAt?.toISOString() ?? null }
 			: null,
+		counts,
 	});
 });
 

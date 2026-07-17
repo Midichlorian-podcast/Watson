@@ -1565,8 +1565,8 @@
 		"manualActivationError": "The manual step could not be started ({{code}}). Check previous steps and your connection."
 	},
 	"mail": {
-		"demoBadge": "DEMO",
-		"demoBanner": "message content and mail actions are simulated; a connected account is not syncing mail yet",
+		"demoBadge": "PARTLY DEMO",
+		"demoBanner": "team inboxes and mail actions are simulated; personal Gmail has a real encrypted read view",
 		"taskCreatedToast": "Task from mail added to Inbox — due today",
 		"taskCreatedOpen": "Open",
 		"taskNoInbox": "No inbox project found — task not created"

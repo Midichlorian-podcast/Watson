@@ -152,7 +152,7 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
 
 ### 2.2 Záměrně demo nebo nedostupné
 
-- Mail je rozsáhlý interaktivní demo modul. Permanentní `MailDemoBanner` je povinný na všech vstupních plochách. Gmail OAuth, credential vault a šifrovaný owner-only inbound sync jsou skutečné; hlavní Mail UI stále používá seed, IMAP a odeslání/doručení ještě produkční nejsou.
+- Mail je částečně skutečný a částečně demo. Permanentní `MailDemoBanner` je povinný na všech vstupních plochách, dokud nejsou hotové send/team cesty. Gmail OAuth, credential vault, šifrovaný inbound sync a osobní read-only inbox jsou skutečné; týmové schránky stále používají seed a IMAP i odeslání/doručení ještě produkční nejsou.
 - AI meeting extraction bez klíče je dostupná pouze v non-production ukázkovém režimu a musí být označena `mock`. Produkce bez klíče vrací 503.
 - LuckyOS canned data lze zapnout pouze mimo produkci. Produkce bez base URL vrací 503.
 - E-mail reminder není totéž co produkční Mail M1: provider potvrzuje přijetí k odeslání,
@@ -545,7 +545,7 @@ revoke/reconnect a ciphertext; Chromium i WebKit ověřují dialog, mobilní ref
 Veřejné produkční spuštění navíc vyžaduje doloženou Google OAuth verifikaci a případné
 security assessment pro restricted Gmail scope.
 
-Inbound Gmail sync dokončen 2026-07-17: stránkovaný bounded full sync, následný
+Inbound Gmail sync a osobní read-only inbox dokončeny 2026-07-17: stránkovaný bounded full sync, následný
 `historyId` incremental sync, minutový fallback poll bez závislosti na push notifikaci,
 automatický nový full generation po 404/expired history, CAS refresh access tokenu,
 `SKIP LOCKED` lease/retry/dead/reauth state machine a generation-based reconciliation.
@@ -553,7 +553,11 @@ Předmět, adresy, snippet, těla i metadata příloh jsou autentizovaný cipher
 odděleným HMAC-derived content subkey; v clear indexu zůstávají jen opaque provider ID,
 čas, system label ID a velikost. Owner-only cursor API vrací plaintext text až po
 autorizaci, nikdy surové HTML; revoke po provider ACK fyzicky maže credential, cursor i
-obsah. Mail seed UI a send jsou stále demo, proto se banner nesmí odstranit.
+obsah. Web slučuje skutečné osobní účty nad tímto API, zobrazuje reálné počty a tělo
+dešifruje až po otevření zprávy; nic z obsahu neukládá do nešifrovaného browser storage.
+Chromium i WebKit dokazují celý OAuth → sync → list → detail tok, řízené selhání,
+390px reflow a axe bez A/AA nálezů. Týmové seed UI a send jsou stále demo, proto se
+banner změnil jen na „částečně demo“ a nesmí se odstranit.
 
 ### F6 — Radar/automation/AI (4–8 týdnů)
 

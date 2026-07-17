@@ -3,7 +3,8 @@
  *
  * Google používá skutečný serverový OAuth/PKCE flow. M365 a IMAP/SMTP jsou
  * viditelně nedostupné, dokud nebudou mít vlastní ověřený adapter. Google zprávy
- * se synchronizují šifrovaně na serveru; hlavní Mail UI je zatím stále demo.
+ * se synchronizují šifrovaně na serveru; osobní read-only inbox je skutečný,
+ * týmové schránky a poštovní akce zatím zůstávají demo.
  */
 import { useCallback, useEffect, useState } from "react";
 import { API_URL } from "../lib/api";
@@ -158,7 +159,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 			const updatedAccount = body.account;
 			setAccounts((current) => current.map((item) => (item.id === account.id ? updatedAccount : item)));
 			setConfirmRevoke(null);
-			showToast("Google účet je odpojený. Credential i synchronizovaný obsah byly odstraněny; demo Mail se nezměnil.");
+			showToast("Google účet je odpojený. Credential i synchronizovaný obsah byly odstraněny; týmové demo schránky se nezměnily.");
 		} catch (cause) {
 			const code = cause instanceof Error ? cause.message : "mail_revoke_failed";
 			if (code === "stale_version" || code === "mail_account_already_revoked") await load();
@@ -211,7 +212,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 							Osobní e-mailové účty
 						</h2>
 						<p style={{ margin: "4px 0 0", fontSize: 12, lineHeight: 1.5, color: "var(--ink-3)" }}>
-							Credential i synchronizovaný obsah jsou šifrované. Hlavní Mail UI a jeho akce jsou zatím stále demo.
+							Credential i synchronizovaný obsah jsou šifrované. Osobní inbox čte skutečná data; týmové schránky a akce jsou zatím demo.
 						</p>
 					</div>
 					<button
