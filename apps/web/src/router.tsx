@@ -10,6 +10,7 @@ import { parseTaskTab, type TaskTab } from "./lib/taskTabs";
 const named = <K extends string>(loader: () => Promise<Record<K, React.ComponentType>>, key: K) => lazy(() => loader().then((m) => ({ default: m[key] })));
 
 const Cile = named(() => import("./screens/Cile"), "Cile");
+const CaptureIngress = named(() => import("./screens/CaptureIngress"), "CaptureIngress");
 const EmployeeHub = named(() => import("./screens/EmployeeHub"), "EmployeeHub");
 const Hledat = named(() => import("./screens/Hledat"), "Hledat");
 const Intake = named(() => import("./screens/Intake"), "Intake");
@@ -36,6 +37,16 @@ const prehledRoute = createRoute({
 	component: Prehled,
 	validateSearch: (s: Record<string, unknown>): { vstup?: "tym" | "provoz" } => ({
 		vstup: s.vstup === "tym" || s.vstup === "provoz" ? s.vstup : undefined,
+	}),
+});
+const captureRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/zachytit",
+	component: CaptureIngress,
+	validateSearch: (search: Record<string, unknown>): { title?: string; text?: string; url?: string } => ({
+		title: typeof search.title === "string" ? search.title : undefined,
+		text: typeof search.text === "string" ? search.text : undefined,
+		url: typeof search.url === "string" ? search.url : undefined,
 	}),
 });
 const seznamyRoute = createRoute({
@@ -198,6 +209,7 @@ const oblMeRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
 	prehledRoute,
+	captureRoute,
 	seznamyRoute,
 	znalostiRoute,
 	velinRoute,

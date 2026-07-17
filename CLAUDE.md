@@ -1,6 +1,6 @@
 # Watson — závazný re-audit a implementační plán pro Claude Code
 
-> Stav dokumentu: 2026-07-17 po stabilizaci a průběžných produktových dávkách do F8a / migrace 0081.
+> Stav dokumentu: 2026-07-17 po stabilizaci a průběžných produktových dávkách do F8b / migrace 0081.
 >
 > CLAUDE CODE: přečti celý soubor před první změnou. Toto je jediný aktuální řídicí dokument. Staré audity, handoffy a plány ve `files/` jsou historické podklady. Pokud odporují tomuto souboru nebo současnému schématu, nemají autoritu.
 
@@ -239,7 +239,7 @@ Resend, LuckyOS, upload a Anthropic cally dostaly explicitní timeout, omezený 
 
 #### A2-05 — PWA/bundle bez rozpočtu
 
-Build nyní selže nad 350 KiB gzip pro největší JS a nad 5.5 MiB offline precache. PWA precachuje jen potřebný encrypted async SQLite WASM. Aktuálně 328 KiB a 5,180 KiB.
+Build nyní selže nad 350 KiB gzip pro největší JS a nad 5.5 MiB offline precache. PWA precachuje jen potřebný encrypted async SQLite WASM a denní jádro; navštívené velké volitelné moduly ukládá do omezené runtime cache. Aktuálně 289 KiB gzip a 4,941 KiB.
 
 #### A2-06 — blokovaný Web Storage mohl rozbít UI
 
@@ -708,6 +708,23 @@ neschová. Chromium i WebKit produkční průchod pokryl admina i člena, guided
 advanced persistence, týmový/provozní obsah, 390 px, 44px cíle, overflow, runtime
 a axe WCAG A/AA; screenshoty byly vizuálně zkontrolovány. Kontrakt a rollback jsou
 v `docs/information-architecture-runbook.md`.
+
+F8b PWA-first instalace a capture dokončeny 2026-07-17 nad původním offline shellem
+a jediným Quick Capture commandem. Manifest má stabilní identitu, 192/512 PNG a
+maskable ikonu, Můj den/Rychlé zachycení shortcuts a Web Share Target `/zachytit`.
+Neověřené title/text/URL mají pevné limity, odstraňují řídicí a bidi znaky a URL
+přijmou jen HTTP(S) bez credentials; query se po převzetí nahradí čistým `/`.
+Bookmarklet se pouze kopíruje a nikde nevzniká `javascript:` href. Nastavení
+pravdivě rozlišuje dostupný install prompt, instalovaný stav a ruční instalaci z
+menu prohlížeče. Denní jádro zůstává precache; osm velkých volitelných modulů se
+po návštěvě uloží do max. 48členné runtime cache. Offline odemčení zůstává
+bezpečnostní hranicí: otevřená a online ověřená relace pokračuje offline, ale cold
+start záměrně necachuje Better Auth session ani serverový DB klíč. Chromium i
+WebKit produkčně ověřily manifest, title/text/URL ingress, zamítnutí `javascript:`,
+stejný task DB round-trip, precache/runtime cache, zachycení v odpojené otevřené
+relaci, 390 px, neokludované 44px cíle, overflow a axe WCAG A/AA. Vizuální audit
+zkontroloval desktop capture, instalační mobilní kartu i offline modal. Kontrakt,
+provozní hranice a rollback jsou v `docs/pwa-capture-runbook.md`.
 
 ## 10. Detailní acceptance checklist pro budoucí funkce
 

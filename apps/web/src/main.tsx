@@ -3,6 +3,7 @@ import { initI18n } from "@watson/i18n";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { PwaInstallProvider } from "./lib/pwaInstall";
 import { queryClient } from "./lib/queryClient";
 import "./index.css";
 
@@ -13,8 +14,10 @@ if (!rootEl) throw new Error("#root nenalezen");
 
 createRoot(rootEl).render(
 	<StrictMode>
-		<QueryClientProvider client={queryClient}>
-			<App />
-		</QueryClientProvider>
+		<PwaInstallProvider>
+			<QueryClientProvider client={queryClient}>
+				<App />
+			</QueryClientProvider>
+		</PwaInstallProvider>
 	</StrictMode>,
 );

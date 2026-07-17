@@ -282,6 +282,8 @@ export function AddTaskModal({
 	/** Předvyplnění z kalendáře (openAddAt): datum/čas/trvání. */
 	initial?: {
 		capture?: boolean;
+		rawName?: string;
+		description?: string;
 		date?: string;
 		time?: string;
 		duration?: number;
@@ -336,6 +338,14 @@ export function AddTaskModal({
 
 	const [draft, setDraft] = useState<Draft>(() => {
 		const d = freshDraft(null);
+		if (initial?.rawName) {
+			d.rawName = initial.rawName;
+			d.name = initial.rawName;
+		}
+		if (initial?.description) {
+			d.desc = initial.description;
+			d.descOpen = true;
+		}
 		if (initial?.date) {
 			if (initial.date === today) d.dateKind = "dnes";
 			else {
@@ -1018,6 +1028,19 @@ export function AddTaskModal({
 						/>
 					</div>
 				</div>
+				{captureMode && draft.desc && (
+					<div
+						className="mt-3 rounded-xl border border-line bg-panel-2 px-3 py-2"
+						data-capture-context
+					>
+						<div className="font-display text-[10px] font-bold uppercase tracking-[.06em] text-ink-3">
+							{t("addmodal.captureContext")}
+						</div>
+						<div className="mt-1 line-clamp-3 whitespace-pre-wrap break-words font-body text-xs leading-relaxed text-ink-2">
+							{draft.desc}
+						</div>
+					</div>
+				)}
 
 				{/* našeptávač */}
 				{suggest && (

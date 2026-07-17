@@ -5,6 +5,10 @@ import { AddTaskModal } from "../components/AddTaskModal";
 export interface AddPrefill {
 	/** Kompaktní globální zachycení; lze beze ztráty rozepsaného draftu rozbalit. */
 	capture?: boolean;
+	/** Bezpečně omezený název z Web Share Targetu nebo bookmarkletu. */
+	rawName?: string;
+	/** Kontext sdílené stránky/textu; uloží se jako popis a v capture UI se ukáže. */
+	description?: string;
 	/** YYYY-MM-DD → dateKind custom. */
 	date?: string;
 	/** HH:MM. */
@@ -23,7 +27,7 @@ export interface AddPrefill {
 
 interface AddTaskCtx {
 	openAdd: (prefill?: AddPrefill) => void;
-	openCapture: () => void;
+	openCapture: (prefill?: Pick<AddPrefill, "rawName" | "description">) => void;
 }
 const Ctx = createContext<AddTaskCtx>({ openAdd: () => {}, openCapture: () => {} });
 
@@ -35,7 +39,7 @@ export function AddTaskProvider({ children }: { children: ReactNode }) {
 		<Ctx.Provider
 			value={{
 				openAdd: (prefill) => setOpen(prefill ?? {}),
-				openCapture: () => setOpen({ capture: true }),
+				openCapture: (prefill) => setOpen({ capture: true, ...prefill }),
 			}}
 		>
 			{children}

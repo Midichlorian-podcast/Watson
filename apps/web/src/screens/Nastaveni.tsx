@@ -4,6 +4,7 @@ import i18n, { useTranslation } from "@watson/i18n";
 import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { AvailabilitySettings } from "../components/AvailabilitySettings";
 import { IntegrationCenter } from "../components/IntegrationCenter";
+import { PwaInstallCard } from "../components/PwaInstallCard";
 import { SyncProblems } from "../components/SyncProblems";
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
@@ -687,6 +688,7 @@ export function Nastaveni() {
 									/>
 								</div>
 							</div>
+							<PwaInstallCard />
 						</>
 					)}
 

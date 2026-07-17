@@ -3,6 +3,7 @@
  * Vlastní service worker (vite-plugin-pwa `injectManifest`) — bez workboxu (self-contained):
  * - precache app shellu z `self.__WB_MANIFEST` (offline PWA), navigační fallback na index.html,
  * - runtime cache Google Fonts (parita s dřívějším generateSW),
+ * - runtime cache navštívených volitelných hashovaných modulů,
  * - Web Push: zobrazení notifikace + klik → zaostření/otevření okna na daný odkaz.
  */
 declare const self: ServiceWorkerGlobalScope & {
@@ -11,9 +12,11 @@ declare const self: ServiceWorkerGlobalScope & {
 
 const PRECACHE = "watson-precache-v2";
 const FONTS = "watson-fonts-v2";
+const RUNTIME_ASSETS = "watson-runtime-assets-v1";
 const PRECACHE_URLS = self.__WB_MANIFEST.map((e) => e.url);
 const PRECACHE_ABSOLUTE = new Set(PRECACHE_URLS.map((url) => new URL(url, self.location.origin).href));
 const MAX_FONT_ENTRIES = 24;
+const MAX_RUNTIME_ASSET_ENTRIES = 48;
 
 async function trimCache(cacheName: string, maxEntries: number): Promise<void> {
 	const cache = await caches.open(cacheName);
@@ -35,7 +38,9 @@ self.addEventListener("activate", (event) => {
 		(async () => {
 			const keys = await caches.keys();
 			await Promise.all(
-				keys.filter((key) => key !== PRECACHE && key !== FONTS).map((key) => caches.delete(key)),
+				keys
+					.filter((key) => key !== PRECACHE && key !== FONTS && key !== RUNTIME_ASSETS)
+					.map((key) => caches.delete(key)),
 			);
 			// Název precache zůstává mezi buildy stejný. Bez explicitního úklidu by
 			// každý deploy trvale ponechal všechny staré hashované chunky a WASM.
@@ -69,11 +74,12 @@ self.addEventListener("fetch", (event) => {
 		return;
 	}
 
-	// Google Fonts → cache-first s doplněním na pozadí.
-	if (
-		url.origin === "https://fonts.googleapis.com" ||
-		url.origin === "https://fonts.gstatic.com"
-	) {
+	// Stylesheet Google Fonts necháme přímo prohlížeči. WebKit odmítá opaque CSS,
+	// pokud jej vrátí service worker; vlastní binární fonty lze bezpečně cacheovat.
+	if (url.origin === "https://fonts.googleapis.com") return;
+
+	// Google Fonts binární assety → cache-first s doplněním na pozadí.
+	if (url.origin === "https://fonts.gstatic.com") {
 		event.respondWith(
 			caches.open(FONTS).then((c) =>
 				c.match(req).then((cached) => {
@@ -92,9 +98,21 @@ self.addEventListener("fetch", (event) => {
 		return;
 	}
 
-	// Vlastní origin (precachnuté hashované assety) → cache-first.
+	// Vlastní origin → precache-first; navštívené volitelné hashované assety
+	// uložíme do omezené runtime cache pro další offline použití.
 	if (url.origin === self.location.origin) {
-		event.respondWith(caches.match(req).then((cached) => cached ?? fetch(req)));
+		event.respondWith(
+			caches.match(req).then(async (cached) => {
+				if (cached) return cached;
+				const response = await fetch(req);
+				if (url.pathname.startsWith("/assets/") && response.ok && response.type === "basic") {
+					const runtime = await caches.open(RUNTIME_ASSETS);
+					await runtime.put(req, response.clone());
+					await trimCache(RUNTIME_ASSETS, MAX_RUNTIME_ASSET_ENTRIES);
+				}
+				return response;
+			}),
+		);
 	}
 });
 
