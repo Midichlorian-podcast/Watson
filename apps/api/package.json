@@ -21,6 +21,7 @@
 		"verify:employee-reconcile": "tsx verify-employee-reconcile.ts",
 		"verify:employee-hub": "tsx verify-employee-hub.ts",
 		"verify:employee-hub-ui": "tsx verify-employee-hub-ui.ts",
+		"verify:employee-self-service": "tsx verify-employee-self-service.ts",
 		"verify:luckyos-v1": "tsx verify-luckyos-v1.ts",
 		"verify:db-invariants": "tsx verify-db-invariants.ts",
 		"verify:ai-policy": "tsx verify-ai-policy.ts",

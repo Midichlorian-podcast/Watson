@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { useState } from "react";
+import { EmployeeSelfService } from "../components/EmployeeSelfService";
 import { syncEmployeeTasks, useEmployeeHub } from "../lib/employee";
 import { showToast } from "../lib/toast";
 
@@ -301,6 +302,8 @@ export function EmployeeHub() {
           </div>
         )}
       </section>
+
+      {data.selfService && <EmployeeSelfService />}
     </div>
   );
 }

@@ -172,6 +172,15 @@ VALIDATION_API="$API_URL" pnpm --filter @watson/api verify:input-observability
 RATE_LIMIT_API="$API_URL" pnpm --filter @watson/api verify:rate-limit
 stop_api
 
+# LuckyOS v1 běží v samostatném explicitním procesu. Tím test zároveň dokazuje,
+# že nedochází k tichému přepnutí legacy kontraktu ani ke sdílení env konfigurace.
+export LUCKYOS_PROTOCOL="v1"
+export LUCKYOS_ORGANIZATION_ID="watson-luckyos-self-service-test"
+export LUCKYOS_WEBHOOK_SIGNING_SECRET="ci-luckyos-webhook-signing-secret-at-least-32-bytes"
+start_api 0
+EMPLOYEE_SELF_SERVICE_API="$API_URL" pnpm --filter @watson/api verify:employee-self-service
+stop_api
+
 # Samostatný restart dokazuje produkční 2FA enforcement, ne pouze helper funkce.
 start_api 1
 AUTH_API="$API_URL" pnpm --filter @watson/api verify:auth-security

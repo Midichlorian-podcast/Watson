@@ -610,8 +610,8 @@ Informativní oznámení úkol nevytvářejí. API důkaz pokrývá session, no-
 bezpečné relativní odkazy, provider kontrakt, task lineage a retry bez duplicity. Chromium
 i WebKit ověřily gating, dashboard, sync, 390px reflow, mobilní 44px akci a axe WCAG A/AA;
 ruční vizuální audit následně přeskládal mobilní hlavičku. Provozní hranice jsou v
-`docs/employee-hub-runbook.md`. Odevzdávací formuláře, dokumenty/podpisy, absence a
-onboarding/offboarding jsou další samostatné F7 vertikály a tento core je nepředstírá.
+`docs/employee-hub-runbook.md`. Dokumenty/podpisy, absence a onboarding/offboarding
+jsou další samostatné F7 vertikály a tento core je nepředstírá.
 
 LuckyOS v1 integrační základ dokončen 2026-07-17: starý e-mailový broker zůstává
 výslovným `legacy` režimem a žádný deploy ho automaticky nepřepne. V1 vydává přesný
@@ -625,8 +625,19 @@ výhradně z této vazby, před tokenem respektuje lokální revoke, zakazuje re
 limituje timeout i odpověď. Produkční preflight vyžaduje tenant a izolovaný webhook
 secret. Integrační důkaz používá reálnou DB a dual-contract LuckyOS stub a pokrývá
 podpis, replay, pořadí, replacement, lokální/provider revoke a přesný M2M scope.
-Formuláře stále nejsou zpřístupněné, dokud jejich vlastní response allowlist a
-agenda command kontrakt neprojdou stejným důkazem.
+
+LuckyOS v1 self-service profil + docházka + malá čísla dokončen 2026-07-17:
+nový povrch je zpřístupněn jen explicitním `selfService=true`; legacy zůstává
+beze změny. Browser nikdy nevolí person ID, tenant ani scopes. Profil maskuje
+bankovní účet a změnu převádí na schvalovanou žádost bez vracení patch hodnot.
+Docházka i malá čísla oddělují koncept od potvrzeného submitu, všechny write
+commandy mají user-bound idempotency key a provider konflikty se mapují na
+bezpečné kódy. Zod kontrakt a veřejné projekce zahazují neznámá provider pole i
+upstream text. V1 work items se mapují do stávajícího reconciliation, takže se
+nerozvětvuje původní osobní projekt Zaměstnanec. Citlivé query mají `no-store`,
+krátký memory-only cache a žádný browser/offline draft. API důkaz pokrývá
+redakci, replay/konflikt, budoucí datum, submit, sync a revoke; Chromium i WebKit
+ověřily všechny tři formuláře, potvrzení, 390px reflow a axe WCAG A/AA.
 
 ## 10. Detailní acceptance checklist pro budoucí funkce
 

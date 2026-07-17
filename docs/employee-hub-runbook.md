@@ -74,20 +74,56 @@ RSA compromise domain; PowerSync, Better Auth, mail vault a webhook HMAC zůstá
 oddělené. Legacy endpoint se v režimu v1 odmítne a nikdy se nepoužívá jako tichý
 fallback.
 
+## Profil, docházka a malá čísla
+
+První v1 self-service vertikála je dostupná jen při `linked=true` a
+`selfService=true`. Browser používá výhradně Watson routy pod
+`/api/employee/self-service/*`; provider person ID, tenant, scopes, M2M token ani
+LuckyOS URL nikdy neposílá. Server je odvodí z podepsané identity binding a pro
+každou operaci vydá token pouze s jedním minimálním scope.
+
+- Profil vrací maskovaný bankovní účet a změnu posílá jako žádost ke schválení.
+  Historie žádostí ukazuje jen názvy měněných polí, ne jejich dřívější či navržené
+  hodnoty.
+- Docházka odděluje `save_draft` od potvrzeného `submit`. Watson odmítá duplicitní
+  řádky, datum mimo měsíc, budoucí datum, neplatné hodiny i prázdný submit ještě
+  před providerem.
+- Malá čísla čtou jen dostupné choreografie a měsíční záznamy. Koncept a odevzdání
+  jsou dva explicitní stavy; minuty mají providerem podporovaný krok.
+- Každý write má klientské UUID převedené na user-bound idempotency key. Stejný
+  klíč a obsah lze bezpečně zopakovat, stejný klíč s jiným obsahem skončí 409.
+- Provider odpovědi procházejí Zod kontraktem a veřejnou allowlist projekcí.
+  Neznámá pole, raw patch hodnoty, identity metadata a upstream error text se
+  zahodí.
+- React Query drží odpovědi jen krátce v paměti. Profil, docházka ani malá čísla se
+  neukládají do PowerSyncu, IndexedDB, `localStorage` nebo `sessionStorage`.
+  Koncept je trvalý až po výslovném „Uložit koncept“ do LuckyOS.
+
+V1 work items se před existujícím reconciliation mapují na stabilní Watson typy
+(`attendance_reminder`, `missing_document`, `contract_signature_required`). Tím
+se rozšíří současný osobní projekt Zaměstnanec bez výměny nebo duplikace původního
+mechanismu.
+
 ## Automatické důkazy
 
 ```bash
 node scripts/verify-employee-hub-contract.mjs
 node scripts/verify-luckyos-v1-contract.mjs
+node scripts/verify-employee-self-service-contract.mjs
 EMPLOYEE_HUB_API=http://127.0.0.1:8790 pnpm --filter @watson/api verify:employee-hub
 pnpm --filter @watson/api verify:luckyos-v1
+EMPLOYEE_SELF_SERVICE_API=http://127.0.0.1:8790 pnpm --filter @watson/api verify:employee-self-service
 EMPLOYEE_HUB_UI_WEB=http://localhost:5173 pnpm --filter @watson/api verify:employee-hub-ui
 bash scripts/ci-api-integration.sh
 pnpm gate
 ```
 
-API verifier musí běžet proti lokálnímu LuckyOS stubu z integrační sady. Browser verifier pokrývá Chromium i WebKit, desktop, 390 px, navigační gating, dashboard, sync a axe WCAG A/AA.
+API verifier musí běžet proti lokálnímu LuckyOS stubu z integrační sady. Browser verifier pokrývá Chromium i WebKit, desktop, 390 px, navigační gating, dashboard, profil, docházku, malá čísla, explicitní submit a axe WCAG A/AA.
 
 ## Scope této dávky
 
-Tato dávka nezpřístupňuje nové odevzdávací formuláře ani dokumentové mutace. Starší broker routy zůstávají zachované kvůli kompatibilitě, ale jejich nový UI, request/response allowlist, idempotentní command receipt, upload limity, malware/retention pravidla a elektronický podpis patří do následující samostatné F7 vertikály.
+Tato dávka zpřístupňuje profilové změnové žádosti, docházku a malá čísla. Starší
+broker routy zůstávají zachované kvůli kompatibilitě a výchozí protocol zůstává
+`legacy`; nasazení samotného kódu proto nikoho nepřepne. Dokumenty, výdaje,
+elektronický podpis, upload limity, malware/retention pravidla a lifecycle
+absence patří do následujících samostatně auditovaných F7 vertikál.

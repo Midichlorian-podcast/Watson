@@ -39,6 +39,7 @@ import { chainCommandRoutes } from "./chainCommands";
 import { customFieldRoutes } from "./customFields";
 import { decisionRoutes } from "./decisions";
 import { employeeRoutes } from "./employee";
+import { employeeSelfServiceRoutes } from "./employeeSelfService";
 import { env, googleEnabled, pushEnabled } from "./env";
 import { exportRoutes } from "./export";
 import { importRoutes } from "./imports";
@@ -473,6 +474,7 @@ app.route("/", mailOutboundRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);
+app.route("/", employeeSelfServiceRoutes);
 
 /** Web Push — VAPID klíč, (od)hlášení odběru, test. */
 app.route("/", pushRoutes);

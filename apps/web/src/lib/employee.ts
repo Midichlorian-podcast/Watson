@@ -59,7 +59,7 @@ export type EmployeeHubStatus = {
 };
 
 export type EmployeeHubResponse =
-  | { linked: true; status: EmployeeHubStatus; fetchedAt: string }
+  | { linked: true; selfService: boolean; status: EmployeeHubStatus; fetchedAt: string }
   | {
       linked: false;
       reason?:

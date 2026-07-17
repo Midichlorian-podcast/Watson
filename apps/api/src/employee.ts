@@ -28,13 +28,14 @@ import {
 } from "@watson/db";
 import { type Context, Hono } from "hono";
 import { auth } from "./auth";
+import { readLuckyOsV1Identity, readLuckyOsV1Status } from "./employeeSelfService";
 import { env, luckyOsEnabled } from "./env";
 import {
 	employeeStatusSchema,
 	isLuckyOsRevoked,
 	type LuckyEmployeeStatus,
-	luckyIdentitySchema,
 	luckyFetch,
+	luckyIdentitySchema,
 	recordLuckyOsHealth,
 } from "./integrations";
 import { issueBridgeToken } from "./powersync";
@@ -363,6 +364,10 @@ employeeRoutes.get("/api/employee/me", async (c) => {
 	if (!luckyOsEnabled) {
 		return c.json({ linked: false, reason: "luckyos_not_configured" });
 	}
+	if (env.luckyOs.protocol === "v1") {
+		const identity = await readLuckyOsV1Identity(session.user.id);
+		return c.json(identity, identity.linked ? 200 : identity.reason === "luckyos_contract_rejected" ? 502 : 200);
+	}
 	const email = session.user.email;
 	if (!email) return c.json({ linked: false, reason: "no_email" });
 
@@ -397,6 +402,29 @@ employeeRoutes.get("/api/employee/status", async (c) => {
 	if (!luckyOsEnabled) {
 		return c.json({ linked: false, reason: "luckyos_not_configured" });
 	}
+	if (env.luckyOs.protocol === "v1") {
+		const result = await readLuckyOsV1Status(session.user.id);
+		if (!result.ok) {
+			return c.json({
+				linked: false,
+				reason: result.revoked
+					? "luckyos_revoked"
+					: result.status === 403 || result.status === 404
+						? "luckyos_identity_not_linked"
+						: result.status === 422
+							? "luckyos_contract_rejected"
+							: "luckyos_unavailable",
+			});
+		}
+		const parsed = employeeStatusSchema.safeParse(result.data);
+		if (!parsed.success) return c.json({ linked: false, reason: "luckyos_contract_rejected" }, 502);
+		return c.json({
+			linked: true,
+			selfService: true,
+			status: publicEmployeeStatus(parsed.data),
+			fetchedAt: new Date().toISOString(),
+		});
+	}
 	const email = session.user.email;
 	if (!email) return c.json({ linked: false, reason: "no_email" });
 	const res = await luckyFetch(session.user.id, email, null, "/api/employee/status");
@@ -416,6 +444,7 @@ employeeRoutes.get("/api/employee/status", async (c) => {
 	if (!parsed.success) return c.json({ linked: false, reason: "luckyos_contract_rejected" }, 502);
 	return c.json({
 		linked: true,
+		selfService: false,
 		status: publicEmployeeStatus(parsed.data),
 		fetchedAt: new Date().toISOString(),
 	});
@@ -431,6 +460,19 @@ employeeRoutes.post("/api/employee/sync", async (c) => {
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	if (!luckyOsEnabled) {
 		return c.json({ linked: false, reason: "luckyos_not_configured" });
+	}
+	if (env.luckyOs.protocol === "v1") {
+		const result = await readLuckyOsV1Status(session.user.id);
+		if (result.revoked) return c.json({ linked: false, reason: "luckyos_revoked" }, 423);
+		if (!result.ok) return c.json({ linked: false, status: result.status }, 502);
+		const parsedStatus = employeeStatusSchema.safeParse(result.data);
+		if (!parsedStatus.success) return c.json({ error: "invalid_luckyos_status_payload" }, 502);
+		const summary = await reconcileEmployeeTasks(
+			session.user.id,
+			parsedStatus.data,
+			c.get("requestId") ?? null,
+		);
+		return c.json({ linked: true, ...summary, fetchedAt: new Date().toISOString() });
 	}
 	const email = session.user.email;
 	if (!email) return c.json({ linked: false, reason: "no_email" });

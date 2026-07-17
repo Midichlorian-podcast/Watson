@@ -9,6 +9,16 @@ export default defineConfig({
 		// Raw-size warning is noisy for the PowerSync worker/runtime; the repository
 		// enforces a stricter gzip + offline precache budget after every root build.
 		chunkSizeWarningLimit: 1100,
+		rollupOptions: {
+			output: {
+				// Překlady jsou stabilní statický asset a rostou nezávisle na runtime.
+				// Oddělený preloadovaný chunk drží startovní runtime pod hard budgetem
+				// a dovolí prohlížeči cacheovat copy mezi aplikačními releasy.
+				manualChunks(id) {
+					if (id.includes("/packages/i18n/src/locales/")) return "locales";
+				},
+			},
+		},
 	},
 	resolve: {
 		alias: {

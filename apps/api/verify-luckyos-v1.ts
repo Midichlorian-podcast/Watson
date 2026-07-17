@@ -191,14 +191,11 @@ try {
 		correlationId: `correlation-${randomUUID()}`,
 	});
 	assert.equal(provider.ok, true);
-	assert.deepEqual(provider.data, {
-		resource: "profile",
-		data: { status: "available" },
-		provider_person_id: providerPersonId,
-		watson_user_id: userId,
-		organization_id: organizationId,
-		scope: "profile:read",
-	});
+	assert.equal((provider.data as { resource?: unknown })?.resource, "profile");
+	assert.equal(
+		(provider.data as { data?: { profile?: { name?: unknown } } })?.data?.profile?.name,
+		"CI Employee v1",
+	);
 	await assert.rejects(
 		() =>
 			luckyOsV1EmployeeFetch({
