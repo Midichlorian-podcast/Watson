@@ -611,8 +611,8 @@ bezpečné relativní odkazy, provider kontrakt, task lineage a retry bez duplic
 i WebKit ověřily gating, dashboard, sync, 390px reflow, mobilní 44px akci a axe WCAG A/AA;
 ruční vizuální audit následně přeskládal mobilní hlavičku. Provozní hranice jsou v
 `docs/employee-hub-runbook.md`. Dokumenty/podpisy, dovolená/absence i
-onboarding/offboarding přes Postupy navazují samostatnými dokončenými F7 vertikálami;
-znalostní/SOP povrch zůstává další samostatnou dávkou.
+onboarding/offboarding přes Postupy i Employee-facing Knowledge/SOP navazují
+samostatnými dokončenými F7 vertikálami.
 
 LuckyOS v1 integrační základ dokončen 2026-07-17: starý e-mailový broker zůstává
 výslovným `legacy` režimem a žádný deploy ho automaticky nepřepne. V1 vydává přesný
@@ -681,7 +681,21 @@ a vedou do stejného Employee Hubu, takže původní flow engine zůstává beze
 API důkaz pokrývá redakci, invalidní potvrzení, replay, konflikt idempotency a
 souborový submit. Chromium i WebKit ověřily ztracenou odpověď, automatický přechod
 na další krok, Postupy, desktop, 390px, lokalizovaný file picker, bez overflow a
-axe WCAG A/AA. Další F7 dávka je Employee-facing Knowledge a SOP.
+axe WCAG A/AA.
+
+Employee-facing Knowledge a SOP dokončeny 2026-07-17: workspace má úzce zaměřené
+příručky, očíslované SOP a zásady se strukturovanými sekcemi, vlastníkem, štítky,
+vyhledáváním a deep linkem; nevznikl Notion-like builder, chat ani office suite.
+Manager/admin/owner pracuje s CAS konceptem a explicitním Draft → Publish; čtenář
+vždy dostane pouze neměnný aktuální snapshot. Výchozí interní publikum vylučuje
+hosty, které musí správce výslovně zahrnout. Volitelné potvrzení patří přesné verzi
+a správa ukazuje jen agregát bez hodnocení lidí. DB hlídá tenant, strukturu obsahu,
+vlastníka, pořadí verzí, neměnnost snapshotu i platnost potvrzení. Retry všech
+commandů je user-bound a audit neobsahuje text znalosti. Podepsaný export/restore
+skutečně obnovil archivovaný článek, dvě verze i dvě potvrzení; restore výjimka je
+jen transaction-local. API verifier má 26 průchodů a Chromium/WebKit browser důkaz
+pokrývá create → publish → acknowledge, historii, hledání, 390 px, 44px cíle,
+overflow i axe WCAG A/AA. Provozní hranice jsou v `docs/knowledge-sop-runbook.md`.
 
 ## 10. Detailní acceptance checklist pro budoucí funkce
 
@@ -710,7 +724,7 @@ Každá produkční funkce musí odpovědět ano na vše relevantní:
 
 Poslední ověření 2026-07-17:
 
-- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 107 TSX.
+- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 121 TSX.
 - `pnpm typecheck`: 6/6 balíčků.
 - `pnpm test`: recurrence 14/14 + 9 projekčních regresí + 6 transformací řady, Quick Add, timezone, recent items, proč-teď, deep linky,
   uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
@@ -727,7 +741,8 @@ Poslední ověření 2026-07-17:
   dostupnost, Focus Time, snooze/reminder hold, nouzové výjimky a interní rezervace,
   meeting ACL/commandy,
   AI policy, task delete/restore, workspace policy, export/restore, manual gate,
-  input/observability, rate limit a auth/2FA — vše prošlo.
+	Employee Knowledge/SOP včetně verzí a export/restore, input/observability,
+	rate limit a auth/2FA — vše prošlo.
 - Migrace 0046: aplikována; sedm typů projektových polí i jejich task hodnoty mají
   DB validaci, ACL, audit, export/restore, delete/undo a PowerSync kontrakt.
 - Migrace 0047 + dopředná oprava 0048: aplikovány; pět typů vložitelných task anket

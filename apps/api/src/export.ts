@@ -31,6 +31,9 @@ const backupSecret = env.backupSigningSecret ?? DEV_BACKUP_SECRET;
 export const RESTORE_TABLE_ORDER = [
 	"workspaces",
 	"memberships",
+	"knowledge_articles",
+	"knowledge_article_versions",
+	"knowledge_acknowledgements",
 	"availability_profiles",
 	"availability_blocks",
 	"projects",
@@ -107,6 +110,12 @@ const EXPORT_QUERIES: Record<
 > = {
 	workspaces: (ws) => sql`SELECT * FROM workspaces WHERE id = ANY(${uuids(ws)})`,
 	memberships: (ws) => sql`SELECT * FROM memberships WHERE workspace_id = ANY(${uuids(ws)})`,
+	knowledge_articles: (ws) =>
+		sql`SELECT * FROM knowledge_articles WHERE workspace_id = ANY(${uuids(ws)})`,
+	knowledge_article_versions: (ws) =>
+		sql`SELECT * FROM knowledge_article_versions WHERE workspace_id = ANY(${uuids(ws)})`,
+	knowledge_acknowledgements: (ws) =>
+		sql`SELECT * FROM knowledge_acknowledgements WHERE workspace_id = ANY(${uuids(ws)})`,
 	availability_profiles: (ws) =>
 		sql`SELECT * FROM availability_profiles WHERE workspace_id = ANY(${uuids(ws)})`,
 	availability_blocks: (ws, userId) => sql`
@@ -523,6 +532,7 @@ async function runRestoreTransaction(input: {
 			await tx.execute(sql`SELECT set_config('watson.allow_poll_restore', 'on', true)`);
 			await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'on', true)`);
 			await tx.execute(sql`SELECT set_config('watson.skip_decision_materialize', 'on', true)`);
+			await tx.execute(sql`SELECT set_config('watson.allow_knowledge_restore', 'on', true)`);
 
 			const workspaceRows = input.tables.workspaces ?? [];
 			const workspaceIds = workspaceRows.map((row) => String(row.id));

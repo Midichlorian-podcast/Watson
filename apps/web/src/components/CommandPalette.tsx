@@ -24,6 +24,7 @@ type Route =
 	| "/prehled"
 	| "/mail"
 	| "/seznamy"
+	| "/znalosti"
 	| "/velin"
 	| "/ukoly"
 	| "/nadchazejici"
@@ -155,6 +156,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 				[t("nav.tasks"), "/ukoly"],
 				[t("nav.projects"), "/projekty"],
 				[t("nav.lists"), "/seznamy"],
+				[t("nav.knowledge"), "/znalosti"],
 				...(isLeadership(workspaces) ? ([[t("nav.velin"), "/velin"]] as [string, Route][]) : []),
 				[t("nav.goals"), "/cile"],
 				[t("nav.reports"), "/reporty"],

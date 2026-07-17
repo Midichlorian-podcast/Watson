@@ -38,6 +38,7 @@ const MORE: { to: string; icon: IconName; labelKey: string }[] = [
 	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
 	{ to: "/prijem-prace", icon: "schranka", labelKey: "nav.intake" },
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists" },
+	{ to: "/znalosti", icon: "popis", labelKey: "nav.knowledge" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
 	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox" },
 	{ to: "/cile", icon: "cile", labelKey: "nav.goals" },

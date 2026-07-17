@@ -48,6 +48,7 @@ import { exportRoutes } from "./export";
 import { importRoutes } from "./imports";
 import { intakeFormRoutes } from "./intakeForms";
 import { integrationRoutes } from "./integrations";
+import { knowledgeRoutes } from "./knowledge";
 import { luckyOsV1Routes } from "./luckyOsV1";
 import { mailAccountRoutes } from "./mailAccounts";
 import { mailExecutionRoutes } from "./mailExecution";
@@ -294,6 +295,10 @@ app.use(
 	rateLimit({ name: "automation", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
 );
 app.use(
+	"/api/knowledge/*",
+	rateLimit({ name: "knowledge", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
+);
+app.use(
 	"/api/watson/*",
 	rateLimit({ name: "watson-ai", windowMs: 60_000, max: 20, scope: "session-or-ip" }),
 );
@@ -467,6 +472,7 @@ app.route("/", taskBulkCommandRoutes);
 app.route("/", taskAcceptanceRoutes);
 app.route("/", chainCommandRoutes);
 app.route("/", decisionRoutes);
+app.route("/", knowledgeRoutes);
 app.route("/", radarRoutes);
 app.route("/", meetingsRoutes);
 app.route("/", watsonRoutes);
@@ -548,6 +554,7 @@ app.get("/api/workspaces", async (c) => {
 				capabilities: {
 					manageGoals: rank >= roleRank("manager"),
 					manageListTemplates: rank >= roleRank("manager"),
+					manageKnowledge: rank >= roleRank("manager"),
 					manageWorkspaceMembers: rank >= roleRank("admin"),
 					createContacts: rank >= roleRank("member"),
 					createLists: rank >= roleRank("member"),

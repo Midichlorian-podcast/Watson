@@ -40,6 +40,7 @@ export const MAIN_NAV: NavItem[] = [
 	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
 	{ to: "/prijem-prace", icon: "schranka", labelKey: "nav.intake" },
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists", count: true },
+	{ to: "/znalosti", icon: "popis", labelKey: "nav.knowledge" },
 	{ to: "/cile", icon: "cile", labelKey: "nav.goals" },
 	{ to: "/reporty", icon: "reporty", labelKey: "nav.reports" },
 	{ to: "/postupy", icon: "postup", labelKey: "nav.flows" },

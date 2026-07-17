@@ -561,6 +561,20 @@
       "when": 1784316572511,
       "tag": "0079_flat_jean_grey",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1784320863082,
+      "tag": "0080_brave_angel",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1784321596514,
+      "tag": "0081_knowledge_restore",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,7 @@ export interface Workspace {
 	capabilities?: {
 		manageGoals: boolean;
 		manageListTemplates: boolean;
+		manageKnowledge: boolean;
 		manageWorkspaceMembers: boolean;
 		createContacts: boolean;
 		createLists: boolean;

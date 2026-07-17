@@ -17,6 +17,7 @@ export * from "./flow";
 export * from "./goals";
 export * from "./imports";
 export * from "./intake";
+export * from "./knowledge";
 export * from "./lists";
 export * from "./mail";
 export * from "./meetings";
