@@ -47,7 +47,7 @@ export function MailScreen() {
 		if (handledConnection.current === key) return;
 		handledConnection.current = key;
 		if (search.mailConnection === "success") {
-			showToast("Google účet je bezpečně připravený. Synchronizace zpráv bude následovat; Mail je zatím demo.");
+			showToast("Google účet je připojený a bezpečný sync běží na pozadí; hlavní Mail UI je zatím demo.");
 		} else {
 			const messages: Record<string, string> = {
 				mail_oauth_denied: "Google souhlas byl zrušen. Žádný účet ani credential nevznikl.",

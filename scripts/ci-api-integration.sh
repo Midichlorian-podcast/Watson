@@ -125,6 +125,7 @@ pnpm --filter @watson/api verify:drizzle
 pnpm --filter @watson/api verify:reminders
 pnpm --filter @watson/api verify:mail-vault
 pnpm --filter @watson/api verify:mail-foundation
+pnpm --filter @watson/api verify:mail-content-vault
 pnpm --filter @watson/api verify:employee-reconcile
 pnpm --filter @watson/api verify:db-invariants
 pnpm --filter @watson/api verify:signing-keys
@@ -150,6 +151,7 @@ AVAILABILITY_API="$API_URL" pnpm --filter @watson/api verify:availability
 BOOKING_API="$API_URL" pnpm --filter @watson/api verify:bookings
 INTEGRATIONS_API="$API_URL" pnpm --filter @watson/api verify:integrations
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-google
+MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-sync
 RECURRENCE_API="$API_URL" pnpm --filter @watson/api verify:recurrence
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:meet-acl
 MEETING_API="$API_URL" pnpm --filter @watson/api verify:meeting-commands

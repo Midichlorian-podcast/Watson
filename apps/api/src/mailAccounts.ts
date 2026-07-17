@@ -15,7 +15,9 @@ import {
 	mailAccountCredentials,
 	mailAccounts,
 	mailCommandReceipts,
+	mailMessages,
 	mailOauthSessions,
+	mailSyncStates,
 	sql,
 	workspaces,
 } from "@watson/db";
@@ -287,6 +289,22 @@ async function storeGoogleAccount(
 					credentialVersion: sql`${mailAccountCredentials.credentialVersion} + 1`,
 				},
 			});
+		await tx
+			.insert(mailSyncStates)
+			.values({ accountId, status: "pending", syncMode: "full", requestedAt: new Date() })
+			.onConflictDoUpdate({
+				target: mailSyncStates.accountId,
+				set: {
+					status: "pending",
+					requestedAt: new Date(),
+					nextAttemptAt: null,
+					leaseToken: null,
+					leaseUntil: null,
+					attempts: 0,
+					lastErrorCode: null,
+					version: sql`${mailSyncStates.version} + 1`,
+				},
+			});
 		await tx.insert(auditEvents).values({
 			workspaceId,
 			actorType: "user",
@@ -546,6 +564,8 @@ mailAccountRoutes.post("/api/mail/accounts/:accountId/revoke", async (c) => {
 				);
 				await revokeGoogleToken(credential.refreshToken);
 			}
+			await tx.delete(mailMessages).where(eq(mailMessages.accountId, account.id));
+			await tx.delete(mailSyncStates).where(eq(mailSyncStates.accountId, account.id));
 			await tx.delete(mailAccountCredentials).where(eq(mailAccountCredentials.accountId, account.id));
 			const [updated] = await tx
 				.update(mailAccounts)
@@ -578,6 +598,7 @@ mailAccountRoutes.post("/api/mail/accounts/:accountId/revoke", async (c) => {
 					provider: account.provider,
 					status: "revoked",
 					credential: "deleted",
+					syncedContent: "deleted",
 					operationId: body.data.operationId,
 				},
 				requestId: c.get("requestId") ?? null,

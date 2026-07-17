@@ -5,6 +5,8 @@ import {
 	getDb,
 	mailAccountCredentials,
 	mailAccounts,
+	mailMessages,
+	mailSyncStates,
 	users,
 	workspaces,
 } from "@watson/db";
@@ -142,12 +144,67 @@ async function main() {
 				.where(eq(mailAccountCredentials.accountId, accountId)),
 		);
 
+		await rejected("partial sync bez history cursoru v DB nevznikne", () =>
+			db.insert(mailSyncStates).values({
+				accountId,
+				status: "idle",
+				syncMode: "partial",
+			}),
+		);
+		await rejected("running sync bez úplného lease v DB nevznikne", () =>
+			db.insert(mailSyncStates).values({
+				accountId,
+				status: "running",
+				syncMode: "full",
+			}),
+		);
+		const generation = randomUUID();
+		await db.insert(mailSyncStates).values({
+			accountId,
+			status: "idle",
+			syncMode: "full",
+			fullSyncGeneration: generation,
+		});
+		await rejected("DB odmítne neplatné opaque provider message ID", () =>
+			db.insert(mailMessages).values({
+				accountId,
+				providerMessageId: "provider id with spaces",
+				providerThreadId: "thread-1",
+				historyId: "1001",
+				internalDate: new Date(),
+				keyId: "mail-foundation",
+				nonce: "A".repeat(16),
+				authTag: "B".repeat(22),
+				ciphertext: "C",
+				lastSeenSyncGeneration: generation,
+			}),
+		);
+		await db.insert(mailMessages).values({
+			accountId,
+			providerMessageId: "message-1",
+			providerThreadId: "thread-1",
+			historyId: "1001",
+			internalDate: new Date(),
+			keyId: "mail-foundation",
+			nonce: "A".repeat(16),
+			authTag: "B".repeat(22),
+			ciphertext: "C",
+			lastSeenSyncGeneration: generation,
+		});
+
 		await db.delete(mailAccounts).where(eq(mailAccounts.id, accountId));
-		const credentialsAfterDelete = await db
-			.select({ accountId: mailAccountCredentials.accountId })
-			.from(mailAccountCredentials)
-			.where(eq(mailAccountCredentials.accountId, accountId));
-		check("smazání mailboxu fyzicky odstraní credential envelope", credentialsAfterDelete.length === 0);
+		const [credentialsAfterDelete, syncAfterDelete, messagesAfterDelete] = await Promise.all([
+			db
+				.select({ accountId: mailAccountCredentials.accountId })
+				.from(mailAccountCredentials)
+				.where(eq(mailAccountCredentials.accountId, accountId)),
+			db.select().from(mailSyncStates).where(eq(mailSyncStates.accountId, accountId)),
+			db.select().from(mailMessages).where(eq(mailMessages.accountId, accountId)),
+		]);
+		check(
+			"smazání mailboxu fyzicky odstraní credential, cursor i obsah",
+			credentialsAfterDelete.length === 0 && syncAfterDelete.length === 0 && messagesAfterDelete.length === 0,
+		);
 	} finally {
 		await db.delete(users).where(eq(users.id, owner.id));
 		await db.delete(users).where(eq(users.id, stranger.id));

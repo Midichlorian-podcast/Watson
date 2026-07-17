@@ -7,6 +7,7 @@
  */
 import { sql } from "drizzle-orm";
 import {
+	boolean,
 	check,
 	index,
 	integer,
@@ -201,5 +202,120 @@ export const mailCommandReceipts = pgTable(
 		check("mail_command_receipts_response_object", sql`jsonb_typeof(${t.response}) = 'object'`),
 		uniqueIndex("mail_command_receipts_actor_operation_uq").on(t.actorUserId, t.operationId),
 		index("mail_command_receipts_account_idx").on(t.accountId, t.createdAt),
+	],
+);
+
+/**
+ * Autoritativní mailbox sync cursor a krátký distributed lease. Jeden účet má
+ * nejvýše jeden běh; expirovaný lease převezme jiná API replika. Page token je
+ * pouze neprůhledný provider cursor, nikdy OAuth credential.
+ */
+export const mailSyncStates = pgTable(
+	"mail_sync_states",
+	{
+		accountId: uuid("account_id")
+			.primaryKey()
+			.references(() => mailAccounts.id, { onDelete: "cascade" }),
+		status: varchar("status", { length: 24 }).notNull().default("pending"),
+		syncMode: varchar("sync_mode", { length: 16 }).notNull().default("full"),
+		historyId: varchar("history_id", { length: 64 }),
+		baselineHistoryId: varchar("baseline_history_id", { length: 64 }),
+		pageToken: varchar("page_token", { length: 2048 }),
+		fullSyncGeneration: uuid("full_sync_generation").notNull().defaultRandom(),
+		requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow(),
+		nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+		leaseToken: uuid("lease_token"),
+		leaseUntil: timestamp("lease_until", { withTimezone: true }),
+		attempts: integer("attempts").notNull().default(0),
+		lastStartedAt: timestamp("last_started_at", { withTimezone: true }),
+		lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+		lastErrorCode: varchar("last_error_code", { length: 64 }),
+		version: integer("version").notNull().default(1),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check(
+			"mail_sync_states_status_valid",
+			sql`${t.status} in ('pending', 'running', 'idle', 'retry', 'dead', 'reauth_required')`,
+		),
+		check("mail_sync_states_mode_valid", sql`${t.syncMode} in ('full', 'partial')`),
+		check(
+			"mail_sync_states_lease_consistent",
+			sql`(${t.status} = 'running') = (${t.leaseToken} IS NOT NULL AND ${t.leaseUntil} IS NOT NULL)`,
+		),
+		check(
+			"mail_sync_states_history_valid",
+			sql`${t.historyId} IS NULL OR ${t.historyId} ~ '^[0-9]{1,64}$'`,
+		),
+		check(
+			"mail_sync_states_baseline_valid",
+			sql`${t.baselineHistoryId} IS NULL OR ${t.baselineHistoryId} ~ '^[0-9]{1,64}$'`,
+		),
+		check(
+			"mail_sync_states_partial_cursor",
+			sql`${t.syncMode} <> 'partial' OR ${t.historyId} IS NOT NULL`,
+		),
+		check("mail_sync_states_attempts_nonnegative", sql`${t.attempts} >= 0`),
+		check(
+			"mail_sync_states_error_valid",
+			sql`${t.lastErrorCode} IS NULL OR ${t.lastErrorCode} in ('mail_provider_timeout', 'mail_provider_unavailable', 'mail_rate_limited', 'mail_auth_rejected', 'mail_contract_rejected', 'mail_history_expired')`,
+		),
+		check("mail_sync_states_version_positive", sql`${t.version} > 0`),
+		index("mail_sync_states_claim_idx").on(t.status, t.nextAttemptAt, t.requestedAt),
+		index("mail_sync_states_lease_idx").on(t.leaseUntil),
+	],
+);
+
+/**
+ * Provider index + autentizovaně šifrovaný obsah zprávy. Předmět, adresy,
+ * snippet i MIME těla jsou uvnitř ciphertextu; otevřené zůstávají jen opaque
+ * Gmail ID, datum/velikost a labely potřebné pro bezpečný incremental sync.
+ */
+export const mailMessages = pgTable(
+	"mail_messages",
+	{
+		id: pk(),
+		accountId: uuid("account_id")
+			.notNull()
+			.references(() => mailAccounts.id, { onDelete: "cascade" }),
+		providerMessageId: varchar("provider_message_id", { length: 128 }).notNull(),
+		providerThreadId: varchar("provider_thread_id", { length: 128 }).notNull(),
+		historyId: varchar("history_id", { length: 64 }).notNull(),
+		internalDate: timestamp("internal_date", { withTimezone: true }).notNull(),
+		labelIds: jsonb("label_ids").$type<string[]>().notNull().default([]),
+		sizeEstimate: integer("size_estimate").notNull().default(0),
+		algorithm: varchar("algorithm", { length: 24 }).notNull().default("aes-256-gcm-v1"),
+		keyId: varchar("key_id", { length: 64 }).notNull(),
+		nonce: varchar("nonce", { length: 24 }).notNull(),
+		authTag: varchar("auth_tag", { length: 32 }).notNull(),
+		ciphertext: text("ciphertext").notNull(),
+		contentVersion: integer("content_version").notNull().default(1),
+		contentTruncated: boolean("content_truncated").notNull().default(false),
+		lastSeenSyncGeneration: uuid("last_seen_sync_generation").notNull(),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check(
+			"mail_messages_provider_message_id_valid",
+			sql`${t.providerMessageId} ~ '^[A-Za-z0-9_-]{1,128}$'`,
+		),
+		check(
+			"mail_messages_provider_thread_id_valid",
+			sql`${t.providerThreadId} ~ '^[A-Za-z0-9_-]{1,128}$'`,
+		),
+		check("mail_messages_history_valid", sql`${t.historyId} ~ '^[0-9]{1,64}$'`),
+		check("mail_messages_labels_array", sql`jsonb_typeof(${t.labelIds}) = 'array'`),
+		check("mail_messages_size_nonnegative", sql`${t.sizeEstimate} >= 0`),
+		check("mail_messages_algorithm_valid", sql`${t.algorithm} = 'aes-256-gcm-v1'`),
+		check("mail_messages_key_id_valid", sql`length(${t.keyId}) between 1 and 64`),
+		check("mail_messages_nonce_valid", sql`length(${t.nonce}) between 16 and 24`),
+		check("mail_messages_tag_valid", sql`length(${t.authTag}) between 22 and 32`),
+		check("mail_messages_ciphertext_valid", sql`length(${t.ciphertext}) > 0`),
+		check("mail_messages_content_version_positive", sql`${t.contentVersion} > 0`),
+		uniqueIndex("mail_messages_account_provider_uq").on(t.accountId, t.providerMessageId),
+		index("mail_messages_account_date_idx").on(t.accountId, t.internalDate),
+		index("mail_messages_account_thread_idx").on(t.accountId, t.providerThreadId),
 	],
 );

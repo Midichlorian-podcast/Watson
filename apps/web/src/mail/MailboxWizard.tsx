@@ -2,8 +2,8 @@
  * F5 Mail M1 — pravdivá správa osobních mailbox účtů.
  *
  * Google používá skutečný serverový OAuth/PKCE flow. M365 a IMAP/SMTP jsou
- * viditelně nedostupné, dokud nebudou mít vlastní ověřený adapter. Připojený účet
- * zatím neznamená synchronizované zprávy; permanentní demo banner zůstává.
+ * viditelně nedostupné, dokud nebudou mít vlastní ověřený adapter. Google zprávy
+ * se synchronizují šifrovaně na serveru; hlavní Mail UI je zatím stále demo.
  */
 import { useCallback, useEffect, useState } from "react";
 import { API_URL } from "../lib/api";
@@ -158,7 +158,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 			const updatedAccount = body.account;
 			setAccounts((current) => current.map((item) => (item.id === account.id ? updatedAccount : item)));
 			setConfirmRevoke(null);
-			showToast("Google účet je odpojený. Credential byl odstraněn; demo zprávy se nezměnily.");
+			showToast("Google účet je odpojený. Credential i synchronizovaný obsah byly odstraněny; demo Mail se nezměnil.");
 		} catch (cause) {
 			const code = cause instanceof Error ? cause.message : "mail_revoke_failed";
 			if (code === "stale_version" || code === "mail_account_already_revoked") await load();
@@ -211,7 +211,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 							Osobní e-mailové účty
 						</h2>
 						<p style={{ margin: "4px 0 0", fontSize: 12, lineHeight: 1.5, color: "var(--ink-3)" }}>
-							Připojení ukládá pouze šifrovaný credential. Zprávy a akce v Mailu jsou zatím stále demo.
+							Credential i synchronizovaný obsah jsou šifrované. Hlavní Mail UI a jeho akce jsou zatím stále demo.
 						</p>
 					</div>
 					<button
@@ -263,7 +263,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 										</div>
 										{confirming && (
 											<div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)", fontSize: 11.5, color: "var(--ink-2)" }}>
-												Watson požádá Google o revokaci a potom fyzicky odstraní credential.
+												Watson požádá Google o revokaci a potom fyzicky odstraní credential, sync cursor i stažený obsah.
 												<div style={{ display: "flex", gap: 8, marginTop: 9 }}>
 													<button type="button" onClick={() => setConfirmRevoke(null)} disabled={revoking === account.id} style={{ minHeight: 44, padding: "0 13px", border: "1px solid var(--line)", borderRadius: 9, background: "transparent", color: "var(--ink-2)", cursor: "pointer" }}>Ponechat účet</button>
 													<button type="button" onClick={() => void revoke(account)} disabled={revoking === account.id} style={{ minHeight: 44, padding: "0 13px", border: 0, borderRadius: 9, background: "var(--danger-ink)", color: "white", cursor: "pointer" }}>{revoking === account.id ? "Odpojuji…" : "Potvrdit odpojení"}</button>

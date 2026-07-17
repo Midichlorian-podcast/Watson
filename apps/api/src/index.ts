@@ -44,6 +44,7 @@ import { intakeFormRoutes } from "./intakeForms";
 import { integrationRoutes } from "./integrations";
 import { meetingsRoutes } from "./meetings";
 import { mailAccountRoutes } from "./mailAccounts";
+import { mailSyncRoutes, startMailSyncWorker } from "./mailSync";
 import { parseMailVaultKeyring } from "./mailVault";
 import { isOpsTokenAuthorized, readOpsSloSnapshot, recordHttpMetric } from "./opsMetrics";
 import { pollRoutes } from "./polls";
@@ -435,6 +436,7 @@ app.route("/", intakeFormRoutes);
 app.route("/", integrationRoutes);
 app.route("/", serviceIntegrationRoutes);
 app.route("/", mailAccountRoutes);
+app.route("/", mailSyncRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);
@@ -1323,6 +1325,7 @@ serve({ fetch: app.fetch, port: env.apiPort }, (info) => {
 		`[watson-api] Web Push: ${pushEnabled ? "zapnut" : "vypnut (chybí VAPID klíče)"}`,
 	);
 	startReminderWorker();
+	startMailSyncWorker();
 });
 
 export type AppType = typeof app;
