@@ -13,6 +13,7 @@ import {
 	and,
 	assignments,
 	auditEvents,
+	decisions as decisionLog,
 	entityLinks,
 	eq,
 	getDb,
@@ -126,11 +127,10 @@ async function claudeExtract(
 ): Promise<TaskProposal[]> {
 	const client = new Anthropic({ apiKey: env.anthropicApiKey, timeout: 90_000, maxRetries: 1 });
 	const rosterText = roster
-		.map(
-			(r) =>
-				redactVendorText(
-					`- ${r.name ?? "?"} (id: ${r.id})${r.areas ? ` — oblasti: ${r.areas}` : ""}${r.bio ? `; ${r.bio}` : ""}`,
-				),
+		.map((r) =>
+			redactVendorText(
+				`- ${r.name ?? "?"} (id: ${r.id})${r.areas ? ` — oblasti: ${r.areas}` : ""}${r.bio ? `; ${r.bio}` : ""}`,
+			),
 		)
 		.join("\n");
 
@@ -422,9 +422,7 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 				.map((event) => event.diff as { commandHash?: unknown } | null)
 				.map((diff) => diff?.commandHash)
 				.find((hash): hash is string => typeof hash === "string");
-			const hub = (
-				await tx.select().from(tasks).where(eq(tasks.id, body.hubTaskId)).limit(1)
-			)[0];
+			const hub = (await tx.select().from(tasks).where(eq(tasks.id, body.hubTaskId)).limit(1))[0];
 			const assigned = hub
 				? await tx
 						.select({ userId: assignments.userId })
@@ -629,8 +627,7 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 		return { conflict: false as const, replayed: false, meetingId: body.meetingId };
 	});
 
-	if ("conflict" in result && result.conflict)
-		return c.json({ error: "command_id_conflict" }, 409);
+	if ("conflict" in result && result.conflict) return c.json({ error: "command_id_conflict" }, 409);
 	if ("forbidden" in result) return c.json({ error: "forbidden" }, 403);
 	if ("invalidParticipants" in result)
 		return c.json({ error: "participant_not_project_member" }, 422);
@@ -641,10 +638,8 @@ meetingsRoutes.post("/api/meetings/plan", async (c) => {
 			{ error: "availability_conflict", availability: result.availabilityConflict },
 			409,
 		);
-	if ("invalidPreviousMeeting" in result)
-		return c.json({ error: "invalid_previous_meeting" }, 422);
-	if ("notPreviousParticipant" in result)
-		return c.json({ error: "not-a-participant" }, 403);
+	if ("invalidPreviousMeeting" in result) return c.json({ error: "invalid_previous_meeting" }, 422);
+	if ("notPreviousParticipant" in result) return c.json({ error: "not-a-participant" }, 403);
 	if ("invalidCarry" in result) return c.json({ error: "invalid_carry" }, 422);
 	return c.json({ ok: true, ...result });
 });
@@ -708,7 +703,8 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 	// + regres statusu; verze/soubeh řeší až Conflict Inbox — CC-P0-04/07).
 	if (existing && existing.status === "cancelled")
 		return c.json({ error: "meeting_cancelled" }, 409);
-	if (existing && existing.status === "committed") return c.json({ error: "already committed" }, 409);
+	if (existing && existing.status === "committed")
+		return c.json({ error: "already committed" }, 409);
 	if (!aiEnabled && !aiMockEnabled) return c.json({ error: "ai_not_configured" }, 503);
 
 	const roster: RosterRow[] = await db
@@ -728,8 +724,7 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 			inputChars: transcript.length,
 			model: env.anthropicModel,
 		});
-		if (!authorization.ok)
-			return c.json({ error: authorization.error }, authorization.status);
+		if (!authorization.ok) return c.json({ error: authorization.error }, authorization.status);
 	}
 
 	let proposals: TaskProposal[];
@@ -994,7 +989,9 @@ meetingsRoutes.get("/api/meetings/:id", async (c) => {
 	return c.json({ meeting: m });
 });
 
-const linkExistingSchema = z.object({ taskIds: z.array(z.string().uuid()).min(1).max(200) }).strict();
+const linkExistingSchema = z
+	.object({ taskIds: z.array(z.string().uuid()).min(1).max(200) })
+	.strict();
 
 /**
  * Jednorázová oprava starších lokálně vytvořených akčních bodů. Nový tok používá
@@ -1018,10 +1015,7 @@ meetingsRoutes.post("/api/meetings/:id/link-existing", async (c) => {
 				.select({ role: memberships.role })
 				.from(memberships)
 				.where(
-					and(
-						eq(memberships.workspaceId, m.workspaceId),
-						eq(memberships.userId, session.user.id),
-					),
+					and(eq(memberships.workspaceId, m.workspaceId), eq(memberships.userId, session.user.id)),
 				)
 				.limit(1)
 		)[0]?.role;
@@ -1079,7 +1073,10 @@ meetingsRoutes.post("/api/meetings/:id/link-existing", async (c) => {
 				})
 				.onConflictDoNothing();
 		}
-		await tx.update(meetings).set({ status: "committed", updatedAt: new Date() }).where(eq(meetings.id, m.id));
+		await tx
+			.update(meetings)
+			.set({ status: "committed", updatedAt: new Date() })
+			.where(eq(meetings.id, m.id));
 		await tx.insert(auditEvents).values({
 			workspaceId: m.workspaceId,
 			actorType: "user",
@@ -1127,14 +1124,14 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 		.map((proposal, proposalIndex) => ({ proposal, proposalIndex }))
 		.filter(
 			({ proposal }) =>
-				proposal.keep === true &&
-				proposal.kind === "action" &&
-				proposal.title.trim().length > 0,
+				proposal.keep === true && proposal.kind === "action" && proposal.title.trim().length > 0,
 		);
-	const decisions = review.filter(
-		(proposal) =>
-			proposal.keep === true && proposal.kind === "decision" && proposal.title.trim().length > 0,
-	);
+	const decisionProposals = review
+		.map((proposal, proposalIndex) => ({ proposal, proposalIndex }))
+		.filter(
+			({ proposal }) =>
+				proposal.keep === true && proposal.kind === "decision" && proposal.title.trim().length > 0,
+		);
 	const unresolved = review.filter(
 		(proposal) => proposal.kind === "unclear" && proposal.title.trim().length > 0,
 	);
@@ -1151,10 +1148,7 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 				.select({ role: memberships.role })
 				.from(memberships)
 				.where(
-					and(
-						eq(memberships.workspaceId, m.workspaceId),
-						eq(memberships.userId, session.user.id),
-					),
+					and(eq(memberships.workspaceId, m.workspaceId), eq(memberships.userId, session.user.id)),
 				)
 				.limit(1)
 		)[0];
@@ -1167,10 +1161,7 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 							.select({ id: assignments.id })
 							.from(assignments)
 							.where(
-								and(
-									eq(assignments.taskId, m.hubTaskId),
-									eq(assignments.userId, session.user.id),
-								),
+								and(eq(assignments.taskId, m.hubTaskId), eq(assignments.userId, session.user.id)),
 							)
 							.limit(1)
 					).length > 0
@@ -1204,11 +1195,16 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 						eq(entityLinks.toType, "task"),
 					),
 				);
+			const priorDecisions = await tx
+				.select({ id: decisionLog.id })
+				.from(decisionLog)
+				.where(and(eq(decisionLog.sourceType, "meeting"), eq(decisionLog.sourceObjectId, m.id)));
 			return {
 				ok: true as const,
 				replayed: true,
 				created: linked.length,
 				taskIds: linked.map((row) => row.taskId),
+				decisionIds: priorDecisions.map((row) => row.id),
 			};
 		}
 
@@ -1224,13 +1220,15 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 		const hub = m.hubTaskId
 			? (await tx.select().from(tasks).where(eq(tasks.id, m.hubTaskId)).limit(1))[0]
 			: undefined;
-		const hasAppendix = decisions.length > 0 || unresolved.length > 0;
-		if (hasAppendix && m.hubTaskId && !hub) return { invalidHub: true as const };
+		const hasMeetingOutputs = decisionProposals.length > 0 || unresolved.length > 0;
+		if (hasMeetingOutputs && m.hubTaskId && !hub) return { invalidHub: true as const };
+		const decisionProjectId = hub?.projectId ?? parsed.data.defaultProjectId;
 		const projectIds = [
 			...new Set([
 				parsed.data.defaultProjectId,
 				...materialized.map((item) => item.projectId),
-				...(hasAppendix && hub ? [hub.projectId] : []),
+				...(decisionProposals.length > 0 ? [decisionProjectId] : []),
+				...(unresolved.length > 0 && hub ? [hub.projectId] : []),
 			]),
 		];
 		const allowedProjects = projectIds.length
@@ -1297,9 +1295,7 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 				name: item.proposal.title.trim(),
 				description: item.proposal.note ?? null,
 				priority: item.proposal.priority ?? 3,
-				dueDate: item.proposal.due
-					? new Date(`${item.proposal.due}T00:00:00.000Z`)
-					: null,
+				dueDate: item.proposal.due ? new Date(`${item.proposal.due}T00:00:00.000Z`) : null,
 				assignmentMode: item.assigneeIds.length > 1 ? "shared_all" : "single",
 				kind: "task",
 				meetingId: m.id,
@@ -1328,19 +1324,28 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 			taskIds.push(taskId);
 		}
 
-		if (hasAppendix && hub) {
-			const blocks: string[] = [];
-			if (decisions.length > 0) {
-				blocks.push(
-					`Rozhodnutí z porady:\n${decisions.map((item) => `• ${item.title.trim()}`).join("\n")}`,
-				);
-			}
-			if (unresolved.length > 0) {
-				blocks.push(
-					`K dořešení (nepřevzato jako úkol):\n${unresolved.map((item) => `• ${item.title.trim()}`).join("\n")}`,
-				);
-			}
-			const appendix = blocks.join("\n\n");
+		const decisionIds: string[] = [];
+		for (const item of decisionProposals) {
+			const decisionId = crypto.randomUUID();
+			await tx.insert(decisionLog).values({
+				id: decisionId,
+				workspaceId: m.workspaceId,
+				projectId: decisionProjectId,
+				sourceType: "meeting",
+				sourceObjectId: m.id,
+				sourceKey: String(item.proposalIndex),
+				title: item.proposal.title.trim(),
+				rationale: item.proposal.note?.trim() || null,
+				decidedAt: new Date(),
+				createdBy: session.user.id,
+			});
+			decisionIds.push(decisionId);
+		}
+
+		if (unresolved.length > 0 && hub) {
+			const appendix = `K dořešení (nepřevzato jako úkol):\n${unresolved
+				.map((item) => `• ${item.title.trim()}`)
+				.join("\n")}`;
 			await tx
 				.update(tasks)
 				.set({
@@ -1363,13 +1368,20 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 			diff: {
 				taskIds,
 				count: taskIds.length,
-				decisionCount: decisions.length,
+				decisionIds,
+				decisionCount: decisionIds.length,
 				unresolvedCount: unresolved.length,
 				commandHash: commitHash,
 			},
 			requestId: c.get("requestId") ?? null,
 		});
-		return { ok: true as const, replayed: false, created: taskIds.length, taskIds };
+		return {
+			ok: true as const,
+			replayed: false,
+			created: taskIds.length,
+			taskIds,
+			decisionIds,
+		};
 	});
 
 	if ("notFound" in result) return c.json({ error: "not found" }, 404);
@@ -1380,9 +1392,7 @@ meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
 		return c.json({ error: "already_committed_different_payload" }, 409);
 	if ("invalidProject" in result) return c.json({ error: "invalid_project" }, 403);
 	if ("invalidHub" in result) return c.json({ error: "invalid_meeting_hub" }, 409);
-	if ("invalidAssignee" in result)
-		return c.json({ error: "assignee_not_project_member" }, 422);
-	if ("crossProjectParent" in result)
-		return c.json({ error: "cross_project_parent" }, 422);
+	if ("invalidAssignee" in result) return c.json({ error: "assignee_not_project_member" }, 422);
+	if ("crossProjectParent" in result) return c.json({ error: "cross_project_parent" }, 422);
 	return c.json(result);
 });

@@ -176,6 +176,7 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 				'taskAcceptances', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_acceptances x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'comments', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM comments x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'commentDecisions', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM comment_decisions x WHERE x.task_id IN (SELECT id FROM task_ids)),
+				'decisionTaskLinks', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM decision_task_links x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'mentions', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM mentions x WHERE x.comment_id IN (SELECT id FROM comment_ids)),
 				'commentReactions', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM comment_reactions x WHERE x.comment_id IN (SELECT id FROM comment_ids)),
 				'attachments', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM attachments x WHERE x.task_id IN (SELECT id FROM task_ids) OR x.comment_id IN (SELECT id FROM comment_ids)),
@@ -275,6 +276,9 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 		// meetings.hub_task_id má ON DELETE CASCADE; sidecar proto zmizí ve stejné
 		// DB operaci jako hub. BEFORE DELETE trigger současně odpojí zachované action
 		// tasky a navazující porady, takže nevzniknou soft-reference sirotci.
+		await tx.execute(
+			sql`SELECT set_config('watson.preserve_decisions_on_source_delete', 'on', true)`,
+		);
 		await tx.execute(sql`DELETE FROM tasks WHERE id = ANY(${uuids(taskIds)})`);
 		await tx.insert(auditEvents).values({
 			workspaceId,
@@ -294,8 +298,7 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 	if ("forbidden" in result) return c.json({ error: "forbidden" }, 403);
 	if ("milestoneReference" in result)
 		return c.json({ error: "project_milestone_task_reference" }, 409);
-	if ("activeBookingReference" in result)
-		return c.json({ error: "cancel_booking_first" }, 409);
+	if ("activeBookingReference" in result) return c.json({ error: "cancel_booking_first" }, 409);
 	if ("multipleWorkspaces" in result)
 		return c.json({ error: "cross_workspace_batch_not_allowed" }, 422);
 	return c.json({ ok: true, batchId: result.batchId, replay: result.replay });
@@ -309,7 +312,9 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 	const db = getDb();
 
 	const result = await db.transaction(async (tx) => {
-		await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${parsed.data.batchId}, 0))`);
+		await tx.execute(
+			sql`SELECT pg_advisory_xact_lock(hashtextextended(${parsed.data.batchId}, 0))`,
+		);
 		const rows = (await tx.execute(sql`
 			SELECT id, workspace_id, created_by, snapshot, restored_at, expires_at
 			FROM task_undo_batches WHERE id = ${parsed.data.batchId} FOR UPDATE
@@ -328,9 +333,7 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 		if (batch.restored_at) return { replay: true as const };
 		if (new Date(batch.expires_at).getTime() <= Date.now()) return { expired: true as const };
 		const projectIds = Array.isArray(batch.snapshot.projectIds) ? batch.snapshot.projectIds : [];
-		const rootTaskIds = Array.isArray(
-			(batch.snapshot as { rootTaskIds?: unknown }).rootTaskIds,
-		)
+		const rootTaskIds = Array.isArray((batch.snapshot as { rootTaskIds?: unknown }).rootTaskIds)
 			? ((batch.snapshot as { rootTaskIds: unknown[] }).rootTaskIds.filter(
 					(value): value is string => typeof value === "string",
 				) as string[])
@@ -343,30 +346,68 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 			LEFT JOIN memberships wm ON wm.workspace_id = p.workspace_id AND wm.user_id = ${session.user.id}
 			WHERE p.id = ANY(${uuids(projectIds)})
 		`)) as unknown as AccessRow[];
-		if (access.length !== projectIds.length || !access.every((row) => canEditTask(row, session.user.id)))
+		if (
+			access.length !== projectIds.length ||
+			!access.every((row) => canEditTask(row, session.user.id))
+		)
 			return { forbidden: true as const };
 
 		// Raw SQL parametr musí být serializovaný JSON string; předání JS objektu přes
 		// drizzle `sql` končí v postgres-js jako neplatný binární argument.
 		const snapshot = sql`${JSON.stringify(batch.snapshot)}::jsonb`;
-		await tx.execute(sql`INSERT INTO tasks SELECT * FROM jsonb_populate_recordset(null::tasks, ${snapshot}->'tasks') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO meetings SELECT * FROM jsonb_populate_recordset(null::meetings, ${snapshot}->'meetings') ON CONFLICT DO NOTHING`);
+		await tx.execute(
+			sql`INSERT INTO tasks SELECT * FROM jsonb_populate_recordset(null::tasks, ${snapshot}->'tasks') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO meetings SELECT * FROM jsonb_populate_recordset(null::meetings, ${snapshot}->'meetings') ON CONFLICT DO NOTHING`,
+		);
 		await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'on', true)`);
-		await tx.execute(sql`INSERT INTO assignments SELECT * FROM jsonb_populate_recordset(null::assignments, ${snapshot}->'assignments') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO task_acceptances SELECT * FROM jsonb_populate_recordset(null::task_acceptances, COALESCE(${snapshot}->'taskAcceptances', '[]'::jsonb)) ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO comments SELECT * FROM jsonb_populate_recordset(null::comments, ${snapshot}->'comments') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO comment_decisions SELECT * FROM jsonb_populate_recordset(null::comment_decisions, ${snapshot}->'commentDecisions') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO mentions SELECT * FROM jsonb_populate_recordset(null::mentions, ${snapshot}->'mentions') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO comment_reactions SELECT * FROM jsonb_populate_recordset(null::comment_reactions, ${snapshot}->'commentReactions') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO attachments SELECT * FROM jsonb_populate_recordset(null::attachments, ${snapshot}->'attachments') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO attachment_blobs SELECT * FROM jsonb_populate_recordset(null::attachment_blobs, ${snapshot}->'attachmentBlobs') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO reminders SELECT * FROM jsonb_populate_recordset(null::reminders, ${snapshot}->'reminders') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO task_activity SELECT * FROM jsonb_populate_recordset(null::task_activity, ${snapshot}->'taskActivity') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO task_dependencies SELECT * FROM jsonb_populate_recordset(null::task_dependencies, ${snapshot}->'taskDependencies') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO task_custom_field_values SELECT * FROM jsonb_populate_recordset(null::task_custom_field_values, ${snapshot}->'customFieldValues') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO task_polls SELECT * FROM jsonb_populate_recordset(null::task_polls, ${snapshot}->'polls') ON CONFLICT DO NOTHING`);
+		await tx.execute(
+			sql`INSERT INTO assignments SELECT * FROM jsonb_populate_recordset(null::assignments, ${snapshot}->'assignments') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO task_acceptances SELECT * FROM jsonb_populate_recordset(null::task_acceptances, COALESCE(${snapshot}->'taskAcceptances', '[]'::jsonb)) ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO comments SELECT * FROM jsonb_populate_recordset(null::comments, ${snapshot}->'comments') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO comment_decisions SELECT * FROM jsonb_populate_recordset(null::comment_decisions, ${snapshot}->'commentDecisions') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO decision_task_links SELECT * FROM jsonb_populate_recordset(null::decision_task_links, COALESCE(${snapshot}->'decisionTaskLinks', '[]'::jsonb)) ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO mentions SELECT * FROM jsonb_populate_recordset(null::mentions, ${snapshot}->'mentions') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO comment_reactions SELECT * FROM jsonb_populate_recordset(null::comment_reactions, ${snapshot}->'commentReactions') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO attachments SELECT * FROM jsonb_populate_recordset(null::attachments, ${snapshot}->'attachments') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO attachment_blobs SELECT * FROM jsonb_populate_recordset(null::attachment_blobs, ${snapshot}->'attachmentBlobs') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO reminders SELECT * FROM jsonb_populate_recordset(null::reminders, ${snapshot}->'reminders') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO task_activity SELECT * FROM jsonb_populate_recordset(null::task_activity, ${snapshot}->'taskActivity') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO task_dependencies SELECT * FROM jsonb_populate_recordset(null::task_dependencies, ${snapshot}->'taskDependencies') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO task_custom_field_values SELECT * FROM jsonb_populate_recordset(null::task_custom_field_values, ${snapshot}->'customFieldValues') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO task_polls SELECT * FROM jsonb_populate_recordset(null::task_polls, ${snapshot}->'polls') ON CONFLICT DO NOTHING`,
+		);
 		await tx.execute(sql`SELECT set_config('watson.allow_poll_restore', 'on', true)`);
-		await tx.execute(sql`INSERT INTO task_poll_responses SELECT * FROM jsonb_populate_recordset(null::task_poll_responses, ${snapshot}->'pollResponses') ON CONFLICT DO NOTHING`);
+		await tx.execute(
+			sql`INSERT INTO task_poll_responses SELECT * FROM jsonb_populate_recordset(null::task_poll_responses, ${snapshot}->'pollResponses') ON CONFLICT DO NOTHING`,
+		);
 		await tx.execute(sql`
 			UPDATE intake_submissions submission SET task_id = restored.task_id
 			FROM jsonb_to_recordset(${snapshot}->'intakeSubmissions') AS restored(id uuid, task_id uuid)
@@ -377,15 +418,33 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 			FROM jsonb_to_recordset(COALESCE(${snapshot}->'importItems', '[]'::jsonb)) AS restored(id uuid, task_id uuid)
 			WHERE item.id = restored.id AND item.task_id IS NULL
 		`);
-		await tx.execute(sql`INSERT INTO import_attachments SELECT * FROM jsonb_populate_recordset(null::import_attachments, COALESCE(${snapshot}->'importAttachments', '[]'::jsonb)) ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO task_recurrence_prefixes SELECT * FROM jsonb_populate_recordset(null::task_recurrence_prefixes, COALESCE(${snapshot}->'recurrencePrefixes', '[]'::jsonb)) ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO task_occurrence_overrides SELECT * FROM jsonb_populate_recordset(null::task_occurrence_overrides, ${snapshot}->'occurrences') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO task_user_colors SELECT * FROM jsonb_populate_recordset(null::task_user_colors, ${snapshot}->'colors') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO chain_steps SELECT * FROM jsonb_populate_recordset(null::chain_steps, ${snapshot}->'chainSteps') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO calendar_links SELECT * FROM jsonb_populate_recordset(null::calendar_links, ${snapshot}->'calendarLinks') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO checklist_items SELECT * FROM jsonb_populate_recordset(null::checklist_items, ${snapshot}->'checklistItems') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO task_labels SELECT * FROM jsonb_populate_recordset(null::task_labels, ${snapshot}->'taskLabels') ON CONFLICT DO NOTHING`);
-		await tx.execute(sql`INSERT INTO entity_links SELECT * FROM jsonb_populate_recordset(null::entity_links, ${snapshot}->'entityLinks') ON CONFLICT DO NOTHING`);
+		await tx.execute(
+			sql`INSERT INTO import_attachments SELECT * FROM jsonb_populate_recordset(null::import_attachments, COALESCE(${snapshot}->'importAttachments', '[]'::jsonb)) ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO task_recurrence_prefixes SELECT * FROM jsonb_populate_recordset(null::task_recurrence_prefixes, COALESCE(${snapshot}->'recurrencePrefixes', '[]'::jsonb)) ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO task_occurrence_overrides SELECT * FROM jsonb_populate_recordset(null::task_occurrence_overrides, ${snapshot}->'occurrences') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO task_user_colors SELECT * FROM jsonb_populate_recordset(null::task_user_colors, ${snapshot}->'colors') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO chain_steps SELECT * FROM jsonb_populate_recordset(null::chain_steps, ${snapshot}->'chainSteps') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO calendar_links SELECT * FROM jsonb_populate_recordset(null::calendar_links, ${snapshot}->'calendarLinks') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO checklist_items SELECT * FROM jsonb_populate_recordset(null::checklist_items, ${snapshot}->'checklistItems') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO task_labels SELECT * FROM jsonb_populate_recordset(null::task_labels, ${snapshot}->'taskLabels') ON CONFLICT DO NOTHING`,
+		);
+		await tx.execute(
+			sql`INSERT INTO entity_links SELECT * FROM jsonb_populate_recordset(null::entity_links, ${snapshot}->'entityLinks') ON CONFLICT DO NOTHING`,
+		);
 		await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'off', true)`);
 		await tx.execute(sql`
 			SELECT watson_reconcile_task_acceptances(restored.id)

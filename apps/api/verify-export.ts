@@ -88,7 +88,9 @@ async function restore(
 async function main() {
 	const cookie = await login("demo@watson.test");
 	const user = (
-		(await db.execute(sql`SELECT id FROM users WHERE email = 'demo@watson.test'`)) as { id: string }[]
+		(await db.execute(sql`SELECT id FROM users WHERE email = 'demo@watson.test'`)) as {
+			id: string;
+		}[]
 	)[0];
 	if (!user) throw new Error("demo user missing");
 	const workspace = (
@@ -137,12 +139,16 @@ async function main() {
 		check("export endpoint 200", response.status === 200, response.status);
 		const backup = (await response.json()) as Backup;
 
-		const recomputed = createHash("sha256")
-			.update(JSON.stringify(backup.tables))
-			.digest("hex");
+		const recomputed = createHash("sha256").update(JSON.stringify(backup.tables)).digest("hex");
 		check("checksum sedí na přesný obsah", recomputed === backup.manifest.checksum);
-		check("manifest je version 2 a HMAC podepsaný", backup.manifest.version === 2 && /^[a-f0-9]{64}$/.test(backup.manifest.signature));
-		check("manifest transparentně uvádí privacy/storage výluky", Object.keys(backup.manifest.limitations ?? {}).length === 4);
+		check(
+			"manifest je version 3 a HMAC podepsaný",
+			backup.manifest.version === 3 && /^[a-f0-9]{64}$/.test(backup.manifest.signature),
+		);
+		check(
+			"manifest transparentně uvádí privacy/storage výluky",
+			Object.keys(backup.manifest.limitations ?? {}).length === 4,
+		);
 
 		const directTasks = Number(
 			(
@@ -190,14 +196,22 @@ async function main() {
 		await db.execute(sql`DELETE FROM task_recurrence_prefixes WHERE id = ${recurrencePrefixId}`);
 		let result = await restore(cookie, backup, "dry-run");
 		check("dry-run projde", result.response.status === 200, result.body);
-		check("dry-run plánuje obnovit smazaný kontakt", result.body.report?.inserted?.contacts === 1, result.body);
+		check(
+			"dry-run plánuje obnovit smazaný kontakt",
+			result.body.report?.inserted?.contacts === 1,
+			result.body,
+		);
 		check(
 			"dry-run plánuje obnovit historii opakované řady",
 			result.body.report?.inserted?.task_recurrence_prefixes === 1,
 			result.body,
 		);
 		const afterDryRun = Number(
-			((await db.execute(sql`SELECT count(*)::int AS n FROM contacts WHERE id = ${contactId}`)) as { n: number }[])[0]?.n,
+			(
+				(await db.execute(
+					sql`SELECT count(*)::int AS n FROM contacts WHERE id = ${contactId}`,
+				)) as { n: number }[]
+			)[0]?.n,
 		);
 		check("dry-run skutečně rollbackne všechny zápisy", afterDryRun === 0);
 
@@ -210,7 +224,11 @@ async function main() {
 			result.body,
 		);
 		const afterApply = Number(
-			((await db.execute(sql`SELECT count(*)::int AS n FROM contacts WHERE id = ${contactId}`)) as { n: number }[])[0]?.n,
+			(
+				(await db.execute(
+					sql`SELECT count(*)::int AS n FROM contacts WHERE id = ${contactId}`,
+				)) as { n: number }[]
+			)[0]?.n,
 		);
 		check("kontakt po restore existuje", afterApply === 1);
 		const prefixAfterApply = Number(
@@ -223,7 +241,11 @@ async function main() {
 		check("segment řady po restore existuje", prefixAfterApply === 1);
 
 		result = await restore(cookie, backup, "apply");
-		check("opakovaný apply je bezpečný/idempotentní", result.response.status === 200 && result.body.report?.inserted?.contacts === 0, result.body);
+		check(
+			"opakovaný apply je bezpečný/idempotentní",
+			result.response.status === 200 && result.body.report?.inserted?.contacts === 0,
+			result.body,
+		);
 		check(
 			"opakovaný apply neduplikuje segment řady",
 			result.response.status === 200 &&
@@ -239,17 +261,29 @@ async function main() {
 		if (!firstContact) throw new Error("fixture_missing_contact");
 		firstContact.name = "tampered without checksum";
 		result = await restore(cookie, corrupted, "dry-run");
-		check("poškozený checksum je odmítnut", result.response.status === 400 && result.body.code === "checksum_mismatch", result.body);
+		check(
+			"poškozený checksum je odmítnut",
+			result.response.status === 400 && result.body.code === "checksum_mismatch",
+			result.body,
+		);
 
 		const badSignature = clone(backup);
 		badSignature.manifest.signature = "0".repeat(64);
 		result = await restore(cookie, badSignature, "dry-run");
-		check("neplatný HMAC podpis je odmítnut", result.response.status === 400 && result.body.code === "signature_mismatch", result.body);
+		check(
+			"neplatný HMAC podpis je odmítnut",
+			result.response.status === 400 && result.body.code === "signature_mismatch",
+			result.body,
+		);
 
 		const missingTable = clone(backup);
 		delete missingTable.tables.labels;
 		result = await restore(cookie, missingTable, "dry-run");
-		check("chybějící tabulka je řízeně odmítnuta", result.response.status === 400 && result.body.code === "table_inventory_mismatch", result.body);
+		check(
+			"chybějící tabulka je řízeně odmítnuta",
+			result.response.status === 400 && result.body.code === "table_inventory_mismatch",
+			result.body,
+		);
 
 		const duplicate = clone(backup);
 		const duplicateContact = duplicate.tables.contacts[0];
@@ -258,13 +292,35 @@ async function main() {
 		duplicate.manifest.counts.contacts += 1;
 		resign(duplicate);
 		result = await restore(cookie, duplicate, "dry-run");
-		check("duplicate ID v souboru je odmítnuto před SQL", result.response.status === 400 && result.body.code === "duplicate_id:contacts", result.body);
+		check(
+			"duplicate ID v souboru je odmítnuto před SQL",
+			result.response.status === 400 && result.body.code === "duplicate_id:contacts",
+			result.body,
+		);
+
+		const legacyV2 = clone(backup);
+		legacyV2.manifest.version = 2;
+		delete legacyV2.tables.decisions;
+		delete legacyV2.tables.decision_task_links;
+		delete legacyV2.manifest.counts.decisions;
+		delete legacyV2.manifest.counts.decision_task_links;
+		resign(legacyV2);
+		result = await restore(cookie, legacyV2, "dry-run");
+		check(
+			"version 2 bez Decision Logu se bezpečně normalizuje",
+			result.response.status === 200,
+			result.body,
+		);
 
 		const future = clone(backup);
 		future.manifest.schemaMigrations = (future.manifest.schemaMigrations ?? 0) + 1000;
 		resign(future);
 		result = await restore(cookie, future, "dry-run");
-		check("novější schema je odmítnuto", result.response.status === 400 && result.body.code === "backup_schema_newer_than_server", result.body);
+		check(
+			"novější schema je odmítnuto",
+			result.response.status === 400 && result.body.code === "backup_schema_newer_than_server",
+			result.body,
+		);
 	} finally {
 		await db.execute(sql`DELETE FROM contacts WHERE id = ${contactId}`);
 		await db.execute(sql`DELETE FROM tasks WHERE id = ${recurrenceTaskId}`);

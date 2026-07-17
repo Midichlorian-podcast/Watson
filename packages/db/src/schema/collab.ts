@@ -11,6 +11,7 @@ import {
 	foreignKey,
 	index,
 	integer,
+	jsonb,
 	pgTable,
 	text,
 	timestamp,
@@ -22,7 +23,7 @@ import { createdAt, pk, updatedAt } from "./_helpers";
 import { users } from "./auth";
 import { notificationChannelEnum, reminderTypeEnum } from "./enums";
 import { tasks } from "./task";
-import { projects } from "./workspace";
+import { projects, workspaces } from "./workspace";
 
 const bytea = customType<{ data: Uint8Array; driverData: Uint8Array }>({
 	dataType: () => "bytea",
@@ -127,6 +128,127 @@ export const commentDecisions = pgTable(
 		uniqueIndex("comment_decisions_comment_uq").on(t.commentId),
 		index("comment_decisions_task_idx").on(t.taskId),
 		index("comment_decisions_project_idx").on(t.projectId),
+	],
+);
+
+/**
+ * F6 Decision Log — kanonický, dohledatelný snapshot rozhodnutí z komentáře,
+ * porady nebo ručního zápisu. Zdrojový objekt může později zmizet; proto je jeho
+ * UUID historická reference bez FK a `title` zůstává neměnným snapshotem.
+ */
+export const decisions = pgTable(
+	"decisions",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		sourceType: varchar("source_type", { length: 24 }).notNull(),
+		sourceObjectId: uuid("source_object_id"),
+		sourceKey: varchar("source_key", { length: 128 }).notNull().default("0"),
+		title: text("title").notNull(),
+		rationale: text("rationale"),
+		ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+		decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow(),
+		effectiveAt: timestamp("effective_at", { withTimezone: true }),
+		reviewAt: timestamp("review_at", { withTimezone: true }),
+		status: varchar("status", { length: 24 }).notNull().default("active"),
+		supersedesId: uuid("supersedes_id").references((): AnyPgColumn => decisions.id, {
+			onDelete: "set null",
+		}),
+		createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+		version: integer("version").notNull().default(1),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check("decisions_source_type_valid", sql`${t.sourceType} in ('manual', 'comment', 'meeting')`),
+		check(
+			"decisions_source_consistent",
+			sql`(${t.sourceType} = 'manual' AND ${t.sourceObjectId} IS NULL) OR (${t.sourceType} <> 'manual' AND ${t.sourceObjectId} IS NOT NULL)`,
+		),
+		check("decisions_source_key_valid", sql`length(${t.sourceKey}) between 1 and 128`),
+		check("decisions_title_valid", sql`length(trim(${t.title})) between 1 and 2000`),
+		check(
+			"decisions_rationale_valid",
+			sql`${t.rationale} IS NULL OR length(${t.rationale}) <= 10000`,
+		),
+		check("decisions_status_valid", sql`${t.status} in ('active', 'superseded', 'withdrawn')`),
+		check(
+			"decisions_not_self_supersede",
+			sql`${t.supersedesId} IS NULL OR ${t.supersedesId} <> ${t.id}`,
+		),
+		check("decisions_version_positive", sql`${t.version} > 0`),
+		foreignKey({
+			name: "decisions_project_workspace_fk",
+			columns: [t.projectId, t.workspaceId],
+			foreignColumns: [projects.id, projects.workspaceId],
+		}).onDelete("cascade"),
+		uniqueIndex("decisions_source_uq")
+			.on(t.sourceType, t.sourceObjectId, t.sourceKey)
+			.where(sql`${t.sourceObjectId} IS NOT NULL`),
+		uniqueIndex("decisions_id_project_uq").on(t.id, t.projectId),
+		index("decisions_project_status_idx").on(t.projectId, t.status, t.decidedAt),
+		index("decisions_workspace_review_idx").on(t.workspaceId, t.reviewAt),
+		index("decisions_owner_idx").on(t.ownerUserId, t.status),
+	],
+);
+
+/** Task vazby jsou záměrně ve stejném projektu jako rozhodnutí, aby nic neuniklo z restricted projektu. */
+export const decisionTaskLinks = pgTable(
+	"decision_task_links",
+	{
+		id: pk(),
+		decisionId: uuid("decision_id").notNull(),
+		taskId: uuid("task_id").notNull(),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		foreignKey({
+			name: "decision_task_links_decision_project_fk",
+			columns: [t.decisionId, t.projectId],
+			foreignColumns: [decisions.id, decisions.projectId],
+		}).onDelete("cascade"),
+		foreignKey({
+			name: "decision_task_links_task_project_fk",
+			columns: [t.taskId, t.projectId],
+			foreignColumns: [tasks.id, tasks.projectId],
+		}).onDelete("cascade"),
+		uniqueIndex("decision_task_links_pair_uq").on(t.decisionId, t.taskId),
+		index("decision_task_links_task_idx").on(t.taskId),
+		index("decision_task_links_project_idx").on(t.projectId),
+	],
+);
+
+/** Idempotentní receipts pro ruční create/review/supersede commandy Decision Logu. */
+export const decisionCommandReceipts = pgTable(
+	"decision_command_receipts",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		actorUserId: uuid("actor_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		operationId: varchar("operation_id", { length: 128 }).notNull(),
+		requestHash: varchar("request_hash", { length: 64 }).notNull(),
+		action: varchar("action", { length: 24 }).notNull(),
+		response: jsonb("response").$type<Record<string, unknown>>().notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		check("decision_receipts_hash_valid", sql`${t.requestHash} ~ '^[0-9a-f]{64}$'`),
+		check("decision_receipts_action_valid", sql`${t.action} in ('create', 'review')`),
+		check("decision_receipts_response_object", sql`jsonb_typeof(${t.response}) = 'object'`),
+		uniqueIndex("decision_receipts_actor_operation_uq").on(t.actorUserId, t.operationId),
+		index("decision_receipts_workspace_idx").on(t.workspaceId, t.createdAt),
 	],
 );
 

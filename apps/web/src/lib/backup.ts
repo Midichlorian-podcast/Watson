@@ -22,6 +22,8 @@ const BACKUP_TABLES = [
 	"task_acceptances",
 	"comments",
 	"comment_decisions",
+	"decisions",
+	"decision_task_links",
 	"mentions",
 	"comment_reactions",
 	"task_occurrence_overrides",
@@ -163,8 +165,7 @@ const base64ToBytes = (value: string): Uint8Array => {
 
 // WebCrypto's DOM types intentionally reject views backed by SharedArrayBuffer.
 // Copying also prevents callers from mutating parameters while an async operation runs.
-const cryptoBytes = (value: Uint8Array): Uint8Array<ArrayBuffer> =>
-	new Uint8Array(value);
+const cryptoBytes = (value: Uint8Array): Uint8Array<ArrayBuffer> => new Uint8Array(value);
 
 async function backupKey(
 	passphrase: string,
@@ -249,10 +250,7 @@ export async function decryptServerBackup(
 }
 
 /** Autoritativní, podepsaný export ze serveru — jediný formát přijímaný restore endpointem. */
-export async function downloadBackup(
-	stamp: string,
-	passphrase: string,
-): Promise<BackupResult> {
+export async function downloadBackup(stamp: string, passphrase: string): Promise<BackupResult> {
 	const response = await fetch(`${API_URL}/api/export`, { credentials: "include" });
 	if (!response.ok) throw new Error(`export_${response.status}`);
 	const backup = (await response.json()) as ServerBackup;
@@ -269,10 +267,7 @@ export async function downloadBackup(
 }
 
 /** Rychlá klientská kontrola; kryptografii a veškeré ACL vždy znovu ověří server. */
-export async function readRestoreFile(
-	file: File,
-	passphrase: string,
-): Promise<ServerBackup> {
+export async function readRestoreFile(file: File, passphrase: string): Promise<ServerBackup> {
 	if (file.size > 25 * 1024 * 1024) throw new Error("restore_file_too_large");
 	let value: unknown;
 	try {

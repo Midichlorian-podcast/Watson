@@ -8,6 +8,7 @@ import {
 	and,
 	assignments,
 	auditEvents,
+	decisions,
 	entityLinks,
 	eq,
 	getDb,
@@ -47,7 +48,8 @@ async function login(email: string): Promise<string> {
 		`${API}/api/auth/magic-link/verify?token=${rows[0]?.identifier}&callbackURL=http://localhost:5173/`,
 		{ redirect: "manual" },
 	);
-	const raw = verified.headers.getSetCookie?.().join("; ") ?? verified.headers.get("set-cookie") ?? "";
+	const raw =
+		verified.headers.getSetCookie?.().join("; ") ?? verified.headers.get("set-cookie") ?? "";
 	const cookie = raw
 		.split(/,(?=\s*\w+=)/)
 		.map((part) => part.split(";")[0]?.trim())
@@ -150,10 +152,14 @@ async function main(): Promise<void> {
 
 		response = await post(cookie, "/api/meetings/plan", plan);
 		const replayPlan = (await response.json().catch(() => ({}))) as { replayed?: boolean };
-		check("stejný plan retry je 200 replay", response.status === 200 && replayPlan.replayed === true, {
-			status: response.status,
-			body: replayPlan,
-		});
+		check(
+			"stejný plan retry je 200 replay",
+			response.status === 200 && replayPlan.replayed === true,
+			{
+				status: response.status,
+				body: replayPlan,
+			},
+		);
 		check(
 			"plan retry nevytvoří další assignments",
 			(await db.select().from(assignments).where(eq(assignments.taskId, hubTaskId))).length === 2,
@@ -214,7 +220,11 @@ async function main(): Promise<void> {
 		response = await post(cookie, "/api/meetings/plan", followPlan);
 		check("follow-up retry je idempotentní", response.status === 200, response.status);
 		response = await post(cookie, "/api/meetings/plan", { ...followPlan, carryTaskIds: [] });
-		check("follow-up retry se změněným carry payloadem je 409", response.status === 409, response.status);
+		check(
+			"follow-up retry se změněným carry payloadem je 409",
+			response.status === 409,
+			response.status,
+		);
 
 		const proposals = [
 			{
@@ -240,6 +250,7 @@ async function main(): Promise<void> {
 		const commitResult = (await response.json().catch(() => ({}))) as {
 			created?: number;
 			taskIds?: string[];
+			decisionIds?: string[];
 			replayed?: boolean;
 		};
 		check(
@@ -260,8 +271,12 @@ async function main(): Promise<void> {
 		check(
 			"řešitel vznikne jen u určeného bodu",
 			taskIds.length > 0 &&
-				(await db.select().from(assignments).where(and(eq(assignments.userId, participant.id))))
-					.filter((row) => taskIds.includes(row.taskId)).length === 1,
+				(
+					await db
+						.select()
+						.from(assignments)
+						.where(and(eq(assignments.userId, participant.id)))
+				).filter((row) => taskIds.includes(row.taskId)).length === 1,
 		);
 		check(
 			"lineage odkazy vzniknou ve stejné transakci",
@@ -274,14 +289,26 @@ async function main(): Promise<void> {
 		);
 		const hub = (await db.select().from(tasks).where(eq(tasks.id, hubTaskId)))[0];
 		check(
-			"rozhodnutí i nejasnost zůstanou v trvalé stopě hubu",
-			!!hub?.description?.includes("Použijeme variantu B") &&
-				!!hub.description.includes("Prověřit nejasný termín"),
+			"nejasnost zůstane v hubu, rozhodnutí se neduplikuje do volného textu",
+			!!hub?.description?.includes("Prověřit nejasný termín") &&
+				!hub.description.includes("Použijeme variantu B"),
 			hub?.description,
+		);
+		const loggedDecisions = await db
+			.select()
+			.from(decisions)
+			.where(and(eq(decisions.sourceType, "meeting"), eq(decisions.sourceObjectId, meetingId)));
+		check(
+			"schválené rozhodnutí vznikne v kanonickém Decision Logu",
+			loggedDecisions.length === 1 &&
+				loggedDecisions[0]?.title === "Použijeme variantu B" &&
+				commitResult.decisionIds?.[0] === loggedDecisions[0]?.id,
+			loggedDecisions,
 		);
 		check(
 			"meeting je committed",
-			(await db.select().from(meetings).where(eq(meetings.id, meetingId)))[0]?.status === "committed",
+			(await db.select().from(meetings).where(eq(meetings.id, meetingId)))[0]?.status ===
+				"committed",
 		);
 
 		response = await post(cookie, `/api/meetings/${meetingId}/commit`, commitBody);

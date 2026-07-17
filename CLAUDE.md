@@ -587,6 +587,8 @@ dialog, lazy detail, přímý deep link, mobilní reflow a axe. Týmová variant
 
 Nejdřív dependency graph a decision log, potom explainable Radar, poté rules engine. AI smí pouze navrhovat, dokud každá action nemá command, preview, permission recheck, audit a undo.
 
+Kanonický Decision Log dokončen 2026-07-17: ruční zápis, označený komentář a lidsky schválený výstup vloženého přepisu porady končí ve stejné projektově izolované vrstvě. Název a zdroj jsou neměnný snapshot; oprava probíhá výslovným nahrazením, původní řádek zůstává `superseded`, odvolání je terminální. Revize používá CAS verzi, create/review mají stabilní operation receipt a paralelní nahrazení zamyká původní rozhodnutí. DB hlídá workspace/project, členství vlastníka i autora, source scope a task vazby. API stránkuje stabilním cursorem, restricted projekt neprozradí nečlenovi a audit neobsahuje titul ani odůvodnění. Meeting commit už rozhodnutí neduplikuje do popisu hubu; nejasnosti tam zůstávají. PowerSync poskytuje project-scoped offline kopii, UI v Meets umí vyhledávání, filtry, vlastníka, review date, související úkoly, deep-link, revizi, nahrazení i lokální fallback. Delete/Undo úkolu zachová historický záznam a obnoví jeho vazby. Export v3 přenáší Decision Log; podepsaný v2 export bez nových tabulek se bezpečně normalizuje a komentářová rozhodnutí doplní. API verifier pokrývá replay, souběh, tenant útoky, cursor, meeting/comment zdroje, delete/undo a redigovaný audit; Chromium i WebKit dokazují ztracenou odpověď bez duplicity, revizi, historii, deep-link, 390px reflow a axe WCAG A/AA.
+
 ## 10. Detailní acceptance checklist pro budoucí funkce
 
 Každá produkční funkce musí odpovědět ano na vše relevantní:

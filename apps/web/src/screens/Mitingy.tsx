@@ -13,6 +13,7 @@ import i18n from "@watson/i18n";
 import { AvatarGroup } from "@watson/ui";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { pillStyle } from "../components/filterUi";
+import { DecisionLog } from "../components/DecisionLog";
 import { InternalBooking } from "../components/InternalBooking";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
@@ -144,9 +145,9 @@ export function Mitingy() {
 	// Výchozí = první „skutečný" projekt prostoru; osobní Inbox až jako fallback.
 	const inbox = projects.find((p) => p.name !== "Doručené" && p.name !== "Inbox") ?? projects[0];
 
-	const [mode, setMode] = useState<"list" | "pick" | "plan" | "new" | "review" | "booking">(
-		"list",
-	);
+	const [mode, setMode] = useState<
+		"list" | "pick" | "plan" | "new" | "review" | "booking" | "decisions"
+	>("list");
 	// Board porady = celostránkový detail řízený URL (?meet=…&focus=zapis) — deep-link,
 	// zpět tlačítkem prohlížeče, žádné vrstvení overlayů.
 	const navigate = useNavigate();
@@ -484,11 +485,32 @@ export function Mitingy() {
 			/>
 		);
 	}
+	if (mode === "decisions" && activeWs) {
+		return (
+			<DecisionLog
+				workspaceId={activeWs}
+				projects={projects}
+				editableProjects={editableProjects}
+				members={members}
+				onBack={() => setMode("list")}
+				onOpenTask={openTask}
+				onOpenMeeting={(id) => openBoard(id)}
+			/>
+		);
+	}
 	const hasAny = (hubMeets ?? []).length > 0 || (detachedMeets ?? []).length > 0;
 
 	return (
 		<div style={{ maxWidth: 820, margin: "0 auto", padding: "22px 20px 60px" }}>
-			<div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+			<div
+				style={{
+					display: "flex",
+					alignItems: "center",
+					gap: 10,
+					marginBottom: 4,
+					flexWrap: "wrap",
+				}}
+			>
 				<h1
 					className="font-display"
 					style={{ fontWeight: 800, fontSize: 24, color: "var(--w-ink)", margin: 0 }}
@@ -496,7 +518,10 @@ export function Mitingy() {
 					Meets
 				</h1>
 				{mode === "list" && (
-					<div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+					<div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+						<button type="button" style={BTN_GHOST} onClick={() => setMode("decisions")}>
+							Rozhodnutí
+						</button>
 						<button type="button" style={BTN_GHOST} onClick={() => setMode("booking")}>
 							{i18n.t("booking.open")}
 						</button>
@@ -556,7 +581,7 @@ export function Mitingy() {
 										const time =
 											m.start_date && m.start_timezone
 												? (wallTimeFromInstant(m.start_date, m.start_timezone)?.slice(0, 5) ?? "")
-												: m.start_date?.slice(11, 16) ?? "";
+												: (m.start_date?.slice(11, 16) ?? "");
 										const sub = subMap.get(m.id);
 										const who = asgMap.get(m.id) ?? [];
 										const proj = projects.find((p) => p.id === m.project_id);
@@ -643,9 +668,12 @@ export function Mitingy() {
 												{/* účastníci — sdílený AvatarGroup (packages/ui), ne lokální kopie stacku */}
 												{who.length > 0 && (
 													<span style={{ flex: "none" }}>
-											<AvatarGroup
-												people={who.map((id) => ({ id, initials: initials(members.get(id) ?? "?") }))}
-											/>
+														<AvatarGroup
+															people={who.map((id) => ({
+																id,
+																initials: initials(members.get(id) ?? "?"),
+															}))}
+														/>
 													</span>
 												)}
 											</button>
@@ -1007,7 +1035,7 @@ export function Mitingy() {
 										style={{ ...INPUT, ...INPUT_SM }}
 									>
 										<option value="">— nikdo —</option>
-						{reviewMembers.map((m) => (
+										{reviewMembers.map((m) => (
 											<option key={m.id} value={m.id}>
 												{m.name}
 											</option>

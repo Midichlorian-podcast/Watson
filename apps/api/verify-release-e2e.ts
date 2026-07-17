@@ -10,6 +10,8 @@ import { createHmac } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import {
 	accounts,
+	and,
+	decisions,
 	eq,
 	getDb,
 	memberships,
@@ -25,8 +27,7 @@ import { type Browser, chromium, type Page, webkit } from "playwright";
 
 const API = process.env.WATSON_RELEASE_API ?? "http://localhost:8787";
 const WEB = process.env.WATSON_RELEASE_WEB ?? "http://localhost:5173";
-const ARTIFACT =
-	process.env.WATSON_RELEASE_ARTIFACT ?? "/tmp/watson-release-e2e.json";
+const ARTIFACT = process.env.WATSON_RELEASE_ARTIFACT ?? "/tmp/watson-release-e2e.json";
 const SCREENSHOT_DIR = process.env.WATSON_RELEASE_SCREENSHOT_DIR;
 const BROWSERS = (process.env.WATSON_RELEASE_BROWSERS ?? "chromium,webkit")
 	.split(",")
@@ -281,20 +282,22 @@ async function assertAxeClean(page: Page, label: string) {
 	await page.waitForTimeout(20);
 	await page.evaluate(axe.source);
 	const violations = await page.evaluate(async () => {
-		const runner = (globalThis as unknown as {
-			axe: {
-				run: (
-					root: Document,
-					options: Record<string, unknown>,
-				) => Promise<{
-					violations: {
-						id: string;
-						impact: string | null;
-						nodes: { target: string[]; failureSummary?: string }[];
-					}[];
-				}>;
-			};
-		}).axe;
+		const runner = (
+			globalThis as unknown as {
+				axe: {
+					run: (
+						root: Document,
+						options: Record<string, unknown>,
+					) => Promise<{
+						violations: {
+							id: string;
+							impact: string | null;
+							nodes: { target: string[]; failureSummary?: string }[];
+						}[];
+					}>;
+				};
+			}
+		).axe;
 		const result = await runner.run(document, {
 			runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] },
 		});
@@ -419,7 +422,18 @@ async function verifyMeeting(page: Page, fixture: Fixture, browserName: BrowserN
 	);
 	if (!committed) throw new Error("release_meeting_commit_missing");
 	if (committed.transcript !== transcript) throw new Error("release_meeting_transcript_mismatch");
-	if (!committed.hub_description?.includes("Rozhodnutí z porady")) {
+	const loggedDecision = await eventually(
+		"meeting_decision_logged",
+		() =>
+			db
+				.select({ id: decisions.id, title: decisions.title })
+				.from(decisions)
+				.where(
+					and(eq(decisions.sourceType, "meeting"), eq(decisions.sourceObjectId, committed.id)),
+				),
+		(rows) => rows.some((row) => row.title.includes("variantu B")),
+	);
+	if (!loggedDecision) {
 		throw new Error("release_meeting_decision_log_missing");
 	}
 	if ((await meetingActionCount(committed.id, reviewedActionTitle)) < 1) {
@@ -471,14 +485,16 @@ async function verifyBackupRestore(page: Page, fixture: Fixture) {
 
 async function localTaskByName(page: Page, name: string): Promise<ServerTask | null> {
 	return page.evaluate(async (taskName) => {
-		const local = (window as unknown as {
-			__watsonDb?: {
-				getAll: (
-					query: string,
-					params: unknown[],
-				) => Promise<{ id: string; project_id: string; name: string; due_date: string | null }[]>;
-			};
-		}).__watsonDb;
+		const local = (
+			window as unknown as {
+				__watsonDb?: {
+					getAll: (
+						query: string,
+						params: unknown[],
+					) => Promise<{ id: string; project_id: string; name: string; due_date: string | null }[]>;
+				};
+			}
+		).__watsonDb;
 		if (!local) return null;
 		const rows = await local.getAll(
 			"SELECT id, project_id, name, due_date FROM tasks WHERE name = ? LIMIT 1",
@@ -490,11 +506,13 @@ async function localTaskByName(page: Page, name: string): Promise<ServerTask | n
 
 async function localProblemCount(page: Page, status = "open") {
 	return page.evaluate(async (problemStatus) => {
-		const local = (window as unknown as {
-			__watsonDb?: {
-				getAll: (query: string, params: unknown[]) => Promise<{ count: number }[]>;
-			};
-		}).__watsonDb;
+		const local = (
+			window as unknown as {
+				__watsonDb?: {
+					getAll: (query: string, params: unknown[]) => Promise<{ count: number }[]>;
+				};
+			}
+		).__watsonDb;
 		if (!local) return -1;
 		const rows = await local.getAll(
 			"SELECT count(*) AS count FROM local_rejected_ops WHERE status = ?",
@@ -506,14 +524,16 @@ async function localProblemCount(page: Page, status = "open") {
 
 async function localProblemStatus(page: Page, id: string) {
 	return page.evaluate(async (problemId) => {
-		const local = (window as unknown as {
-			__watsonDb?: {
-				getAll: (
-					query: string,
-					params: unknown[],
-				) => Promise<{ status: string; http_code: number | null; server_code: string | null }[]>;
-			};
-		}).__watsonDb;
+		const local = (
+			window as unknown as {
+				__watsonDb?: {
+					getAll: (
+						query: string,
+						params: unknown[],
+					) => Promise<{ status: string; http_code: number | null; server_code: string | null }[]>;
+				};
+			}
+		).__watsonDb;
 		if (!local) return null;
 		const rows = await local.getAll(
 			"SELECT status, http_code, server_code FROM local_rejected_ops WHERE id = ? LIMIT 1",
@@ -585,9 +605,9 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		if (!held) throw new Error("release_offline_write_reached_server");
 
 		await navigate(page, "/nastaveni?sekce=data");
-		const pendingOutbox = page.locator(
-			"[data-outbox-pending] details[data-outbox-operation]",
-		).first();
+		const pendingOutbox = page
+			.locator("[data-outbox-pending] details[data-outbox-operation]")
+			.first();
 		await pendingOutbox.waitFor({ state: "visible", timeout: 10_000 });
 		await pendingOutbox.locator("summary").click();
 		await pendingOutbox.locator("[data-outbox-diff]").waitFor({ state: "visible" });
@@ -596,9 +616,11 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		await captureEvidence(page, browserName, "outbox-pending-390");
 
 		const offlineCheckpoint = await page.evaluate(() => {
-			const status = (window as unknown as {
-				__watsonDb?: { currentStatus?: { lastSyncedAt?: Date | string | null } };
-			}).__watsonDb?.currentStatus;
+			const status = (
+				window as unknown as {
+					__watsonDb?: { currentStatus?: { lastSyncedAt?: Date | string | null } };
+				}
+			).__watsonDb?.currentStatus;
 			return status?.lastSyncedAt ? new Date(status.lastSyncedAt).getTime() : 0;
 		});
 		await context.setOffline(false);
@@ -621,14 +643,16 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			"reconnect_checkpoint",
 			() =>
 				page.evaluate(() => {
-					const status = (window as unknown as {
-						__watsonDb?: {
-							currentStatus?: {
-								lastSyncedAt?: Date | string | null;
-								dataFlowStatus?: { uploading?: boolean; downloading?: boolean };
+					const status = (
+						window as unknown as {
+							__watsonDb?: {
+								currentStatus?: {
+									lastSyncedAt?: Date | string | null;
+									dataFlowStatus?: { uploading?: boolean; downloading?: boolean };
+								};
 							};
-						};
-					}).__watsonDb?.currentStatus;
+						}
+					).__watsonDb?.currentStatus;
 					return {
 						checkpoint: status?.lastSyncedAt ? new Date(status.lastSyncedAt).getTime() : 0,
 						transferring: Boolean(
@@ -713,13 +737,12 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		const invalidProjectId = crypto.randomUUID();
 		await page.evaluate(
 			async ({ taskId, badProjectId }) => {
-				const local = (window as unknown as {
-					__watsonDb: { execute: (query: string, params: unknown[]) => Promise<unknown> };
-				}).__watsonDb;
-				await local.execute("UPDATE tasks SET project_id = ? WHERE id = ?", [
-					badProjectId,
-					taskId,
-				]);
+				const local = (
+					window as unknown as {
+						__watsonDb: { execute: (query: string, params: unknown[]) => Promise<unknown> };
+					}
+				).__watsonDb;
+				await local.execute("UPDATE tasks SET project_id = ? WHERE id = ?", [badProjectId, taskId]);
 			},
 			{ taskId: localTask.id, badProjectId: invalidProjectId },
 		);
@@ -737,9 +760,9 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		await captureEvidence(page, browserName, "sync-problem-390");
 		await page.setViewportSize({ width: 1280, height: 720 });
 		await navigate(page, "/nastaveni?sekce=data");
-		const rejectedOutbox = page.locator(
-			"[data-outbox-rejected] details[data-outbox-operation]",
-		).first();
+		const rejectedOutbox = page
+			.locator("[data-outbox-rejected] details[data-outbox-operation]")
+			.first();
 		await rejectedOutbox.waitFor({ state: "visible" });
 		await rejectedOutbox.locator("[data-outbox-diff]").waitFor({ state: "visible" });
 		await page.setViewportSize({ width: 390, height: 844 });
@@ -774,9 +797,11 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		});
 		await page.evaluate(
 			async ({ id, payload, rowId, localClientId, localOperationId }) => {
-				const local = (window as unknown as {
-					__watsonDb: { execute: (query: string, params: unknown[]) => Promise<unknown> };
-				}).__watsonDb;
+				const local = (
+					window as unknown as {
+						__watsonDb: { execute: (query: string, params: unknown[]) => Promise<unknown> };
+					}
+				).__watsonDb;
 				const now = new Date().toISOString();
 				await local.execute(
 					`INSERT INTO local_rejected_ops

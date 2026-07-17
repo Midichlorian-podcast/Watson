@@ -20,7 +20,7 @@ const tasks = new Table(
 		parent_id: column.text,
 		name: column.text,
 		description: column.text,
-    why_now: column.text,
+		why_now: column.text,
 		priority: column.integer,
 		color: column.text,
 		due_date: column.text,
@@ -397,6 +397,47 @@ const comment_decisions = new Table(
 	}),
 );
 
+/** F6 — kanonický Decision Log z ručních zápisů, komentářů a porad. Zápis pouze přes API. */
+const decisions = new Table(
+	{
+		workspace_id: column.text,
+		project_id: column.text,
+		source_type: column.text,
+		source_object_id: column.text,
+		source_key: column.text,
+		title: column.text,
+		rationale: column.text,
+		owner_user_id: column.text,
+		decided_at: column.text,
+		effective_at: column.text,
+		review_at: column.text,
+		status: column.text,
+		supersedes_id: column.text,
+		created_by: column.text,
+		version: column.integer,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: {
+			by_project_status: ["project_id", "status"],
+			by_owner_status: ["owner_user_id", "status"],
+			by_source: ["source_type", "source_object_id"],
+		},
+	},
+);
+
+/** Volitelné vazby rozhodnutí na úkoly stejného projektu. */
+const decision_task_links = new Table(
+	{
+		decision_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		created_at: column.text,
+	},
+	{ indexes: { by_decision: ["decision_id"], by_task: ["task_id"] } },
+);
+
 /** R4 — per-výskyt výjimky opakování (done/skip i auditovaný přesun jednoho výskytu). */
 const task_occurrence_overrides = new Table(
 	{
@@ -749,6 +790,8 @@ export const AppSchema = new Schema({
 	comments,
 	attachments,
 	comment_decisions,
+	decisions,
+	decision_task_links,
 	mentions,
 	comment_reactions,
 	task_occurrence_overrides,
@@ -792,6 +835,8 @@ export type AssignmentRow = Database["assignments"];
 export type TaskAcceptanceRow = Database["task_acceptances"];
 export type CommentRow = Database["comments"];
 export type AttachmentRow = Database["attachments"];
+export type DecisionRow = Database["decisions"];
+export type DecisionTaskLinkRow = Database["decision_task_links"];
 export type MentionRow = Database["mentions"];
 export type CommentReactionRow = Database["comment_reactions"];
 export type ReminderRow = Database["reminders"];

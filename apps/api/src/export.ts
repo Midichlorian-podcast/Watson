@@ -59,6 +59,8 @@ export const RESTORE_TABLE_ORDER = [
 	"task_acceptances",
 	"comments",
 	"comment_decisions",
+	"decisions",
+	"decision_task_links",
 	"mentions",
 	"comment_reactions",
 	"attachments",
@@ -117,8 +119,7 @@ const EXPORT_QUERIES: Record<
 	projects: (ws) => sql`SELECT * FROM projects WHERE workspace_id = ANY(${uuids(ws)})`,
 	project_members: (ws) =>
 		sql`SELECT pm.* FROM project_members pm JOIN projects p ON p.id = pm.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
-	booking_pages: (ws) =>
-		sql`SELECT * FROM booking_pages WHERE workspace_id = ANY(${uuids(ws)})`,
+	booking_pages: (ws) => sql`SELECT * FROM booking_pages WHERE workspace_id = ANY(${uuids(ws)})`,
 	booking_page_participants: (ws) =>
 		sql`SELECT participant.* FROM booking_page_participants participant
 		JOIN booking_pages page ON page.id = participant.page_id
@@ -184,6 +185,10 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT c.* FROM comments c JOIN tasks t ON t.id = c.task_id JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	comment_decisions: (ws) =>
 		sql`SELECT d.* FROM comment_decisions d JOIN projects p ON p.id = d.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	decisions: (ws) =>
+		sql`SELECT d.* FROM decisions d JOIN projects p ON p.id = d.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	decision_task_links: (ws) =>
+		sql`SELECT link.* FROM decision_task_links link JOIN projects p ON p.id = link.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	mentions: (ws) =>
 		sql`SELECT m.* FROM mentions m JOIN comments c ON c.id = m.comment_id JOIN tasks t ON t.id = c.task_id JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	comment_reactions: (ws) =>
@@ -207,8 +212,7 @@ const EXPORT_QUERIES: Record<
 		sql`SELECT prefix.* FROM task_recurrence_prefixes prefix JOIN projects p ON p.id = prefix.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	task_occurrence_overrides: (ws) =>
 		sql`SELECT o.* FROM task_occurrence_overrides o JOIN tasks t ON t.id = o.task_id JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
-	task_user_colors: (_ws, userId) =>
-		sql`SELECT * FROM task_user_colors WHERE user_id = ${userId}`,
+	task_user_colors: (_ws, userId) => sql`SELECT * FROM task_user_colors WHERE user_id = ${userId}`,
 	reminders: (_ws, userId) => sql`SELECT * FROM reminders WHERE user_id = ${userId}`,
 	task_activity: (ws) =>
 		sql`SELECT ta.* FROM task_activity ta JOIN projects p ON p.id = ta.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
@@ -313,17 +317,21 @@ exportRoutes.get("/api/export", async (c) => {
 	const checksum = checksumTables(tables);
 	const unsignedManifest = {
 		format: "watson-export",
-		version: 2,
+		version: 3,
 		exportedAt: new Date().toISOString(),
 		schemaMigrations,
 		scope: { workspaces: ws.length, userId, authority: "admin-or-owner" },
 		counts,
 		checksum,
 		limitations: {
-			meetingContent: "only creator or participant; other meeting rows are restored with redacted content",
-			attachmentFiles: "server-stored attachment files and their metadata require a separate binary backup and are excluded",
-			authAndSecrets: "accounts, sessions, tokens, push subscriptions and calendar credentials excluded",
-			personalMail: "mail accounts, synchronized content and personal message source links are excluded; restored tasks do not retain mail deep links",
+			meetingContent:
+				"only creator or participant; other meeting rows are restored with redacted content",
+			attachmentFiles:
+				"server-stored attachment files and their metadata require a separate binary backup and are excluded",
+			authAndSecrets:
+				"accounts, sessions, tokens, push subscriptions and calendar credentials excluded",
+			personalMail:
+				"mail accounts, synchronized content and personal message source links are excluded; restored tasks do not retain mail deep links",
 		},
 	};
 	const manifest = {
@@ -400,9 +408,9 @@ async function databaseColumns(db: ReturnType<typeof getDb>) {
 		FROM information_schema.columns
 		WHERE table_schema = 'public'
 		  AND table_name = ANY(${sql`ARRAY[${sql.join(
-			RESTORE_TABLE_ORDER.map((name) => sql`${name}`),
-			sql`, `,
-		)}]::text[]`})
+				RESTORE_TABLE_ORDER.map((name) => sql`${name}`),
+				sql`, `,
+			)}]::text[]`})
 	`)) as { table_name: string; column_name: string; data_type: string }[];
 	const result = new Map<string, Map<string, string>>();
 	for (const row of rows) {
@@ -418,36 +426,40 @@ function constantTimeHexEqual(a: string, b: string) {
 	return timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
 }
 
-async function validateRestore(
-	db: ReturnType<typeof getDb>,
-	backup: unknown,
-	userId: string,
-) {
+async function validateRestore(db: ReturnType<typeof getDb>, backup: unknown, userId: string) {
 	if (!backup || typeof backup !== "object") throw new Error("invalid_backup");
 	const value = backup as { manifest?: RestoreManifest; tables?: Record<string, unknown> };
 	const manifest = value.manifest;
 	const rawTables = value.tables;
 	if (!manifest || !rawTables || typeof rawTables !== "object") throw new Error("invalid_backup");
-	if (manifest.format !== "watson-export" || manifest.version !== 2) {
+	if (manifest.format !== "watson-export" || ![2, 3].includes(manifest.version)) {
 		throw new Error("unsupported_backup_version");
 	}
 	if (manifest.scope?.userId !== userId) throw new Error("backup_owner_mismatch");
 	if (!Number.isFinite(Date.parse(manifest.exportedAt))) throw new Error("invalid_export_time");
 	const names = Object.keys(rawTables).sort();
 	const expectedNames = [...RESTORE_TABLE_ORDER].sort();
-	if (JSON.stringify(names) !== JSON.stringify(expectedNames)) throw new Error("table_inventory_mismatch");
+	const legacyV2Names = expectedNames.filter(
+		(name) => name !== "decisions" && name !== "decision_task_links",
+	);
+	const expectedForVersion = manifest.version === 2 ? legacyV2Names : expectedNames;
+	if (JSON.stringify(names) !== JSON.stringify(expectedForVersion))
+		throw new Error("table_inventory_mismatch");
 
 	const columns = await databaseColumns(db);
 	const tables: Record<string, Rows> = {};
 	let totalRows = 0;
 	for (const table of RESTORE_TABLE_ORDER) {
-		const rows = rawTables[table];
+		const legacyDecisionTable =
+			manifest.version === 2 && (table === "decisions" || table === "decision_task_links");
+		const rows = legacyDecisionTable ? [] : rawTables[table];
 		if (!Array.isArray(rows) || rows.length > 20_000) throw new Error(`invalid_table:${table}`);
 		const allowed = columns.get(table);
 		if (!allowed) throw new Error(`database_table_missing:${table}`);
 		const ids = new Set<string>();
 		for (const row of rows) {
-			if (!row || typeof row !== "object" || Array.isArray(row)) throw new Error(`invalid_row:${table}`);
+			if (!row || typeof row !== "object" || Array.isArray(row))
+				throw new Error(`invalid_row:${table}`);
 			const record = row as Record<string, unknown>;
 			if (typeof record.id !== "string" || !/^[0-9a-f-]{36}$/i.test(record.id)) {
 				throw new Error(`invalid_id:${table}`);
@@ -459,11 +471,14 @@ async function validateRestore(
 			}
 		}
 		totalRows += rows.length;
-		if (manifest.counts?.[table] !== rows.length) throw new Error(`count_mismatch:${table}`);
+		const expectedCount = legacyDecisionTable ? 0 : manifest.counts?.[table];
+		if (expectedCount !== rows.length) throw new Error(`count_mismatch:${table}`);
 		tables[table] = rows as Rows;
 	}
 	if (totalRows > 50_000) throw new Error("backup_too_many_rows");
-	const checksum = checksumTables(tables);
+	// V2 checksum byl počítaný před přidáním Decision Log tabulek; ověřujeme proto
+	// původní inventář a prázdné nové tabulky přidáme až do normalizovaného restore plánu.
+	const checksum = checksumTables(rawTables as Record<string, Rows>);
 	if (!constantTimeHexEqual(checksum, manifest.checksum)) throw new Error("checksum_mismatch");
 	const expectedSignature = manifestSignature({
 		version: manifest.version,
@@ -471,12 +486,14 @@ async function validateRestore(
 		userId,
 		checksum,
 	});
-	if (!constantTimeHexEqual(expectedSignature, manifest.signature)) throw new Error("signature_mismatch");
+	if (!constantTimeHexEqual(expectedSignature, manifest.signature))
+		throw new Error("signature_mismatch");
 	const migrationRows = (await db.execute(
 		sql`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`,
 	)) as { n: number }[];
 	const currentMigrations = migrationRows[0]?.n ?? 0;
-	if ((manifest.schemaMigrations ?? 0) > currentMigrations) throw new Error("backup_schema_newer_than_server");
+	if ((manifest.schemaMigrations ?? 0) > currentMigrations)
+		throw new Error("backup_schema_newer_than_server");
 	return { manifest, tables, checksum, columns };
 }
 
@@ -499,10 +516,13 @@ async function runRestoreTransaction(input: {
 }): Promise<RestoreReport> {
 	try {
 		return await input.db.transaction(async (tx) => {
-			await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`restore:${input.userId}:${input.checksum}`}))`);
+			await tx.execute(
+				sql`SELECT pg_advisory_xact_lock(hashtext(${`restore:${input.userId}:${input.checksum}`}))`,
+			);
 			await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
 			await tx.execute(sql`SELECT set_config('watson.allow_poll_restore', 'on', true)`);
 			await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'on', true)`);
+			await tx.execute(sql`SELECT set_config('watson.skip_decision_materialize', 'on', true)`);
 
 			const workspaceRows = input.tables.workspaces ?? [];
 			const workspaceIds = workspaceRows.map((row) => String(row.id));
@@ -525,15 +545,22 @@ async function runRestoreTransaction(input: {
 				const id = String(row.id);
 				if (existingIds.has(id)) continue;
 				const hasAdminMembership = membershipRows.some(
-					(member) => member.workspace_id === id && member.user_id === input.userId && member.role === "admin",
+					(member) =>
+						member.workspace_id === id &&
+						member.user_id === input.userId &&
+						member.role === "admin",
 				);
-				if (row.owner_id !== input.userId || !hasAdminMembership) throw new Error("new_workspace_ownership_mismatch");
+				if (row.owner_id !== input.userId || !hasAdminMembership)
+					throw new Error("new_workspace_ownership_mismatch");
 			}
 
 			const inserted: Record<string, number> = {};
 			const skippedExisting: Record<string, number> = {};
 			for (const table of RESTORE_TABLE_ORDER) {
-				const rows = table === "tasks" ? sortTasksParentFirst(input.tables[table] ?? []) : input.tables[table] ?? [];
+				const rows =
+					table === "tasks"
+						? sortTasksParentFirst(input.tables[table] ?? [])
+						: (input.tables[table] ?? []);
 				inserted[table] = 0;
 				skippedExisting[table] = 0;
 				for (const row of rows) {
@@ -562,6 +589,31 @@ async function runRestoreTransaction(input: {
 					throw new Error(`restore_conflict:${table}`);
 				}
 			}
+			// Starší export bez kanonického Decision Logu bezpečně doplníme z označených komentářů.
+			await tx.execute(sql`
+				INSERT INTO decisions (
+					id, workspace_id, project_id, source_type, source_object_id, source_key,
+					title, decided_at, created_by
+				)
+				SELECT cd.id, p.workspace_id, cd.project_id, 'comment', cd.id, '0',
+					COALESCE(NULLIF(trim(left(c.body, 2000)), ''), 'Rozhodnutí z komentáře'),
+					cd.created_at, cd.marked_by
+				FROM comment_decisions cd
+				JOIN comments c ON c.id = cd.comment_id
+				JOIN projects p ON p.id = cd.project_id
+				WHERE p.workspace_id = ANY(${uuids(workspaceIds)})
+				ON CONFLICT DO NOTHING
+			`);
+			await tx.execute(sql`
+				INSERT INTO decision_task_links (decision_id, task_id, project_id)
+				SELECT d.id, cd.task_id, cd.project_id
+				FROM comment_decisions cd
+				JOIN decisions d
+					ON d.source_type = 'comment' AND d.source_object_id = cd.id AND d.source_key = '0'
+				JOIN projects p ON p.id = cd.project_id
+				WHERE p.workspace_id = ANY(${uuids(workspaceIds)})
+				ON CONFLICT DO NOTHING
+			`);
 			await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'off', true)`);
 			const restoredTaskIds = (input.tables.tasks ?? []).map((row) => String(row.id));
 			if (restoredTaskIds.length > 0)
@@ -609,7 +661,8 @@ exportRoutes.post("/api/restore", async (c) => {
 	if (!body || typeof body !== "object") return c.json({ error: "invalid_request" }, 400);
 	const request = body as { mode?: unknown; conflictMode?: unknown; backup?: unknown };
 	const mode = request.mode === "apply" ? "apply" : request.mode === "dry-run" ? "dry-run" : null;
-	const conflictMode = request.conflictMode === "fail" ? "fail" : request.conflictMode === "skip" ? "skip" : null;
+	const conflictMode =
+		request.conflictMode === "fail" ? "fail" : request.conflictMode === "skip" ? "skip" : null;
 	if (!mode || !conflictMode) return c.json({ error: "invalid_restore_mode" }, 400);
 	const db = getDb();
 	try {

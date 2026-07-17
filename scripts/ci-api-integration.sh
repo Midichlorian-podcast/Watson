@@ -135,6 +135,7 @@ start_api 0
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:rbac
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:sync-refs
 DECISIONS_API="$API_URL" pnpm --filter @watson/api verify:comment-decisions
+DECISION_LOG_API="$API_URL" pnpm --filter @watson/api verify:decisions
 COMMENT_COLLAB_API="$API_URL" pnpm --filter @watson/api verify:comment-collaboration
 TASK_BULK_API="$API_URL" pnpm --filter @watson/api verify:task-bulk
 SAVED_VIEWS_API="$API_URL" pnpm --filter @watson/api verify:saved-views
