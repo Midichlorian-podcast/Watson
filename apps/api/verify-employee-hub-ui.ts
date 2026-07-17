@@ -135,6 +135,7 @@ async function run(browserName: "chromium" | "webkit") {
     const profileCommands: Array<Record<string, unknown>> = [];
     const attendanceCommands: Array<Record<string, unknown>> = [];
     const smallNumberCommands: Array<Record<string, unknown>> = [];
+    const absenceCommands: Array<Record<string, unknown>> = [];
     const documentCommands: Buffer[] = [];
     const expenseCommands: Buffer[] = [];
     const contractCommands: Array<Record<string, unknown>> = [];
@@ -260,6 +261,64 @@ async function run(browserName: "chromium" | "webkit") {
               },
             ],
           },
+          fetchedAt: "2026-07-17T10:30:00.000Z",
+        }),
+      });
+    });
+    await page.route(/\/api\/employee\/self-service\/absences(?:\?|$)/, async (route) => {
+      if (route.request().method() === "POST") {
+        absenceCommands.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
+        if (absenceCommands.length === 1) {
+          await route.fulfill({
+            status: 502,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "luckyos_unavailable" }),
+          });
+          return;
+        }
+        await route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          headers: { "Cache-Control": "private, no-store" },
+          body: JSON.stringify({ absence: { id: "absence-upload-ui" }, replayed: false }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Cache-Control": "private, no-store" },
+        body: JSON.stringify({
+          cases: [
+            {
+              id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              kind: "vacation",
+              startDate: "2026-08-10",
+              endDate: "2026-08-12",
+              timezone: "Europe/Prague",
+              visibility: "team",
+              status: "resolved",
+              priority: "normal",
+              resolutionPublic: "Schváleno vedoucím",
+              version: 2,
+              createdAt: "2026-07-16T08:00:00.000Z",
+              updatedAt: "2026-07-17T08:00:00.000Z",
+            },
+            {
+              id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+              kind: "doctor",
+              startDate: "2026-08-18",
+              endDate: "2026-08-18",
+              timezone: "Europe/Prague",
+              visibility: "private",
+              status: "in_review",
+              priority: "normal",
+              resolutionPublic: null,
+              version: 1,
+              createdAt: "2026-07-17T08:00:00.000Z",
+              updatedAt: "2026-07-17T08:00:00.000Z",
+            },
+          ],
           fetchedAt: "2026-07-17T10:30:00.000Z",
         }),
       });
@@ -398,6 +457,36 @@ async function run(browserName: "chromium" | "webkit") {
       throw new Error(`employee_hub_ui_small_number_command:${JSON.stringify(smallNumberCommands)}`);
     }
 
+    await page.getByRole("heading", { name: "Dovolená a absence", exact: true }).waitFor();
+    const absencesPanel = page.locator("#absence");
+    await absencesPanel.locator("select").selectOption("vacation");
+    await absencesPanel.getByLabel("První den", { exact: true }).fill("2026-08-20");
+    await absencesPanel.getByLabel("Poslední den", { exact: true }).fill("2026-08-22");
+    await absencesPanel
+      .getByLabel("Poznámka pro oprávněnou osobu v LuckyOS (volitelně)", { exact: true })
+      .fill("Rodinná dovolená");
+    await absencesPanel.getByRole("checkbox").check();
+    page.once("dialog", (dialog) => dialog.accept());
+    await absencesPanel.getByRole("button", { name: "Odeslat žádost", exact: true }).click();
+    await page.getByText("Žádost se nepodařilo potvrdit.", { exact: false }).waitFor();
+    ignoreIntentional502();
+    page.once("dialog", (dialog) => dialog.accept());
+    await absencesPanel.getByRole("button", { name: "Odeslat žádost", exact: true }).click();
+    await page.getByText("Žádost byla bezpečně odeslána do LuckyOS.", { exact: true }).waitFor();
+    if (
+      absenceCommands.length !== 2 ||
+      absenceCommands[0]?.operationId !== absenceCommands[1]?.operationId ||
+      absenceCommands[0]?.kind !== "vacation" ||
+      absenceCommands[0]?.startDate !== "2026-08-20" ||
+      absenceCommands[0]?.endDate !== "2026-08-22" ||
+      absenceCommands[0]?.visibility !== "private" ||
+      absenceCommands[0]?.note !== "Rodinná dovolená" ||
+      typeof absenceCommands[0]?.timezone !== "string" ||
+      "priority" in (absenceCommands[0] ?? {}) ||
+      "personId" in (absenceCommands[0] ?? {}) ||
+      "scopes" in (absenceCommands[0] ?? {})
+    ) throw new Error(`employee_hub_ui_absence_retry:${JSON.stringify(absenceCommands)}`);
+
     await page.getByRole("heading", { name: "Dokumenty a oficiální soubory", exact: true }).waitFor();
     await page.getByText("Výplatní páska červen", { exact: true }).waitFor();
     const pdf = {
@@ -448,7 +537,7 @@ async function run(browserName: "chromium" | "webkit") {
       mimeType: "image/png",
       buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YKx7QAAAABJRU5ErkJggg==", "base64"),
     });
-    await page.getByRole("checkbox").check();
+    await page.locator("#smlouvy").getByRole("checkbox").check();
     if (SCREENSHOT_DIR) {
       await mkdir(SCREENSHOT_DIR, { recursive: true });
       await page.locator("#smlouvy").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-contract-sign-desktop.png` });
@@ -485,6 +574,7 @@ async function run(browserName: "chromium" | "webkit") {
       await page.locator("#mala-cisla").screenshot({
         path: `${SCREENSHOT_DIR}/${browserName}-employee-small-numbers-desktop.png`,
       });
+      await page.locator("#absence").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-absences-desktop.png` });
       await page.locator("#dokumenty").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-documents-desktop.png` });
       await page.locator("#vydaje").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-expenses-desktop.png` });
       await page.locator("#smlouvy").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-contracts-desktop.png` });
@@ -511,6 +601,10 @@ async function run(browserName: "chromium" | "webkit") {
     if (!documentsLinkBox || documentsLinkBox.height < 44) {
       throw new Error(`employee_hub_ui_mobile_documents_target:${JSON.stringify(documentsLinkBox)}`);
     }
+    const absencesLinkBox = await page.getByRole("link", { name: "Dovolená a absence", exact: true }).boundingBox();
+    if (!absencesLinkBox || absencesLinkBox.height < 44) {
+      throw new Error(`employee_hub_ui_mobile_absences_target:${JSON.stringify(absencesLinkBox)}`);
+    }
     await assertNoOverflow(page, `${browserName}_mobile`);
     await assertAxeClean(page, `${browserName}_mobile`);
     if (SCREENSHOT_DIR) {
@@ -521,6 +615,7 @@ async function run(browserName: "chromium" | "webkit") {
       await page.locator("#dochazka").screenshot({
         path: `${SCREENSHOT_DIR}/${browserName}-employee-attendance-mobile.png`,
       });
+      await page.locator("#absence").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-absences-mobile.png` });
       await page.locator("#dokumenty").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-documents-mobile.png` });
     }
 

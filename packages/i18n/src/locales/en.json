@@ -58,6 +58,7 @@
 		"privateLabel": "private label",
 		"blockType": "Block type",
 		"focusEmergencyNote": "Focus Time is a hard scheduling block. An emergency exception requires explicit confirmation and an audited reason.",
+		"manualAbsenceNote": "This is only an operational availability block without HR approval. Submit official leave or absence in Employee Hub; Watson will import it from LuckyOS after approval.",
 		"startsAt": "Starts",
 		"endsAt": "Ends",
 		"label": "Short label",
@@ -70,6 +71,10 @@
 			"unavailable": "Unavailable",
 			"absence": "Absence",
 			"holiday": "Holiday / time off"
+		},
+		"approval": {
+			"pending": "Pending approval",
+			"approved": "Approved"
 		},
 		"status": {
 			"manual_snooze": "do not disturb",
@@ -136,6 +141,7 @@
 			"submit": "Submit",
 			"unsaved": "You have unsaved changes.",
 			"reviewerNote": "Reviewer note",
+			"absences": { "nav": "Leave and absence" },
 			"documents": { "nav": "Documents" },
 			"expenses": { "nav": "Expenses" },
 			"contracts": { "nav": "Contracts" },
@@ -216,6 +222,45 @@
 				"confirmSubmit": "Submit this entry for review?",
 				"saved": "The small-numbers draft was saved to LuckyOS.",
 				"submitted": "Small numbers were submitted for review."
+			}
+		},
+		"absences": {
+			"title": "Leave and absence",
+			"description": "Your request is sent to LuckyOS for approval. Watson shows the pending period to the team, but it affects scheduling and Do Not Disturb only after approval.",
+			"kindLabel": "Request type",
+			"kind": {
+				"vacation": "Vacation",
+				"sickness": "Sick leave",
+				"doctor": "Medical appointment",
+				"family_care": "Family care",
+				"other": "Other absence"
+			},
+			"from": "First day",
+			"to": "Last day",
+			"note": "Note for an authorized LuckyOS reviewer (optional)",
+			"private": "Hide any optional label from colleagues. The absence type and period remain visible so work is not scheduled for me.",
+			"timezone": "Full days are calculated in {{timezone}}.",
+			"submit": "Send request",
+			"sending": "Sending…",
+			"confirm": "Send an absence request from {{from}} through {{to}} to LuckyOS? An authorized reviewer will assess it.",
+			"sent": "The request was sent securely to LuckyOS.",
+			"history": "My requests",
+			"loading": "Loading the current status from LuckyOS…",
+			"loadFailed": "Requests could not be loaded. Nothing was changed.",
+			"empty": "You have no vacation or absence request yet.",
+			"status": {
+				"submitted": "Submitted",
+				"in_review": "In review",
+				"needs_employee": "Needs your input",
+				"resolved": "Approved",
+				"rejected": "Rejected",
+				"cancelled": "Cancelled"
+			},
+			"error": {
+				"invalid": "Check the request type and date range.",
+				"overlap": "This period overlaps another open or approved request.",
+				"revoked": "LuckyOS access was revoked. Contact an administrator.",
+				"failed": "The request could not be confirmed. Your form data is preserved; try again."
 			}
 		},
 		"files": {

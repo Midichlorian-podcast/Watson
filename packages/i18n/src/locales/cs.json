@@ -58,6 +58,7 @@
 		"privateLabel": "soukromý popisek",
 		"blockType": "Typ bloku",
 		"focusEmergencyNote": "Focus Time je tvrdý blok plánování. Nouzová výjimka bude vyžadovat výslovné potvrzení a důvod v auditu.",
+		"manualAbsenceNote": "Toto je pouze provozní blok dostupnosti bez HR schválení. Oficiální dovolenou nebo absenci odešli v Zaměstnaneckém přehledu; po schválení ji Watson převezme z LuckyOS.",
 		"startsAt": "Začátek",
 		"endsAt": "Konec",
 		"label": "Krátký popisek",
@@ -70,6 +71,10 @@
 			"unavailable": "Nedostupnost",
 			"absence": "Absence",
 			"holiday": "Svátek / volno"
+		},
+		"approval": {
+			"pending": "Čeká na schválení",
+			"approved": "Schváleno"
 		},
 		"status": {
 			"manual_snooze": "Nerušit",
@@ -140,6 +145,7 @@
 			"submit": "Odevzdat",
 			"unsaved": "Máš neuložené změny.",
 			"reviewerNote": "Poznámka kontroly",
+			"absences": { "nav": "Dovolená a absence" },
 			"documents": { "nav": "Dokumenty" },
 			"expenses": { "nav": "Výdaje" },
 			"contracts": { "nav": "Smlouvy" },
@@ -220,6 +226,45 @@
 				"confirmSubmit": "Opravdu chceš záznam odevzdat ke kontrole?",
 				"saved": "Koncept malých čísel byl uložen do LuckyOS.",
 				"submitted": "Malá čísla byla odevzdána ke kontrole."
+			}
+		},
+		"absences": {
+			"title": "Dovolená a absence",
+			"description": "Žádost odešleš do LuckyOS ke schválení. Watson mezitím ukáže týmu čekající období, ale plánování a Nerušit začne ovlivňovat až schválená absence.",
+			"kindLabel": "Druh žádosti",
+			"kind": {
+				"vacation": "Dovolená",
+				"sickness": "Pracovní neschopnost",
+				"doctor": "Lékař",
+				"family_care": "Péče o blízkého",
+				"other": "Jiná absence"
+			},
+			"from": "První den",
+			"to": "Poslední den",
+			"note": "Poznámka pro oprávněnou osobu v LuckyOS (volitelně)",
+			"private": "Skrýt případný popisek před kolegy. Typ „absence“ a období zůstanou viditelné, aby na mě neplánovali práci.",
+			"timezone": "Celé dny se počítají v pásmu {{timezone}}.",
+			"submit": "Odeslat žádost",
+			"sending": "Odesílám…",
+			"confirm": "Odeslat žádost o absenci od {{from}} do {{to}} do LuckyOS? Po odeslání ji posoudí oprávněná osoba.",
+			"sent": "Žádost byla bezpečně odeslána do LuckyOS.",
+			"history": "Moje žádosti",
+			"loading": "Načítám aktuální stav z LuckyOS…",
+			"loadFailed": "Žádosti se nepodařilo načíst. Nic se nezměnilo.",
+			"empty": "Zatím nemáš žádnou žádost o dovolenou nebo absenci.",
+			"status": {
+				"submitted": "Odesláno",
+				"in_review": "Posuzuje se",
+				"needs_employee": "Čeká na doplnění",
+				"resolved": "Schváleno",
+				"rejected": "Zamítnuto",
+				"cancelled": "Zrušeno"
+			},
+			"error": {
+				"invalid": "Zkontroluj druh a platné období žádosti.",
+				"overlap": "Toto období se překrývá s jinou otevřenou nebo schválenou žádostí.",
+				"revoked": "Přístup do LuckyOS byl odvolán. Obrať se na správce.",
+				"failed": "Žádost se nepodařilo potvrdit. Vyplněná data zůstala zachována; zkus to znovu."
 			}
 		},
 		"files": {

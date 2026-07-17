@@ -213,7 +213,10 @@ export function CalendarMonth({
 									data-mchip
 									role="note"
 									aria-label={availabilityToday
-										.map(({ block }) => t(`availability.kind.${block.kind ?? "unavailable"}`))
+										.map(
+											({ block }) =>
+												`${t(`availability.kind.${block.kind ?? "unavailable"}`)}${block.approval_status === "pending" ? ` · ${t("availability.approval.pending")}` : ""}`,
+										)
 										.join(", ")}
 									style={{
 										minHeight: 16,
@@ -232,6 +235,7 @@ export function CalendarMonth({
 									}}
 								>
 									{t(`availability.kind.${availabilityToday[0]?.block.kind ?? "unavailable"}`)}
+									{availabilityToday[0]?.block.approval_status === "pending" ? ` · ${t("availability.approval.pending")}` : ""}
 									{availabilityToday.length > 1 ? ` +${availabilityToday.length - 1}` : ""}
 								</div>
 							)}

@@ -48,6 +48,7 @@ type AvailabilityBlock = {
 	label: string | null;
 	visibility: "team" | "private";
 	source: "manual" | "calendar" | "luckyos";
+	approvalStatus: "pending" | "approved" | "rejected" | "cancelled";
 	version: number;
 };
 type AvailabilityResponse = {
@@ -644,6 +645,7 @@ export function AvailabilitySettings({ workspaceId }: { workspaceId: string | un
 									<div style={{ flex: 1, minWidth: 0 }}>
 										<div className="font-display" style={{ fontWeight: 700, fontSize: 12.5, color: "var(--w-ink)" }}>
 											{t(`availability.kind.${block.kind}`)}{block.label ? ` · ${block.label}` : ""}
+											{block.approvalStatus === "pending" ? ` · ${t("availability.approval.pending")}` : ""}
 										</div>
 										<div style={{ fontSize: 11.5, color: "var(--w-ink-3)", marginTop: 2 }}>
 											{new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(block.startsAt))} – {new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(block.endsAt))}
@@ -707,6 +709,7 @@ export function AvailabilitySettings({ workspaceId }: { workspaceId: string | un
 							</select>
 						</label>
 						{blockDraft.kind === "focus" && <div style={{ padding: 10, borderRadius: 9, background: "var(--w-brass-soft)", color: "var(--w-ink-2)", fontSize: 11.5 }}>{t("availability.focusEmergencyNote")}</div>}
+						{blockDraft.kind === "absence" && <div style={{ padding: 10, borderRadius: 9, background: "var(--w-brass-soft)", color: "var(--w-ink-2)", fontSize: 11.5 }}>{t("availability.manualAbsenceNote")}</div>}
 						<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
 							<label style={{ display: "grid", gap: 5, fontSize: 12, color: "var(--w-ink-2)" }}>{t("availability.startsAt")}<input type="datetime-local" value={blockDraft.startLocal} onChange={(event) => setBlockDraft({ ...blockDraft, startLocal: event.target.value })} style={INPUT} /></label>
 							<label style={{ display: "grid", gap: 5, fontSize: 12, color: "var(--w-ink-2)" }}>{t("availability.endsAt")}<input type="datetime-local" value={blockDraft.endLocal} onChange={(event) => setBlockDraft({ ...blockDraft, endLocal: event.target.value })} style={INPUT} /></label>

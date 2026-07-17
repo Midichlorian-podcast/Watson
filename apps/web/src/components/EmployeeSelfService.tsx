@@ -12,6 +12,7 @@ import {
   useEmployeeSmallNumbers,
 } from "../lib/employeeSelfService";
 import { showToast } from "../lib/toast";
+import { EmployeeAbsences } from "./EmployeeAbsences";
 import { EmployeeFiles } from "./EmployeeFiles";
 
 const card = "rounded-2xl border border-line bg-card";
@@ -688,6 +689,7 @@ export function EmployeeSelfService() {
     ["profil", "prirazeni", "profile"],
     ["dochazka", "termin", "attendance"],
     ["mala-cisla", "trvani", "smallNumbers"],
+    ["absence", "termin", "absences"],
     ["dokumenty", "priloha", "documents"],
     ["vydaje", "reporty", "expenses"],
     ["smlouvy", "hotovo", "contracts"],
@@ -712,6 +714,7 @@ export function EmployeeSelfService() {
         <ProfilePanel />
         <AttendancePanel />
         <SmallNumbersPanel />
+        <EmployeeAbsences />
         <EmployeeFiles />
       </div>
     </div>

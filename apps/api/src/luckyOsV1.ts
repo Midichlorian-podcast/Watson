@@ -20,6 +20,11 @@ import {
 } from "@watson/db";
 import { Hono } from "hono";
 import { z } from "zod";
+import {
+	absenceProviderStatusSchema,
+	parseLuckyOsAbsenceCases,
+	reconcileLuckyOsAbsenceCases,
+} from "./employeeAbsenceProjection";
 import { env } from "./env";
 import { issueLuckyOsV1Token } from "./powersync";
 
@@ -126,6 +131,49 @@ function parseIdentityEvent(event: EventEnvelope): IdentityEventPayload | null {
 	return parsed.data;
 }
 
+function isAbsenceCaseEvent(event: EventEnvelope) {
+	if (event.aggregate.type !== "employee_domain_case" || !event.person_id) return false;
+	const data =
+		event.payload.data && typeof event.payload.data === "object"
+			? (event.payload.data as Record<string, unknown>)
+			: null;
+	return data?.case_type === "absence";
+}
+
+const absenceCaseEventPayloadSchema = z
+	.object({
+		agenda: z.literal("assignments"),
+		entity_type: z.literal("employee_domain_case"),
+		entity_id: z.string().trim().min(1).max(255),
+		version: z.number().int().positive(),
+		change_type: z.enum(["upserted", "closed"]),
+		data: z
+			.object({
+				case_type: z.literal("absence"),
+				status: absenceProviderStatusSchema,
+			})
+			.passthrough(),
+	})
+	.passthrough();
+
+function parseAbsenceCaseEvent(event: EventEnvelope) {
+	if (!isAbsenceCaseEvent(event)) return null;
+	if (!event.event_type.match(/^employee\.domain\.assignments\.(upserted|closed)$/)) {
+		throw new LuckyOsV1Error("invalid_absence_event", 422);
+	}
+	const payload = absenceCaseEventPayloadSchema.safeParse(event.payload);
+	if (
+		!payload.success ||
+		payload.data.entity_id !== event.aggregate.id ||
+		payload.data.version !== event.aggregate.version ||
+		(event.event_type.endsWith(".closed") &&
+			!["resolved", "rejected", "cancelled"].includes(payload.data.data.status))
+	) {
+		throw new LuckyOsV1Error("invalid_absence_event", 422);
+	}
+	return payload.data.data.status;
+}
+
 async function applySignedEvent(args: {
 	event: EventEnvelope;
 	idempotencyKey: string;
@@ -148,6 +196,7 @@ async function applySignedEvent(args: {
 					eventId: luckyOsEventInbox.eventId,
 					payloadHash: luckyOsEventInbox.payloadHash,
 					disposition: luckyOsEventInbox.disposition,
+					ownerUserId: luckyOsEventInbox.ownerUserId,
 				})
 				.from(luckyOsEventInbox)
 				.where(
@@ -165,7 +214,34 @@ async function applySignedEvent(args: {
 			) {
 				throw new LuckyOsV1Error("idempotency_conflict", 409);
 			}
-			return { replayed: true, disposition: existingReceipt.disposition };
+			let ownerUserId = existingReceipt.ownerUserId;
+			if (!ownerUserId && !identity && args.event.person_id) {
+				ownerUserId =
+					(
+						await tx
+							.select({ ownerUserId: luckyOsIdentityBindings.ownerUserId })
+							.from(luckyOsIdentityBindings)
+							.where(
+								and(
+									eq(luckyOsIdentityBindings.organizationId, args.event.organization_id),
+									eq(luckyOsIdentityBindings.providerPersonId, args.event.person_id),
+									eq(luckyOsIdentityBindings.status, "active"),
+								),
+							)
+							.limit(1)
+					)[0]?.ownerUserId ?? null;
+				if (ownerUserId) {
+					await tx
+						.update(luckyOsEventInbox)
+						.set({ ownerUserId })
+						.where(eq(luckyOsEventInbox.eventId, existingReceipt.eventId));
+				}
+			}
+			return {
+				replayed: true,
+				disposition: existingReceipt.disposition,
+				ownerUserId,
+			};
 		}
 
 		let ownerUserId: string | null = null;
@@ -275,6 +351,23 @@ async function applySignedEvent(args: {
 				}
 			}
 		}
+		if (!identity && args.event.person_id) {
+			ownerUserId =
+				(
+					await tx
+						.select({ ownerUserId: luckyOsIdentityBindings.ownerUserId })
+						.from(luckyOsIdentityBindings)
+						.where(
+							and(
+								eq(luckyOsIdentityBindings.organizationId, args.event.organization_id),
+								eq(luckyOsIdentityBindings.providerPersonId, args.event.person_id),
+								eq(luckyOsIdentityBindings.status, "active"),
+							),
+						)
+						.limit(1)
+				)[0]?.ownerUserId ?? null;
+			if (!ownerUserId) disposition = "projection_identity_pending";
+		}
 
 		await tx.insert(luckyOsEventInbox).values({
 			eventId: args.event.event_id,
@@ -294,8 +387,54 @@ async function applySignedEvent(args: {
 			occurredAt: new Date(args.event.occurred_at),
 			processedAt,
 		});
-		return { replayed: false, disposition };
+		return { replayed: false, disposition, ownerUserId };
 	});
+}
+
+async function projectAbsenceEvent(
+	event: EventEnvelope,
+	eventStatus: z.infer<typeof absenceProviderStatusSchema>,
+	ownerUserId: string,
+	auditRequestId: string,
+) {
+	const result = await luckyOsV1EmployeeFetch({
+		userId: ownerUserId,
+		scopes: ["cases:read"],
+		pathSuffix: "/cases?limit=100&include_closed=true",
+		correlationId: event.correlation_id,
+	});
+	if (!result.ok) throw new Error("absence_projection_provider_failed");
+	let cases: ReturnType<typeof parseLuckyOsAbsenceCases>;
+	try {
+		cases = parseLuckyOsAbsenceCases(result.data);
+	} catch {
+		throw new Error("absence_projection_contract_rejected");
+	}
+	const target = cases.find((item) => item.id === event.aggregate.id);
+	if (!target) {
+		throw new Error("absence_projection_case_missing");
+	}
+	if (
+		target.version < event.aggregate.version ||
+		(target.version === event.aggregate.version && eventStatus !== target.status)
+	) {
+		// LuckyOS can publish before its read model catches up. Keep the signed event
+		// pending instead of acknowledging stale state; the exact replay is retryable.
+		throw new Error("absence_projection_provider_not_caught_up");
+	}
+	try {
+		await reconcileLuckyOsAbsenceCases(ownerUserId, cases, auditRequestId);
+	} catch {
+		throw new Error("absence_projection_reconcile_failed");
+	}
+	try {
+		await getDb()
+			.update(luckyOsEventInbox)
+			.set({ status: "processed", disposition: "absence_projected", processedAt: new Date() })
+			.where(eq(luckyOsEventInbox.eventId, event.event_id));
+	} catch {
+		throw new Error("absence_projection_receipt_failed");
+	}
 }
 
 export const luckyOsV1Routes = new Hono<{ Variables: { requestId: string } }>();
@@ -337,13 +476,47 @@ luckyOsV1Routes.post("/api/integrations/luckyos/v1/events", async (c) => {
 		if (c.req.header("x-lucky-event-id")?.trim() !== parsed.data.event_id) {
 			throw new LuckyOsV1Error("event_id_mismatch", 400);
 		}
+		const absenceEventStatus = parseAbsenceCaseEvent(parsed.data);
 		const result = await applySignedEvent({
 			event: parsed.data,
 			idempotencyKey,
 			payloadHash: hashBody(rawBody),
 		});
+		if (absenceEventStatus && result.disposition !== "absence_projected") {
+			if (!result.ownerUserId) {
+				throw new LuckyOsV1Error("absence_projection_identity_pending", 503);
+			}
+			try {
+				await projectAbsenceEvent(
+					parsed.data,
+					absenceEventStatus,
+					result.ownerUserId,
+					c.get("requestId"),
+				);
+			} catch (error) {
+				console.warn(
+					JSON.stringify({
+						level: "warn",
+						event: "luckyos_absence_projection_retry",
+						eventId: parsed.data.event_id,
+						code:
+							error instanceof Error && error.message.startsWith("absence_projection_")
+								? error.message
+								: "absence_projection_failed",
+					}),
+				);
+				await getDb()
+					.update(luckyOsEventInbox)
+					.set({ status: "pending", disposition: "absence_projection_retry_required" })
+					.where(eq(luckyOsEventInbox.eventId, parsed.data.event_id));
+				throw new LuckyOsV1Error("absence_projection_unavailable", 503);
+			}
+		}
 		return jsonResponse(
-			{ accepted: true, disposition: result.disposition },
+			{
+				accepted: true,
+				disposition: absenceEventStatus ? "absence_projected" : result.disposition,
+			},
 			result.replayed ? 200 : 202,
 			result.replayed,
 		);

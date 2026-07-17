@@ -1148,13 +1148,13 @@ function WeekColumns({
 								if (id) onDrop(id, iso);
 							}}
 						>
-							{availabilityToday.map(({ block, segment }) => (
+					{availabilityToday.map(({ block, segment }) => (
 								<div
 									key={`availability-${block.id}`}
 									role="note"
-									aria-label={`${t(`availability.kind.${block.kind ?? "unavailable"}`)} ${fmtMin(segment.start)}–${fmtMin(segment.end)}`}
+									aria-label={`${t(`availability.kind.${block.kind ?? "unavailable"}`)}${block.approval_status === "pending" ? ` · ${t("availability.approval.pending")}` : ""} ${fmtMin(segment.start)}–${fmtMin(segment.end)}`}
 									style={{
-										border: "1px dashed var(--w-brass)",
+										border: `1px ${block.approval_status === "pending" ? "dashed" : "solid"} var(--w-brass)`,
 										borderRadius: 7,
 										padding: "5px 7px",
 										background:
@@ -1165,7 +1165,10 @@ function WeekColumns({
 										fontSize: 10.5,
 									}}
 								>
-									<strong>{t(`availability.kind.${block.kind ?? "unavailable"}`)}</strong>
+									<strong>
+										{t(`availability.kind.${block.kind ?? "unavailable"}`)}
+										{block.approval_status === "pending" ? ` · ${t("availability.approval.pending")}` : ""}
+									</strong>
 									<div className="font-mono" style={{ marginTop: 2, fontSize: 9.5 }}>
 										{fmtMin(segment.start)}–{fmtMin(segment.end)}
 									</div>
@@ -2127,7 +2130,7 @@ function TimeGrid({
 								{availabilityToday.map(({ block, segment }) => {
 									const kind = block.kind ?? "unavailable";
 									const height = Math.max(5, (segment.end - segment.start) * PPM);
-									const label = t(`availability.kind.${kind}`);
+									const label = `${t(`availability.kind.${kind}`)}${block.approval_status === "pending" ? ` · ${t("availability.approval.pending")}` : ""}`;
 									return (
 										<div
 											key={`availability-${block.id}`}
@@ -2142,7 +2145,7 @@ function TimeGrid({
 												top: segment.start * PPM,
 												height,
 												zIndex: 1,
-												border: `1px ${kind === "focus" ? "dashed" : "solid"} var(--w-brass)`,
+											border: `1px ${kind === "focus" || block.approval_status === "pending" ? "dashed" : "solid"} var(--w-brass)`,
 												borderRadius: 5,
 												background:
 													kind === "focus"

@@ -419,6 +419,7 @@ export async function buildRadarSnapshot(input: {
 			and(
 				inArray(availabilityBlocks.workspaceId, workspaceIds),
 				isNull(availabilityBlocks.cancelledAt),
+				eq(availabilityBlocks.approvalStatus, "approved"),
 				sql`${availabilityBlocks.endsAt} >= ${windowStart.toISOString()}::timestamptz`,
 				sql`${availabilityBlocks.startsAt} <= ${windowEnd.toISOString()}::timestamptz`,
 			),

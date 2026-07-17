@@ -123,6 +123,18 @@ try {
 	response = await deliver(wrongTenant, `lucky-test:${randomUUID()}`);
 	assert.equal(response.status, 403, "cross-tenant event must fail");
 
+	const queuedBeforeIdentity = event({ version: 1, status: "active" });
+	queuedBeforeIdentity.event_type = "employee.domain.profile.updated";
+	queuedBeforeIdentity.aggregate.type = "employee_domain_case";
+	queuedBeforeIdentity.aggregate.id = randomUUID();
+	const queuedBeforeIdentityKey = `lucky-test:${randomUUID()}`;
+	response = await deliver(queuedBeforeIdentity, queuedBeforeIdentityKey);
+	assert.equal(response.status, 202);
+	assert.deepEqual(await response.json(), {
+		accepted: true,
+		disposition: "projection_identity_pending",
+	});
+
 	const active = event({ version: 1, status: "active" });
 	const activeKey = `lucky-test:${randomUUID()}`;
 	response = await deliver(active, activeKey);
@@ -150,6 +162,15 @@ try {
 	assert.equal(binding.organizationId, organizationId);
 	assert.equal(binding.status, "active");
 	assert.equal(binding.providerVersion, 1);
+
+	response = await deliver(queuedBeforeIdentity, queuedBeforeIdentityKey);
+	assert.equal(response.status, 200, "queued event must re-resolve identity on exact replay");
+	const [reboundQueuedEvent] = await db
+		.select({ ownerUserId: luckyOsEventInbox.ownerUserId })
+		.from(luckyOsEventInbox)
+		.where(eq(luckyOsEventInbox.eventId, queuedBeforeIdentity.event_id))
+		.limit(1);
+	assert.equal(reboundQueuedEvent?.ownerUserId, userId);
 
 	const suspended = event({ version: 2, status: "suspended" });
 	response = await deliver(suspended, `lucky-test:${randomUUID()}`);

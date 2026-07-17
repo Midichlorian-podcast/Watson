@@ -188,7 +188,10 @@ availabilityRoutes.get("/api/workspaces/:workspaceId/availability", async (c) =>
 		);
 	const profileByUser = new Map(profiles.map((profile) => [profile.userId, profile]));
 	const currentBlocks = blocks.filter(
-		(block) => block.startsAt.getTime() <= now.getTime() && block.endsAt.getTime() > now.getTime(),
+		(block) =>
+			block.approvalStatus === "approved" &&
+			block.startsAt.getTime() <= now.getTime() &&
+			block.endsAt.getTime() > now.getTime(),
 	);
 
 	return c.json({
@@ -443,7 +446,9 @@ availabilityRoutes.post("/api/workspaces/:workspaceId/availability/blocks", asyn
 				existing.endsAt.toISOString() === new Date(parsed.data.endsAt).toISOString() &&
 				existing.timezone === parsed.data.timezone &&
 				(existing.label ?? null) === (parsed.data.label || null) &&
-				existing.visibility === parsed.data.visibility;
+				existing.visibility === parsed.data.visibility &&
+				existing.source === "manual" &&
+				existing.approvalStatus === "approved";
 			return same ? { block: existing, replayed: true } : { error: "block_id_reused" as const };
 		}
 		const [block] = await tx
@@ -458,6 +463,7 @@ availabilityRoutes.post("/api/workspaces/:workspaceId/availability/blocks", asyn
 				timezone: parsed.data.timezone,
 				label: parsed.data.label || null,
 				visibility: parsed.data.visibility,
+				approvalStatus: "approved",
 				createdBy: session.user.id,
 			})
 			.returning();
@@ -504,6 +510,7 @@ availabilityRoutes.put("/api/workspaces/:workspaceId/availability/blocks/:blockI
 				timezone: parsed.data.timezone,
 				label: parsed.data.label || null,
 				visibility: parsed.data.visibility,
+				approvalStatus: "approved",
 				version: before.version + 1,
 				updatedAt: new Date(),
 			})
@@ -611,6 +618,7 @@ export async function readNotificationHold(
 				eq(availabilityBlocks.workspaceId, workspaceId),
 				eq(availabilityBlocks.userId, userId),
 				isNull(availabilityBlocks.cancelledAt),
+				eq(availabilityBlocks.approvalStatus, "approved"),
 				sql`${availabilityBlocks.startsAt} <= ${now.toISOString()}::timestamptz`,
 				sql`${availabilityBlocks.endsAt} > ${now.toISOString()}::timestamptz`,
 			),

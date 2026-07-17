@@ -112,7 +112,7 @@ const EXPORT_QUERIES: Record<
 	availability_blocks: (ws, userId) => sql`
 		SELECT id, workspace_id, user_id, kind, starts_at, ends_at, timezone,
 		       CASE WHEN visibility = 'team' OR user_id = ${userId} THEN label ELSE NULL END AS label,
-		       visibility, source, external_id, created_by, cancelled_at, version, created_at, updated_at
+		       visibility, source, approval_status, external_id, created_by, cancelled_at, version, created_at, updated_at
 		FROM availability_blocks
 		WHERE workspace_id = ANY(${uuids(ws)})
 	`,

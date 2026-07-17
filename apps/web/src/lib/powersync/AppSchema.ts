@@ -220,6 +220,7 @@ const availability_blocks = new Table(
 		timezone: column.text,
 		visibility: column.text,
 		source: column.text,
+		approval_status: column.text,
 		external_id: column.text,
 		created_by: column.text,
 		cancelled_at: column.text,

@@ -137,6 +137,35 @@ Při incidentu `file_scan_unavailable`, `file_storage_unavailable` nebo
 bezpečně zopakovat stejný command se zachovaným operation ID; nové operation ID
 se použije až po vědomé změně obsahu.
 
+## Dovolená a absence
+
+Oficiální dovolená nebo absence vzniká ve Watsonu jako verzovaný LuckyOS
+`employee_domain_case` typu `absence`; LuckyOS je jediný HR system of record a
+stav `resolved` je jediný stav, který Watson chápe jako schválený. Browser nikdy
+neurčuje person ID, tenant ani scopes. Server používá přesné `cases:read`,
+`cases:write` a `assignments:write`, normalizuje celé dny přes IANA zónu a odmítá
+obrácené, delší než roční nebo překrývající se otevřené období.
+
+Watson ukládá jen provozní projekci do `availability_blocks`: interval, zónu,
+viditelnost, provider case ID a `approval_status`. Poznámka zaměstnance ani text
+interního rozhodnutí se neukládají do Watson DB, PowerSyncu nebo audit eventu.
+Projekce vzniká ve všech prostorech, jejichž je zaměstnanec členem, aby vedení i
+kolegové viděli období nedostupnosti bez přístupu k HR detailu.
+
+- `submitted`, `in_review` a `needs_employee` jsou `pending`: zobrazí se
+  přerušovaně jako čekající, ale neblokují plánování, nespouštějí Nerušit a
+  nevstupují do Radaru.
+- `resolved` je `approved`: absence začne chránit plánování podle workspace
+  policy a po dobu trvání drží upozornění ve frontě.
+- `rejected` a `cancelled` projekci ukončí; historický audit zůstává bez obsahu
+  žádosti.
+
+Změnu po posouzení přenáší podepsaný LuckyOS outbox event. Watson z eventu
+nepřebírá HR payload naslepo: pod serverovou identitou znovu načte person-scoped
+`cases` projekci, ověří shodu ID, data, IANA hranic a verze a teprve poté provede
+idempotentní update. Pokud refresh nebo projekce selže, webhook vrátí řízené 503;
+LuckyOS může zopakovat stejný event a nevznikne druhý blok.
+
 ## Automatické důkazy
 
 ```bash
@@ -144,6 +173,7 @@ node scripts/verify-employee-hub-contract.mjs
 node scripts/verify-luckyos-v1-contract.mjs
 node scripts/verify-employee-self-service-contract.mjs
 node scripts/verify-employee-files-contract.mjs
+node scripts/verify-employee-absences-contract.mjs
 EMPLOYEE_HUB_API=http://127.0.0.1:8790 pnpm --filter @watson/api verify:employee-hub
 pnpm --filter @watson/api verify:luckyos-v1
 EMPLOYEE_SELF_SERVICE_API=http://127.0.0.1:8790 pnpm --filter @watson/api verify:employee-self-service
@@ -152,13 +182,13 @@ bash scripts/ci-api-integration.sh
 pnpm gate
 ```
 
-API verifier musí běžet proti lokálnímu LuckyOS stubu z integrační sady. Browser verifier pokrývá Chromium i WebKit, desktop, 390 px, navigační gating, dashboard, profil, docházku, malá čísla, dokumentový retry, výdaj, podpisovou challenge, explicitní souhlas a axe WCAG A/AA.
+API verifier musí běžet proti lokálnímu LuckyOS stubu z integrační sady. Browser verifier pokrývá Chromium i WebKit, desktop, 390 px, navigační gating, dashboard, profil, docházku, malá čísla, žádost o absenci se stabilním retry, dokumentový retry, výdaj, podpisovou challenge, explicitní souhlas a axe WCAG A/AA.
 
 ## Scope této dávky
 
 Tato dávka zpřístupňuje profilové změnové žádosti, docházku, malá čísla,
-dokumenty, výdaje a elektronický podpis. Starší
+dovolenou/absence, dokumenty, výdaje a elektronický podpis. Starší
 broker routy zůstávají zachované kvůli kompatibilitě a výchozí protocol zůstává
 `legacy`; nasazení samotného kódu proto nikoho nepřepne. Retention a malware
-politiku vlastní LuckyOS. Lifecycle absence, onboarding/offboarding a znalostní
-vrstva patří do následujících samostatně auditovaných F7 vertikál.
+politiku vlastní LuckyOS. Onboarding/offboarding a znalostní vrstva patří do
+následujících samostatně auditovaných F7 vertikál.

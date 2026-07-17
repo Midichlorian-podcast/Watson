@@ -6,6 +6,7 @@ const port = Number(process.env.LUCKYOS_STUB_PORT ?? 8791);
 const v1Receipts = new Map();
 const v1Responses = new Map();
 const v1Uploads = new Map();
+const v1Cases = new Map();
 
 async function requestBytes(request) {
 	const chunks = [];
@@ -32,6 +33,30 @@ const server = createServer(async (request, response) => {
 	response.setHeader("content-type", "application/json");
 	if (request.url === "/health") {
 		response.end(JSON.stringify({ ok: true }));
+		return;
+	}
+	if (request.method === "POST" && request.url?.startsWith("/__test__/absence/")) {
+		const id = decodeURIComponent(request.url.split("/").at(-2) ?? "");
+		const existing = v1Cases.get(id);
+		if (!existing) {
+			response.statusCode = 404;
+			response.end(JSON.stringify({ error: "absence_not_found" }));
+			return;
+		}
+		const body = JSON.parse(await requestBody(request));
+		if (!["in_review", "needs_employee", "resolved", "rejected", "cancelled"].includes(body.status)) {
+			response.statusCode = 422;
+			response.end(JSON.stringify({ error: "invalid_status" }));
+			return;
+		}
+		existing.status = body.status;
+		existing.resolution_public = body.resolution_public ?? null;
+		existing.version += 1;
+		existing.updated_at = "2026-07-18T08:00:00.000Z";
+		existing.closed_at = ["resolved", "rejected", "cancelled"].includes(body.status)
+			? existing.updated_at
+			: null;
+		response.end(JSON.stringify({ case: existing }));
 		return;
 	}
 	const payload = tokenPayload(request.headers.authorization);
@@ -120,6 +145,7 @@ const server = createServer(async (request, response) => {
 			"expense-claims": "expenses:read",
 			"trainer-projects": "trainer-projects:read",
 			contracts: "contracts:read",
+			cases: "cases:read",
 		}[resource];
 		if (request.method === "GET" && (!readScope || !scopes.has(readScope))) {
 			response.statusCode = 403;
@@ -392,6 +418,21 @@ const server = createServer(async (request, response) => {
 			);
 			return;
 		}
+		if (request.method === "GET" && remainder === "cases") {
+			response.end(
+				JSON.stringify({
+					resource: "cases",
+					data: {
+						cases: [...v1Cases.values()]
+							.filter((item) => item.provider_person_id === providerPersonId)
+							.sort((left, right) => right.updated_at.localeCompare(left.updated_at)),
+					},
+					request_id: crypto.randomUUID(),
+					correlation_id: request.headers["x-correlation-id"],
+				}),
+			);
+			return;
+		}
 		if (request.method === "POST" && remainder === "upload-intents") {
 			const key = request.headers["idempotency-key"];
 			const raw = await requestBody(request);
@@ -578,6 +619,84 @@ const server = createServer(async (request, response) => {
 			};
 			v1Receipts.set(key, raw);
 			v1Responses.set(key, result);
+			response.end(JSON.stringify(result));
+			return;
+		}
+		if (request.method === "POST" && /^cases\/[^/]+\/commands$/.test(remainder)) {
+			const key = request.headers["idempotency-key"];
+			const raw = await requestBody(request);
+			if (
+				!scopes.has("assignments:write") ||
+				!scopes.has("cases:write") ||
+				typeof key !== "string"
+			) {
+				response.statusCode = 403;
+				response.end(JSON.stringify({ error: { code: "insufficient_scope" } }));
+				return;
+			}
+			const previous = v1Receipts.get(key);
+			if (previous && previous !== raw) {
+				response.statusCode = 409;
+				response.end(JSON.stringify({ error: { code: "idempotency_conflict" } }));
+				return;
+			}
+			if (previous) {
+				response.setHeader("idempotency-replayed", "true");
+				response.end(JSON.stringify({ ...v1Responses.get(key), idempotency_replayed: true }));
+				return;
+			}
+			const command = JSON.parse(raw);
+			const id = remainder.split("/")[1];
+			if (
+				command.command !== "case.create" ||
+				command.expected_version !== 0 ||
+				command.case_type !== "absence" ||
+				command.priority !== "normal" ||
+				command.data?.schema_version !== 1 ||
+				command.upload_id !== null
+			) {
+				response.statusCode = 400;
+				response.end(JSON.stringify({ error: { code: "invalid_domain_command" } }));
+				return;
+			}
+			const entity = {
+				id,
+				provider_person_id: providerPersonId,
+				case_type: "absence",
+				target_type: null,
+				target_id: null,
+				subject: command.subject,
+				employee_message: command.message,
+				employee_payload: command.data,
+				status: "submitted",
+				priority: "normal",
+				due_at: null,
+				resolution_public: null,
+				version: 1,
+				correlation_id: request.headers["x-correlation-id"],
+				created_at: "2026-07-17T08:00:00.000Z",
+				updated_at: "2026-07-17T08:00:00.000Z",
+				closed_at: null,
+				internal_payload: { reviewer_secret: "must-not-leak" },
+			};
+			v1Cases.set(id, entity);
+			const result = {
+				entity_type: "employee_domain_case",
+				entity: {
+					id,
+					case_type: "absence",
+					status: "submitted",
+					priority: "normal",
+					version: 1,
+					created_at: entity.created_at,
+				},
+				idempotency_replayed: false,
+				request_id: crypto.randomUUID(),
+				correlation_id: request.headers["x-correlation-id"],
+			};
+			v1Receipts.set(key, raw);
+			v1Responses.set(key, result);
+			response.statusCode = 201;
 			response.end(JSON.stringify(result));
 			return;
 		}

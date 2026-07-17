@@ -389,6 +389,7 @@ export async function readTaskAvailabilityConflicts(
 		WHERE b.workspace_id = ${input.workspaceId}
 		  AND b.user_id = ANY(${uuidArray(assigneeIds)})
 		  AND b.cancelled_at IS NULL
+		  AND b.approval_status = 'approved'
 		  AND b.starts_at < ${endsAt.toISOString()}::timestamptz
 		  AND b.ends_at > ${input.startsAt.toISOString()}::timestamptz
 		ORDER BY b.starts_at, b.user_id,

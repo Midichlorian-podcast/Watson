@@ -119,6 +119,8 @@ export const availabilityBlocks = pgTable(
 		/** private = kolegové vidí typ a čas, ne uživatelův popisek. */
 		visibility: varchar("visibility", { length: 12 }).notNull().default("team"),
 		source: varchar("source", { length: 16 }).notNull().default("manual"),
+		/** LuckyOS žádost je pending; až resolved projekce smí ovlivnit plánování a snooze. */
+		approvalStatus: varchar("approval_status", { length: 16 }).notNull().default("approved"),
 		externalId: varchar("external_id", { length: 240 }),
 		createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
 		cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
@@ -149,6 +151,14 @@ export const availabilityBlocks = pgTable(
 		check(
 			"availability_blocks_source_valid",
 			sql`${t.source} in ('manual', 'calendar', 'luckyos')`,
+		),
+		check(
+			"availability_blocks_approval_status_valid",
+			sql`${t.approvalStatus} in ('pending', 'approved', 'rejected', 'cancelled')`,
+		),
+		check(
+			"availability_blocks_pending_source_valid",
+			sql`${t.approvalStatus} = 'approved' or ${t.source} = 'luckyos'`,
 		),
 		check("availability_blocks_time_valid", sql`${t.endsAt} > ${t.startsAt}`),
 		check("availability_blocks_version_positive", sql`${t.version} >= 1`),

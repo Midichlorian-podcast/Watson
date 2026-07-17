@@ -3,6 +3,7 @@ import "./src/env";
 import { createHmac, randomUUID } from "node:crypto";
 import {
 	and,
+	availabilityBlocks,
 	eq,
 	getDb,
 	integrationConnections,
@@ -15,6 +16,7 @@ import {
 	users,
 	workspaces,
 } from "@watson/db";
+import { readTaskAvailabilityConflicts } from "./src/taskAvailability";
 
 const API = process.env.EMPLOYEE_SELF_SERVICE_API ?? "http://127.0.0.1:8790";
 const organizationId = process.env.LUCKYOS_ORGANIZATION_ID ?? "";
@@ -110,7 +112,7 @@ async function provisionIdentity(userId: string, providerPersonId: string) {
 		organization_id: organizationId,
 		aggregate: { type: "external_identity_link", id: randomUUID(), version: 1 },
 		person_id: providerPersonId,
-		occurred_at: new Date().toISOString(),
+		occurred_at: "2026-07-17T09:00:00.000Z",
 		correlation_id: `self-service-${eventId}`,
 		payload: { person_id: providerPersonId, watson_user_id: userId, status: "active", reason_code: null },
 	};
@@ -136,6 +138,50 @@ async function provisionIdentity(userId: string, providerPersonId: string) {
 	return eventId;
 }
 
+async function sendAbsenceEvent(
+	providerPersonId: string,
+	caseId: string,
+	version: number,
+	eventId: string,
+	payloadVersion = version,
+) {
+	const payload = {
+		schema_version: 1,
+		event_id: eventId,
+		event_type: "employee.domain.assignments.closed",
+		organization_id: organizationId,
+		aggregate: { type: "employee_domain_case", id: caseId, version },
+		person_id: providerPersonId,
+		occurred_at: "2026-07-17T09:00:00.000Z",
+		correlation_id: `absence-${eventId}`,
+		payload: {
+			agenda: "assignments",
+			entity_type: "employee_domain_case",
+			entity_id: caseId,
+			version: payloadVersion,
+			change_type: "closed",
+			data: { status: "resolved", case_type: "absence" },
+		},
+	};
+	const body = JSON.stringify(payload);
+	const timestamp = new Date().toISOString();
+	const signature = `v1=${createHmac("sha256", webhookSecret)
+		.update(`${timestamp}.${body}`, "utf8")
+		.digest("hex")}`;
+	const response = await fetch(`${API}/api/integrations/luckyos/v1/events`, {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+			"idempotency-key": `absence:${eventId}`,
+			"x-lucky-event-id": eventId,
+			"x-lucky-timestamp": timestamp,
+			"x-lucky-signature": signature,
+		},
+		body,
+	});
+	return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+}
+
 async function main() {
 	if (process.env.LUCKYOS_PROTOCOL !== "v1" || !organizationId || !webhookSecret) {
 		throw new Error("employee self-service verifier requires the LuckyOS v1 environment");
@@ -159,7 +205,15 @@ async function main() {
 		.returning({ id: workspaces.id });
 	if (!workspace) throw new Error("employee_self_service_workspace_missing");
 	await db.insert(memberships).values({ workspaceId: workspace.id, userId: user.id, role: "admin" });
-	const eventId = await provisionIdentity(user.id, `person-${suffix}`);
+	const [teamWorkspace] = await db
+		.insert(workspaces)
+		.values({ name: `Employee team ${suffix}`, ownerId: user.id, isPersonal: false })
+		.returning({ id: workspaces.id });
+	if (!teamWorkspace) throw new Error("employee_self_service_team_workspace_missing");
+	await db.insert(memberships).values({ workspaceId: teamWorkspace.id, userId: user.id, role: "admin" });
+	const providerPersonId = `person-${suffix}`;
+	const eventId = await provisionIdentity(user.id, providerPersonId);
+	let absenceEventId: string | null = null;
 
 	try {
 		const unauthorized = await request(null, "/api/employee/self-service/profile");
@@ -328,6 +382,192 @@ async function main() {
 				(smallSave.body.entity as Record<string, unknown> | undefined)?.status === "submitted" &&
 				!smallSave.text.includes("must-not-leak"),
 			{ invalidMinutes, smallSave },
+		);
+
+		const absencesBefore = await request(cookie, "/api/employee/self-service/absences");
+		check(
+			"absence se čtou online z LuckyOS a prázdný stav neobsahuje HR payload",
+			absencesBefore.status === 200 &&
+				Array.isArray(absencesBefore.body.cases) &&
+				(absencesBefore.body.cases as unknown[]).length === 0 &&
+				!absencesBefore.text.includes("employee_message") &&
+				!absencesBefore.text.includes("internal_payload"),
+			absencesBefore.body,
+		);
+		const invalidAbsence = await request(cookie, "/api/employee/self-service/absences", {
+			method: "POST",
+			body: {
+				operationId: randomUUID(),
+				kind: "vacation",
+				startDate: "2026-08-12",
+				endDate: "2026-08-10",
+				timezone: "Europe/Prague",
+				visibility: "team",
+				note: null,
+			},
+		});
+		check(
+			"neplatné nebo obrácené období skončí před provider commandem",
+			invalidAbsence.status === 422 && invalidAbsence.body.error === "invalid_absence_request",
+			invalidAbsence,
+		);
+		const absenceOperation = randomUUID();
+		const sensitiveAbsenceNote = "Citlivá poznámka pouze pro oprávněnou osobu";
+		const absenceBody = {
+			operationId: absenceOperation,
+			kind: "vacation",
+			startDate: "2026-08-10",
+			endDate: "2026-08-12",
+			timezone: "Europe/Prague",
+			visibility: "team",
+			note: sensitiveAbsenceNote,
+		};
+		const absenceCreate = await request(cookie, "/api/employee/self-service/absences", {
+			method: "POST",
+			body: absenceBody,
+		});
+		const absenceReplay = await request(cookie, "/api/employee/self-service/absences", {
+			method: "POST",
+			body: absenceBody,
+		});
+		const overlappingAbsence = await request(cookie, "/api/employee/self-service/absences", {
+			method: "POST",
+			body: { ...absenceBody, operationId: randomUUID(), startDate: "2026-08-11" },
+		});
+		const pendingBlocks = await db
+			.select()
+			.from(availabilityBlocks)
+			.where(
+				and(
+					eq(availabilityBlocks.userId, user.id),
+					eq(availabilityBlocks.source, "luckyos"),
+					eq(availabilityBlocks.externalId, absenceOperation),
+				),
+			);
+		const pendingScheduling = await readTaskAvailabilityConflicts(db, {
+			workspaceId: teamWorkspace.id,
+			policy: "strict",
+			actorUserId: user.id,
+			taskId: null,
+			startsAt: new Date("2026-08-11T08:00:00.000Z"),
+			durationMin: 60,
+			assigneeIds: [user.id],
+		});
+		check(
+			"žádost je idempotentní, hlídá překryv a čekající projekce ještě neblokuje plánování",
+			absenceCreate.status === 201 &&
+				absenceReplay.status === 200 &&
+				absenceReplay.body.replayed === true &&
+				overlappingAbsence.status === 409 &&
+				overlappingAbsence.body.error === "absence_overlap" &&
+				pendingBlocks.length === 2 &&
+				pendingBlocks.every(
+					(block) => block.approvalStatus === "pending" && block.cancelledAt === null,
+				) &&
+				pendingScheduling.canSchedule === true &&
+				pendingScheduling.conflicts.length === 0 &&
+				!absenceCreate.text.includes(sensitiveAbsenceNote),
+			{ absenceCreate, absenceReplay, overlappingAbsence, pendingBlocks, pendingScheduling },
+		);
+		const invalidAbsenceEvent = await sendAbsenceEvent(
+			providerPersonId,
+			absenceOperation,
+			2,
+			randomUUID(),
+			1,
+		);
+		check(
+			"event s nesouhlasnou payload verzí je odmítnut před trvalým inboxem",
+			invalidAbsenceEvent.status === 422 &&
+				invalidAbsenceEvent.body.error === "invalid_absence_event",
+			invalidAbsenceEvent,
+		);
+		absenceEventId = randomUUID();
+		const absenceEventBeforeProvider = await sendAbsenceEvent(
+			providerPersonId,
+			absenceOperation,
+			2,
+			absenceEventId,
+		);
+		const stubBase = process.env.LUCKYOS_BASE_URL ?? "";
+		const providerResolve = await fetch(
+			`${stubBase}/__test__/absence/${encodeURIComponent(absenceOperation)}/status`,
+			{
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ status: "resolved", resolution_public: "Schváleno vedoucím" }),
+			},
+		);
+		const absenceEvent = await sendAbsenceEvent(
+			providerPersonId,
+			absenceOperation,
+			2,
+			absenceEventId,
+		);
+		const absenceEventReplay = await sendAbsenceEvent(
+			providerPersonId,
+			absenceOperation,
+			2,
+			absenceEventId,
+		);
+		const approvedBlocks = await db
+			.select()
+			.from(availabilityBlocks)
+			.where(
+				and(
+					eq(availabilityBlocks.userId, user.id),
+					eq(availabilityBlocks.source, "luckyos"),
+					eq(availabilityBlocks.externalId, absenceOperation),
+				),
+			);
+		const approvedScheduling = await readTaskAvailabilityConflicts(db, {
+			workspaceId: teamWorkspace.id,
+			policy: "strict",
+			actorUserId: user.id,
+			taskId: null,
+			startsAt: new Date("2026-08-11T08:00:00.000Z"),
+			durationMin: 60,
+			assigneeIds: [user.id],
+		});
+		const absencesAfter = await request(cookie, "/api/employee/self-service/absences");
+		const approvedCases = absencesAfter.body.cases as Array<Record<string, unknown>> | undefined;
+		const auditLeak = (await db.execute(sql`
+			SELECT 1 FROM audit_events
+			WHERE workspace_id IN (${workspace.id}::uuid, ${teamWorkspace.id}::uuid)
+			  AND (coalesce(diff, '{}'::jsonb)::text || coalesce(before, '{}'::jsonb)::text)
+			      LIKE ${`%${sensitiveAbsenceNote}%`}
+			LIMIT 1
+		`)) as unknown[];
+		check(
+			"podepsaná změna počká na autoritativní read model a pak schválí projekci bez úniku poznámky",
+			absenceEventBeforeProvider.status === 503 &&
+				absenceEventBeforeProvider.body.error === "absence_projection_unavailable" &&
+				providerResolve.status === 200 &&
+				absenceEvent.status === 200 &&
+				absenceEvent.body.disposition === "absence_projected" &&
+				absenceEventReplay.status === 200 &&
+				approvedBlocks.length === 2 &&
+				approvedBlocks.every(
+					(block) => block.approvalStatus === "approved" && block.version === 2,
+				) &&
+				approvedScheduling.canSchedule === false &&
+				approvedScheduling.conflicts.length === 1 &&
+				approvedCases?.[0]?.status === "resolved" &&
+				approvedCases?.[0]?.resolutionPublic === "Schváleno vedoucím" &&
+				auditLeak.length === 0 &&
+				!absencesAfter.text.includes(sensitiveAbsenceNote) &&
+				!absencesAfter.text.includes('"priority"') &&
+				!absencesAfter.text.includes("internal_payload"),
+			{
+					absenceEventBeforeProvider,
+					providerResolve: providerResolve.status,
+					absenceEvent,
+					absenceEventReplay,
+					approvedBlocks,
+					approvedScheduling,
+					absencesAfter: absencesAfter.body,
+					auditLeak,
+				},
 		);
 
 		const documents = await request(cookie, "/api/employee/self-service/documents");
@@ -606,8 +846,12 @@ async function main() {
 			revoked,
 		);
 	} finally {
+		if (absenceEventId) {
+			await db.delete(luckyOsEventInbox).where(eq(luckyOsEventInbox.eventId, absenceEventId));
+		}
 		await db.delete(luckyOsEventInbox).where(eq(luckyOsEventInbox.eventId, eventId));
 		await db.delete(luckyOsIdentityBindings).where(eq(luckyOsIdentityBindings.ownerUserId, user.id));
+		await db.delete(workspaces).where(eq(workspaces.id, teamWorkspace.id));
 		await db.delete(workspaces).where(eq(workspaces.id, workspace.id));
 		await db.delete(users).where(eq(users.id, user.id));
 	}

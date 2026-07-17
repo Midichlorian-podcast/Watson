@@ -140,7 +140,7 @@ bucket_definitions:
         WHERE workspace_id = bucket.workspace_id
       # Soukromý popisek se záměrně nesyncuje do týmového bucketu; UI zde ukáže typ.
       - SELECT id, workspace_id, user_id, kind, starts_at, ends_at, timezone,
-               visibility, source, external_id, created_by, cancelled_at, version, created_at, updated_at
+               visibility, source, approval_status, external_id, created_by, cancelled_at, version, created_at, updated_at
         FROM availability_blocks
         WHERE workspace_id = bucket.workspace_id
       - SELECT id, workspace_id, name, scope, metric, target, due_date, period, periodic,

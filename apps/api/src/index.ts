@@ -39,6 +39,7 @@ import { chainCommandRoutes } from "./chainCommands";
 import { customFieldRoutes } from "./customFields";
 import { decisionRoutes } from "./decisions";
 import { employeeRoutes } from "./employee";
+import { employeeAbsenceRoutes } from "./employeeAbsences";
 import { EMPLOYEE_FILE_MAX_BYTES, employeeFileRoutes } from "./employeeFiles";
 import { employeeSelfServiceRoutes } from "./employeeSelfService";
 import { env, googleEnabled, pushEnabled } from "./env";
@@ -487,6 +488,7 @@ app.route("/", mailOutboundRoutes);
 app.route("/", employeeRoutes);
 app.route("/", employeeSelfServiceRoutes);
 app.route("/", employeeFileRoutes);
+app.route("/", employeeAbsenceRoutes);
 
 /** Web Push — VAPID klíč, (od)hlášení odběru, test. */
 app.route("/", pushRoutes);

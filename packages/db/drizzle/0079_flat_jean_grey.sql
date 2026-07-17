@@ -1,0 +1,3 @@
+ALTER TABLE "availability_blocks" ADD COLUMN "approval_status" varchar(16) DEFAULT 'approved' NOT NULL;--> statement-breakpoint
+ALTER TABLE "availability_blocks" ADD CONSTRAINT "availability_blocks_approval_status_valid" CHECK ("availability_blocks"."approval_status" in ('pending', 'approved', 'rejected', 'cancelled'));--> statement-breakpoint
+ALTER TABLE "availability_blocks" ADD CONSTRAINT "availability_blocks_pending_source_valid" CHECK ("availability_blocks"."approval_status" = 'approved' or "availability_blocks"."source" = 'luckyos');

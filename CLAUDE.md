@@ -611,7 +611,8 @@ bezpečné relativní odkazy, provider kontrakt, task lineage a retry bez duplic
 i WebKit ověřily gating, dashboard, sync, 390px reflow, mobilní 44px akci a axe WCAG A/AA;
 ruční vizuální audit následně přeskládal mobilní hlavičku. Provozní hranice jsou v
 `docs/employee-hub-runbook.md`. Dokumenty/podpisy navazují samostatnou dokončenou
-F7 vertikálou; absence a onboarding/offboarding zůstávají dalšími dávkami.
+F7 vertikálou; dovolená/absence je rovněž dokončená a onboarding/offboarding zůstává
+další samostatnou dávkou.
 
 LuckyOS v1 integrační základ dokončen 2026-07-17: starý e-mailový broker zůstává
 výslovným `legacy` režimem a žádný deploy ho automaticky nepřepne. V1 vydává přesný
@@ -655,7 +656,19 @@ se stejným názvem i verzí smlouvy; chybějící obsah se poctivě přizná a 
 nevydávají za přečtenou smlouvu. API důkaz pokrývá redakci provider metadata,
 upload/replay, výdaj, challenge, podpis a revoke; Chromium i WebKit pokrývají
 retry, dokument, výdaj, podpis, 390px reflow a axe WCAG A/AA. Další F7 dávka je
-absence a dovolená, poté onboarding/offboarding a znalostní/SOP povrch.
+onboarding/offboarding a znalostní/SOP povrch.
+
+LuckyOS v1 dovolená a absence dokončena 2026-07-17: zaměstnanec odesílá
+striktní, idempotentní `absence` case do LuckyOS; Watson ukládá jen minimalizovanou
+kalendářovou projekci bez poznámky nebo HR detailu. `pending` je týmově viditelný,
+ale neblokuje plánování, Nerušit ani Radar; až LuckyOS `resolved` podepsaným
+eventem přepne projekci na `approved`. Event vždy znovu načte autoritativní
+person-scoped cases, ověří alespoň eventovou verzi a při zpoždění read modelu vrátí
+retryable 503. API důkaz pokrývá obrácené období, překryv, retry, izolaci osoby,
+projekci do více workspace, pending vs. strict plánování i redakci poznámky. Chromium
+i WebKit ověřily ztracenou odpověď se stabilním operation ID, explicitní potvrzení,
+desktop, 390px, 44px mobilní cíle a axe WCAG A/AA. Produkční build, celý gate a úplná
+API integrační sada jsou zelené; ruční screenshot audit nenašel overflow ani nečitelný stav.
 
 ## 10. Detailní acceptance checklist pro budoucí funkce
 
