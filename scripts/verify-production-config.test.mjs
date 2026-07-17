@@ -51,6 +51,7 @@ function validEnv() {
     LOCAL_DATA_ENCRYPTION_SECRET: "local_6Q1w4E8r2T5y9U3i7O0p4A6s8D2f5G9h",
     MAIL_VAULT_KEYS_JSON: mailVaultKeyRing(),
     OPS_METRICS_TOKEN: "metrics_9Z4x7C1v5B8n2M6a0S3d7F1g4H8j2K5l",
+    PUBLIC_WEBHOOK_SIGNING_SECRET: "webhooks_3R8m1Q6v9T2x5K7p4N0c8D1f6H9j2L5s",
     RESEND_API_KEY: "re_production_provider_key_123456789",
     AUTH_EMAIL_FROM: "Watson <auth@watson.cz>",
     REMINDER_EMAIL_FROM: "Watson <reminders@watson.cz>",

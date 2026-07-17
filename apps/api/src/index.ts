@@ -60,6 +60,7 @@ import { isOpsTokenAuthorized, readOpsSloSnapshot, recordHttpMetric } from "./op
 import { pollRoutes } from "./polls";
 import { powersyncRoutes } from "./powersync";
 import { projectMilestoneRoutes } from "./projectMilestones";
+import { publicApiRoutes } from "./publicApi";
 import { pushRoutes, startReminderWorker } from "./push";
 import { radarRoutes } from "./radar";
 import { rateLimit } from "./rateLimit";
@@ -78,6 +79,7 @@ import {
 	type RawLegacyTimelineRow,
 } from "./taskTimeline";
 import { watsonRoutes } from "./watson";
+import { startWebhookWorker } from "./webhookDelivery";
 
 // F5 bezpečnostní startup gate: produkce nesmí naběhnout s fallbackem nebo
 // poškozeným keyringem pro mailbox credentials. Parser nikdy neloguje hodnoty.
@@ -267,9 +269,15 @@ app.use(
 	cors({
 		origin: env.webOrigins,
 		credentials: true,
-		allowHeaders: ["Content-Type", "Authorization"],
+		allowHeaders: ["Content-Type", "Authorization", "Idempotency-Key"],
 		allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-		exposeHeaders: ["X-Request-Id"],
+		exposeHeaders: [
+			"X-Request-Id",
+			"X-RateLimit-Limit",
+			"X-RateLimit-Remaining",
+			"Retry-After",
+			"Watson-Api-Version",
+		],
 	}),
 );
 
@@ -487,6 +495,7 @@ app.route("/", intakeFormRoutes);
 app.route("/", integrationRoutes);
 app.route("/", luckyOsV1Routes);
 app.route("/", serviceIntegrationRoutes);
+app.route("/", publicApiRoutes);
 app.route("/", mailAccountRoutes);
 app.route("/", mailSyncRoutes);
 app.route("/", mailExecutionRoutes);
@@ -1387,6 +1396,7 @@ serve({ fetch: app.fetch, port: env.apiPort }, (info) => {
 	startMailSyncWorker();
 	startMailOutboundWorker();
 	startAutomationWorker();
+	startWebhookWorker();
 });
 
 export type AppType = typeof app;

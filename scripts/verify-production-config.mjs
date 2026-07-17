@@ -219,13 +219,18 @@ export function validateProductionConfig(source = process.env) {
   const backupSecret = secret("BACKUP_SIGNING_SECRET");
   const localDataSecret = secret("LOCAL_DATA_ENCRYPTION_SECRET");
   const metricsToken = secret("OPS_METRICS_TOKEN");
-  const independentSecrets = [authSecret, backupSecret, localDataSecret, metricsToken].filter(
-    Boolean,
-  );
+  const webhookSecret = secret("PUBLIC_WEBHOOK_SIGNING_SECRET");
+  const independentSecrets = [
+    authSecret,
+    backupSecret,
+    localDataSecret,
+    metricsToken,
+    webhookSecret,
+  ].filter(Boolean);
   record(
     "core_secret_isolation",
-    new Set(independentSecrets).size === 4 ? "passed" : "failed",
-    "Auth, export signing, local-data encryption, and metrics credentials must all be present and different.",
+    new Set(independentSecrets).size === 5 ? "passed" : "failed",
+    "Auth, export signing, local-data encryption, metrics, and public-webhook credentials must all be present and different.",
   );
 
   const mailVaultRaw = required("MAIL_VAULT_KEYS_JSON");
@@ -239,7 +244,7 @@ export function validateProductionConfig(source = process.env) {
     "mail_vault_isolation",
     mailVaultKeys &&
       !mailVaultKeys.some((key) =>
-        [authSecret, backupSecret, localDataSecret, metricsToken].includes(key),
+        [authSecret, backupSecret, localDataSecret, metricsToken, webhookSecret].includes(key),
       )
       ? "passed"
       : "failed",
@@ -450,6 +455,7 @@ export function validateProductionConfig(source = process.env) {
       source.BACKUP_SIGNING_SECRET,
       source.LOCAL_DATA_ENCRYPTION_SECRET,
       source.OPS_METRICS_TOKEN,
+	  source.PUBLIC_WEBHOOK_SIGNING_SECRET,
     ].includes(luckyWebhookSecret);
     record(
       "luckyos_webhook_secret_isolation",

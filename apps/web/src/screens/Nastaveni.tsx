@@ -3,6 +3,7 @@ import { Link, useNavigate, useRouterState, useSearch } from "@tanstack/react-ro
 import i18n, { useTranslation } from "@watson/i18n";
 import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { AvailabilitySettings } from "../components/AvailabilitySettings";
+import { DeveloperApiSettings } from "../components/DeveloperApiSettings";
 import { IntegrationCenter } from "../components/IntegrationCenter";
 import { PwaInstallCard } from "../components/PwaInstallCard";
 import { SyncProblems } from "../components/SyncProblems";
@@ -1119,6 +1120,12 @@ export function Nastaveni() {
 							{/* F4 — serverový registry/health povrch. LuckyOS je první skutečný adapter;
 							    mail zůstává pravdivě označený jako demo až do samostatného F5. */}
 							<IntegrationCenter />
+							{activeWorkspace && (
+								<DeveloperApiSettings
+									workspaceId={activeWorkspace.id}
+									canManage={activeWorkspace.role === "admin"}
+								/>
+							)}
 
 							{/* POŠTA — mailová nastavení (podpisy, VIP, schránky…) na JEDNOM místě,
 			    ne schovaná uvnitř mailu. Embedded = bez vlastní hlavičky. Obal data-wm-theme

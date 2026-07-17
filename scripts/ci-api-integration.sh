@@ -21,6 +21,7 @@ export BACKUP_SIGNING_SECRET="ci-backup-signing-secret-at-least-32-bytes"
 export LOCAL_DATA_ENCRYPTION_SECRET="ci-local-data-secret-at-least-32-bytes-long"
 export MAIL_VAULT_KEYS_JSON='{"version":1,"currentKid":"ci-mail","keys":{"ci-mail":"WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo"}}'
 export OPS_METRICS_TOKEN="ci-ops-metrics-token-${RUN_NONCE}-at-least-32-bytes"
+export PUBLIC_WEBHOOK_SIGNING_SECRET="ci-public-webhook-signing-${RUN_NONCE}-at-least-32-bytes"
 # Test nesmí omylem převzít reálný LuckyOS z lokálního .env. Lokální provider
 # ověřuje bridge JWT a dovolí otestovat celý revoke/reconnect lifecycle bez sítě.
 export LUCKYOS_BASE_URL="http://127.0.0.1:8791"
@@ -155,6 +156,7 @@ IMPORTS_API="$API_URL" pnpm --filter @watson/api verify:imports
 AVAILABILITY_API="$API_URL" pnpm --filter @watson/api verify:availability
 BOOKING_API="$API_URL" pnpm --filter @watson/api verify:bookings
 INTEGRATIONS_API="$API_URL" pnpm --filter @watson/api verify:integrations
+PUBLIC_API_URL="$API_URL" pnpm --filter @watson/api verify:public-api
 EMPLOYEE_HUB_API="$API_URL" pnpm --filter @watson/api verify:employee-hub
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-google
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-sync

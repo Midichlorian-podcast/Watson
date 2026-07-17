@@ -575,6 +575,20 @@
       "when": 1784321596514,
       "tag": "0081_knowledge_restore",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1784328092840,
+      "tag": "0082_lyrical_thanos",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1784329147352,
+      "tag": "0083_webhook_workspace_cascade_fix",
+      "breakpoints": true
     }
   ]
 }

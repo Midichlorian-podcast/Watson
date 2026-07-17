@@ -1,7 +1,18 @@
 /** Browser audit Integration Centeru v Chromium/WebKitu včetně lifecycle a mobilního reflow. */
 import "./src/env";
 import { mkdir } from "node:fs/promises";
-import { accounts, auditEvents, and, eq, getDb, memberships, users, workspaces } from "@watson/db";
+import {
+	accounts,
+	auditEvents,
+	and,
+	eq,
+	getDb,
+	memberships,
+	projectMembers,
+	projects,
+	users,
+	workspaces,
+} from "@watson/db";
 import axe from "axe-core";
 import { hashPassword } from "better-auth/crypto";
 import { type Browser, chromium, webkit } from "playwright";
@@ -17,6 +28,7 @@ const db = getDb();
 async function provision(browserName: string) {
 	const userId = crypto.randomUUID();
 	const workspaceId = crypto.randomUUID();
+	const projectId = crypto.randomUUID();
 	const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 	const email = `integrations-ui-${browserName}-${suffix}@watson.test`;
 	const password = `Watson-${crypto.randomUUID()}-A1!`;
@@ -41,8 +53,15 @@ async function provision(browserName: string) {
 			isPersonal: true,
 		});
 		await tx.insert(memberships).values({ workspaceId, userId, role: "admin" });
+		await tx.insert(projects).values({
+			id: projectId,
+			workspaceId,
+			ownerId: userId,
+			name: "API Inbox",
+		});
+		await tx.insert(projectMembers).values({ projectId, userId, role: "manager" });
 	});
-	return { userId, workspaceId, email, password };
+	return { userId, workspaceId, projectId, email, password };
 }
 
 async function assertAxeClean(page: import("playwright").Page, label: string) {
@@ -88,9 +107,45 @@ async function run(browserName: "chromium" | "webkit") {
 		const card = page.getByRole("article").filter({ hasText: "LuckyOS" });
 		const emailCard = page.getByRole("article").filter({ hasText: "E-mailové připomínky" });
 		const attachmentCard = page.getByRole("article").filter({ hasText: "Přílohy Watson" });
-		await card.getByText("Připraveno k testu", { exact: true }).waitFor();
+		// Landing Employee Hub may already have performed a real provider probe.
+		// Both states are truthful; the verifier must not depend on request timing.
+		await card.getByText(/^(Připraveno k testu|V pořádku)$/).waitFor();
 		await emailCard.getByText("Připraveno k testu", { exact: true }).waitFor();
 		await attachmentCard.getByText("Vestavěná služba.", { exact: true }).waitFor();
+		const developer = page.locator(".w-developer");
+		await developer.getByRole("heading", { name: "API a webhooky", exact: true }).waitFor();
+		await developer.getByRole("button", { name: "Nový API klíč", exact: true }).click();
+		await developer.getByLabel("Název napojení", { exact: true }).fill("UI reporting bridge");
+		await developer.getByLabel("API Inbox", { exact: true }).check();
+		await developer.getByRole("button", { name: "Vytvořit klíč", exact: true }).click();
+		const apiSecret = developer.getByRole("status").filter({ hasText: "API token" });
+		await apiSecret.waitFor();
+		const bearer = await apiSecret.locator("code").innerText();
+		if (!bearer.startsWith("wtn_live_")) throw new Error("developer_ui_api_token_contract");
+		await apiSecret.getByRole("button", { name: "Mám bezpečně uloženo", exact: true }).click();
+		await apiSecret.waitFor({ state: "hidden" });
+		await developer.getByText("UI reporting bridge", { exact: true }).waitFor();
+
+		await developer.getByRole("button", { name: "Nový webhook", exact: true }).click();
+		await developer.getByLabel("Název napojení", { exact: true }).fill("UI delivery hook");
+		await developer
+			.getByLabel("HTTPS adresa příjemce", { exact: true })
+			.fill("https://hooks.example.net/watson");
+		await developer.getByLabel("API Inbox", { exact: true }).check();
+		await developer.getByRole("button", { name: "Vytvořit webhook", exact: true }).click();
+		const webhookSecret = developer.getByRole("status").filter({ hasText: "Webhook signing secret" });
+		await webhookSecret.waitFor();
+		if (!(await webhookSecret.locator("code").innerText()).startsWith("whsec_")) {
+			throw new Error("developer_ui_webhook_secret_contract");
+		}
+		await webhookSecret.getByRole("button", { name: "Mám bezpečně uloženo", exact: true }).click();
+		await developer.getByText("UI delivery hook", { exact: true }).waitFor();
+		await developer.getByRole("button", { name: "Pozastavit", exact: true }).click();
+		await developer.getByText("Pozastaven", { exact: true }).waitFor();
+		if (SCREENSHOT_DIR) {
+			await mkdir(SCREENSHOT_DIR, { recursive: true });
+			await developer.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-developer-api-desktop.png` });
+		}
 		const manageMailAccounts = page.getByRole("button", { name: "Spravovat účty", exact: true });
 		await manageMailAccounts.click();
 		const mailDialog = page.getByRole("dialog", { name: "Osobní e-mailové účty", exact: true });
@@ -162,6 +217,10 @@ async function run(browserName: "chromium" | "webkit") {
 		}
 		await page.reload({ waitUntil: "domcontentloaded" });
 		await card.getByText("Odpojeno", { exact: true }).waitFor();
+		await developer.getByText("UI reporting bridge", { exact: true }).waitFor();
+		if ((await page.getByText(bearer, { exact: true }).count()) !== 0) {
+			throw new Error("developer_ui_api_token_persisted");
+		}
 
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.reload({ waitUntil: "domcontentloaded" });
@@ -191,6 +250,15 @@ async function run(browserName: "chromium" | "webkit") {
 		const reconnect = card.getByRole("button", { name: "Znovu připojit", exact: true });
 		const box = await reconnect.boundingBox();
 		if (!box || box.height < 44) throw new Error(`integration_ui_mobile_target:${box?.height}`);
+		const developerButton = developer.getByRole("button", { name: "Nový API klíč", exact: true });
+		await developerButton.scrollIntoViewIfNeeded();
+		const developerButtonBox = await developerButton.boundingBox();
+		if (!developerButtonBox || developerButtonBox.height < 44) {
+			throw new Error(`developer_ui_mobile_target:${developerButtonBox?.height}`);
+		}
+		if (SCREENSHOT_DIR) {
+			await developer.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-developer-api-390.png` });
+		}
 		await manageMailAccounts.click();
 		await mailDialog.waitFor();
 		const dialogBox = await mailDialog.boundingBox();

@@ -23,6 +23,7 @@ export * from "./mail";
 export * from "./meetings";
 export * from "./polls";
 export * from "./projectMilestones";
+export * from "./publicApi";
 export * from "./structured";
 export * from "./system";
 export * from "./task";

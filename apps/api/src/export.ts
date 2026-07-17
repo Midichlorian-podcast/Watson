@@ -533,6 +533,9 @@ async function runRestoreTransaction(input: {
 			await tx.execute(sql`SELECT set_config('watson.skip_acceptance_reconcile', 'on', true)`);
 			await tx.execute(sql`SELECT set_config('watson.skip_decision_materialize', 'on', true)`);
 			await tx.execute(sql`SELECT set_config('watson.allow_knowledge_restore', 'on', true)`);
+			// Restore is a data-recovery operation, not a stream of user changes. Suppress
+			// public webhook outbox triggers for this transaction to avoid false deliveries.
+			await tx.execute(sql`SELECT set_config('watson.suppress_webhook_events', 'on', true)`);
 
 			const workspaceRows = input.tables.workspaces ?? [];
 			const workspaceIds = workspaceRows.map((row) => String(row.id));

@@ -51,6 +51,14 @@ export const env = {
 	trustProxy: process.env.TRUST_PROXY === "1",
 	/** Samostatný bearer token pro produkční SLO scraper; nikdy nepoužívat jako auth secret. */
 	opsMetricsToken: process.env.OPS_METRICS_TOKEN,
+	/**
+	 * Kořen HMAC výhradně pro veřejné webhook podpisy. V dev režimu může použít
+	 * auth secret, aby lokální stack fungoval bez dalšího setupu; produkce níže
+	 * vyžaduje samostatnou hodnotu a preflight hlídá její izolaci.
+	 */
+	publicWebhookSigningSecret:
+		process.env.PUBLIC_WEBHOOK_SIGNING_SECRET ??
+		(process.env.NODE_ENV === "production" ? undefined : process.env.BETTER_AUTH_SECRET ?? "watson-dev-webhooks"),
 	google: {
 		clientId: process.env.GOOGLE_CLIENT_ID,
 		clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -117,6 +125,26 @@ if (
 	(!env.opsMetricsToken || env.opsMetricsToken.length < 32 || env.opsMetricsToken.length > 512)
 ) {
 	throw new Error("[watson-api] OPS_METRICS_TOKEN musí mít v produkci 32–512 znaků.");
+}
+
+if (
+	process.env.NODE_ENV === "production" &&
+	(!env.publicWebhookSigningSecret ||
+		env.publicWebhookSigningSecret.length < 32 ||
+		env.publicWebhookSigningSecret.length > 512 ||
+		[
+			env.authSecret,
+			env.backupSigningSecret,
+			env.localDataEncryptionSecret,
+			env.opsMetricsToken,
+			env.luckyOs.webhookSigningSecret,
+		]
+			.filter(Boolean)
+			.includes(env.publicWebhookSigningSecret))
+) {
+	throw new Error(
+		"[watson-api] PUBLIC_WEBHOOK_SIGNING_SECRET musí mít 32–512 znaků a být samostatný.",
+	);
 }
 
 /** Google login se zapne sám, jakmile jsou v .env oba klíče. */
