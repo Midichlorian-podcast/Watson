@@ -134,3 +134,72 @@ export const mailAccountCredentials = pgTable(
 		),
 	],
 );
+
+/**
+ * Krátkodobý serverový OAuth handshake. State se ukládá jen jako SHA-256 hash a
+ * PKCE verifier jen jako vault envelope. Řádky nejsou klientsky synchronizované.
+ */
+export const mailOauthSessions = pgTable(
+	"mail_oauth_sessions",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		ownerUserId: uuid("owner_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		provider: varchar("provider", { length: 24 }).notNull().default("google"),
+		stateHash: varchar("state_hash", { length: 64 }).notNull(),
+		algorithm: varchar("algorithm", { length: 24 }).notNull().default("aes-256-gcm-v1"),
+		keyId: varchar("key_id", { length: 64 }).notNull(),
+		nonce: varchar("nonce", { length: 24 }).notNull(),
+		authTag: varchar("auth_tag", { length: 32 }).notNull(),
+		ciphertext: text("ciphertext").notNull(),
+		expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+		consumedAt: timestamp("consumed_at", { withTimezone: true }),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		check("mail_oauth_sessions_provider_valid", sql`${t.provider} = 'google'`),
+		check("mail_oauth_sessions_state_hash_valid", sql`${t.stateHash} ~ '^[0-9a-f]{64}$'`),
+		check("mail_oauth_sessions_algorithm_valid", sql`${t.algorithm} = 'aes-256-gcm-v1'`),
+		check("mail_oauth_sessions_key_id_valid", sql`length(${t.keyId}) between 1 and 64`),
+		check("mail_oauth_sessions_nonce_valid", sql`length(${t.nonce}) between 16 and 24`),
+		check("mail_oauth_sessions_tag_valid", sql`length(${t.authTag}) between 22 and 32`),
+		check("mail_oauth_sessions_ciphertext_valid", sql`length(${t.ciphertext}) > 0`),
+		check("mail_oauth_sessions_expiry_valid", sql`${t.expiresAt} > ${t.createdAt}`),
+		uniqueIndex("mail_oauth_sessions_state_hash_uq").on(t.stateHash),
+		index("mail_oauth_sessions_owner_created_idx").on(t.ownerUserId, t.createdAt),
+		index("mail_oauth_sessions_expiry_idx").on(t.expiresAt),
+	],
+);
+
+/** Idempotentní mailbox lifecycle commandy. Response je vždy redigovaný public snapshot. */
+export const mailCommandReceipts = pgTable(
+	"mail_command_receipts",
+	{
+		id: pk(),
+		accountId: uuid("account_id")
+			.notNull()
+			.references(() => mailAccounts.id, { onDelete: "cascade" }),
+		actorUserId: uuid("actor_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		operationId: varchar("operation_id", { length: 128 }).notNull(),
+		requestHash: varchar("request_hash", { length: 64 }).notNull(),
+		action: varchar("action", { length: 24 }).notNull(),
+		response: jsonb("response").$type<Record<string, unknown>>().notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		check("mail_command_receipts_action_valid", sql`${t.action} in ('revoke')`),
+		check(
+			"mail_command_receipts_request_hash_valid",
+			sql`${t.requestHash} ~ '^[0-9a-f]{64}$'`,
+		),
+		check("mail_command_receipts_response_object", sql`jsonb_typeof(${t.response}) = 'object'`),
+		uniqueIndex("mail_command_receipts_actor_operation_uq").on(t.actorUserId, t.operationId),
+		index("mail_command_receipts_account_idx").on(t.accountId, t.createdAt),
+	],
+);

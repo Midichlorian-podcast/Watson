@@ -50,6 +50,30 @@ export const env = {
 		clientId: process.env.GOOGLE_CLIENT_ID,
 		clientSecret: process.env.GOOGLE_CLIENT_SECRET,
 	},
+	/** Samostatný OAuth klient pro Gmail; login scopes se tím nikdy nerozšiřují. */
+	mailGoogle: {
+		clientId: process.env.MAIL_GOOGLE_CLIENT_ID,
+		clientSecret: process.env.MAIL_GOOGLE_CLIENT_SECRET,
+		redirectUri:
+			process.env.MAIL_GOOGLE_REDIRECT_URI ??
+			`${(process.env.BETTER_AUTH_URL ?? "http://localhost:8787").replace(/\/$/, "")}/api/mail/oauth/google/callback`,
+		authUrl:
+			process.env.NODE_ENV === "production"
+				? "https://accounts.google.com/o/oauth2/v2/auth"
+				: (process.env.MAIL_GOOGLE_AUTH_URL ?? "https://accounts.google.com/o/oauth2/v2/auth"),
+		tokenUrl:
+			process.env.NODE_ENV === "production"
+				? "https://oauth2.googleapis.com/token"
+				: (process.env.MAIL_GOOGLE_TOKEN_URL ?? "https://oauth2.googleapis.com/token"),
+		apiBaseUrl:
+			process.env.NODE_ENV === "production"
+				? "https://gmail.googleapis.com"
+				: (process.env.MAIL_GOOGLE_API_BASE_URL ?? "https://gmail.googleapis.com").replace(/\/$/, ""),
+		revokeUrl:
+			process.env.NODE_ENV === "production"
+				? "https://oauth2.googleapis.com/revoke"
+				: (process.env.MAIL_GOOGLE_REVOKE_URL ?? "https://oauth2.googleapis.com/revoke"),
+	},
 	vapid: {
 		subject: process.env.VAPID_SUBJECT ?? "mailto:dev@watson.test",
 		publicKey: process.env.VAPID_PUBLIC_KEY,
@@ -87,6 +111,11 @@ if (
 
 /** Google login se zapne sám, jakmile jsou v .env oba klíče. */
 export const googleEnabled = Boolean(env.google.clientId && env.google.clientSecret);
+
+/** Gmail mailbox OAuth vyžaduje vlastní klientský pár i credential vault. */
+export const mailGoogleEnabled = Boolean(
+	env.mailGoogle.clientId && env.mailGoogle.clientSecret && env.mailVaultKeysJson,
+);
 
 /** Web Push se zapne, jakmile jsou v .env oba VAPID klíče. */
 export const pushEnabled = Boolean(env.vapid.publicKey && env.vapid.privateKey);

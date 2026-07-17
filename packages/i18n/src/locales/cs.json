@@ -1594,7 +1594,7 @@
 	},
 	"mail": {
 		"demoBadge": "DEMO",
-		"demoBanner": "lokální simulace — zprávy neopouštějí Watson",
+		"demoBanner": "obsah zpráv a mailové akce jsou simulace; připojený účet ještě poštu nesynchronizuje",
 		"taskCreatedToast": "Úkol z mailu přidán do Schránky — termín dnes",
 		"taskCreatedOpen": "Otevřít",
 		"taskNoInbox": "Nenašel jsem inbox projekt — úkol nezaložen"

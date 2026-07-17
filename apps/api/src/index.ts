@@ -43,6 +43,7 @@ import { importRoutes } from "./imports";
 import { intakeFormRoutes } from "./intakeForms";
 import { integrationRoutes } from "./integrations";
 import { meetingsRoutes } from "./meetings";
+import { mailAccountRoutes } from "./mailAccounts";
 import { parseMailVaultKeyring } from "./mailVault";
 import { isOpsTokenAuthorized, readOpsSloSnapshot, recordHttpMetric } from "./opsMetrics";
 import { pollRoutes } from "./polls";
@@ -433,6 +434,7 @@ app.route("/", projectMilestoneRoutes);
 app.route("/", intakeFormRoutes);
 app.route("/", integrationRoutes);
 app.route("/", serviceIntegrationRoutes);
+app.route("/", mailAccountRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);

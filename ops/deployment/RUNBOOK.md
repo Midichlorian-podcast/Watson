@@ -47,6 +47,30 @@ vault, compare the rewritten count with the active account count, and test provi
 the old key only after no row references its `key_id`. A mailbox revoke must delete its credential
 row; metadata and redacted audit may remain, but tokens and IMAP passwords may not.
 
+## Gmail OAuth M1 release gate
+
+1. Create a dedicated Google OAuth **Web application** client for Watson Mail. Do not reuse the
+   Google login or calendar client. Enable the Gmail API and register
+   `MAIL_GOOGLE_REDIRECT_URI` exactly, including scheme, host, port, path, case, and trailing slash.
+2. Configure the OAuth consent screen for the production domains and request only
+   `https://www.googleapis.com/auth/gmail.modify`. This is a restricted Gmail scope. Complete the
+   required Google OAuth verification and, when Google requires it for server-side restricted data,
+   the security assessment before an external production rollout. Console approval is release
+   evidence outside this repository; a green code gate does not replace it.
+3. Store `MAIL_GOOGLE_CLIENT_ID` and `MAIL_GOOGLE_CLIENT_SECRET` in the secret manager. Keep
+   `MAIL_GOOGLE_AUTH_URL`, `MAIL_GOOGLE_TOKEN_URL`, `MAIL_GOOGLE_API_BASE_URL`, and
+   `MAIL_GOOGLE_REVOKE_URL` unset in production: Watson pins the official HTTPS endpoints there and
+   accepts overrides only outside production for isolated tests.
+4. Run the preflight, then perform an authorized canary connection. Confirm the callback returns to
+   `/mail` without `code` or `state` in the browser URL, the account appears only to its owner, and
+   no token, verifier, authorization code, or provider payload appears in structured logs/audit.
+5. Revoke the canary in Watson. Require successful Google revocation before local credential
+   deletion, verify that the credential row is gone, and confirm a repeated command is idempotent.
+   A provider timeout must leave the credential intact and show a retryable error.
+6. Rotate the Google client secret as a non-overlap provider credential: schedule a monitored
+   window, update all replicas together, run a fresh authorization and an existing-account reconnect,
+   then revoke the old secret. Refresh tokens remain protected by the independent mail vault keyring.
+
 ## Emergency compromise
 
 Stop affected writes, revoke the credential at its authority, isolate logs and artifacts that may contain it, and rotate only the compromised domain plus any value that was improperly reused. Force session revocation for auth compromise, rebuild local caches for local-data-key compromise, and run a restore drill for backup-key compromise. Record user impact and the measured recovery interval in the incident review.

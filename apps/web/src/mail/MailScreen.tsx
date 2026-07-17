@@ -40,6 +40,34 @@ export function MailScreen() {
 	const search = useSearch({ from: "/mail" });
 	const { theme } = useTheme();
 	const deepLinkedThread = useRef<string | null>(null);
+	const handledConnection = useRef<string | null>(null);
+	useEffect(() => {
+		if (!search.mailConnection) return;
+		const key = `${search.mailConnection}:${search.code ?? ""}`;
+		if (handledConnection.current === key) return;
+		handledConnection.current = key;
+		if (search.mailConnection === "success") {
+			showToast("Google účet je bezpečně připravený. Synchronizace zpráv bude následovat; Mail je zatím demo.");
+		} else {
+			const messages: Record<string, string> = {
+				mail_oauth_denied: "Google souhlas byl zrušen. Žádný účet ani credential nevznikl.",
+				mail_oauth_state_invalid: "Ověření připojení vypršelo. Spusť připojení znovu.",
+				mail_contract_rejected: "Google vrátil neúplné potvrzení. Účet nebyl uložen.",
+				mail_scope_missing: "Google neudělil potřebné oprávnění. Účet nebyl uložen.",
+				mail_oauth_rejected: "Google odmítl dokončit autorizaci. Spusť připojení znovu.",
+				mail_identity_rejected: "Google nepotvrdil identitu schránky. Účet nebyl uložen.",
+				mail_provider_timeout: "Google neodpověděl včas. Účet nebyl změněn; zkus to znovu.",
+				mail_provider_unavailable: "Google je dočasně nedostupný. Účet nebyl změněn.",
+				mail_rate_limited: "Google teď omezuje počet požadavků. Zkus připojení později.",
+				mail_auth_session_missing: "Přihlášení vypršelo. Přihlas se a spusť připojení znovu.",
+			};
+			showToast(messages[search.code ?? ""] ?? "Připojení se nepodařilo bezpečně dokončit. Zkus to znovu.");
+		}
+		const cleaned = new URL(window.location.href);
+		cleaned.searchParams.delete("mailConnection");
+		cleaned.searchParams.delete("code");
+		window.history.replaceState(window.history.state, "", cleaned);
+	}, [search.mailConnection, search.code]);
 	useEffect(() => {
 		const id = search.vlakno;
 		if (!id || deepLinkedThread.current === id || !m.threads.some((thread) => thread.id === id))
@@ -246,7 +274,7 @@ export function MailScreen() {
 			data-wm-theme={theme === "dark" ? "dark" : "light"}
 			style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}
 		>
-			{/* CC-P0-08 — permanentní demo stav modulu; nesundávat před M1 */}
+			{/* CC-P0-08 — nesundávat před E2E důkazem message sync/send */}
 			<MailDemoBanner />
 			<div
 				data-mailroot

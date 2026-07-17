@@ -121,8 +121,10 @@ test("malformed or shared signing keyrings and partial providers fail", () => {
   env.LUCKYOS_BASE_URL = "https://people.watson.cz";
   env.LUCKYOS_SIGNING_KEYS_JSON = env.POWERSYNC_SIGNING_KEYS_JSON;
   env.GOOGLE_CLIENT_ID = "google-client-only";
+  env.MAIL_GOOGLE_CLIENT_ID = "mail-google-client-only";
   let report = validateProductionConfig(env);
   assert.equal(report.checks.find((check) => check.id === "google_oauth")?.status, "failed");
+  assert.equal(report.checks.find((check) => check.id === "mail_google_oauth")?.status, "failed");
   assert.equal(
     report.checks.find((check) => check.id === "signing_keyring_isolation")?.status,
     "failed",
@@ -163,6 +165,9 @@ test("fully configured optional providers can produce a clean pass", () => {
   const env = validEnv();
   env.GOOGLE_CLIENT_ID = "google-production-client";
   env.GOOGLE_CLIENT_SECRET = "google-production-secret";
+  env.MAIL_GOOGLE_CLIENT_ID = "mail-google-production-client";
+  env.MAIL_GOOGLE_CLIENT_SECRET = "mail-google-production-secret";
+  env.MAIL_GOOGLE_REDIRECT_URI = "https://api.watson.cz/api/mail/oauth/google/callback";
   env.ANTHROPIC_API_KEY = "sk-ant-production-credential";
   env.LUCKYOS_BASE_URL = "https://people.watson.cz";
   env.LUCKYOS_SIGNING_KEYS_JSON = keyRing("luckyos-key");

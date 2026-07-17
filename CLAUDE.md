@@ -25,7 +25,7 @@ Komentář, toast, `catch {}`, odstranění ovladače, změna copy nebo zelený 
 Tato rozhodnutí jsou závazná a nesmí být změněna bez výslovného souhlasu zakladatele:
 
 1. První release je interní pilot do 20 lidí.
-2. Mail zůstává viditelný jako jasně označené demo, dokud nevznikne skutečný provider a per-mailbox bezpečnost.
+2. Obsah a akce Mailu zůstávají viditelně demo, dokud nevznikne provider sync/send a message-level bezpečnost; samotný Gmail account lifecycle už skutečný je.
 3. Přepis porady smí číst účastník nebo explicitně pozvaný člověk; workspace admin nemá automatický přístup.
 4. Offline přepis je v první verzi povolen, ale pouze v per-user šifrované lokální DB s revokací a cleanupem.
 5. Projektové členství mění project manager nebo workspace admin/owner; editor nikdy.
@@ -142,13 +142,16 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
 - Workspace pozvánky, role a profilové metadata.
 - Web Push a volitelné e-mailové remindery sdílejí lease/retry/hold state machine; e-mail
   dostane `sent` až po provider ACK, stabilní idempotency key a message ID.
+- Osobní Gmail account lifecycle M1: oddělený serverový OAuth klient, PKCE, jednorázový
+  user-bound state, šifrovaný refresh credential, owner-only list a provider-first revoke.
+  Toto zatím pouze bezpečně připojí účet; zprávy ani mailové akce ještě nesynchronizuje.
 - LuckyOS broker s odděleným bridge keyringem, tenant dedup a transakční reconciliation; reálný provider je externí prerequisite.
 - Export/restore s ACL scope, checksumem, HMAC, schema verzí, dry-run, conflict módem a lokálním AES-GCM obalem.
 - PWA/offline shell, šifrovaná per-user PowerSync SQLite a Centrum problémů pro odmítnuté zápisy.
 
 ### 2.2 Záměrně demo nebo nedostupné
 
-- Mail je rozsáhlý interaktivní demo modul. Permanentní `MailDemoBanner` je povinný na všech vstupních plochách. OAuth/IMAP, odeslání, doručení, vault, provider sync a mailbox audit nejsou produkční.
+- Mail je rozsáhlý interaktivní demo modul. Permanentní `MailDemoBanner` je povinný na všech vstupních plochách. Gmail OAuth account lifecycle a credential vault jsou skutečné; IMAP, message sync, odeslání, doručení a message-level mailbox audit ještě produkční nejsou.
 - AI meeting extraction bez klíče je dostupná pouze v non-production ukázkovém režimu a musí být označena `mock`. Produkce bez klíče vrací 503.
 - LuckyOS canned data lze zapnout pouze mimo produkci. Produkce bez base URL vrací 503.
 - E-mail reminder není totéž co produkční Mail M1: provider potvrzuje přijetí k odeslání,
@@ -530,6 +533,17 @@ První bezpečnostní základ dokončen 2026-07-17: osobní `mail_accounts`, odd
 keyring, account/owner/provider AAD, produkční startup/preflight gate a DB triggery pro
 osobní tenant scope i shodu credential/provider. Provider sync a odesílání ještě nejsou
 hotové; permanentní Mail demo banner proto záměrně zůstává.
+
+Gmail account lifecycle dokončen 2026-07-17: dedikovaný mail OAuth klient (oddělený od
+loginu), PKCE S256, v DB pouze SHA-256 state, user-bound jednorázový callback s expirací,
+šifrovaný PKCE verifier, přesná kontrola scope `gmail.modify`, encrypted refresh token,
+owner-only account list, reconnect se stabilním account ID a provider-first idempotentní
+revoke s CAS/auditem. Osobní správa je v Nastavení → Pošta; týmová administrace ji
+nevystavuje. API E2E ověřuje state binding/replay, tenant izolaci, malformed provider,
+revoke/reconnect a ciphertext; Chromium i WebKit ověřují dialog, mobilní reflow a WCAG.
+Veřejné produkční spuštění navíc vyžaduje doloženou Google OAuth verifikaci a případné
+security assessment pro restricted Gmail scope. Message ingest/sync a send stále čekají;
+demo banner a seed zprávy se proto nesmí odstranit.
 
 ### F6 — Radar/automation/AI (4–8 týdnů)
 

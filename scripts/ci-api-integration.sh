@@ -5,6 +5,7 @@ API_URL="http://127.0.0.1:8790"
 API_PID=""
 LUCKYOS_STUB_PID=""
 EMAIL_STUB_PID=""
+MAIL_GOOGLE_STUB_PID=""
 API_LOG="${RUNNER_TEMP:-/tmp}/watson-api-integration.log"
 RUN_NONCE="${GITHUB_RUN_ID:-local}-$$-$(date +%s)"
 
@@ -28,6 +29,13 @@ export RESEND_API_KEY="re_ci_provider_key"
 export RESEND_API_BASE_URL="http://127.0.0.1:8792"
 export AUTH_EMAIL_FROM="Watson CI <auth@watson.test>"
 export REMINDER_EMAIL_FROM="Watson CI <reminders@watson.test>"
+export MAIL_GOOGLE_CLIENT_ID="mail-google-ci-client"
+export MAIL_GOOGLE_CLIENT_SECRET="mail-google-ci-secret"
+export MAIL_GOOGLE_REDIRECT_URI="$API_URL/api/mail/oauth/google/callback"
+export MAIL_GOOGLE_AUTH_URL="http://127.0.0.1:8793/oauth2/v2/auth"
+export MAIL_GOOGLE_TOKEN_URL="http://127.0.0.1:8793/token"
+export MAIL_GOOGLE_API_BASE_URL="http://127.0.0.1:8793"
+export MAIL_GOOGLE_REVOKE_URL="http://127.0.0.1:8793/revoke"
 
 stop_api() {
 	if [[ -n "$API_PID" ]] && kill -0 "$API_PID" 2>/dev/null; then
@@ -47,6 +55,10 @@ cleanup() {
 		kill "$EMAIL_STUB_PID"
 		wait "$EMAIL_STUB_PID" 2>/dev/null || true
 	fi
+	if [[ -n "$MAIL_GOOGLE_STUB_PID" ]] && kill -0 "$MAIL_GOOGLE_STUB_PID" 2>/dev/null; then
+		kill "$MAIL_GOOGLE_STUB_PID"
+		wait "$MAIL_GOOGLE_STUB_PID" 2>/dev/null || true
+	fi
 }
 trap cleanup EXIT
 
@@ -54,12 +66,24 @@ node apps/api/verify-luckyos-provider-stub.mjs >"${RUNNER_TEMP:-/tmp}/watson-luc
 LUCKYOS_STUB_PID=$!
 node apps/api/verify-email-provider-stub.mjs >"${RUNNER_TEMP:-/tmp}/watson-email-stub.log" 2>&1 &
 EMAIL_STUB_PID=$!
+node apps/api/verify-mail-google-provider-stub.mjs >"${RUNNER_TEMP:-/tmp}/watson-mail-google-stub.log" 2>&1 &
+MAIL_GOOGLE_STUB_PID=$!
 for _ in $(seq 1 40); do
 	if curl --fail --silent "http://127.0.0.1:8791/health" >/dev/null; then
 		break
 	fi
 	if ! kill -0 "$LUCKYOS_STUB_PID" 2>/dev/null; then
 		cat "${RUNNER_TEMP:-/tmp}/watson-luckyos-stub.log"
+		exit 1
+	fi
+	sleep 0.1
+done
+for _ in $(seq 1 40); do
+	if curl --fail --silent "http://127.0.0.1:8793/health" >/dev/null; then
+		break
+	fi
+	if ! kill -0 "$MAIL_GOOGLE_STUB_PID" 2>/dev/null; then
+		cat "${RUNNER_TEMP:-/tmp}/watson-mail-google-stub.log"
 		exit 1
 	fi
 	sleep 0.1
@@ -125,6 +149,7 @@ IMPORTS_API="$API_URL" pnpm --filter @watson/api verify:imports
 AVAILABILITY_API="$API_URL" pnpm --filter @watson/api verify:availability
 BOOKING_API="$API_URL" pnpm --filter @watson/api verify:bookings
 INTEGRATIONS_API="$API_URL" pnpm --filter @watson/api verify:integrations
+MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-google
 RECURRENCE_API="$API_URL" pnpm --filter @watson/api verify:recurrence
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:meet-acl
 MEETING_API="$API_URL" pnpm --filter @watson/api verify:meeting-commands

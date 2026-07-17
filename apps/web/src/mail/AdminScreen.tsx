@@ -5,13 +5,13 @@
  * (osobní schránky v ní NEJSOU — audit L-48), Nepřečtené per schránka (čte a
  * zapisuje SDÍLENÝ m.mbRead/m.setMbRead — stejná data jako řádky seznamu),
  * Pravidla a Šablony. Stav mimo mbRead je demo vrstva držená lokálně
- * (useState z ADM_SEED); „+ Připojit schránku" otevírá MailboxWizard a avatary
- * v matici Přístupů kartu osoby (PersonCard) s offboardingem.
+ * (useState z ADM_SEED); avatary v matici Přístupů otevírají kartu osoby
+ * (PersonCard) s offboardingem. Osobní účty se spravují výhradně v osobním
+ * nastavení pošty, ne v této týmové administraci.
  */
 import { useState } from "react";
 import { showToast } from "../lib/toast";
 import { ADM_SEED, type AdmSeed, MB, P, TPL } from "./data";
-import { MailboxWizard } from "./MailboxWizard";
 import { PersonCard } from "./PersonCard";
 import { useMail } from "./state";
 
@@ -90,8 +90,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 	const [adm, setAdmRaw] = useState<AdmLocal>(cache.adm);
 	const [tplDel, setTplDel] = useState<Record<string, true>>(cache.tplDel);
 	const [tplAdd, setTplAdd] = useState(cache.tplAdd);
-	// overlaye: průvodce připojením schránky + karta osoby z matice Přístupů
-	const [wizOn, setWizOn] = useState(false);
+	// overlay: karta osoby z matice Přístupů
 	const [person, setPerson] = useState<string | null>(null);
 
 	const setAdm = (patch: Partial<AdmLocal>) => {
@@ -203,8 +202,8 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 						lineHeight: 1.55,
 					}}
 				>
-					Vidí jen správce týmu. Osobní schránky sem nepatří — připojuje si je každý sám v Nastavení
-					(šifrování přijde s reálným backendem M1).
+					Vidí jen správce týmu. Osobní účty sem nepatří — každý je spravuje sám v Nastavení →
+					Pošta přes skutečný OAuth a šifrovaný vault. Týmové schránky níže jsou zatím návrh M3.
 				</div>
 
 				{/* ── Připojené schránky (prototyp ř. 1470–1509) ── */}
@@ -453,18 +452,11 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 							flexWrap: "wrap",
 						}}
 					>
-						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							data-ghost
-							onClick={() => setWizOn(true)}
-							style={{ fontSize: 11.5, padding: "6px 12px", flex: "none" }}
-						>
-							+ Připojit schránku
-						</span>
 						<span
 							style={{ fontFamily: "var(--w-font-body)", fontSize: 10.5, color: "var(--ink-3)" }}
 						>
-							Gmail / M365 přes OAuth, nebo IMAP+SMTP kdekoli — jen super-admin; v demu se
-							přihlášení nikam neukládá (šifrovaný vault je až součást M1, v demu neexistuje)
+							Tato karta zatím ukazuje návrh týmových schránek. Osobní účty si každý připojuje sám
+							v Nastavení → Pošta; sdílené schránky přijdou až v M3.
 						</span>
 					</div>
 					<div
@@ -936,8 +928,7 @@ export function AdminScreen({ embedded = false }: { embedded?: boolean } = {}) {
 				</div>
 			</div>
 
-			{/* overlaye: průvodce připojením schránky + karta osoby */}
-			<MailboxWizard open={wizOn} onClose={() => setWizOn(false)} />
+			{/* overlay: karta osoby */}
 			<PersonCard pid={person} onClose={() => setPerson(null)} />
 		</div>
 	);

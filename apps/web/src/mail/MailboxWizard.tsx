@@ -1,113 +1,183 @@
 /**
- * Průvodce připojením schránky (Modul 15; prototyp markup ř. 1840–1902 +
- * logika wizV ř. 3239–3274). Kroky: 1) poskytovatel (Gmail / M365 / IMAP+SMTP),
- * 2) přihlášení — OAuth demo „rovnou připojeno", nebo IMAP formulář s testem:
- * první test s portem ≠ 993 selže LIDSKOU hláškou (audit A-01 — řeč ne-vývojáře,
- * konkrétní rada, heslo se neodeslalo), po opravě portu uspěje, 3) lidé
- * s přístupem, 4) hotovo — poctivý závěr, že reálné připojení přijde s mail
- * backendem (M1). Oproti prototypu (3 kroky + toast) přidán krok 4 a progress
- * tečky dle zadání; heslo je jen demo pole, nikam se neposílá.
+ * F5 Mail M1 — pravdivá správa osobních mailbox účtů.
+ *
+ * Google používá skutečný serverový OAuth/PKCE flow. M365 a IMAP/SMTP jsou
+ * viditelně nedostupné, dokud nebudou mít vlastní ověřený adapter. Připojený účet
+ * zatím neznamená synchronizované zprávy; permanentní demo banner zůstává.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { API_URL } from "../lib/api";
 import { showToast } from "../lib/toast";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
-import { P } from "./data";
 
-type Provider = "gmail" | "m365" | "imap";
+type MailAccount = {
+	id: string;
+	provider: "google" | "imap_smtp";
+	emailAddress: string;
+	displayName: string | null;
+	status: "connected" | "syncing" | "degraded" | "reauth_required" | "revoked";
+	grantedScopes: string[];
+	capabilities: string[];
+	lastSuccessAt: string | null;
+	lastErrorCode: string | null;
+	revokedAt: string | null;
+	version: number;
+};
 
-/** Karty poskytovatelů (prototyp wizV.provs, ř. 3243). */
-const PROVS: { id: Provider; l: string }[] = [
-	{ id: "gmail", l: "Gmail / Workspace" },
-	{ id: "m365", l: "Microsoft 365" },
-	{ id: "imap", l: "IMAP + SMTP" },
-];
+type AccountsResponse = { accounts: MailAccount[]; googleAvailable: boolean };
 
-/** Pořadí lidí dle matice přístupů (prototyp PIDS). */
-const PIDS = ["ad", "ps", "tm", "mh", "fk", "js"];
+const providerCards = [
+	{
+		id: "google",
+		name: "Gmail / Google Workspace",
+		description: "Osobní účet přes Google OAuth. Heslo Watson nikdy nevidí.",
+		available: true,
+	},
+	{
+		id: "m365",
+		name: "Microsoft 365",
+		description: "Provider adapter bude následovat po dokončení osobního Gmailu.",
+		available: false,
+	},
+	{
+		id: "imap",
+		name: "IMAP + SMTP",
+		description: "Obecné schránky přidáme až s ověřením obou serverů a bezpečným vaultem hesla.",
+		available: false,
+	},
+] as const;
 
-const STEP_L = ["poskytovatel", "přihlášení", "přístupy", "hotovo"];
+const errorCopy: Record<string, string> = {
+	mail_google_not_configured: "Google připojení zatím není na serveru nakonfigurované.",
+	mail_accounts_unavailable: "Bezpečný stav účtů se nepodařilo načíst. Zavři okno a zkus to znovu.",
+	mail_authorization_url_rejected: "Server vrátil nedůvěryhodnou autorizační adresu. Připojení bylo zastaveno.",
+	mail_connection_failed: "Připojení nebylo dokončeno a žádný nový credential se neuložil.",
+	mail_provider_timeout: "Google neodpověděl včas. Zkus to znovu za chvíli.",
+	mail_provider_unavailable: "Google je teď nedostupný. Účet se nezměnil.",
+	mail_revoke_failed: "Google nepotvrdil odpojení. Credential zůstal bezpečně uložený; zkus to znovu.",
+	mail_credentials_missing: "Účet nemá úplný credential. Nic se nezměnilo; kontaktuj správce provozu.",
+	mail_account_already_revoked: "Účet už byl odpojený. Stav jsme znovu načetli.",
+	stale_version: "Účet se mezitím změnil. Stav jsme znovu načetli; operaci případně zopakuj.",
+	operation_id_reused: "Tento bezpečnostní příkaz už byl použit pro jinou operaci. Zkus akci znovu.",
+	unauthorized: "Přihlášení vypršelo. Obnov stránku a přihlas se znovu.",
+};
 
-/** Vstup formuláře IMAP — vzhled dle prototypu ř. 1873–1878. */
-const inputStyle = {
-	border: "1px solid var(--line)",
-	background: "var(--panel-2)",
-	borderRadius: 9,
-	padding: "8px 11px",
-	fontFamily: "var(--w-font-mono)",
-	fontSize: 11,
-	color: "var(--ink)",
-	outline: "none",
-	minWidth: 0,
-} as const;
+const accountStatus: Record<MailAccount["status"], { label: string; tone: string }> = {
+	connected: { label: "Účet připravený", tone: "var(--success-ink)" },
+	syncing: { label: "Probíhá kontrola", tone: "var(--ink-2)" },
+	degraded: { label: "Vyžaduje pozornost", tone: "var(--danger-ink)" },
+	reauth_required: { label: "Obnovit souhlas", tone: "var(--danger-ink)" },
+	revoked: { label: "Odpojený", tone: "var(--ink-3)" },
+};
 
-const hint = {
-	fontFamily: "var(--w-font-body)",
-	fontSize: 11.5,
-	color: "var(--ink-3)",
-	margin: "10px 0 8px",
-} as const;
+async function readAccounts(): Promise<AccountsResponse> {
+	const response = await fetch(`${API_URL}/api/mail/accounts`, { credentials: "include" });
+	if (!response.ok) throw new Error(response.status === 401 ? "unauthorized" : "mail_accounts_unavailable");
+	return (await response.json()) as AccountsResponse;
+}
+
+function trustedAuthorizationUrl(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	try {
+		const url = new URL(value);
+		if (url.origin === "https://accounts.google.com") return url.toString();
+		if (import.meta.env.DEV && url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname)) {
+			return url.toString();
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
 
 export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
-	const [step, setStep] = useState(1);
-	const [prov, setProv] = useState<Provider>("gmail");
-	const [auth, setAuth] = useState(false);
-	const [tested, setTested] = useState<"fail" | "ok" | null>(null);
-	// port 143 jako výchozí — první test tak předvede lidskou chybovou hlášku (A-01)
-	const [port, setPort] = useState("143");
-	const [failPort, setFailPort] = useState("143");
-	const [ppl, setPpl] = useState<Record<string, boolean>>({ ad: true, ps: true });
-	// a11y: fokus dovnitř modalu + cyklení Tab uvnitř + návrat po zavření (audit MED MailboxWizard.tsx:120)
+	const [accounts, setAccounts] = useState<MailAccount[]>([]);
+	const [googleAvailable, setGoogleAvailable] = useState(false);
+	const [loading, setLoading] = useState(false);
+	const [connecting, setConnecting] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+	const [revoking, setRevoking] = useState<string | null>(null);
 	const trapRef = useOverlayLayer<HTMLDivElement>(open, onClose);
 
-	// otevření = čistý průvodce (prototyp wizOpen, ř. 3304)
+	const load = useCallback(async () => {
+		setLoading(true);
+		setError(null);
+		try {
+			const result = await readAccounts();
+			setAccounts(result.accounts);
+			setGoogleAvailable(result.googleAvailable);
+		} catch (cause) {
+			setError(cause instanceof Error ? cause.message : "mail_accounts_unavailable");
+		} finally {
+			setLoading(false);
+		}
+	}, []);
+
 	useEffect(() => {
 		if (!open) return;
-		setStep(1);
-		setProv("gmail");
-		setAuth(false);
-		setTested(null);
-		setPort("143");
-		setPpl({ ad: true, ps: true });
-	}, [open]);
+		setConfirmRevoke(null);
+		void load();
+	}, [open, load]);
 
 	if (!open) return null;
 
-	/** Test IMAP: port ≠ 993 → srozumitelné selhání; 993 → úspěch (zadání + A-01). */
-	const doTest = () => {
-		if (port.trim() !== "993") {
-			setFailPort(port.trim() || "?");
-			setTested("fail");
-			showToast("Test selhal — hlášku píšeme řečí ne-vývojáře, s konkrétní radou");
-			return;
+	const connectGoogle = async () => {
+		if (!googleAvailable || connecting) return;
+		setConnecting(true);
+		setError(null);
+		try {
+			const response = await fetch(`${API_URL}/api/mail/oauth/google/start`, {
+				method: "POST",
+				credentials: "include",
+			});
+			const body = (await response.json().catch(() => ({}))) as { authorizationUrl?: unknown; error?: string };
+			if (!response.ok) throw new Error(body.error ?? "mail_connection_failed");
+			const authorizationUrl = trustedAuthorizationUrl(body.authorizationUrl);
+			if (!authorizationUrl) throw new Error("mail_authorization_url_rejected");
+			window.location.assign(authorizationUrl);
+		} catch (cause) {
+			const code = cause instanceof Error ? cause.message : "mail_connection_failed";
+			setError(code);
+			setConnecting(false);
 		}
-		setTested("ok");
-		showToast("Simulace testu připojení — žádný server nebyl kontaktován");
 	};
 
-	// krok 2 = přihlášení; „Pokračovat" povol až po ověření (OAuth) / testu (IMAP)
-	const canNext = step !== 2 || (prov === "imap" ? tested === "ok" : auth);
-
-	const finish = () => {
-		const n = PIDS.filter((pid) => ppl[pid]).length;
-		showToast(
-			`Simulace: schránka připojena jen v demu (nic se reálně nepřipojilo). Přístup dostalo ${n} lidí, zbytek ji neuvidí vůbec.`,
-		);
-		setStep(4);
+	const revoke = async (account: MailAccount) => {
+		setRevoking(account.id);
+		setError(null);
+		try {
+			const response = await fetch(`${API_URL}/api/mail/accounts/${account.id}/revoke`, {
+				method: "POST",
+				credentials: "include",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ operationId: crypto.randomUUID(), expectedVersion: account.version }),
+			});
+			const body = (await response.json().catch(() => ({}))) as { account?: MailAccount; error?: string };
+			if (!response.ok || !body.account) throw new Error(body.error ?? "mail_revoke_failed");
+			const updatedAccount = body.account;
+			setAccounts((current) => current.map((item) => (item.id === account.id ? updatedAccount : item)));
+			setConfirmRevoke(null);
+			showToast("Google účet je odpojený. Credential byl odstraněn; demo zprávy se nezměnily.");
+		} catch (cause) {
+			const code = cause instanceof Error ? cause.message : "mail_revoke_failed";
+			if (code === "stale_version" || code === "mail_account_already_revoked") await load();
+			setError(code);
+		} finally {
+			setRevoking(null);
+		}
 	};
+
+	const activeGoogle = accounts.some((account) => account.provider === "google" && account.status !== "revoked");
+	const errorMessage = error
+		? (errorCopy[error] ?? "Operaci se nepodařilo bezpečně dokončit. Účet zůstal beze změny.")
+		: null;
 
 	return (
-		<div
-			data-esc-layer
-			style={{
-				position: "fixed",
-				inset: 0,
-				zIndex: "var(--w-layer-nested)",
-				animation: "wFade .12s ease",
-			}}
-		>
+		<div data-esc-layer style={{ position: "fixed", inset: 0, zIndex: "var(--w-layer-nested)" }}>
 			<button
 				type="button"
-				aria-label="Zavřít průvodce"
+				aria-label="Zavřít správu schránek"
 				onClick={onClose}
 				style={{ position: "absolute", inset: 0, border: 0, background: "rgba(23,40,63,.32)" }}
 			/>
@@ -116,392 +186,122 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 				tabIndex={-1}
 				role="dialog"
 				aria-modal="true"
-				aria-label="Připojení schránky"
-				data-screen-label="Připojení schránky"
+				aria-labelledby="mailbox-manager-title"
+				data-screen-label="Správa osobních schránek"
 				style={{
 					position: "fixed",
 					top: "50%",
 					left: "50%",
-					transform: "translate(-50%,-50%)",
+					transform: "translate(-50%, -50%)",
 					zIndex: "calc(var(--w-layer-nested) + 1)",
-					outline: "none",
-					width: "min(440px, 94vw)",
+					width: "min(560px, 94vw)",
 					maxHeight: "88vh",
 					overflow: "auto",
 					background: "var(--panel)",
 					border: "1px solid var(--line)",
 					borderRadius: 16,
 					boxShadow: "var(--shadow)",
-					animation: "wPop .14s ease",
-					padding: "17px 18px 15px",
+					padding: "18px",
+					outline: "none",
 				}}
 			>
-				{/* hlavička s krokem (prototyp ř. 1844–1848) */}
-				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-					<span
-						style={{
-							fontFamily: "var(--w-font-display)",
-							fontWeight: 800,
-							fontSize: 14.5,
-							color: "var(--ink)",
-							flex: 1,
-						}}
-					>
-						Připojit schránku
-					</span>
-					<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)" }}>
-						Krok {step} / 4 — {STEP_L[step - 1]}
-					</span>
-					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+				<div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+					<div style={{ minWidth: 0, flex: 1 }}>
+						<h2 id="mailbox-manager-title" style={{ margin: 0, fontSize: 17, color: "var(--ink)" }}>
+							Osobní e-mailové účty
+						</h2>
+						<p style={{ margin: "4px 0 0", fontSize: 12, lineHeight: 1.5, color: "var(--ink-3)" }}>
+							Připojení ukládá pouze šifrovaný credential. Zprávy a akce v Mailu jsou zatím stále demo.
+						</p>
+					</div>
+					<button
+						type="button"
 						onClick={onClose}
-						title="Zavřít (Esc)"
-						style={{ fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
+						aria-label="Zavřít"
+						style={{ width: 44, height: 44, border: 0, background: "transparent", color: "var(--ink-3)", fontSize: 20, cursor: "pointer" }}
 					>
 						×
-					</span>
+					</button>
 				</div>
 
-				{/* krok 1 — poskytovatel (prototyp ř. 1849–1856) */}
-				{step === 1 && (
-					<>
-						<div style={hint}>
-							Odkud schránka je? Multi-doména i mix poskytovatelů je v pořádku.
-						</div>
-						<div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-							{PROVS.map((p) => (
-								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-									key={p.id}
-									data-statepill
-									data-on={prov === p.id || undefined}
-									onClick={() => {
-										setProv(p.id);
-										setAuth(false);
-										setTested(null);
-									}}
-									style={{
-										fontFamily: "var(--w-font-display)",
-										fontWeight: 600,
-										fontSize: 12,
-										padding: "9px 13px",
-										borderRadius: 11,
-									}}
-								>
-									{p.l}
-								</span>
-							))}
-						</div>
-					</>
+				{errorMessage && (
+					<div role="alert" style={{ marginTop: 14, padding: "10px 12px", borderRadius: 10, background: "var(--danger-soft)", color: "var(--danger-ink)", fontSize: 12 }}>
+						{errorMessage}
+					</div>
 				)}
 
-				{/* krok 2 — přihlášení: OAuth (prototyp ř. 1858–1866) */}
-				{step === 2 && prov !== "imap" && (
-					<>
-						<div style={hint}>Přihlášení proběhne u poskytovatele — Watson heslo nikdy nevidí.</div>
-						{auth ? (
-							<div
-								style={{
-									display: "flex",
-									alignItems: "center",
-									gap: 8,
-									background: "var(--success-soft)",
-									borderRadius: 10,
-									padding: "9px 12px",
-								}}
-							>
-								<span style={{ color: "var(--success-ink)", fontWeight: 700 }}>✓</span>
-								<span
-									style={{
-										fontFamily: "var(--w-font-body)",
-										fontSize: 12,
-										color: "var(--success-ink)",
-									}}
-								>
-									Simulace ověření — reálný token a vault přijdou s M1
-								</span>
-							</div>
-						) : (
-							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-								data-primary
-								onClick={() => {
-									// demo — OAuth okno poskytovatele tu není, rovnou „připojeno"
-									setAuth(true);
-									showToast(
-										"Simulace ověření — žádný token nevznikl; šifrovaný vault přijde s M1",
-									);
-								}}
-								style={{ display: "inline-flex", fontSize: 12, padding: "9px 16px" }}
-							>
-								{prov === "m365" ? "Přihlásit přes Microsoft" : "Přihlásit přes Google"}
-							</span>
-						)}
-					</>
-				)}
-
-				{/* krok 2 — přihlášení: IMAP + SMTP (prototyp ř. 1867–1881) */}
-				{step === 2 && prov === "imap" && (
-					<>
-						<div style={hint}>Servery zadáš ručně — funguje s kýmkoli.</div>
-						{tested === "fail" && (
-							<div
-								style={{
-									display: "flex",
-									gap: 8,
-									alignItems: "flex-start",
-									border: "1px solid var(--ink-3)",
-									borderRadius: 10,
-									padding: "8px 11px",
-									marginBottom: 8,
-								}}
-							>
-								<span
-									style={{
-										fontFamily: "var(--w-font-display)",
-										fontWeight: 800,
-										fontSize: 12,
-										color: "var(--ink)",
-										flex: "none",
-									}}
-								>
-									⚠
-								</span>
-								<span
-									style={{
-										fontFamily: "var(--w-font-body)",
-										fontSize: 11.5,
-										color: "var(--ink-2)",
-										lineHeight: 1.5,
-									}}
-								>
-									{/* lidská hláška dle auditu A-01 — co se stalo + konkrétní rada */}
-									Server odmítl spojení na portu {failPort} — zkus 993 (šifrované IMAP), nebo ověř u
-									poskytovatele, že máš IMAP zapnutý. Heslo se neodeslalo.
-								</span>
-							</div>
-						)}
-						{tested === "ok" && (
-							<div
-								style={{
-									display: "flex",
-									alignItems: "center",
-									gap: 8,
-									background: "var(--success-soft)",
-									borderRadius: 10,
-									padding: "8px 11px",
-									marginBottom: 8,
-								}}
-							>
-								<span style={{ color: "var(--success-ink)", fontWeight: 700 }}>✓</span>
-								<span
-									style={{
-										fontFamily: "var(--w-font-body)",
-										fontSize: 11.5,
-										color: "var(--success-ink)",
-									}}
-								>
-									Simulace testu — reálné ověření IMAP/SMTP přijde s mail backendem (M1).
-								</span>
-							</div>
-						)}
-						<div style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: 6 }}>
-							<input placeholder="IMAP server — imap.forpsi.com" style={inputStyle} />
-							<input
-								value={port}
-								onChange={(e) => {
-									setPort(e.target.value);
-									// změna portu ruší předchozí výsledek testu — jinak by po úspěchu na 993
-									// zůstal „ok" i po přepnutí na 143 (audit LOW MailboxWizard.tsx:317)
-									setTested(null);
-								}}
-								title="IMAP port — 993 je šifrovaný standard"
-								style={inputStyle}
-							/>
-							<input placeholder="SMTP server — smtp.forpsi.com" style={inputStyle} />
-							<input placeholder="465" style={inputStyle} />
+				<section aria-labelledby="connected-mailboxes" style={{ marginTop: 18 }}>
+					<h3 id="connected-mailboxes" style={{ margin: "0 0 8px", fontSize: 12, color: "var(--ink-2)" }}>
+						Účty ve Watsonu
+					</h3>
+					{loading ? (
+						<div style={{ padding: 14, border: "1px solid var(--line)", borderRadius: 12, color: "var(--ink-3)", fontSize: 12 }}>
+							Načítám bezpečný stav účtů…
 						</div>
-						{/* jméno + heslo (zadání) — demo pole, nikam se neodesílají */}
-						<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
-							<input placeholder="přihlašovací jméno" autoComplete="off" style={inputStyle} />
-							<input type="password" placeholder="heslo" autoComplete="off" style={inputStyle} />
+					) : accounts.length === 0 ? (
+						<div style={{ padding: 14, border: "1px dashed var(--line)", borderRadius: 12, color: "var(--ink-3)", fontSize: 12 }}>
+							Zatím tu není žádný osobní účet.
 						</div>
-						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							data-ghost
-							onClick={doTest}
-							style={{ display: "inline-flex", fontSize: 11, padding: "6px 12px", marginTop: 8 }}
-						>
-							{tested === "fail" ? "Otestovat znovu" : "Otestovat připojení"}
-						</span>
-					</>
-				)}
-
-				{/* krok 3 — lidé s přístupem (prototyp ř. 1883–1894) */}
-				{step === 3 && (
-					<>
-						<div style={hint}>
-							Kdo schránku uvidí? Ostatním v UI nebude existovat. Doladíš pak v matici.
-						</div>
-						<div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-							{PIDS.map((pid) => {
-								const p = P[pid];
-								if (!p) return null;
+					) : (
+						<div style={{ display: "grid", gap: 8 }}>
+							{accounts.map((account) => {
+								const status = accountStatus[account.status];
+								const confirming = confirmRevoke === account.id;
 								return (
-									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-										key={pid}
-										data-statepill
-										data-on={ppl[pid] || undefined}
-										onClick={() => setPpl((s) => ({ ...s, [pid]: !s[pid] }))}
-										style={{
-											display: "inline-flex",
-											alignItems: "center",
-											gap: 5,
-											fontFamily: "var(--w-font-display)",
-											fontWeight: 600,
-											fontSize: 10.5,
-											padding: "3px 10px 3px 4px",
-											borderRadius: 999,
-										}}
-									>
-										<span
-											data-av={p.av || undefined}
-											style={{
-												width: 17,
-												height: 17,
-												borderRadius: "50%",
-												background: "var(--avatar-navy)",
-												color: "#fff",
-												fontSize: 7,
-												fontWeight: 700,
-												display: "inline-flex",
-												alignItems: "center",
-												justifyContent: "center",
-											}}
-										>
-											{p.ini}
-										</span>
-										{p.n.split(" ")[0]}
-									</span>
+									<div key={account.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12 }}>
+										<div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+											<span aria-hidden style={{ width: 32, height: 32, display: "grid", placeItems: "center", borderRadius: 9, background: "var(--panel-2)", fontWeight: 800, color: "var(--ink)" }}>G</span>
+											<div style={{ minWidth: 0, flex: 1 }}>
+												<div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink)", overflowWrap: "anywhere" }}>{account.emailAddress}</div>
+												<div style={{ marginTop: 2, fontSize: 10.5, color: status.tone }}>{status.label} · verze {account.version}</div>
+											</div>
+											{account.status !== "revoked" && !confirming && (
+												<button type="button" onClick={() => setConfirmRevoke(account.id)} style={{ minHeight: 44, padding: "0 13px", border: "1px solid var(--line)", borderRadius: 9, background: "transparent", color: "var(--ink-2)", cursor: "pointer" }}>
+													Odpojit
+												</button>
+											)}
+										</div>
+										{confirming && (
+											<div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)", fontSize: 11.5, color: "var(--ink-2)" }}>
+												Watson požádá Google o revokaci a potom fyzicky odstraní credential.
+												<div style={{ display: "flex", gap: 8, marginTop: 9 }}>
+													<button type="button" onClick={() => setConfirmRevoke(null)} disabled={revoking === account.id} style={{ minHeight: 44, padding: "0 13px", border: "1px solid var(--line)", borderRadius: 9, background: "transparent", color: "var(--ink-2)", cursor: "pointer" }}>Ponechat účet</button>
+													<button type="button" onClick={() => void revoke(account)} disabled={revoking === account.id} style={{ minHeight: 44, padding: "0 13px", border: 0, borderRadius: 9, background: "var(--danger-ink)", color: "white", cursor: "pointer" }}>{revoking === account.id ? "Odpojuji…" : "Potvrdit odpojení"}</button>
+												</div>
+											</div>
+										)}
+									</div>
 								);
 							})}
 						</div>
-					</>
-				)}
+					)}
+				</section>
 
-				{/* krok 4 — hotovo, poctivý závěr (zadání; prototyp končil toastem) */}
-				{step === 4 && (
-					<>
-						<div
-							style={{
-								display: "flex",
-								alignItems: "center",
-								gap: 8,
-								background: "var(--success-soft)",
-								borderRadius: 10,
-								padding: "9px 12px",
-								marginTop: 10,
-							}}
-						>
-							<span style={{ color: "var(--success-ink)", fontWeight: 700 }}>✓</span>
-							<span
-								style={{
-									fontFamily: "var(--w-font-body)",
-									fontSize: 12,
-									color: "var(--success-ink)",
-								}}
-							>
-								Schránka připojena (simulace) — objeví se v sidebaru dema. Přístup:{" "}
-								{PIDS.filter((pid) => ppl[pid]).length} lidí, zbytek ji neuvidí vůbec.
-							</span>
-						</div>
-						<div
-							style={{
-								fontFamily: "var(--w-font-mono)",
-								fontSize: 9.5,
-								color: "var(--ink-3)",
-								marginTop: 10,
-								lineHeight: 1.6,
-							}}
-						>
-							Demo — reálné připojení přijde s mail backendem (M1).
-						</div>
-					</>
-				)}
-
-				{/* navigace + progress tečky (prototyp ř. 1896–1900; tečky dle zadání) */}
-				<div style={{ display: "flex", gap: 7, marginTop: 14, alignItems: "center" }}>
-					<span
-						style={{ display: "inline-flex", gap: 5, flex: 1 }}
-						role="progressbar"
-						aria-label={`Krok ${step} ze 4`}
-						aria-valuemin={1}
-						aria-valuemax={4}
-						aria-valuenow={step}
-					>
-						{[1, 2, 3, 4].map((s) => (
-							<span
-								key={s}
-								style={{
-									width: 7,
-									height: 7,
-									borderRadius: "50%",
-									background: s <= step ? "var(--brass)" : "var(--line)",
-								}}
-							/>
-						))}
-					</span>
-					{step > 1 && step < 4 && (
-						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							data-ghost
-							onClick={() => setStep((s) => Math.max(1, s - 1))}
-							style={{ fontSize: 11.5, padding: "7px 13px" }}
-						>
-							← Zpět
-						</span>
-					)}
-					{step < 3 && (
-						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							data-primary
-							onClick={() => {
-								// krok 2 nejde přeskočit bez ověření — OAuth vyžaduje přihlášení,
-								// IMAP úspěšný test (audit LOW MailboxWizard.tsx:317)
-								if (!canNext) {
-									showToast(
-										prov === "imap"
-											? "Nejdřív otestuj připojení (port 993) — teprve pak pokračuj."
-											: "Nejdřív se přihlas u poskytovatele — teprve pak pokračuj.",
-									);
-									return;
-								}
-								setStep((s) => Math.min(3, s + 1));
-							}}
-							style={{
-								fontSize: 11.5,
-								padding: "7px 15px",
-								display: "inline-flex",
-								opacity: canNext ? 1 : 0.5,
-								cursor: canNext ? "pointer" : "not-allowed",
-							}}
-						>
-							Pokračovat
-						</span>
-					)}
-					{step === 3 && (
-						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							data-primary
-							onClick={finish}
-							style={{ fontSize: 11.5, padding: "7px 15px", display: "inline-flex" }}
-						>
-							Připojit
-						</span>
-					)}
-					{step === 4 && (
-						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							data-primary
-							onClick={onClose}
-							style={{ fontSize: 11.5, padding: "7px 15px", display: "inline-flex" }}
-						>
-							Hotovo
-						</span>
-					)}
-				</div>
+				<section aria-labelledby="mailbox-providers" style={{ marginTop: 18 }}>
+					<h3 id="mailbox-providers" style={{ margin: "0 0 8px", fontSize: 12, color: "var(--ink-2)" }}>
+						Přidat nebo obnovit účet
+					</h3>
+					<div style={{ display: "grid", gap: 8 }}>
+						{providerCards.map((provider) => {
+							const enabled = provider.id === "google" && googleAvailable;
+							return (
+								<div key={provider.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: 12, border: "1px solid var(--line)", borderRadius: 12, background: provider.available ? "transparent" : "var(--panel-2)" }}>
+									<div style={{ minWidth: 0, flex: 1 }}>
+										<div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--ink)" }}>{provider.name}</div>
+										<div style={{ marginTop: 3, fontSize: 11, lineHeight: 1.45, color: "var(--ink-3)" }}>{provider.description}</div>
+									</div>
+									{provider.id === "google" ? (
+										<button type="button" onClick={() => void connectGoogle()} disabled={!enabled || connecting} style={{ minHeight: 44, padding: "0 14px", border: 0, borderRadius: 9, background: enabled ? "var(--ink)" : "var(--line)", color: enabled ? "var(--panel)" : "var(--ink-3)", cursor: enabled ? "pointer" : "not-allowed", flex: "none" }}>
+											{connecting ? "Otevírám Google…" : activeGoogle ? "Přidat další" : "Pokračovat"}
+										</button>
+									) : (
+										<span style={{ fontSize: 10.5, color: "var(--ink-3)", flex: "none" }}>Připravujeme</span>
+									)}
+								</div>
+							);
+						})}
+					</div>
+				</section>
 			</div>
 		</div>
 	);

@@ -4,7 +4,8 @@ import { useTranslation } from "@watson/i18n";
  * CC-P0-08 — permanentní, nezaměnitelné označení demo stavu Mailu (rozhodnutí §15/2,
  * varianta B: modul viditelný, ale nesmí tvrdit reálné připojení/odeslání/šifrování).
  * Musí být vidět bez scrollu na každé mailové obrazovce i v composerech; zmizí až
- * s reálným mail backendem (M1), ne dřív. Regresi hlídá src/mail/runClaimsTest.ts.
+ * až s ověřeným message sync/send backendem, ne po pouhém připojení účtu.
+ * Regresi hlídá src/mail/runClaimsTest.ts.
  */
 export function MailDemoBanner({ compact }: { compact?: boolean }) {
 	const { t } = useTranslation();

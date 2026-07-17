@@ -11,6 +11,7 @@ import { useState } from "react";
 import { useTheme } from "../layout/useTheme";
 import { showToast } from "../lib/toast";
 import { MB, NAST_SEED, type NastSeed } from "./data";
+import { MailboxWizard } from "./MailboxWizard";
 import { sigIdOf } from "./SigPicker";
 import { useMail } from "./state";
 
@@ -138,6 +139,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 	const m = useMail();
 	const { theme, toggle } = useTheme();
 	const [nast, setNastRaw] = useState<NastSeed>(cache.nast);
+	const [mailboxManagerOpen, setMailboxManagerOpen] = useState(false);
 	// editor podpisu: {id:null} = nový, jinak úprava existujícího (název + tělo po řádcích)
 	const [sigEd, setSigEd] = useState<{ id: string | null; n: string; b: string } | null>(null);
 
@@ -896,81 +898,33 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 					)}
 				</div>
 
-				{/* ── Osobní schránka (prototyp ř. 1745–1755) ── */}
+				{/* ── Osobní schránky: skutečný serverový account manager M1 ── */}
 				<div style={cardStyle}>
-					<div style={headStyle}>Osobní schránka</div>
+					<div style={headStyle}>Osobní e-mailové účty</div>
 					<div
 						style={{
 							display: "flex",
-							alignItems: "center",
+							alignItems: "flex-start",
 							gap: 10,
 							padding: "12px 18px",
 							flexWrap: "wrap",
 						}}
 					>
-						<span
-							data-mbdot="osobni"
-							style={{ width: 9, height: 9, borderRadius: "50%", flex: "none" }}
-						/>
-						<span
-							style={{ fontFamily: "var(--w-font-mono)", fontSize: 11.5, color: "var(--ink-2)" }}
+						<div style={{ flex: "1 1 260px", fontFamily: "var(--w-font-body)", fontSize: 11, lineHeight: 1.5, color: "var(--ink-3)" }}>
+							Google účet připojíš přes OAuth; heslo Watson nikdy nevidí a credential ukládá šifrovaně.
+							Obsah zpráv a akce v Mailu zůstávají do další etapy zřetelně demo.
+						</div>
+						<button
+							type="button"
+							onClick={() => setMailboxManagerOpen(true)}
+							style={{ minHeight: 44, padding: "0 14px", border: 0, borderRadius: 9, background: "var(--ink)", color: "var(--panel)", cursor: "pointer", flex: "none", fontWeight: 700 }}
 						>
-							kosir.adam@gmail.com
-						</span>
-						<span
-							style={{
-								display: "inline-flex",
-								alignItems: "center",
-								gap: 5,
-								fontFamily: "var(--w-font-mono)",
-								fontSize: 9.5,
-								padding: "2px 9px",
-								borderRadius: 999,
-								background: "var(--pers-bg)",
-								border: "1px solid var(--pers-line)",
-								color: "var(--pers-ink)",
-							}}
-						>
-							<svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden>
-								<rect
-									x="2.2"
-									y="5"
-									width="7.6"
-									height="5.2"
-									rx="1.2"
-									stroke="currentColor"
-									strokeWidth="1.2"
-								/>
-								<path d="M4 5 V3.8 A2 2 0 0 1 8 3.8 V5" stroke="currentColor" strokeWidth="1.2" />
-							</svg>
-							demo · bez AI
-						</span>
-						<span style={{ flex: 1 }} />
-						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							data-ghost
-							onClick={() =>
-								showToast(
-									"Simulace: osobní schránka by se odpojila — vlákna zůstávají jen v tvém zařízení (demo, nešifrováno)",
-								)
-							}
-							style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)", flex: "none" }}
-						>
-							Odpojit
-						</span>
-					</div>
-					<div
-						style={{
-							fontFamily: "var(--w-font-body)",
-							fontSize: 10.5,
-							color: "var(--ink-3)",
-							padding: "0 18px 13px",
-						}}
-					>
-						Mimo týmové hledání, AI i správu týmu; admin ji nevidí. V demu uložená lokálně bez
-						šifrování — to přijde s M1.
+							Spravovat účty
+						</button>
 					</div>
 				</div>
 			</div>
+			<MailboxWizard open={mailboxManagerOpen} onClose={() => setMailboxManagerOpen(false)} />
 		</div>
 	);
 }

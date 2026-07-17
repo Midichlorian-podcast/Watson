@@ -1566,7 +1566,7 @@
 	},
 	"mail": {
 		"demoBadge": "DEMO",
-		"demoBanner": "local simulation — messages never leave Watson",
+		"demoBanner": "message content and mail actions are simulated; a connected account is not syncing mail yet",
 		"taskCreatedToast": "Task from mail added to Inbox — due today",
 		"taskCreatedOpen": "Open",
 		"taskNoInbox": "No inbox project found — task not created"

@@ -44,7 +44,9 @@ assert.throws(
 );
 console.log("  ✓ ciphertext nelze přesunout k jinému mailbox účtu (AAD)");
 
-const changed = `${first.ciphertext.slice(0, -1)}${first.ciphertext.endsWith("A") ? "B" : "A"}`;
+const changedBytes = Buffer.from(first.ciphertext, "base64url");
+changedBytes[0] = (changedBytes[0] ?? 0) ^ 1;
+const changed = changedBytes.toString("base64url");
 assert.throws(
 	() => decryptMailSecret(context, { ...first, ciphertext: changed }, keyring),
 	/mail_vault_decryption_failed/,
@@ -75,4 +77,3 @@ for (const invalid of [
 console.log("  ✓ neúplný nebo slabý keyring je odmítnut bez fallback klíče");
 
 console.log("\nMail credential vault: všechny kontroly prošly");
-

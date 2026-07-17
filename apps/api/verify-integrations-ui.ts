@@ -52,7 +52,13 @@ async function assertAxeClean(page: import("playwright").Page, label: string) {
 		const result = await runner.run(document, {
 			runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] },
 		});
-		return result.violations.map((violation) => violation.id);
+		return result.violations.map((violation) => {
+			const targets = violation.nodes
+				.flatMap((node) => node.target.map((target) => String(target)))
+				.slice(0, 4)
+				.join("|");
+			return `${violation.id}[${targets}]`;
+		});
 	});
 	if (violations.length) throw new Error(`integration_ui_axe_${label}:${violations.join(",")}`);
 }
@@ -85,6 +91,24 @@ async function run(browserName: "chromium" | "webkit") {
 		await card.getByText("Připraveno k testu", { exact: true }).waitFor();
 		await emailCard.getByText("Připraveno k testu", { exact: true }).waitFor();
 		await attachmentCard.getByText("Vestavěná služba.", { exact: true }).waitFor();
+		const manageMailAccounts = page.getByRole("button", { name: "Spravovat účty", exact: true });
+		await manageMailAccounts.click();
+		const mailDialog = page.getByRole("dialog", { name: "Osobní e-mailové účty", exact: true });
+		await mailDialog.getByText("Zatím tu není žádný osobní účet.", { exact: true }).waitFor();
+		await mailDialog.getByText("Gmail / Google Workspace", { exact: true }).waitFor();
+		await mailDialog.getByText("Microsoft 365", { exact: true }).waitFor();
+		await mailDialog.getByText("IMAP + SMTP", { exact: true }).waitFor();
+		if ((await mailDialog.locator('input[type="password"]').count()) !== 0) {
+			throw new Error("mail_accounts_ui_password_field_exposed");
+		}
+		const googleConnect = mailDialog.getByRole("button", { name: "Pokračovat", exact: true });
+		if (await googleConnect.isDisabled()) throw new Error("mail_accounts_ui_google_not_configured");
+		if ((await mailDialog.getByText("Připravujeme", { exact: true }).count()) !== 2) {
+			throw new Error("mail_accounts_ui_unavailable_adapters_not_explicit");
+		}
+		await assertAxeClean(page, `${browserName}_mail_accounts_desktop`);
+		await mailDialog.getByRole("button", { name: "Zavřít", exact: true }).click();
+		await mailDialog.waitFor({ state: "hidden" });
 		await card.getByText("Co propojení smí", { exact: true }).click();
 		for (const permission of [
 			"Ověřit identitu zaměstnance",
@@ -167,6 +191,30 @@ async function run(browserName: "chromium" | "webkit") {
 		const reconnect = card.getByRole("button", { name: "Znovu připojit", exact: true });
 		const box = await reconnect.boundingBox();
 		if (!box || box.height < 44) throw new Error(`integration_ui_mobile_target:${box?.height}`);
+		await manageMailAccounts.click();
+		await mailDialog.waitFor();
+		const dialogBox = await mailDialog.boundingBox();
+		if (!dialogBox || dialogBox.x < 0 || dialogBox.x + dialogBox.width > 390) {
+			throw new Error(`mail_accounts_ui_mobile_dialog_clipped:${JSON.stringify(dialogBox)}`);
+		}
+		const mobileConnectBox = await mailDialog
+			.getByRole("button", { name: "Pokračovat", exact: true })
+			.boundingBox();
+		if (!mobileConnectBox || mobileConnectBox.height < 44) {
+			throw new Error(`mail_accounts_ui_mobile_target:${mobileConnectBox?.height}`);
+		}
+		const dialogOverflow = await mailDialog.evaluate(
+			(node) => node.scrollWidth > node.clientWidth + 1,
+		);
+		if (dialogOverflow) throw new Error("mail_accounts_ui_mobile_overflow");
+		await assertAxeClean(page, `${browserName}_mail_accounts_mobile`);
+		if (SCREENSHOT_DIR) {
+			await mailDialog.screenshot({
+				path: `${SCREENSHOT_DIR}/${browserName}-mail-accounts-390.png`,
+			});
+		}
+		await mailDialog.getByRole("button", { name: "Zavřít", exact: true }).click();
+		await mailDialog.waitFor({ state: "hidden" });
 		await assertAxeClean(page, `${browserName}_mobile`);
 		if (SCREENSHOT_DIR) {
 			await mkdir(SCREENSHOT_DIR, { recursive: true });
@@ -196,7 +244,7 @@ async function run(browserName: "chromium" | "webkit") {
 		if (runtimeErrors.length > 0) {
 			throw new Error(`integration_ui_runtime:${runtimeErrors.join(" | ")}`);
 		}
-		console.log(`  ✓ ${browserName}: tři providery, health, revoke/reconnect, mobile reflow a axe`);
+		console.log(`  ✓ ${browserName}: providery, osobní mail, lifecycle, mobile reflow a axe`);
 	} finally {
 		await browser?.close();
 		await db.delete(workspaces).where(eq(workspaces.id, fixture.workspaceId));

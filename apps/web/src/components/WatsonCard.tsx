@@ -205,7 +205,7 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 					if (r.ok) done++;
 				} else if (a.type === "draft_email" || a.type === "assign_email") {
 					// Mail je zatím z velké části demo — akci nabídneme, ale reálně neprovádíme.
-					showToast("Mailové akce přijdou s reálným mailem (M1).");
+					showToast("Mailové akce přijdou v další etapě message sync/send.");
 				}
 			}
 			showToast(`Watson provedl ${done} ${done === 1 ? "akci" : "akcí"}.`);

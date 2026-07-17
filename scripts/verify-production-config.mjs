@@ -354,6 +354,38 @@ export function validateProductionConfig(source = process.env) {
     record("google_oauth", "passed", "Google OAuth credentials are configured as a pair.");
   }
 
+  const mailGoogleId = source.MAIL_GOOGLE_CLIENT_ID?.trim();
+  const mailGoogleSecret = source.MAIL_GOOGLE_CLIENT_SECRET?.trim();
+  const mailGoogleRedirect = parseUrl(source.MAIL_GOOGLE_REDIRECT_URI?.trim(), ["https:"]);
+  if (Boolean(mailGoogleId) !== Boolean(mailGoogleSecret)) {
+    record(
+      "mail_google_oauth",
+      "failed",
+      "Gmail OAuth must provide its dedicated client ID and client secret together.",
+    );
+  } else if (!mailGoogleId) {
+    record(
+      "mail_google_oauth",
+      "warning",
+      "Gmail mailbox OAuth is disabled; Mail must remain visibly in demo mode.",
+    );
+  } else {
+    const validMailGoogle =
+      !isPlaceholder(mailGoogleId) &&
+      !isPlaceholder(mailGoogleSecret) &&
+      mailGoogleRedirect &&
+      !mailGoogleRedirect.username &&
+      !mailGoogleRedirect.password &&
+      mailGoogleRedirect.pathname === "/api/mail/oauth/google/callback" &&
+      !mailGoogleRedirect.search &&
+      !mailGoogleRedirect.hash;
+    record(
+      "mail_google_oauth",
+      validMailGoogle ? "passed" : "failed",
+      "Gmail OAuth requires dedicated non-placeholder credentials and an exact HTTPS callback URI.",
+    );
+  }
+
   const anthropicKey = source.ANTHROPIC_API_KEY?.trim();
   if (!anthropicKey) {
     record("anthropic", "warning", "Anthropic is disabled; AI features will not be available.");

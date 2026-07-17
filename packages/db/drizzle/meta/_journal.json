@@ -484,6 +484,13 @@
       "when": 1784263855417,
       "tag": "0068_overjoyed_obadiah_stane",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1784264339160,
+      "tag": "0069_bouncy_betty_brant",
+      "breakpoints": true
     }
   ]
 }
