@@ -49,7 +49,7 @@ const lifecycleSchema = z
 	})
 	.strict();
 
-const luckyIdentitySchema = z
+export const luckyIdentitySchema = z
 	.object({
 		user: z.object({ email: z.string().email().max(254) }).passthrough(),
 		person: z
@@ -82,7 +82,7 @@ export const employeeStatusSchema = z
 						type: z.string().min(1).max(64),
 						title: z.string().min(1).max(500),
 						message: z.string().max(5_000).optional(),
-						href: z.string().url().max(2_000).optional(),
+						href: z.string().max(2_000).optional(),
 						due: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 						is_read: z.boolean().optional(),
 					})

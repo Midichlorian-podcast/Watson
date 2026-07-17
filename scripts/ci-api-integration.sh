@@ -153,6 +153,7 @@ IMPORTS_API="$API_URL" pnpm --filter @watson/api verify:imports
 AVAILABILITY_API="$API_URL" pnpm --filter @watson/api verify:availability
 BOOKING_API="$API_URL" pnpm --filter @watson/api verify:bookings
 INTEGRATIONS_API="$API_URL" pnpm --filter @watson/api verify:integrations
+EMPLOYEE_HUB_API="$API_URL" pnpm --filter @watson/api verify:employee-hub
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-google
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-sync
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-execution

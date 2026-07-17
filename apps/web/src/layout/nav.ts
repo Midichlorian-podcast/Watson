@@ -64,4 +64,11 @@ export const VELIN_NAV: NavItem = {
 	labelKey: "nav.velin",
 };
 
-export const ALL_NAV: NavItem[] = [TODAY_NAV, ...MAIN_NAV, ...FAV_NAV, SETTINGS_NAV, VELIN_NAV];
+/** Employee Hub je viditelný pouze po potvrzeném osobním napojení na LuckyOS. */
+export const EMPLOYEE_NAV: NavItem = {
+	to: "/zamestnanec",
+	icon: "tym",
+	labelKey: "nav.employee",
+};
+
+export const ALL_NAV: NavItem[] = [TODAY_NAV, ...MAIN_NAV, ...FAV_NAV, SETTINGS_NAV, VELIN_NAV, EMPLOYEE_NAV];

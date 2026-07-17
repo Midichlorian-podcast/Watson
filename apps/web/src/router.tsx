@@ -9,6 +9,7 @@ import { parseTaskTab, type TaskTab } from "./lib/taskTabs";
 const named = <K extends string>(loader: () => Promise<Record<K, React.ComponentType>>, key: K) => lazy(() => loader().then((m) => ({ default: m[key] })));
 
 const Cile = named(() => import("./screens/Cile"), "Cile");
+const EmployeeHub = named(() => import("./screens/EmployeeHub"), "EmployeeHub");
 const Hledat = named(() => import("./screens/Hledat"), "Hledat");
 const Intake = named(() => import("./screens/Intake"), "Intake");
 const Prehled = named(() => import("./screens/Prehled"), "Prehled");
@@ -143,6 +144,11 @@ const cileRoute = createRoute({
 		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
 	}),
 });
+const employeeRoute = createRoute({
+	getParentRoute: () => rootRoute,
+	path: "/zamestnanec",
+	component: EmployeeHub,
+});
 const postupyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/postupy",
@@ -189,6 +195,7 @@ const routeTree = rootRoute.addChildren([
 	hledatRoute,
 	intakeRoute,
 	cileRoute,
+	employeeRoute,
 	reportyRoute,
 	postupyRoute,
 	projektyRoute,

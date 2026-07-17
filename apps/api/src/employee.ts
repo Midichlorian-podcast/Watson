@@ -33,6 +33,7 @@ import {
 	employeeStatusSchema,
 	isLuckyOsRevoked,
 	type LuckyEmployeeStatus,
+	luckyIdentitySchema,
 	luckyFetch,
 	recordLuckyOsHealth,
 } from "./integrations";
@@ -42,6 +43,151 @@ type Db = ReturnType<typeof getDb>;
 type DbTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export const employeeRoutes = new Hono<{ Variables: { requestId: string } }>();
+
+employeeRoutes.use("*", async (c, next) => {
+	await next();
+	c.header("Cache-Control", "private, no-store");
+});
+
+type JsonObject = Record<string, unknown>;
+
+function object(value: unknown): JsonObject {
+	return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {};
+}
+
+function text(value: unknown, max = 500): string | null {
+	return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
+}
+
+function finite(value: unknown, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY) {
+	return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max
+		? value
+		: null;
+}
+
+function relativeHref(value: unknown): string | null {
+	const href = text(value, 500);
+	return href?.startsWith("/") && !href.startsWith("//") ? href : null;
+}
+
+const readinessStates = new Set(["ready", "pending", "blocked"]);
+const deadlineSeverities = new Set(["info", "warning", "urgent", "overdue"]);
+
+/**
+ * Owner-only veřejná projekce provider stavu. LuckyOS může svůj interní payload
+ * rozšiřovat, ale Watson nikdy nevrací neznámá pole, interní identity ani provider metadata.
+ */
+export function publicEmployeeStatus(value: LuckyEmployeeStatus) {
+	const person = object(value.person);
+	const readiness = object(value.readiness);
+	const deadlines = object(value.deadlines);
+	const progress = object((value as JsonObject).dpp_progress);
+	const submissions = object((value as JsonObject).submissions);
+	const blockers = Array.isArray(readiness.blockers)
+		? readiness.blockers.slice(0, 100).map((entry) => {
+				const row = object(entry);
+				return {
+					type: text(row.type, 64) ?? "other",
+					explanation: text(row.explanation, 1_000) ?? "Vyžaduje doplnění.",
+					href: relativeHref(row.href),
+				};
+			})
+		: [];
+	const missingDocuments = Array.isArray(readiness.missing_documents)
+		? readiness.missing_documents
+				.map((entry) => text(entry, 120))
+				.filter((entry): entry is string => Boolean(entry))
+				.slice(0, 100)
+		: [];
+	const countdowns = Array.isArray(deadlines.computed_countdowns)
+		? deadlines.computed_countdowns.slice(0, 50).map((entry) => {
+				const row = object(entry);
+				const severity = text(row.severity, 20);
+				return {
+					key: text(row.key ?? row.type, 80) ?? "deadline",
+					label: text(row.label ?? row.title, 300) ?? "Termín",
+					due: text(row.due ?? row.due_date, 40),
+					daysRemaining: finite(row.days_remaining, -3_650, 3_650),
+					severity: severity && deadlineSeverities.has(severity) ? severity : "info",
+				};
+			})
+		: [];
+	const submissionKinds = [
+		"attendance",
+		"expenses",
+		"documents",
+		"profile_changes",
+		"small_numbers",
+	] as const;
+	const submissionSummary = Object.fromEntries(
+		submissionKinds.map((kind) => {
+			const rows = Array.isArray(submissions[kind]) ? submissions[kind] : [];
+			return [
+				kind,
+				rows.slice(0, 20).map((entry) => {
+					const row = object(entry);
+					return {
+						id: text(row.id, 128),
+						status: text(row.status ?? row.review_status, 40) ?? "unknown",
+						reviewerNote: text(row.reviewer_note, 1_000),
+						periodMonth: finite(row.period_month, 1, 12),
+						periodYear: finite(row.period_year, 2020, 2100),
+						updatedAt: text(row.updated_at ?? row.submitted_at ?? row.created_at, 50),
+					};
+				}),
+			];
+		}),
+	);
+	const rawStatus = text(readiness.status, 20);
+	return {
+		person: {
+			// Provider person ID je serverová identita a může být odvozené z e-mailu.
+			// Klient ho pro read-only Hub nepotřebuje a nesmí ho posílat zpět jako autoritu.
+			id: null,
+			fullName: text(person.full_name, 500),
+			personType: text(person.person_type, 100),
+		},
+		readiness: {
+			status: rawStatus && readinessStates.has(rawStatus) ? rawStatus : "pending",
+			blockers,
+			missingDocuments,
+			hasSubmittedAttendance: readiness.has_submitted_attendance === true,
+			parentContributionCompleted: readiness.parent_contribution_completed === true,
+		},
+		deadlines: {
+			attendanceDueDay: finite(deadlines.attendance_due_day, 1, 31),
+			payrollDay: finite(deadlines.payroll_day, 1, 31),
+			withholdingTaxDay: finite(deadlines.withholding_tax_day, 1, 31),
+			countdowns,
+		},
+		dppProgress: {
+			hoursUsed: finite(progress.hours_used, 0, 100_000),
+			hoursLimit: finite(progress.hours_limit, 0, 100_000),
+			monthlyHours: finite(progress.monthly_hours, 0, 10_000),
+			monthlyLimit: finite(progress.monthly_limit, 0, 10_000),
+		},
+		submissions: submissionSummary,
+		notifications: (value.notifications ?? []).map((notification) => ({
+			id: notification.id,
+			type: notification.type,
+			title: notification.title,
+			message: notification.message ?? null,
+			href: relativeHref(notification.href),
+			due: notification.due ?? null,
+			isRead: notification.is_read ?? false,
+		})),
+	};
+}
+
+function publicEmployeeIdentity(data: unknown) {
+	const root = object(data);
+	const person = object(root.person);
+	return {
+		id: null,
+		fullName: text(person.full_name, 500),
+		personType: text(person.person_type, 100),
+	};
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reconcile: notifikace/deadliny LuckyOS → nativní Watson úkoly (Fáze 1)
@@ -224,12 +370,21 @@ employeeRoutes.get("/api/employee/me", async (c) => {
 	if (!res.ok) {
 		return c.json({
 			linked: false,
-			reason: res.revoked ? "luckyos_revoked" : undefined,
-			status: res.status,
+			...(res.revoked ? { status: 423 } : {}),
+			reason: res.revoked
+				? "luckyos_revoked"
+				: res.notConfigured
+					? "luckyos_not_configured"
+					: res.status === 404
+						? "luckyos_identity_not_linked"
+						: "luckyos_unavailable",
 		});
 	}
-	const data = res.data as { user?: unknown; person?: unknown };
-	return c.json({ linked: true, user: data.user ?? null, person: data.person ?? null });
+	const parsed = luckyIdentitySchema.safeParse(res.data);
+	if (!parsed.success) {
+		return c.json({ linked: false, reason: "luckyos_contract_rejected" }, 502);
+	}
+	return c.json({ linked: true, person: publicEmployeeIdentity(parsed.data) });
 });
 
 /**
@@ -248,11 +403,22 @@ employeeRoutes.get("/api/employee/status", async (c) => {
 	if (!res.ok) {
 		return c.json({
 			linked: false,
-			reason: res.revoked ? "luckyos_revoked" : undefined,
-			status: res.status,
+			reason: res.revoked
+				? "luckyos_revoked"
+				: res.notConfigured
+					? "luckyos_not_configured"
+					: res.status === 404
+						? "luckyos_identity_not_linked"
+						: "luckyos_unavailable",
 		});
 	}
-	return c.json({ linked: true, status: res.data });
+	const parsed = employeeStatusSchema.safeParse(res.data);
+	if (!parsed.success) return c.json({ linked: false, reason: "luckyos_contract_rejected" }, 502);
+	return c.json({
+		linked: true,
+		status: publicEmployeeStatus(parsed.data),
+		fetchedAt: new Date().toISOString(),
+	});
 });
 
 /**
@@ -278,7 +444,7 @@ employeeRoutes.post("/api/employee/sync", async (c) => {
 		parsedStatus.data,
 		c.get("requestId") ?? null,
 	);
-	return c.json({ linked: true, ...summary });
+	return c.json({ linked: true, ...summary, fetchedAt: new Date().toISOString() });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { useTranslation } from "@watson/i18n";
 import { Icon, type IconName } from "@watson/ui";
 import { useState } from "react";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
+import { useEmployeeHub } from "../lib/employee";
 import { useWatson } from "../lib/watson";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
@@ -56,17 +57,25 @@ export function MobileTabBar() {
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs, setActiveWs } = useWorkspace();
 	const mailUnread = useMailUnread();
+	const employeeHub = useEmployeeHub();
 	// P1-08: sheet je dialog — past na fokus + návrat fokusu na tlačítko „Více"
 	const sheetRef = useOverlayLayer<HTMLDivElement>(moreOpen, () => setMoreOpen(false));
 
 	// Velín jen pro vedení (Vlastník/Admin) — stejný gating jako sidebar.
-	const more = isLeadership(workspaces)
+	let more = isLeadership(workspaces)
 		? [
 				...MORE.slice(0, 2),
 				{ to: "/velin", icon: "velin" as IconName, labelKey: "nav.velin" },
 				...MORE.slice(2),
 			]
 		: MORE;
+	if (employeeHub.data?.linked === true) {
+		more = [
+			...more.slice(0, 1),
+			{ to: "/zamestnanec", icon: "tym" as IconName, labelKey: "nav.employee" },
+			...more.slice(1),
+		];
+	}
 	const moreActive = more.some((m) => path.startsWith(m.to));
 
 	return (

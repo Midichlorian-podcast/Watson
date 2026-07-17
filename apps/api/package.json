@@ -19,6 +19,8 @@
 		"verify:meet-acl": "tsx verify-meet-acl.ts",
 		"verify:meeting-commands": "tsx verify-meeting-commands.ts",
 		"verify:employee-reconcile": "tsx verify-employee-reconcile.ts",
+		"verify:employee-hub": "tsx verify-employee-hub.ts",
+		"verify:employee-hub-ui": "tsx verify-employee-hub-ui.ts",
 		"verify:db-invariants": "tsx verify-db-invariants.ts",
 		"verify:ai-policy": "tsx verify-ai-policy.ts",
 		"verify:rate-limit": "tsx verify-rate-limit.ts",

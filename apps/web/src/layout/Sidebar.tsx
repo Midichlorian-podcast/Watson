@@ -8,10 +8,11 @@ import { SidebarTrustState } from "../components/TrustState";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
 import { inboxProjectIds } from "../lib/inbox";
+import { useEmployeeHub } from "../lib/employee";
 import { useProjects } from "../lib/projects";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
-import { MAIN_NAV, type NavItem, VELIN_NAV } from "./nav";
+import { EMPLOYEE_NAV, MAIN_NAV, type NavItem, VELIN_NAV } from "./nav";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const todayIso = () => {
@@ -138,6 +139,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 	);
 	// Mail — badge = per-osoba nepřečtené v týmových schránkách (unreadFor součet).
 	const mailUnread = useMailUnread();
+	const employeeHub = useEmployeeHub();
+	const employeeLinked = employeeHub.data?.linked === true;
 
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs, setActiveWs, isCollapsed, toggleCollapse } = useWorkspace();
@@ -373,6 +376,13 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 								collapsed={collapsed}
 								count={item.count ? counts[item.to] : undefined}
 							/>
+							{item.to === "/mail" && employeeLinked && (
+								<NavRow
+									item={EMPLOYEE_NAV}
+									active={isActive(EMPLOYEE_NAV.to)}
+									collapsed={collapsed}
+								/>
+							)}
 							{/* Velín mezi Reporty a Postupy (prototyp ř. 251–257) — jen pro
 							    vedení (Vlastník/Admin), odznak VEDENÍ */}
 							{item.to === "/reporty" && isLeadership(workspaces) && (

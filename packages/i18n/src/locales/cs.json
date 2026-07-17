@@ -89,6 +89,66 @@
 			"sun": "Ne"
 		}
 	},
+	"employee": {
+		"title": "Můj zaměstnanecký přehled",
+		"loading": "Načítám aktuální stav z LuckyOS…",
+		"loadFailed": "Zaměstnanecký přehled se nepodařilo načíst. Zkus to znovu; žádná data se nezměnila.",
+		"openIntegrations": "Otevřít nastavení propojení",
+		"employeeFallback": "Zaměstnanec",
+		"onlineOnly": "aktuální data z LuckyOS",
+		"syncing": "Synchronizuji…",
+		"syncTasks": "Přenést akce do úkolů",
+		"privacyNotice": "Watson zobrazuje jen nezbytné údaje. Účetní a personální autoritou zůstává LuckyOS",
+		"fetchedAt": "stav k {{value}}",
+		"readinessTitle": "Připravenost a blokace",
+		"noBlockers": "Nic ti právě nebrání pokračovat.",
+		"missingDocuments": "Chybějící dokumenty",
+		"deadlinesTitle": "Termíny a limity",
+		"daysRemaining_one": "{{count}} den",
+		"daysRemaining_few": "{{count}} dny",
+		"daysRemaining_other": "{{count}} dní",
+		"attendanceDueDay": "Docházku je potřeba odevzdat do {{day}}. dne v měsíci.",
+		"payrollDay": "Výplatní den je {{day}}. den v měsíci.",
+		"noDeadlines": "Teď tu není žádný blízký termín.",
+		"dppProgress": "Čerpání DPP",
+		"notificationsTitle": "Co vyžaduje pozornost",
+		"noNotifications": "Žádná nová zaměstnanecká oznámení.",
+		"due": "Termín {{date}}",
+		"syncCreated_one": "Do úkolů byla přenesena {{count}} nová akce.",
+		"syncCreated_few": "Do úkolů byly přeneseny {{count}} nové akce.",
+		"syncCreated_other": "Do úkolů bylo přeneseno {{count}} nových akcí.",
+		"syncNoChange": "Všechny akční položky už v úkolech máš.",
+		"syncFailed": "Akce se do úkolů nepodařilo přenést. Nic se neztratilo.",
+		"dashboardTitle": "Můj stav",
+		"dashboardOpen": "Otevřít přehled",
+		"dashboardBlockers_one": "{{count}} blokace vyžaduje pozornost",
+		"dashboardBlockers_few": "{{count}} blokace vyžadují pozornost",
+		"dashboardBlockers_other": "{{count}} blokací vyžaduje pozornost",
+		"dashboardNotifications_one": "{{count}} nové oznámení",
+		"dashboardNotifications_few": "{{count}} nová oznámení",
+		"dashboardNotifications_other": "{{count}} nových oznámení",
+		"readiness": {
+			"ready": "Připraveno",
+			"pending": "Čeká na doplnění",
+			"blocked": "Blokováno"
+		},
+		"unlinked": {
+			"luckyos_not_configured": "LuckyOS zatím není pro Watson nastavený. Propojení musí dokončit správce.",
+			"luckyos_revoked": "Propojení s LuckyOS bylo zrušeno. Správce ho může bezpečně obnovit.",
+			"luckyos_identity_not_linked": "Tvůj účet zatím není v LuckyOS spárovaný. Zkontroluj e-mail nebo požádej správce o propojení.",
+			"luckyos_contract_rejected": "LuckyOS odmítl verzi integrační smlouvy. Propojení musí aktualizovat správce.",
+			"luckyos_unavailable": "LuckyOS je právě nedostupný. Watson nezobrazuje zastaralý stav jako aktuální.",
+			"no_email": "Účet nemá e-mail potřebný pro bezpečné spárování s LuckyOS."
+		},
+		"blocker": {
+			"missing_bank_account": "Chybí bankovní účet",
+			"missing_document": "Chybí dokument",
+			"attendance_rejected": "Docházka byla vrácena",
+			"payroll_blocked": "Výplata je blokovaná",
+			"contract_signature_required": "Smlouva čeká na podpis",
+			"other": "Je potřeba doplnit údaje"
+		}
+	},
 	"dependencies": {
 		"cardBlocked": "Blokováno · {{count}}",
 		"strictBlocked": "Úkol nelze dokončit: stále ho blokuje {{names}} (celkem {{count}}).",
@@ -141,7 +201,8 @@
 		"more": "Více",
 		"mobilePrimary": "Hlavní mobilní navigace",
 		"moreSections": "Další sekce",
-		"intake": "Příjem práce"
+		"intake": "Příjem práce",
+		"employee": "Zaměstnanec"
 	},
 	"shell": {
 		"newTask": "Úkol",

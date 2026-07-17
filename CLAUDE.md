@@ -593,6 +593,26 @@ Explainable Radar dokončen 2026-07-17: Velín dostal živý read model `radar:v
 
 Rules & Automation Engine v1 dokončen 2026-07-17: projektová pravidla mají oddělený měnitelný draft, explicitní Preview a neměnné publikované verze; každý běh je připnutý ke konkrétní verzi. V1 reaguje na vytvoření/dokončení/znovuotevření úkolu, umí AND podmínky nad prioritou, deadlinem a řešitelem a atomicky mění prioritu/plánované datum nebo přidá komentář. Worker deduplikuje `(version,event)`, ignoruje vlastní systémové audity a před každým během znovu ověří oprávnění autora publikace. Výsledek má redigovaný audit, historii a 24h stale-safe Undo. Pozastavení nefrontuje nové běhy. DB hlídá tenant, neměnnost verzí i stavový automat runu. UI v Postupech vysvětluje Když → A pokud → Pak, odděluje koncept od publikace a ukazuje procesní počty bez employee scoringu. API verifier pokrývá replay, CAS, pinning, atomické akce, dedup, pause, Undo a tenant útok; Chromium i WebKit dokazují create → preview → publish, focus modal, 390px bez overflow a axe WCAG A/AA. Odmítnuté přiřazování podle role/vytížení a SLA/eskalace zůstávají mimo scope.
 
+### F7 — Employee Hub, LuckyOS a znalostní vrstva
+
+Employee Hub core dokončen 2026-07-17: existující Watson ↔ LuckyOS broker nebyl nahrazen.
+Přibyl owner-only online povrch „Můj zaměstnanecký přehled“ se stavem připravenosti,
+blokacemi, chybějícími dokumenty, termíny, DPP limitem a oznámeními. LuckyOS zůstává
+jedinou účetní a personální autoritou; citlivý stav se neukládá do PowerSync ani browser
+storage a každá Employee odpověď je `private, no-store`. Server validuje provider identitu
+i status a vrací pouze explicitní allowlist projekci; neznámá metadata, provider e-mail,
+interní ID pravidel a absolutní odkazy se redigují. Modul, sidebar, mobilní nabídka i karta
+„Můj stav“ na Přehledu se zobrazí pouze po skutečném `linked=true`.
+
+Akční LuckyOS notifikace lze výslovně převést do osobního projektu „Zaměstnanec“; reconciliation
+je serializovaná per user, tenant-scoped, auditovaná a přes `entity_links` idempotentní.
+Informativní oznámení úkol nevytvářejí. API důkaz pokrývá session, no-store, redakci,
+bezpečné relativní odkazy, provider kontrakt, task lineage a retry bez duplicity. Chromium
+i WebKit ověřily gating, dashboard, sync, 390px reflow, mobilní 44px akci a axe WCAG A/AA;
+ruční vizuální audit následně přeskládal mobilní hlavičku. Provozní hranice jsou v
+`docs/employee-hub-runbook.md`. Odevzdávací formuláře, dokumenty/podpisy, absence a
+onboarding/offboarding jsou další samostatné F7 vertikály a tento core je nepředstírá.
+
 ## 10. Detailní acceptance checklist pro budoucí funkce
 
 Každá produkční funkce musí odpovědět ano na vše relevantní:

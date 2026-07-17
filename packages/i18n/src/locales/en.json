@@ -89,6 +89,62 @@
 			"sun": "Sun"
 		}
 	},
+	"employee": {
+		"title": "My employee overview",
+		"loading": "Loading the current status from LuckyOS…",
+		"loadFailed": "The employee overview could not be loaded. Try again; no data was changed.",
+		"openIntegrations": "Open connection settings",
+		"employeeFallback": "Employee",
+		"onlineOnly": "current LuckyOS data",
+		"syncing": "Syncing…",
+		"syncTasks": "Send actions to tasks",
+		"privacyNotice": "Watson shows only the necessary data. LuckyOS remains the payroll and HR system of record",
+		"fetchedAt": "status as of {{value}}",
+		"readinessTitle": "Readiness and blockers",
+		"noBlockers": "Nothing is currently blocking you.",
+		"missingDocuments": "Missing documents",
+		"deadlinesTitle": "Deadlines and limits",
+		"daysRemaining_one": "{{count}} day",
+		"daysRemaining_other": "{{count}} days",
+		"attendanceDueDay": "Attendance is due by day {{day}} of the month.",
+		"payrollDay": "Payday is day {{day}} of the month.",
+		"noDeadlines": "There is no upcoming deadline right now.",
+		"dppProgress": "DPP allowance",
+		"notificationsTitle": "Needs your attention",
+		"noNotifications": "No new employee notifications.",
+		"due": "Due {{date}}",
+		"syncCreated_one": "{{count}} new action was sent to tasks.",
+		"syncCreated_other": "{{count}} new actions were sent to tasks.",
+		"syncNoChange": "All actionable items are already in your tasks.",
+		"syncFailed": "Actions could not be sent to tasks. Nothing was lost.",
+		"dashboardTitle": "My status",
+		"dashboardOpen": "Open overview",
+		"dashboardBlockers_one": "{{count}} blocker needs attention",
+		"dashboardBlockers_other": "{{count}} blockers need attention",
+		"dashboardNotifications_one": "{{count}} new notification",
+		"dashboardNotifications_other": "{{count}} new notifications",
+		"readiness": {
+			"ready": "Ready",
+			"pending": "Waiting for details",
+			"blocked": "Blocked"
+		},
+		"unlinked": {
+			"luckyos_not_configured": "LuckyOS has not been configured for Watson yet. An administrator needs to finish the connection.",
+			"luckyos_revoked": "The LuckyOS connection was revoked. An administrator can restore it safely.",
+			"luckyos_identity_not_linked": "Your account is not paired with LuckyOS yet. Check your email or ask an administrator to connect it.",
+			"luckyos_contract_rejected": "LuckyOS rejected the integration contract version. An administrator needs to update the connection.",
+			"luckyos_unavailable": "LuckyOS is currently unavailable. Watson does not present stale status as current.",
+			"no_email": "The account has no email address for secure pairing with LuckyOS."
+		},
+		"blocker": {
+			"missing_bank_account": "Bank account missing",
+			"missing_document": "Document missing",
+			"attendance_rejected": "Attendance was returned",
+			"payroll_blocked": "Payroll is blocked",
+			"contract_signature_required": "Contract awaits signature",
+			"other": "Information is required"
+		}
+	},
 	"dependencies": {
 		"cardBlocked": "Blocked · {{count}}",
 		"strictBlocked": "The task cannot be completed: it is still blocked by {{names}} ({{count}} total).",
@@ -141,7 +197,8 @@
 		"more": "More",
 		"mobilePrimary": "Primary mobile navigation",
 		"moreSections": "More sections",
-		"intake": "Work intake"
+		"intake": "Work intake",
+		"employee": "Employee"
 	},
 	"shell": {
 		"newTask": "Task",

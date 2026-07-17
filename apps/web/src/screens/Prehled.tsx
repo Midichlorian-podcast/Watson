@@ -6,6 +6,7 @@ import { CalendarWidget } from "../components/CalendarWidget";
 import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
 import { useSession } from "../lib/auth-client";
 import { LoadingNote, SyncStamp, useAllReady } from "../lib/dataState";
+import { useEmployeeHub } from "../lib/employee";
 import { useFlowSteps } from "../lib/flowSteps";
 import { initials } from "../lib/format";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
@@ -86,6 +87,7 @@ export function Prehled() {
 	const { open } = useTaskDetail();
 	const { data: session } = useSession();
 	const { data: workspaces } = useWorkspaces();
+	const employeeHub = useEmployeeHub();
 	const { projects, isLoading: projLoading } = useProjectsWithState();
 	const flowSteps = useFlowSteps();
 	const goalsAll = useGoalsOverview(t);
@@ -540,6 +542,9 @@ export function Prehled() {
 			? new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" }).format(date)
 			: new Intl.DateTimeFormat(i18n.language, { day: "numeric", month: "numeric" }).format(date);
 	};
+	const employee = employeeHub.data?.linked ? employeeHub.data.status : null;
+	const employeeUnread = employee?.notifications.filter((item) => !item.isRead).length ?? 0;
+	const employeeNextDeadline = employee?.deadlines.countdowns[0] ?? null;
 
 	const synActions: { key: string; label: string; onClick: () => void }[] = [
 		...(view.ovd.length
@@ -757,6 +762,60 @@ export function Prehled() {
 						</OvRow>
 					))}
 				</div>
+
+				{/* Zaměstnanecký stav — jen při skutečně spárovaném LuckyOS účtu. */}
+				{employee && (
+					<div className={cardCls} style={cardStyle}>
+						<CardHead
+							title={t("employee.dashboardTitle")}
+							footLabel={t("employee.dashboardOpen")}
+							onFoot={() => void navigate({ to: "/zamestnanec" })}
+						/>
+						<div className="px-4 pb-4">
+							<div className="flex items-center gap-2 rounded-xl border border-line bg-panel-2 px-3 py-3">
+								<span
+									aria-hidden
+									className="h-2.5 w-2.5 shrink-0 rounded-full"
+									style={{
+										background:
+											employee.readiness.status === "ready"
+												? "var(--w-success)"
+												: employee.readiness.status === "blocked"
+													? "var(--w-overdue)"
+													: "var(--w-p2)",
+									}}
+								/>
+								<div className="min-w-0 flex-1">
+									<div className="font-display text-xs font-bold text-ink">
+										{t(`employee.readiness.${employee.readiness.status}`)}
+									</div>
+									<div className="mt-0.5 truncate font-body text-[11.5px] text-ink-3">
+										{employee.readiness.blockers.length > 0
+											? t("employee.dashboardBlockers", {
+													count: employee.readiness.blockers.length,
+												})
+											: t("employee.noBlockers")}
+									</div>
+								</div>
+							</div>
+							{(employeeNextDeadline || employeeUnread > 0) && (
+								<div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 px-1 font-body text-[11.5px] text-ink-3">
+									{employeeNextDeadline && (
+										<span>
+											{employeeNextDeadline.label}
+											{employeeNextDeadline.daysRemaining != null
+												? ` · ${t("employee.daysRemaining", { count: employeeNextDeadline.daysRemaining })}`
+												: ""}
+										</span>
+									)}
+									{employeeUnread > 0 && (
+										<span>{t("employee.dashboardNotifications", { count: employeeUnread })}</span>
+									)}
+								</div>
+							)}
+						</div>
+					</div>
+				)}
 
 				{/* Waiting Room — odvozená čekání ze závislostí a aktivních kroků Postupů. */}
 				<div className={cardCls} style={cardStyle}>
