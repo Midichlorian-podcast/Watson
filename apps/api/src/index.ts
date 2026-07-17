@@ -41,6 +41,7 @@ import { env, googleEnabled, pushEnabled } from "./env";
 import { exportRoutes } from "./export";
 import { importRoutes } from "./imports";
 import { intakeFormRoutes } from "./intakeForms";
+import { integrationRoutes } from "./integrations";
 import { meetingsRoutes } from "./meetings";
 import { isOpsTokenAuthorized, readOpsSloSnapshot, recordHttpMetric } from "./opsMetrics";
 import { pollRoutes } from "./polls";
@@ -264,6 +265,10 @@ app.use(
 	rateLimit({ name: "employee", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
 );
 app.use(
+	"/api/integrations/*",
+	rateLimit({ name: "integrations", windowMs: 60_000, max: 30, scope: "session-or-ip" }),
+);
+app.use(
 	"/api/attachments/*",
 	rateLimit({ name: "attachments", windowMs: 60_000, max: 60, scope: "session-or-ip" }),
 );
@@ -420,6 +425,7 @@ app.route("/", customFieldRoutes);
 app.route("/", pollRoutes);
 app.route("/", projectMilestoneRoutes);
 app.route("/", intakeFormRoutes);
+app.route("/", integrationRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);

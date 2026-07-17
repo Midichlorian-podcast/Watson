@@ -114,6 +114,96 @@ export const calendarLinks = pgTable(
 	],
 );
 
+/**
+ * F4 — serverový registr produkčních propojení. Neobsahuje tokeny ani provider
+ * payloady; ty patří do odděleného vaultu/adaptéru. Klient čte pouze redigovaný
+ * health snapshot přes API, tabulka se proto záměrně nesynchronizuje PowerSyncem.
+ *
+ * První adapter je osobní LuckyOS bridge. Workspace je osobní prostor vlastníka,
+ * takže audit i lifecycle zůstávají tenant-scoped a případný budoucí týmový
+ * provider může použít stejný model s jiným owner modelem.
+ */
+export const integrationConnections = pgTable(
+	"integration_connections",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		ownerUserId: uuid("owner_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		provider: varchar("provider", { length: 64 }).notNull(),
+		status: varchar("status", { length: 24 }).notNull().default("configured"),
+		/** Stabilní machine-readable scopes/capabilities; nikdy credentials. */
+		scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
+		capabilities: jsonb("capabilities").$type<string[]>().notNull().default([]),
+		lastTestedAt: timestamp("last_tested_at", { withTimezone: true }),
+		lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+		lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+		/** Pouze Watson allowlist kód; upstream text/URL/stack se neukládá. */
+		lastErrorCode: varchar("last_error_code", { length: 64 }),
+		revokedAt: timestamp("revoked_at", { withTimezone: true }),
+		/** CAS verze mění pouze lifecycle commandy, ne průběžný health heartbeat. */
+		version: integer("version").notNull().default(1),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check("integration_connections_provider_valid", sql`${t.provider} in ('luckyos')`),
+		check(
+			"integration_connections_status_valid",
+			sql`${t.status} in ('configured', 'healthy', 'degraded', 'not_configured', 'revoked')`,
+		),
+		check(
+			"integration_connections_revoke_consistent",
+			sql`(${t.status} = 'revoked') = (${t.revokedAt} IS NOT NULL)`,
+		),
+		check(
+			"integration_connections_error_code_valid",
+			sql`${t.lastErrorCode} IS NULL OR ${t.lastErrorCode} in ('luckyos_not_configured', 'luckyos_timeout', 'luckyos_unavailable', 'luckyos_identity_rejected', 'luckyos_identity_not_linked', 'luckyos_contract_rejected', 'luckyos_upstream_error')`,
+		),
+		check("integration_connections_scopes_array", sql`jsonb_typeof(${t.scopes}) = 'array'`),
+		check(
+			"integration_connections_capabilities_array",
+			sql`jsonb_typeof(${t.capabilities}) = 'array'`,
+		),
+		check("integration_connections_version_positive", sql`${t.version} > 0`),
+		uniqueIndex("integration_connections_owner_provider_uq").on(t.ownerUserId, t.provider),
+		index("integration_connections_workspace_idx").on(t.workspaceId, t.provider),
+	],
+);
+
+/**
+ * Idempotency receipt pro revoke/reconnect. Payload hash brání použití stejného
+ * operationId pro jinou lifecycle změnu; response dovolí bezpečný replay.
+ */
+export const integrationCommandReceipts = pgTable(
+	"integration_command_receipts",
+	{
+		id: pk(),
+		connectionId: uuid("connection_id")
+			.notNull()
+			.references(() => integrationConnections.id, { onDelete: "cascade" }),
+		actorUserId: uuid("actor_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		operationId: varchar("operation_id", { length: 128 }).notNull(),
+		requestHash: varchar("request_hash", { length: 64 }).notNull(),
+		action: varchar("action", { length: 24 }).notNull(),
+		response: jsonb("response").$type<Record<string, unknown>>().notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		check("integration_command_receipts_action_valid", sql`${t.action} in ('revoke', 'reconnect')`),
+		uniqueIndex("integration_command_receipts_actor_operation_uq").on(
+			t.actorUserId,
+			t.operationId,
+		),
+		index("integration_command_receipts_connection_idx").on(t.connectionId, t.createdAt),
+	],
+);
+
 /** N6 — audit s diffem; aktér může být `user` i `ai`. */
 export const auditEvents = pgTable(
 	"audit_events",

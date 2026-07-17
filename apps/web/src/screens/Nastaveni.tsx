@@ -3,6 +3,7 @@ import { Link, useNavigate, useRouterState, useSearch } from "@tanstack/react-ro
 import i18n, { useTranslation } from "@watson/i18n";
 import { type CSSProperties, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { AvailabilitySettings } from "../components/AvailabilitySettings";
+import { IntegrationCenter } from "../components/IntegrationCenter";
 import { SyncProblems } from "../components/SyncProblems";
 import { useTheme } from "../layout/useTheme";
 import { API_URL } from "../lib/api";
@@ -180,6 +181,7 @@ export function Nastaveni() {
 	const [rotatedCodesSaved, setRotatedCodesSaved] = useState(false);
 	const [openRoleId, setOpenRoleId] = useState<string | null>(null);
 	const [taskPolicyBusy, setTaskPolicyBusy] = useState(false);
+	const settingsNavRef = useRef<HTMLElement>(null);
 	const roleMenuTriggerRef = useRef<HTMLButtonElement>(null);
 	const roleMenuRef = usePopoverLayer<HTMLDivElement>(
 		Boolean(openRoleId),
@@ -218,6 +220,18 @@ export function Nastaveni() {
 			replace: true,
 		});
 	}, [hash, hashSection, navigate, sekce]);
+	// Mobilní navigace je vodorovně rolovatelná. Deep link proto aktivní sekci
+	// vystředí; uživatel po otevření Integrací nesmí vidět jen utržený kus názvu.
+	useEffect(() => {
+		const nav = settingsNavRef.current;
+		if (!nav || nav.scrollWidth <= nav.clientWidth) return;
+		const active = nav.querySelector<HTMLElement>(
+			`[data-settings-section="${activeSection}"]`,
+		);
+		if (!active) return;
+		const left = active.offsetLeft - (nav.clientWidth - active.clientWidth) / 2;
+		nav.scrollTo({ left: Math.max(0, left), behavior: "auto" });
+	}, [activeSection]);
 	// Odroluj na sekci dle hashe (#posta-admin z mailu). Cílová sekce (Administrace
 	// pošty) se renderuje až po dojezdu async dotazů (teamWs), takže na jeden rAF
 	// ještě v DOM není — pollujeme po rámcích ~1,5 s, dokud se element neobjeví.
@@ -513,12 +527,13 @@ export function Nastaveni() {
 				</p>
 			</header>
 			<div className="w-settings-layout">
-				<nav className="w-settings-nav" aria-label={t("settings.title")}>
+				<nav ref={settingsNavRef} className="w-settings-nav" aria-label={t("settings.title")}>
 					{SETTINGS_NAV.map((section) => {
 						const active = section.id === activeSection;
 						return (
 							<Link
 								key={section.id}
+								data-settings-section={section.id}
 								to="/nastaveni"
 								search={{ sekce: section.id }}
 								aria-current={active ? "page" : undefined}
@@ -1078,6 +1093,10 @@ export function Nastaveni() {
 
 					{activeSection === "integrace" && (
 						<>
+							{/* F4 — serverový registry/health povrch. LuckyOS je první skutečný adapter;
+							    mail zůstává pravdivě označený jako demo až do samostatného F5. */}
+							<IntegrationCenter />
+
 							{/* POŠTA — mailová nastavení (podpisy, VIP, schránky…) na JEDNOM místě,
 			    ne schovaná uvnitř mailu. Embedded = bez vlastní hlavičky. Obal data-wm-theme
 			    dodá mailové tokeny (--panel/--ink/--line…), aby karty vypadaly 1:1 jako v mailu. */}

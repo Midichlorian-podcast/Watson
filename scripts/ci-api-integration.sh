@@ -3,6 +3,7 @@ set -euo pipefail
 
 API_URL="http://127.0.0.1:8790"
 API_PID=""
+LUCKYOS_STUB_PID=""
 API_LOG="${RUNNER_TEMP:-/tmp}/watson-api-integration.log"
 RUN_NONCE="${GITHUB_RUN_ID:-local}-$$-$(date +%s)"
 
@@ -17,9 +18,9 @@ export BETTER_AUTH_SECRET="ci-better-auth-secret-${RUN_NONCE}-at-least-32-bytes-
 export BACKUP_SIGNING_SECRET="ci-backup-signing-secret-at-least-32-bytes"
 export LOCAL_DATA_ENCRYPTION_SECRET="ci-local-data-secret-at-least-32-bytes-long"
 export OPS_METRICS_TOKEN="ci-ops-metrics-token-${RUN_NONCE}-at-least-32-bytes"
-# Test nesmí omylem převzít reálný LuckyOS z lokálního .env. Uzavřený localhost
-# port vytvoří rychlé, deterministické a bezpečné upstream selhání.
-export LUCKYOS_BASE_URL="http://127.0.0.1:1"
+# Test nesmí omylem převzít reálný LuckyOS z lokálního .env. Lokální provider
+# ověřuje bridge JWT a dovolí otestovat celý revoke/reconnect lifecycle bez sítě.
+export LUCKYOS_BASE_URL="http://127.0.0.1:8791"
 export LUCKYOS_MOCK=0
 
 stop_api() {
@@ -32,8 +33,25 @@ stop_api() {
 
 cleanup() {
 	stop_api
+	if [[ -n "$LUCKYOS_STUB_PID" ]] && kill -0 "$LUCKYOS_STUB_PID" 2>/dev/null; then
+		kill "$LUCKYOS_STUB_PID"
+		wait "$LUCKYOS_STUB_PID" 2>/dev/null || true
+	fi
 }
 trap cleanup EXIT
+
+node apps/api/verify-luckyos-provider-stub.mjs >"${RUNNER_TEMP:-/tmp}/watson-luckyos-stub.log" 2>&1 &
+LUCKYOS_STUB_PID=$!
+for _ in $(seq 1 40); do
+	if curl --fail --silent "http://127.0.0.1:8791/health" >/dev/null; then
+		break
+	fi
+	if ! kill -0 "$LUCKYOS_STUB_PID" 2>/dev/null; then
+		cat "${RUNNER_TEMP:-/tmp}/watson-luckyos-stub.log"
+		exit 1
+	fi
+	sleep 0.1
+done
 
 start_api() {
 	local require_2fa="$1"
@@ -82,6 +100,7 @@ TASK_ACCEPTANCES_API="$API_URL" pnpm --filter @watson/api verify:task-acceptance
 IMPORTS_API="$API_URL" pnpm --filter @watson/api verify:imports
 AVAILABILITY_API="$API_URL" pnpm --filter @watson/api verify:availability
 BOOKING_API="$API_URL" pnpm --filter @watson/api verify:bookings
+INTEGRATIONS_API="$API_URL" pnpm --filter @watson/api verify:integrations
 RECURRENCE_API="$API_URL" pnpm --filter @watson/api verify:recurrence
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:meet-acl
 MEETING_API="$API_URL" pnpm --filter @watson/api verify:meeting-commands

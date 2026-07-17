@@ -488,6 +488,20 @@ Stav dávky:
 
 Provider registry, health, scopes, last success, last error, revoke, test connection a audit. Začít LuckyOS, poté reminder e-mail/attachments. Mail až samostatně.
 
+Stav dávky:
+
+1. **Provider registry + LuckyOS health/lifecycle — dokončeno 2026-07-17.**
+   Existující LuckyOS broker nebyl nahrazen: dostal server-only osobní registry bez
+   credentialů, deklarované scopes/capabilities, pravdivý configured/demo/degraded/
+   revoked stav, poslední test/úspěch/chybu a bezpečný allowlist error kódů. Test
+   validuje nejen HTTP, ale i runtime kontrakt identity; vadný payload se nikdy
+   nevrací klientovi. Revoke/reconnect jsou CAS, idempotentní, rate-limitované a
+   auditované; revoke před vydáním bridge tokenu uzavře čtení, formuláře i upload.
+   DB triggery vynucují osobní tenant scope, vlastnictví receiptů a konzistenci
+   revoked/error stavu. Chromium i WebKit ověřily scopes, test, inline potvrzení,
+   serverové odpojení, perzistenci, reconnect, 390px reflow a axe. Mail zůstává
+   pravdivě označený jako demo a přechází až do samostatného F5 programu.
+
 ### F5 — reálný Mail (8–12 týdnů; samostatný program)
 
 1. Provider adapter a OAuth vault.
