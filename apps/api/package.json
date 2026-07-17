@@ -39,6 +39,7 @@
 		"verify:automation": "tsx verify-automation.ts",
 		"verify:knowledge": "tsx verify-knowledge.ts",
 		"verify:knowledge-ui": "tsx verify-knowledge-ui.ts",
+		"verify:ia-ui": "tsx verify-information-architecture-ui.ts",
 		"verify:automation-ui": "tsx verify-automation-ui.ts",
 		"verify:radar-ui": "tsx verify-radar-ui.ts",
 		"verify:saved-views": "tsx verify-saved-views.ts",

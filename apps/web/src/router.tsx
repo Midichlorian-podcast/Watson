@@ -3,6 +3,7 @@ import { lazy } from "react";
 import { AppLayout } from "./layout/AppLayout";
 import { parseSettingsSection, type SettingsSection } from "./lib/settingsSections";
 import { parseTaskTab, type TaskTab } from "./lib/taskTabs";
+
 // Layout zůstává eager; obrazovky se načítají po vstupu → menší main chunk.
 // (Suspense boundary je kolem <Outlet/> v AppLayout).
 
@@ -33,6 +34,9 @@ const prehledRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/prehled",
 	component: Prehled,
+	validateSearch: (s: Record<string, unknown>): { vstup?: "tym" | "provoz" } => ({
+		vstup: s.vstup === "tym" || s.vstup === "provoz" ? s.vstup : undefined,
+	}),
 });
 const seznamyRoute = createRoute({
 	getParentRoute: () => rootRoute,

@@ -24,12 +24,15 @@ export const TODAY_NAV: NavItem = {
  * Hlavní navigace (dle Claude Design handoffu). „Úkoly" je sloučený modul (Dnes/Vše/Zásobník) —
  * v Sidebaru se rozbaluje na zanořené záložky (viz Sidebar). Počty: Schránka/Dnes/Nadcházející/Zásobník.
  */
-export const MAIN_NAV: NavItem[] = [
+/**
+ * Jádro navigace zůstává krátké i při růstu Watsonu. Vedené zobrazení ukazuje
+ * tyto cíle přímo; ostatní plně funkční moduly jsou o jeden explicitní krok níž.
+ */
+export const CORE_NAV: NavItem[] = [
 	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
 	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox", count: true },
 	{ to: "/mail", icon: "mail", labelKey: "nav.mail", count: true },
-	{ to: "/meets", icon: "tym", labelKey: "nav.meetings" },
 	{ to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks" },
 	{
 		to: "/nadchazejici",
@@ -38,6 +41,14 @@ export const MAIN_NAV: NavItem[] = [
 		count: true,
 	},
 	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
+];
+
+/**
+ * Pokročilé nástroje. Seznamy zůstávají snadno dostupné, ale nejsou rovnocenné
+ * každodenním vstupům — přesně podle scope locku informační architektury.
+ */
+export const TOOL_NAV: NavItem[] = [
+	{ to: "/meets", icon: "tym", labelKey: "nav.meetings" },
 	{ to: "/prijem-prace", icon: "schranka", labelKey: "nav.intake" },
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists", count: true },
 	{ to: "/znalosti", icon: "popis", labelKey: "nav.knowledge" },
@@ -45,6 +56,8 @@ export const MAIN_NAV: NavItem[] = [
 	{ to: "/reporty", icon: "reporty", labelKey: "nav.reports" },
 	{ to: "/postupy", icon: "postup", labelKey: "nav.flows" },
 ];
+
+export const MAIN_NAV: NavItem[] = [...CORE_NAV, ...TOOL_NAV];
 
 /** Oblíbené (rychlé filtry). */
 export const FAV_NAV: NavItem[] = [

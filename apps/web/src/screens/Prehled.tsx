@@ -1,7 +1,14 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { type CSSProperties, type ReactNode, useMemo, useRef, useState } from "react";
+import {
+	type CSSProperties,
+	type ReactNode,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { CalendarWidget } from "../components/CalendarWidget";
 import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
 import { useSession } from "../lib/auth-client";
@@ -20,7 +27,7 @@ import { startMinOf, todayISO, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
 import { buildWaitingRoom, type WaitingRoomEntry } from "../lib/waitingRoom";
-import { useWorkspaces } from "../lib/workspace";
+import { isLeadership, useWorkspaces } from "../lib/workspace";
 import { useMailDigest, useOpenMailThread } from "../mail/state";
 
 /**
@@ -84,10 +91,30 @@ function Bar({ pct, color }: { pct: number; color?: string }) {
 export function Prehled() {
 	const { t, i18n } = useTranslation();
 	const navigate = useNavigate();
+	const { vstup } = useSearch({ from: "/prehled" });
 	const { open } = useTaskDetail();
 	const { data: session } = useSession();
 	const { data: workspaces } = useWorkspaces();
 	const employeeHub = useEmployeeHub();
+	const leadershipWorkspaceIds = useMemo(
+		() =>
+			new Set(
+				(workspaces ?? [])
+					.filter(
+						(workspace) =>
+							!workspace.isPersonal &&
+							(workspace.role === "admin" || workspace.role === "manager"),
+					)
+					.map((workspace) => workspace.id),
+			),
+		[workspaces],
+	);
+	const leadership = isLeadership(workspaces);
+	const surface = vstup === "provoz" && !leadership ? "tym" : (vstup ?? "overview");
+	useEffect(() => {
+		if (vstup !== "provoz" || leadership) return;
+		void navigate({ to: "/prehled", search: { vstup: "tym" }, replace: true });
+	}, [leadership, navigate, vstup]);
 	const { projects, isLoading: projLoading } = useProjectsWithState();
 	const flowSteps = useFlowSteps();
 	const goalsAll = useGoalsOverview(t);
@@ -98,6 +125,9 @@ export function Prehled() {
 	const openMailThread = useOpenMailThread();
 	// ovFirm — filtr firmy (prototyp: null = Vše)
 	const [firm, setFirm] = useState<string | null>(null);
+	useEffect(() => {
+		if (surface === "provoz" && firm && !leadershipWorkspaceIds.has(firm)) setFirm(null);
+	}, [firm, leadershipWorkspaceIds, surface]);
 	// peek — náhled položky na místě (feedback: neodvádět z Přehledu pryč)
 	const [peek, setPeek] = useState<PeekTarget | null>(null);
 	// ovLayout (prototyp prop prehledLayout: Mřížka | Ranní feed) — per-user volba
@@ -175,14 +205,28 @@ export function Prehled() {
 	);
 
 	const projById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
-	const firms = useMemo(() => (workspaces ?? []).filter((w) => !w.isPersonal), [workspaces]);
+	const firms = useMemo(
+		() =>
+			(workspaces ?? []).filter(
+				(workspace) =>
+					!workspace.isPersonal &&
+					(surface !== "provoz" || leadershipWorkspaceIds.has(workspace.id)),
+			),
+		[leadershipWorkspaceIds, surface, workspaces],
+	);
 
 	const view = useMemo(() => {
 		const tdy = todayISO();
 		const inboxIds = inboxProjectIds(projects);
 		const wsOfTask = (tk: TaskRow) =>
 			tk.project_id ? (projById.get(tk.project_id)?.workspace_id ?? null) : null;
-		const fOk = (tk: TaskRow) => !firm || wsOfTask(tk) === firm;
+		const fOk = (tk: TaskRow) => {
+			const workspaceId = wsOfTask(tk);
+			if (surface === "provoz" && (!workspaceId || !leadershipWorkspaceIds.has(workspaceId))) {
+				return false;
+			}
+			return !firm || workspaceId === firm;
+		};
 		// otevřené úkoly bez inboxu, bez podúkolů bez termínu, bez spících kroků (Dnes pravidla)
 		const openT = (allTasks ?? []).filter((tk) => {
 			if (tk.completed_at || isInboxTask(tk, inboxIds)) return false;
@@ -238,6 +282,9 @@ export function Prehled() {
 		const risk = goalsAll
 			.filter((g) => {
 				if (g.status !== "risk" && g.status !== "over") return false;
+				if (surface === "provoz" && (!g.wsId || !leadershipWorkspaceIds.has(g.wsId))) {
+					return false;
+				}
 				const gw = (workspaces ?? []).find((w) => w.id === g.wsId);
 				if (firm) {
 					if (gw?.isPersonal) return false;
@@ -248,12 +295,19 @@ export function Prehled() {
 			.slice(0, 3);
 
 		const stuck = flowsAll
-			.filter(
-				(f) =>
-					f.stuck &&
-					(!firm ||
-						(f.projectId ? projById.get(f.projectId)?.workspace_id === firm : f.wsId === firm)),
-			)
+			.filter((f) => {
+				const workspaceId = f.projectId
+					? (projById.get(f.projectId)?.workspace_id ?? f.wsId)
+					: f.wsId;
+				if (!f.stuck) return false;
+				if (
+					surface === "provoz" &&
+					(!workspaceId || !leadershipWorkspaceIds.has(workspaceId))
+				) {
+					return false;
+				}
+				return !firm || workspaceId === firm;
+			})
 			.slice(0, 2);
 
 		// Nejbližší akce — aktivní seznamy s progresem (prototyp akce, slice 3)
@@ -375,12 +429,19 @@ export function Prehled() {
 				});
 			});
 		flowsAll
-			.filter(
-				(f) =>
-					f.hasNow &&
-					(!firm ||
-						(f.projectId ? projById.get(f.projectId)?.workspace_id === firm : f.wsId === firm)),
-			)
+			.filter((f) => {
+				const workspaceId = f.projectId
+					? (projById.get(f.projectId)?.workspace_id ?? f.wsId)
+					: f.wsId;
+				if (!f.hasNow) return false;
+				if (
+					surface === "provoz" &&
+					(!workspaceId || !leadershipWorkspaceIds.has(workspaceId))
+				) {
+					return false;
+				}
+				return !firm || workspaceId === firm;
+			})
 			.slice(0, 2)
 			.forEach((f) => {
 				feed.push({
@@ -458,6 +519,8 @@ export function Prehled() {
 		members,
 		session?.user?.id,
 		firm,
+		leadershipWorkspaceIds,
+		surface,
 		workspaces,
 		t,
 		i18n.language,
@@ -545,8 +608,38 @@ export function Prehled() {
 	const employee = employeeHub.data?.linked ? employeeHub.data.status : null;
 	const employeeUnread = employee?.notifications.filter((item) => !item.isRead).length ?? 0;
 	const employeeNextDeadline = employee?.deadlines.countdowns[0] ?? null;
+	const surfaceSummary = (() => {
+		if (surface === "overview") return view.syn;
+		if (surface === "tym") {
+			const attention = view.communication.length;
+			const waiting = view.waiting.onMe.length + view.waiting.forOthers.length;
+			const parts = [
+				...(attention > 0
+					? [t("prehled.teamSynCommunication", { count: attention })]
+					: []),
+				...(waiting > 0 ? [t("prehled.teamSynWaiting", { count: waiting })] : []),
+			];
+			return parts.join(" ") || t("prehled.teamSynCalm");
+		}
+		const parts = [
+			...(view.risk.length > 0
+				? [t("prehled.operationsSynRisk", { count: view.risk.length })]
+				: []),
+			...(view.stuck.length > 0
+				? [t("prehled.operationsSynFlows", { count: view.stuck.length })]
+				: []),
+			...(view.waiting.onMe.length + view.waiting.forOthers.length > 0
+				? [
+						t("prehled.operationsSynWaiting", {
+							count: view.waiting.onMe.length + view.waiting.forOthers.length,
+						}),
+					]
+				: []),
+		];
+		return parts.join(" ") || t("prehled.operationsSynCalm");
+	})();
 
-	const synActions: { key: string; label: string; onClick: () => void }[] = [
+	const overviewActions: { key: string; label: string; onClick: () => void }[] = [
 		...(view.ovd.length
 			? [
 					{
@@ -571,9 +664,111 @@ export function Prehled() {
 				]
 			: []),
 	];
+	const synActions: { key: string; label: string; onClick: () => void }[] =
+		surface === "overview"
+			? overviewActions
+			: surface === "tym"
+				? [
+						{
+							key: "team-reports",
+							label: t("prehled.openReports"),
+							onClick: () => void navigate({ to: "/reporty" }),
+						},
+						{
+							key: "team-flows",
+							label: t("prehled.openFlows"),
+							onClick: () => void navigate({ to: "/postupy" }),
+						},
+					]
+				: [
+						{
+							key: "operations-command",
+							label: t("prehled.openCommandCenter"),
+							onClick: () => void navigate({ to: "/velin" }),
+						},
+						{
+							key: "operations-goals",
+							label: t("prehled.openGoals"),
+							onClick: () => void navigate({ to: "/cile" }),
+						},
+						{
+							key: "operations-flows",
+							label: t("prehled.openFlows"),
+							onClick: () => void navigate({ to: "/postupy" }),
+						},
+					];
 
 	return (
 		<div className="mx-auto" style={{ maxWidth: 1120, padding: "18px 22px 90px" }}>
+			<section
+				aria-labelledby="overview-surface-title"
+				className="mb-3 flex flex-wrap items-center gap-3 rounded-[14px] border border-line bg-card px-4 py-3"
+				style={{ boxShadow: "var(--w-shadow-sm)" }}
+			>
+				<div className="min-w-[220px] flex-1">
+					<h1 id="overview-surface-title" className="m-0 font-display text-base font-bold text-ink">
+						{t(`prehled.surfaceTitle.${surface}`)}
+					</h1>
+					<p className="mt-1 mb-0 font-body text-xs leading-relaxed text-ink-3">
+						{t(`prehled.surfaceDescription.${surface}`)}
+					</p>
+				</div>
+				<nav
+					aria-label={t("nav.personalizedEntries")}
+					className="flex max-w-full flex-wrap rounded-xl border border-line bg-panel-2 p-[3px]"
+				>
+					<button
+						type="button"
+						onClick={() => void navigate({ to: "/prehled", search: {} })}
+						aria-pressed={surface === "overview"}
+						className="min-h-11 rounded-lg px-3 font-display text-xs font-semibold"
+						style={{
+							background: surface === "overview" ? "var(--w-card)" : "transparent",
+							color: surface === "overview" ? "var(--w-ink)" : "var(--w-ink-3)",
+							boxShadow: surface === "overview" ? "var(--w-shadow-sm)" : undefined,
+						}}
+					>
+						{t("nav.overview")}
+					</button>
+					<button
+						type="button"
+						onClick={() => void navigate({ to: "/", search: {} })}
+						className="min-h-11 rounded-lg px-3 font-display text-xs font-semibold text-ink-3 hover:text-ink"
+					>
+						{t("nav.myDay")}
+					</button>
+					<button
+						type="button"
+						onClick={() => void navigate({ to: "/prehled", search: { vstup: "tym" } })}
+						aria-pressed={surface === "tym"}
+						className="min-h-11 rounded-lg px-3 font-display text-xs font-semibold"
+						style={{
+							background: surface === "tym" ? "var(--w-card)" : "transparent",
+							color: surface === "tym" ? "var(--w-ink)" : "var(--w-ink-3)",
+							boxShadow: surface === "tym" ? "var(--w-shadow-sm)" : undefined,
+						}}
+					>
+						{t("nav.teamEntry")}
+					</button>
+					{leadership && (
+						<button
+							type="button"
+							onClick={() =>
+								void navigate({ to: "/prehled", search: { vstup: "provoz" } })
+							}
+							aria-pressed={surface === "provoz"}
+							className="min-h-11 rounded-lg px-3 font-display text-xs font-semibold"
+							style={{
+								background: surface === "provoz" ? "var(--w-card)" : "transparent",
+								color: surface === "provoz" ? "var(--w-ink)" : "var(--w-ink-3)",
+								boxShadow: surface === "provoz" ? "var(--w-shadow-sm)" : undefined,
+							}}
+						>
+							{t("nav.operationsEntry")}
+						</button>
+					)}
+				</nav>
+			</section>
 			{/* chipy firem (prototyp data-ovchip) */}
 			<div className="flex flex-wrap items-center" style={{ gap: 8, marginBottom: 14 }}>
 				<FirmChip label={t("prehled.chipAll")} on={!firm} onClick={() => setFirm(null)} />
@@ -636,13 +831,13 @@ export function Prehled() {
 						className="font-display font-bold text-brass-text uppercase"
 						style={{ fontSize: 10.5, letterSpacing: ".07em", marginBottom: 4 }}
 					>
-						{t("prehled.synTitle")} · {todayLabel} <SyncStamp />
+						{t(`prehled.surfaceSynthesis.${surface}`)} · {todayLabel} <SyncStamp />
 					</div>
 					<div
 						className="font-body text-ink"
 						style={{ fontSize: 14, lineHeight: 1.55, maxWidth: "82ch" }}
 					>
-						{ready ? view.syn : t("common.loadingData")}
+						{ready ? surfaceSummary : t("common.loadingData")}
 					</div>
 					{ready && synActions.length > 0 && (
 						<div className="flex flex-wrap" style={{ gap: 8, marginTop: 11 }}>
@@ -684,7 +879,8 @@ export function Prehled() {
 				}
 			>
 				{/* Dnes */}
-				<div className={cardCls} style={cardStyle}>
+				{surface === "overview" && (
+					<div className={cardCls} style={cardStyle}>
 					<CardHead
 						title={t("prehled.cardToday")}
 						footLabel={
@@ -761,10 +957,11 @@ export function Prehled() {
 							</span>
 						</OvRow>
 					))}
-				</div>
+					</div>
+				)}
 
 				{/* Zaměstnanecký stav — jen při skutečně spárovaném LuckyOS účtu. */}
-				{employee && (
+				{surface === "overview" && employee && (
 					<div className={cardCls} style={cardStyle}>
 						<CardHead
 							title={t("employee.dashboardTitle")}
@@ -903,7 +1100,8 @@ export function Prehled() {
 				</div>
 
 				{/* Komunikace pro mě — zmínky, odpovědi a komentáře k mým úkolům. */}
-				<div className={cardCls} style={cardStyle}>
+				{surface !== "provoz" && (
+					<div className={cardCls} style={cardStyle}>
 					<CardHead
 						title={t("prehled.cardCommunication")}
 						footLabel={
@@ -971,10 +1169,12 @@ export function Prehled() {
 							</span>
 						</OvRow>
 					))}
-				</div>
+					</div>
+				)}
 
 				{/* Kalendář — měsíční widget s denní agendou (feedback 2026-07-11) */}
-				<div className={cardCls} style={cardStyle}>
+				{surface === "overview" && (
+					<div className={cardCls} style={cardStyle}>
 					<CardHead
 						title={t("prehled.cardCalendar")}
 						footLabel={t("prehled.openUpcoming")}
@@ -995,10 +1195,11 @@ export function Prehled() {
 							})
 						}
 					/>
-				</div>
+					</div>
+				)}
 
 				{/* Pošta — z digestu mail modulu (prototyp mails, ř. 741–765) */}
-				{digest && (
+				{surface === "overview" && digest && (
 					<div className={cardCls} style={cardStyle}>
 						<CardHead
 							title={t("prehled.cardMail")}
@@ -1078,7 +1279,7 @@ export function Prehled() {
 				)}
 
 				{/* Nejbližší akce (Seznamy) */}
-				{view.akce.length > 0 && (
+				{surface !== "provoz" && view.akce.length > 0 && (
 					<div className={cardCls} style={cardStyle}>
 						<CardHead
 							title={t("prehled.cardEvents")}
@@ -1138,7 +1339,7 @@ export function Prehled() {
 				)}
 
 				{/* Cíle v ohrožení */}
-				{view.risk.length > 0 && (
+				{surface !== "tym" && view.risk.length > 0 && (
 					<div className={cardCls} style={cardStyle}>
 						<CardHead
 							title={t("prehled.cardRisk")}
@@ -1184,7 +1385,7 @@ export function Prehled() {
 				)}
 
 				{/* Vázne v postupech */}
-				{view.stuck.length > 0 && (
+				{surface !== "tym" && view.stuck.length > 0 && (
 					<div className={cardCls} style={cardStyle}>
 						<CardHead
 							title={t("prehled.cardStuck")}

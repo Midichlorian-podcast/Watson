@@ -11,13 +11,17 @@ import { authClient, signOut, useSession } from "../lib/auth-client";
 import { downloadBackup, type RestoreReport, readRestoreFile, restoreBackup, type ServerBackup } from "../lib/backup";
 import { focusOnMount } from "../lib/focusOnMount";
 import { initials } from "../lib/format";
+import {
+	setNavigationMode,
+	useNavigationMode,
+} from "../lib/navigationPreferences";
 import { shutdownPowerSync } from "../lib/powersync/db";
 import { type SettingsSection, settingsSectionForHash } from "../lib/settingsSections";
 import { storageGet, storageSet } from "../lib/storage";
 import { showToast } from "../lib/toast";
+import { type Accent, type Density, getAccent, getDensity, setAccent as persistAccent, setDensity as persistDensity } from "../lib/tweaks";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { usePopoverLayer } from "../lib/usePopoverLayer";
-import { type Accent, type Density, getAccent, getDensity, setAccent as persistAccent, setDensity as persistDensity } from "../lib/tweaks";
 import { useWorkspace } from "../lib/workspace";
 import { AdminScreen } from "../mail/AdminScreen";
 import { MailDemoBanner } from "../mail/DemoBanner";
@@ -192,6 +196,7 @@ export function Nastaveni() {
 	const [density, setDensityState] = useState<Density>(getDensity);
 	// výchozí obrazovka po startu (watson.landing; čte AppLayout při prvním načtení)
 	const [landing, setLandingState] = useState<"dnes" | "prehled">(() => (storageGet("watson.landing") === "prehled" ? "prehled" : "dnes"));
+	const navigationMode = useNavigationMode();
 	const [accent, setAccentState] = useState<Accent>(getAccent);
 	const [inviteOpen, setInviteOpen] = useState(false);
 	const [invited, setInvited] = useState<{ name: string; email: string }[]>([]);
@@ -647,6 +652,22 @@ export function Nastaveni() {
 										options={[
 											["prehled", t("nav.overview")],
 											["dnes", t("nav.today")],
+										]}
+									/>
+								</div>
+								<div style={{ ...ROW, borderTop: "1px solid var(--w-line)" }}>
+									<div style={{ flex: 1 }}>
+										<RowTitle>{t("settings.navigationMode")}</RowTitle>
+										<RowDesc>{t("settings.navigationModeDesc")}</RowDesc>
+									</div>
+									<Segments
+										value={navigationMode}
+										onChange={(value) =>
+											setNavigationMode(value === "advanced" ? "advanced" : "guided")
+										}
+										options={[
+											["guided", t("settings.navigationGuided")],
+											["advanced", t("settings.navigationAdvanced")],
 										]}
 									/>
 								</div>

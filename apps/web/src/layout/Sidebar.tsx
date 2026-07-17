@@ -2,17 +2,18 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { type CSSProperties, Fragment, useMemo } from "react";
-import { useAddTask } from "../lib/addTask";
+import { type CSSProperties, Fragment, useMemo, useState } from "react";
 import { SidebarTrustState } from "../components/TrustState";
+import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
+import { useEmployeeHub } from "../lib/employee";
 import { initials } from "../lib/format";
 import { inboxProjectIds } from "../lib/inbox";
-import { useEmployeeHub } from "../lib/employee";
+import { useNavigationMode } from "../lib/navigationPreferences";
 import { useProjects } from "../lib/projects";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
-import { EMPLOYEE_NAV, MAIN_NAV, type NavItem, VELIN_NAV } from "./nav";
+import { CORE_NAV, EMPLOYEE_NAV, type NavItem, TOOL_NAV, VELIN_NAV } from "./nav";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const todayIso = () => {
@@ -105,6 +106,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 	const { openAdd } = useAddTask();
 	const { data: session } = useSession();
 	const path = useRouterState({ select: (s) => s.location.pathname });
+	const overviewEntry = useRouterState({
+		select: (s) => (s.location.search as { vstup?: string }).vstup,
+	});
+	const navigationMode = useNavigationMode();
+	const [toolsOpen, setToolsOpen] = useState(false);
 	// Aktivní projektový filtr (?projekt=) — zvýraznění řádku projektu (prototyp data-projrow).
 	const activeProjekt = useRouterState({
 		select: (s) => (s.location.search as { projekt?: string }).projekt,
@@ -200,7 +206,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 		};
 	}, [openTasks, myAssignments, projects, activeLists, mailUnread]);
 
-	const isActive = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
+	const isActive = (to: string) => {
+		if (to === "/") return path === "/";
+		if (to === "/prehled") return path.startsWith(to) && !overviewEntry;
+		return path.startsWith(to);
+	};
 	const userName = session?.user?.name ?? "";
 
 	// Sloučený modul Úkoly: „/" = Dnes, „/ukoly" = Vše (i drill-down projektu), „?tab=zasobnik" = Zásobník.
@@ -221,6 +231,95 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 		fontWeight: 600,
 		fontSize: 13,
 	});
+	const leadership = isLeadership(workspaces);
+	const toolRouteActive =
+		TOOL_NAV.some((item) => path.startsWith(item.to)) || path.startsWith("/velin");
+	const showTools = collapsed || navigationMode === "advanced" || toolsOpen || toolRouteActive;
+	const renderNavItem = (item: NavItem) => {
+		// Sloučený modul Úkoly = jedna položka „Úkoly" (→ Vše) se zanořenými
+		// záložkami Dnes/Zásobník (ne dvě samostatné ploché položky).
+		if (item.to === "/ukoly") {
+			return (
+				<Fragment key={item.to}>
+					<NavRow item={item} active={vseActive} collapsed={collapsed} />
+					{!collapsed && (
+						<>
+							<Link
+								to="/"
+								search={{}}
+								className={`font-display ${
+									dnesActive
+										? "text-[var(--w-sidebar-ink)]"
+										: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
+								}`}
+								style={subRow(dnesActive)}
+							>
+								<span
+									style={{
+										width: 8,
+										height: 8,
+										borderRadius: "50%",
+										flex: "none",
+										background: "var(--w-brass)",
+									}}
+								/>
+								<span style={{ flex: 1, minWidth: 0 }}>{t("nav.today")}</span>
+								{counts["/"] != null && <span style={BADGE}>{counts["/"]}</span>}
+							</Link>
+							<Link
+								to="/ukoly"
+								search={{ tab: "zasobnik" }}
+								className={`font-display ${
+									zasobnikActive
+										? "text-[var(--w-sidebar-ink)]"
+										: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
+								}`}
+								style={subRow(zasobnikActive)}
+							>
+								<span
+									style={{
+										width: 8,
+										height: 8,
+										borderRadius: 2,
+										flex: "none",
+										background: "var(--w-sidebar-ink-2)",
+									}}
+								/>
+								<span style={{ flex: 1, minWidth: 0 }}>{t("tasks.tabBacklog")}</span>
+								{counts.zasobnik != null && <span style={BADGE}>{counts.zasobnik}</span>}
+							</Link>
+						</>
+					)}
+				</Fragment>
+			);
+		}
+		return (
+			<Fragment key={item.to}>
+				<NavRow
+					item={item}
+					active={isActive(item.to)}
+					collapsed={collapsed}
+					count={item.count ? counts[item.to] : undefined}
+				/>
+				{item.to === "/mail" && employeeLinked && (
+					<NavRow
+						item={EMPLOYEE_NAV}
+						active={isActive(EMPLOYEE_NAV.to)}
+						collapsed={collapsed}
+					/>
+				)}
+				{item.to === "/reporty" && leadership && (
+					<NavRow
+						item={VELIN_NAV}
+						active={isActive("/velin")}
+						collapsed={collapsed}
+						badge={t("velin.badge")}
+						title={t("velin.navTitle")}
+					/>
+				)}
+			</Fragment>
+		);
+	};
 
 	return (
 		<aside
@@ -310,93 +409,111 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 					padding: "0 4px",
 				}}
 			>
-				{MAIN_NAV.map((item) => {
-					// Sloučený modul Úkoly = jedna položka „Úkoly" (→ Vše) se zanořenými
-					// záložkami Dnes/Zásobník (ne dvě samostatné ploché položky).
-					if (item.to === "/ukoly") {
-						return (
-							<Fragment key={item.to}>
-								<NavRow item={item} active={vseActive} collapsed={collapsed} />
-								{!collapsed && (
-									<>
-										<Link
-											to="/"
-											search={{}}
-											className={`font-display ${
-												dnesActive
-													? "text-[var(--w-sidebar-ink)]"
-													: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
-											}`}
-											style={subRow(dnesActive)}
-										>
-											<span
-												style={{
-													width: 8,
-													height: 8,
-													borderRadius: "50%",
-													flex: "none",
-													background: "var(--w-brass)",
-												}}
-											/>
-											<span style={{ flex: 1, minWidth: 0 }}>{t("nav.today")}</span>
-											{counts["/"] != null && <span style={BADGE}>{counts["/"]}</span>}
-										</Link>
-										<Link
-											to="/ukoly"
-											search={{ tab: "zasobnik" }}
-											className={`font-display ${
-												zasobnikActive
-													? "text-[var(--w-sidebar-ink)]"
-													: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
-											}`}
-											style={subRow(zasobnikActive)}
-										>
-											<span
-												style={{
-													width: 8,
-													height: 8,
-													borderRadius: 2,
-													flex: "none",
-													background: "var(--w-sidebar-ink-2)",
-												}}
-											/>
-											<span style={{ flex: 1, minWidth: 0 }}>{t("tasks.tabBacklog")}</span>
-											{counts.zasobnik != null && <span style={BADGE}>{counts.zasobnik}</span>}
-										</Link>
-									</>
-								)}
-							</Fragment>
-						);
-					}
-					return (
-						<Fragment key={item.to}>
-							<NavRow
-								item={item}
-								active={isActive(item.to)}
-								collapsed={collapsed}
-								count={item.count ? counts[item.to] : undefined}
-							/>
-							{item.to === "/mail" && employeeLinked && (
-								<NavRow
-									item={EMPLOYEE_NAV}
-									active={isActive(EMPLOYEE_NAV.to)}
-									collapsed={collapsed}
-								/>
-							)}
-							{/* Velín mezi Reporty a Postupy (prototyp ř. 251–257) — jen pro
-							    vedení (Vlastník/Admin), odznak VEDENÍ */}
-							{item.to === "/reporty" && isLeadership(workspaces) && (
-								<NavRow
-									item={VELIN_NAV}
-									active={isActive("/velin")}
-									collapsed={collapsed}
-									badge={t("velin.badge")}
-									title={t("velin.navTitle")}
-								/>
-							)}
-						</Fragment>
-					);
-				})}
+				<nav aria-label={t("nav.personalizedEntries")} className="mb-2">
+					{!collapsed && (
+						<div className="px-2 pb-1 font-display text-[10px] font-bold uppercase tracking-[.07em] text-[var(--w-sidebar-ink-2)]">
+							{t("nav.personalizedEntries")}
+						</div>
+					)}
+					<Link
+						to="/"
+						search={{}}
+						title={collapsed ? t("nav.myDay") : undefined}
+						aria-current={path === "/" ? "page" : undefined}
+						className="flex min-h-9 items-center rounded-lg border-l-[3px] font-display text-[13px] font-semibold"
+						style={{
+							gap: 11,
+							padding: collapsed ? "7px 10px" : "7px 10px",
+							justifyContent: collapsed ? "center" : undefined,
+							color: path === "/" ? "var(--w-sidebar-ink)" : "var(--w-sidebar-ink-2)",
+							background: path === "/" ? "rgba(255,255,255,.09)" : "transparent",
+							borderLeftColor: path === "/" && !collapsed ? "var(--w-brass)" : "transparent",
+						}}
+					>
+						<Icon name="dnes" size={17} />
+						{!collapsed && <span>{t("nav.myDay")}</span>}
+					</Link>
+					<Link
+						to="/prehled"
+						search={{ vstup: "tym" }}
+						title={collapsed ? t("nav.teamEntry") : undefined}
+						aria-current={path === "/prehled" && overviewEntry === "tym" ? "page" : undefined}
+						className="flex min-h-9 items-center rounded-lg border-l-[3px] font-display text-[13px] font-semibold"
+						style={{
+							gap: 11,
+							padding: "7px 10px",
+							justifyContent: collapsed ? "center" : undefined,
+							color:
+								path === "/prehled" && overviewEntry === "tym"
+									? "var(--w-sidebar-ink)"
+									: "var(--w-sidebar-ink-2)",
+							background:
+								path === "/prehled" && overviewEntry === "tym"
+									? "rgba(255,255,255,.09)"
+									: "transparent",
+							borderLeftColor:
+								path === "/prehled" && overviewEntry === "tym" && !collapsed
+									? "var(--w-brass)"
+									: "transparent",
+						}}
+					>
+						<Icon name="tym" size={17} />
+						{!collapsed && <span>{t("nav.teamEntry")}</span>}
+					</Link>
+					{leadership && (
+						<Link
+							to="/prehled"
+							search={{ vstup: "provoz" }}
+							title={collapsed ? t("nav.operationsEntry") : undefined}
+							aria-current={
+								path === "/prehled" && overviewEntry === "provoz" ? "page" : undefined
+							}
+							className="flex min-h-9 items-center rounded-lg border-l-[3px] font-display text-[13px] font-semibold"
+							style={{
+								gap: 11,
+								padding: "7px 10px",
+								justifyContent: collapsed ? "center" : undefined,
+								color:
+									path === "/prehled" && overviewEntry === "provoz"
+										? "var(--w-sidebar-ink)"
+										: "var(--w-sidebar-ink-2)",
+								background:
+									path === "/prehled" && overviewEntry === "provoz"
+										? "rgba(255,255,255,.09)"
+										: "transparent",
+								borderLeftColor:
+									path === "/prehled" && overviewEntry === "provoz" && !collapsed
+										? "var(--w-brass)"
+										: "transparent",
+							}}
+						>
+							<Icon name="velin" size={17} />
+							{!collapsed && <span>{t("nav.operationsEntry")}</span>}
+						</Link>
+					)}
+				</nav>
+
+				{CORE_NAV.map(renderNavItem)}
+				{!collapsed && navigationMode === "guided" && (
+					<button
+						type="button"
+						onClick={() => setToolsOpen((open) => !open)}
+						aria-expanded={showTools}
+						className="mt-1 flex min-h-11 w-full items-center rounded-lg px-2.5 font-display text-[12px] font-semibold text-[var(--w-sidebar-ink-2)] hover:bg-white/5 hover:text-[var(--w-sidebar-ink)]"
+					>
+						<Icon name="pridat" size={15} />
+						<span className="ml-2 flex-1 text-left">{t("nav.allTools")}</span>
+						<span aria-hidden style={{ transform: showTools ? "rotate(45deg)" : undefined }}>
+							+
+						</span>
+					</button>
+				)}
+				{!collapsed && navigationMode === "advanced" && (
+					<div className="px-2 pt-3 pb-1 font-display text-[10px] font-bold uppercase tracking-[.07em] text-[var(--w-sidebar-ink-2)]">
+						{t("nav.allTools")}
+					</div>
+				)}
+				{showTools && TOOL_NAV.map(renderNavItem)}
 
 				{!collapsed && (
 					<>

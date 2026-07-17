@@ -1,6 +1,6 @@
 # Watson — závazný re-audit a implementační plán pro Claude Code
 
-> Stav dokumentu: 2026-07-17 po stabilizaci a průběžných produktových dávkách do migrace 0064.
+> Stav dokumentu: 2026-07-17 po stabilizaci a průběžných produktových dávkách do F8a / migrace 0081.
 >
 > CLAUDE CODE: přečti celý soubor před první změnou. Toto je jediný aktuální řídicí dokument. Staré audity, handoffy a plány ve `files/` jsou historické podklady. Pokud odporují tomuto souboru nebo současnému schématu, nemají autoritu.
 
@@ -697,6 +697,18 @@ jen transaction-local. API verifier má 26 průchodů a Chromium/WebKit browser 
 pokrývá create → publish → acknowledge, historii, hledání, 390 px, 44px cíle,
 overflow i axe WCAG A/AA. Provozní hranice jsou v `docs/knowledge-sop-runbook.md`.
 
+F8a personalizovaná informační architektura dokončena 2026-07-17 bez přepsání
+existujících obrazovek: Přehled zůstává syntézou celé aplikace a Dnes samostatným
+výkonným seznamem. Role-aware vstupy Můj den / Tým / Provoz vedou na adresovatelné
+řezy; Provoz vidí jen vedení a ručně zadaný deep link běžného člena fail-closed
+přesměruje na Tým. Vedená navigace drží sedm každodenních cílů nahoře, všechny
+ostatní moduly zachovává jeden klik daleko a Seznamy mají nižší, nikoli ztracenou
+váhu. Pokročilý režim je výslovná per-device preference a aktivní nástroj se nikdy
+neschová. Chromium i WebKit produkční průchod pokryl admina i člena, guided →
+advanced persistence, týmový/provozní obsah, 390 px, 44px cíle, overflow, runtime
+a axe WCAG A/AA; screenshoty byly vizuálně zkontrolovány. Kontrakt a rollback jsou
+v `docs/information-architecture-runbook.md`.
+
 ## 10. Detailní acceptance checklist pro budoucí funkce
 
 Každá produkční funkce musí odpovědět ano na vše relevantní:
@@ -815,7 +827,7 @@ Poslední ověření 2026-07-17:
   živými kontrolami včetně přesného count/until transformu, zachování jediného tasku,
   idempotence, blokace existujících budoucích výjimek, downsyncu a CAS undo obou
   strukturálních rozsahů.
-- `pnpm build`: největší JS 342 KiB gzip, precache 5,192 KiB; oba rozpočty splněny;
+- `pnpm build`: největší JS 289 KiB gzip, precache 5,491 KiB; oba rozpočty splněny;
   vlastní pole, ankety, projektové milníky, intake, importní průvodce, Úkoly a Nadcházející jsou oddělené
   lazy-loaded chunky.
 - Celý `pnpm gate` po runtime opravách znovu prošel: typecheck 6/6, lint bez warnings,
