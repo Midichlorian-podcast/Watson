@@ -8,11 +8,16 @@ import {
 	integrationCommandReceipts,
 	integrationConnections,
 	memberships,
+	projectMembers,
+	projects,
+	reminders,
 	sql,
+	tasks,
 	users,
 	workspaces,
 } from "@watson/db";
 import { recordLuckyOsHealth } from "./src/integrations";
+import { scanAndSendDue } from "./src/push";
 
 const API = process.env.INTEGRATIONS_API ?? "http://127.0.0.1:8790";
 const db = getDb();
@@ -49,7 +54,8 @@ async function login(email: string) {
 		`${API}/api/auth/magic-link/verify?token=${rows[0]?.identifier}&callbackURL=http://localhost:5173/`,
 		{ redirect: "manual" },
 	);
-	const raw = verified.headers.getSetCookie?.().join("; ") ?? verified.headers.get("set-cookie") ?? "";
+	const raw =
+		verified.headers.getSetCookie?.().join("; ") ?? verified.headers.get("set-cookie") ?? "";
 	const cookie = raw
 		.split(/,(?=\s*\w+=)/)
 		.map((part) => part.split(";")[0]?.trim())
@@ -92,11 +98,15 @@ async function makeIdentity(slug: string, stamp: string) {
 		.values({ name: `Osobní integration ${slug}`, ownerId: user.id, isPersonal: true })
 		.returning({ id: workspaces.id });
 	if (!workspace) throw new Error("workspace insert failed");
-	await db.insert(memberships).values({ workspaceId: workspace.id, userId: user.id, role: "admin" });
+	await db
+		.insert(memberships)
+		.values({ workspaceId: workspace.id, userId: user.id, role: "admin" });
 	return { ...user, workspaceId: workspace.id };
 }
 
 async function main() {
+	if (!process.env.RESEND_API_BASE_URL?.startsWith("http://127.0.0.1:"))
+		throw new Error("integration verifier requires the local email provider stub");
 	const stamp = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 	const first = await makeIdentity("first", stamp);
 	const second = await makeIdentity("second", stamp);
@@ -106,9 +116,20 @@ async function main() {
 		const secondCookie = await login(second.email);
 		const malformedCookie = await login(malformed.email);
 		let response = await request(firstCookie, "/api/integrations");
-		const initial = (response.body.integrations as Array<Record<string, unknown>> | undefined)?.[0];
+		const registry = response.body.integrations as Array<Record<string, unknown>> | undefined;
+		const initial = registry?.find((item) => item.provider === "luckyos");
+		const initialEmail = registry?.find((item) => item.provider === "resend_email");
+		const initialAttachments = registry?.find((item) => item.provider === "watson_attachments");
 		const initialScopes = Array.isArray(initial?.scopes) ? (initial.scopes as string[]) : [];
-		check("registry vyžaduje session a vrátí právě LuckyOS", response.status === 200 && initial?.provider === "luckyos", response);
+		check(
+			"registry vrátí LuckyOS, reminder e-mail a vestavěné přílohy",
+			response.status === 200 &&
+				registry?.length === 3 &&
+				initial?.provider === "luckyos" &&
+				initialEmail?.mode === "configured" &&
+				initialAttachments?.mode === "built_in",
+			response,
+		);
 		check(
 			"veřejný snapshot neobsahuje tajemství, URL, e-mail ani workspace ID",
 			!["token", "secret", "http://", "https://", first.email, first.workspaceId].some((needle) =>
@@ -121,11 +142,7 @@ async function main() {
 			initialScopes.length === 4 && !initialScopes.some((scope) => scope.includes("*")),
 			initial?.scopes,
 		);
-		const malformedTest = await request(
-			malformedCookie,
-			"/api/integrations/luckyos/test",
-			"POST",
-		);
+		const malformedTest = await request(malformedCookie, "/api/integrations/luckyos/test", "POST");
 		const malformedBody = malformedTest.body.integration as Record<string, unknown> | undefined;
 		check(
 			"HTTP 200 s neplatným provider kontraktem není vydáno za úspěch",
@@ -140,13 +157,38 @@ async function main() {
 				!malformedTest.text.includes("must-not-leak"),
 			malformedTest.text,
 		);
+		const malformedEmail = await request(
+			malformedCookie,
+			"/api/integrations/resend_email/test",
+			"POST",
+		);
+		check(
+			"HTTP 200 s neplatným e-mailovým ACK není vydáno za úspěch",
+			malformedEmail.status === 502 &&
+				malformedEmail.body.error === "email_contract_rejected" &&
+				(malformedEmail.body.integration as Record<string, unknown> | undefined)?.status ===
+					"degraded",
+			malformedEmail,
+		);
+		check(
+			"e-mailový upstream payload ani recipient se nevrací klientovi",
+			!malformedEmail.text.includes("upstream_secret") &&
+				!malformedEmail.text.includes(malformed.email),
+			malformedEmail.text,
+		);
 
 		response = await request(firstCookie, "/api/integrations/luckyos/test", "POST");
 		const tested = response.body.integration as Record<string, unknown> | undefined;
-		check("test ověří skutečný bridge adapter", response.status === 200 && response.body.reachable === true, response);
+		check(
+			"test ověří skutečný bridge adapter",
+			response.status === 200 && response.body.reachable === true,
+			response,
+		);
 		check(
 			"úspěšný test zapíše health bez konfigurace v odpovědi",
-			tested?.status === "healthy" && typeof tested.lastSuccessAt === "string" && typeof tested.lastTestedAt === "string",
+			tested?.status === "healthy" &&
+				typeof tested.lastSuccessAt === "string" &&
+				typeof tested.lastTestedAt === "string",
 			tested,
 		);
 		const version1 = Number(tested?.version);
@@ -156,7 +198,11 @@ async function main() {
 			expectedVersion: version1,
 		});
 		const revoked = response.body.integration as Record<string, unknown> | undefined;
-		check("revoke je serverová lifecycle změna", response.status === 200 && revoked?.status === "revoked", response);
+		check(
+			"revoke je serverová lifecycle změna",
+			response.status === 200 && revoked?.status === "revoked",
+			response,
+		);
 		const revokedVersion = Number(revoked?.version);
 
 		const replay = await request(firstCookie, "/api/integrations/luckyos/revoke", "POST", {
@@ -177,35 +223,189 @@ async function main() {
 			operationId: revokeOperation,
 			expectedVersion: revokedVersion,
 		});
-		check("operationId nelze použít pro jiný payload", reused.status === 409 && reused.body.error === "idempotency_key_reused", reused);
+		check(
+			"operationId nelze použít pro jiný payload",
+			reused.status === 409 && reused.body.error === "idempotency_key_reused",
+			reused,
+		);
 
 		const blockedEmployee = await request(firstCookie, "/api/employee/me");
 		check(
 			"odpojení skutečně zavře employee broker",
-			blockedEmployee.status === 200 && blockedEmployee.body.reason === "luckyos_revoked" && blockedEmployee.body.status === 423,
+			blockedEmployee.status === 200 &&
+				blockedEmployee.body.reason === "luckyos_revoked" &&
+				blockedEmployee.body.status === 423,
 			blockedEmployee,
 		);
-		const blockedWrite = await request(firstCookie, "/api/employee/expenses", "POST", { id: crypto.randomUUID() });
-		check("odpojení zavře také zápisové passthrough", blockedWrite.status === 423 && blockedWrite.body.reason === "luckyos_revoked", blockedWrite);
+		const blockedWrite = await request(firstCookie, "/api/employee/expenses", "POST", {
+			id: crypto.randomUUID(),
+		});
+		check(
+			"odpojení zavře také zápisové passthrough",
+			blockedWrite.status === 423 && blockedWrite.body.reason === "luckyos_revoked",
+			blockedWrite,
+		);
 
 		const secondRegistry = await request(secondCookie, "/api/integrations");
-		const secondConnection = (secondRegistry.body.integrations as Array<Record<string, unknown>> | undefined)?.[0];
-		check("revoke jednoho uživatele nezasáhne jiného tenanta", secondConnection?.status !== "revoked", secondConnection);
+		const secondConnection = (
+			secondRegistry.body.integrations as Array<Record<string, unknown>> | undefined
+		)?.[0];
+		check(
+			"revoke jednoho uživatele nezasáhne jiného tenanta",
+			secondConnection?.status !== "revoked",
+			secondConnection,
+		);
 
 		response = await request(firstCookie, "/api/integrations/luckyos/reconnect", "POST", {
 			operationId: crypto.randomUUID(),
 			expectedVersion: revokedVersion,
 		});
 		const reconnected = response.body.integration as Record<string, unknown> | undefined;
-		check("reconnect nejdřív ověří provider a pak otevře broker", response.status === 200 && reconnected?.status === "healthy", response);
+		check(
+			"reconnect nejdřív ověří provider a pak otevře broker",
+			response.status === 200 && reconnected?.status === "healthy",
+			response,
+		);
 		const currentVersion = Number(reconnected?.version);
 		const stale = await request(firstCookie, "/api/integrations/luckyos/revoke", "POST", {
 			operationId: crypto.randomUUID(),
 			expectedVersion: revokedVersion,
 		});
-		check("stará CAS verze nic nepřepíše", stale.status === 409 && stale.body.error === "stale_version" && stale.body.currentVersion === currentVersion, stale);
+		check(
+			"stará CAS verze nic nepřepíše",
+			stale.status === 409 &&
+				stale.body.error === "stale_version" &&
+				stale.body.currentVersion === currentVersion,
+			stale,
+		);
 		const openEmployee = await request(firstCookie, "/api/employee/me");
-		check("broker po reconnectu opět funguje", openEmployee.status === 200 && openEmployee.body.linked === true, openEmployee);
+		check(
+			"broker po reconnectu opět funguje",
+			openEmployee.status === 200 && openEmployee.body.linked === true,
+			openEmployee,
+		);
+
+		const emailTest = await request(firstCookie, "/api/integrations/resend_email/test", "POST");
+		const emailTested = emailTest.body.integration as Record<string, unknown> | undefined;
+		check(
+			"e-mailový test vyžaduje skutečný provider ACK",
+			emailTest.status === 200 &&
+				emailTest.body.reachable === true &&
+				emailTested?.status === "healthy" &&
+				typeof emailTested.lastSuccessAt === "string",
+			emailTest,
+		);
+		const [reminderProject] = await db
+			.insert(projects)
+			.values({
+				workspaceId: first.workspaceId,
+				ownerId: first.id,
+				name: `Email reminder ${stamp}`,
+			})
+			.returning({ id: projects.id });
+		if (!reminderProject) throw new Error("reminder project setup failed");
+		await db.insert(projectMembers).values({
+			projectId: reminderProject.id,
+			userId: first.id,
+			role: "manager",
+		});
+		const [reminderTask] = await db
+			.insert(tasks)
+			.values({
+				projectId: reminderProject.id,
+				name: "Provider-confirmed reminder",
+				createdBy: first.id,
+			})
+			.returning({ id: tasks.id });
+		if (!reminderTask) throw new Error("reminder task setup failed");
+		const [emailReminder] = await db
+			.insert(reminders)
+			.values({
+				taskId: reminderTask.id,
+				projectId: reminderProject.id,
+				userId: first.id,
+				type: "time",
+				remindAt: new Date(Date.now() - 1_000),
+				channel: "email",
+			})
+			.returning({ id: reminders.id });
+		if (!emailReminder) throw new Error("email reminder setup failed");
+		await Promise.all([scanAndSendDue(), scanAndSendDue()]);
+		const deliveredReminder = (
+			await db
+				.select({
+					state: reminders.deliveryState,
+					attempts: reminders.attempts,
+					sentAt: reminders.sentAt,
+					providerMessageId: reminders.providerMessageId,
+				})
+				.from(reminders)
+				.where(eq(reminders.id, emailReminder.id))
+				.limit(1)
+		)[0];
+		check(
+			"reminder worker uloží sent až po skutečném adapter ACK a jen jednou",
+			deliveredReminder?.state === "sent" &&
+				deliveredReminder.attempts === 1 &&
+				deliveredReminder.sentAt !== null &&
+				deliveredReminder.providerMessageId?.startsWith("stub-") === true,
+			deliveredReminder,
+		);
+		const emailVersion = Number(emailTested?.version);
+		const emailRevoke = await request(
+			firstCookie,
+			"/api/integrations/resend_email/revoke",
+			"POST",
+			{
+				operationId: crypto.randomUUID(),
+				expectedVersion: emailVersion,
+			},
+		);
+		const emailRevoked = emailRevoke.body.integration as Record<string, unknown> | undefined;
+		check(
+			"odpojení e-mailového kanálu je skutečná osobní politika",
+			emailRevoke.status === 200 && emailRevoked?.status === "revoked",
+			emailRevoke,
+		);
+		const disabledCapabilities = await request(firstCookie, "/api/reminders/capabilities");
+		check(
+			"revoked e-mail není nabízen jako dostupný reminder kanál",
+			disabledCapabilities.status === 200 &&
+				(disabledCapabilities.body.email as Record<string, unknown> | undefined)?.enabled ===
+					false &&
+				(disabledCapabilities.body.email as Record<string, unknown> | undefined)?.reason ===
+					"email_revoked",
+			disabledCapabilities,
+		);
+		const emailReconnect = await request(
+			firstCookie,
+			"/api/integrations/resend_email/reconnect",
+			"POST",
+			{
+				operationId: crypto.randomUUID(),
+				expectedVersion: Number(emailRevoked?.version),
+			},
+		);
+		check(
+			"e-mailový kanál lze bezpečně znovu povolit",
+			emailReconnect.status === 200 &&
+				(emailReconnect.body.integration as Record<string, unknown> | undefined)?.status ===
+					"configured",
+			emailReconnect,
+		);
+		const attachmentTest = await request(
+			firstCookie,
+			"/api/integrations/watson_attachments/test",
+			"POST",
+		);
+		check(
+			"vestavěné úložiště příloh má vlastní provozní test",
+			attachmentTest.status === 200 &&
+				attachmentTest.body.reachable === true &&
+				(attachmentTest.body.integration as Record<string, unknown> | undefined)?.status ===
+					"healthy",
+			attachmentTest,
+		);
 
 		const connectionRows = await db
 			.select()
@@ -224,12 +424,23 @@ async function main() {
 					eq(auditEvents.entity, "integration_connection"),
 				),
 			);
-		check("registry drží právě jeden osobní aggregate", connectionRows.length === 1 && connectionRows[0]?.workspaceId === first.workspaceId, connectionRows);
-		check("replay nevytváří duplicitní receipt", receipts.length === 2, receipts.length);
-		check("test, revoke a reconnect mají tenantový audit", audits.length === 3, audits.map((row) => row.action));
+		check(
+			"registry drží tři oddělené osobní aggregate",
+			connectionRows.length === 3 &&
+				connectionRows.every((row) => row.workspaceId === first.workspaceId),
+			connectionRows,
+		);
+		check("replay nevytváří duplicitní receipt", receipts.length === 4, receipts.length);
+		check(
+			"provider testy i lifecycle mají tenantový audit",
+			audits.length === 7,
+			audits.map((row) => row.action),
+		);
 		check(
 			"audit obsahuje jen allowlist stavů, ne tajemství",
-			!JSON.stringify(audits).toLowerCase().match(/token|secret|authorization|http:\/\//),
+			!JSON.stringify(audits)
+				.toLowerCase()
+				.match(/token|secret|authorization|http:\/\//),
 			audits,
 		);
 		await recordLuckyOsHealth(first.id, { ok: false, status: 504, tested: true });
@@ -238,7 +449,12 @@ async function main() {
 			await db
 				.select()
 				.from(integrationConnections)
-				.where(eq(integrationConnections.ownerUserId, first.id))
+				.where(
+					and(
+						eq(integrationConnections.ownerUserId, first.id),
+						eq(integrationConnections.provider, "luckyos"),
+					),
+				)
 				.limit(1)
 		)[0];
 		check(

@@ -1,7 +1,7 @@
 /**
  * Regresní ověření CC-P0-09 (F0 slice) proti živé dev DB: připomínka NESMÍ dostat
- * `sent_at`, pokud provider nic nedoručil (0 subscriptions) nebo je kanál e-mail
- * (neimplementovaný). Před opravou scanAndSendDue nastavoval sent_at vždy.
+ * `sent_at`, pokud provider nic nepotvrdil. Současně dokazuje, že e-mailový kanál
+ * dostane stav sent pouze po provider ACK a dvě instance jej neodešlou dvakrát.
  *
  * Vyžaduje běžící PostgreSQL (docker compose). Spuštění z kořene repa:
  *   pnpm --filter @watson/api verify:reminders
@@ -49,13 +49,17 @@ async function main() {
 		.values({ name: `Reminder ${stamp}`, ownerId: user.id, isPersonal: true })
 		.returning({ id: workspaces.id });
 	if (!workspace) throw new Error("test workspace setup failed");
-	await db.insert(memberships).values({ workspaceId: workspace.id, userId: user.id, role: "admin" });
+	await db
+		.insert(memberships)
+		.values({ workspaceId: workspace.id, userId: user.id, role: "admin" });
 	const [project] = await db
 		.insert(projects)
 		.values({ workspaceId: workspace.id, ownerId: user.id, name: `Reminder ${stamp}` })
 		.returning({ id: projects.id });
 	if (!project) throw new Error("test project setup failed");
-	await db.insert(projectMembers).values({ projectId: project.id, userId: user.id, role: "manager" });
+	await db
+		.insert(projectMembers)
+		.values({ projectId: project.id, userId: user.id, role: "manager" });
 	const [status] = await db
 		.insert(statuses)
 		.values({ scope: "project", projectId: project.id, name: "Čeká", position: 0, isDone: false })
@@ -120,23 +124,34 @@ async function main() {
 
 	let failed = 0;
 	try {
+		let emailCalls = 0;
+		const dependencies = {
+			sendEmail: async (input: { reminderId: string }) => {
+				emailCalls++;
+				return { ok: true as const, messageId: `provider-${input.reminderId}` };
+			},
+		};
 		// Dva workery současně: SKIP LOCKED dovolí claim pouze jednomu.
-		await Promise.all([scanAndSendDue(), scanAndSendDue()]);
+		await Promise.all([
+			scanAndSendDue(new Date(), dependencies),
+			scanAndSendDue(new Date(), dependencies),
+		]);
 		for (const r of inserted) {
 			const [row] = await db
 				.select({
 					sentAt: reminders.sentAt,
 					deliveryState: reminders.deliveryState,
 					attempts: reminders.attempts,
+					providerMessageId: reminders.providerMessageId,
 				})
 				.from(reminders)
 				.where(eq(reminders.id, r.id));
-			if (row?.sentAt != null) {
+			if (r.channel === "push" && row?.sentAt != null) {
 				failed++;
 				console.error(
-					`  ✗ channel=${r.channel}: sent_at=${row.sentAt.toISOString()} přestože NIC nebylo doručeno (0 subscriptions / e-mail neimplementován)`,
+					`  ✗ channel=${r.channel}: sent_at=${row.sentAt.toISOString()} přestože push provider nic nepotvrdil`,
 				);
-			} else {
+			} else if (r.channel === "push") {
 				console.log(`  ✓ channel=${r.channel}: sent_at NULL — poctivý stav`);
 			}
 			if (r.channel === "push" && r.type === "relative" && r.offsetMin === 10) {
@@ -153,12 +168,18 @@ async function main() {
 						`  ✗ concurrent claim: state=${row?.deliveryState}, attempts=${row?.attempts}; čekáno retry/1`,
 					);
 				} else console.log("  ✓ dva workery provedly právě jeden pokus (retry/1)");
-			} else if (row?.deliveryState !== "pending" || row.attempts !== 0) {
+			} else if (
+				row?.deliveryState !== "sent" ||
+				row.attempts !== 1 ||
+				row.sentAt == null ||
+				row.providerMessageId !== `provider-${r.id}` ||
+				emailCalls !== 1
+			) {
 				failed++;
 				console.error(
-					`  ✗ email no-op změnil frontu: state=${row?.deliveryState}, attempts=${row?.attempts}`,
+					`  ✗ email ACK/claim: state=${row?.deliveryState}, attempts=${row?.attempts}, calls=${emailCalls}`,
 				);
-			} else console.log("  ✓ neimplementovaný email zůstal pending/0");
+			} else console.log("  ✓ e-mail je sent právě jednou a až po provider ACK");
 		}
 
 		const pushId = inserted.find((row) => row.channel === "push" && row.type === "time")?.id;
@@ -180,12 +201,7 @@ async function main() {
 			})
 			.from(reminders)
 			.where(eq(reminders.id, pushId));
-		if (
-			dead?.state !== "dead" ||
-			dead.attempts !== 5 ||
-			dead.sentAt != null ||
-			!dead.error
-		) {
+		if (dead?.state !== "dead" || dead.attempts !== 5 || dead.sentAt != null || !dead.error) {
 			failed++;
 			console.error(`  ✗ dead-letter po 5 pokusech — ${JSON.stringify(dead)}`);
 		} else console.log("  ✓ po 5 neúspěších je reminder dead, sent_at NULL a má safe error code");

@@ -15,6 +15,7 @@ import { SignJWT } from "jose";
 import { z } from "zod";
 import { auth } from "./auth";
 import { loadSigningKeyRing, SIGNING_ALG } from "./signingKeys";
+import { reminderEmailAvailability } from "./serviceIntegrations";
 import { preflightAvailabilityForSyncWrite } from "./taskAvailability";
 
 const AUDIENCE = "powersync";
@@ -1097,10 +1098,11 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 			return c.json({ error: "field_too_long", field: columnName, maxLength }, 422);
 		}
 	}
-	// E-mailový provider připomínek zatím neexistuje. Přijetí `channel=email` by
-	// vytvořilo trvale nedoručitelný business stav, proto fail-closed už na write-path.
+	// E-mailový reminder lze přijmout jen při nakonfigurovaném a osobně povoleném
+	// provideru. Offline zápis tak neskončí ve falešně doručitelném stavu.
 	if (body.table === "reminders" && data.channel === "email") {
-		return c.json({ error: "email_reminders_not_available" }, 422);
+		const availability = await reminderEmailAvailability(userId);
+		if (!availability.enabled) return c.json({ error: availability.reason }, 422);
 	}
 	if (body.table === "tasks" && data.start_timezone != null) {
 		try {

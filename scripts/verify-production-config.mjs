@@ -214,6 +214,21 @@ export function validateProductionConfig(source = process.env) {
     validEmailDomain ? "passed" : "failed",
     "AUTH_EMAIL_FROM must contain a deliverable production-domain address.",
   );
+  const reminderEmailFrom = source.REMINDER_EMAIL_FROM?.trim() || emailFrom;
+  const reminderEmailMatch = reminderEmailFrom?.match(/(?:<)?([^<>\s]+@[^<>\s]+)(?:>)?$/);
+  const reminderEmailDomain = reminderEmailMatch?.[1]?.split("@")[1]?.toLowerCase();
+  record(
+    "reminder_email_from",
+    reminderEmailDomain &&
+      !reminderEmailDomain.endsWith(".local") &&
+      !reminderEmailDomain.endsWith(".example") &&
+      !reminderEmailDomain.endsWith(".test") &&
+      !reminderEmailDomain.endsWith(".invalid") &&
+      reminderEmailDomain !== "example.com"
+      ? "passed"
+      : "failed",
+    "REMINDER_EMAIL_FROM (or AUTH_EMAIL_FROM fallback) must contain a deliverable production-domain address.",
+  );
 
   const powersyncUrl = parseUrl(source.POWERSYNC_URL?.trim(), ["https:"]);
   record(

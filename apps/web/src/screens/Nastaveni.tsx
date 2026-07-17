@@ -1553,8 +1553,17 @@ export function Nastaveni() {
 						<>
 							{/* OZNÁMENÍ A WATSON */}
 							<div style={{ ...CARD, overflow: "hidden" }}>
-								<NotifyRow title={t("settings.morningSummary")} desc={t("settings.morningSummaryDesc")} divider />
-								<NotifyRow title={t("settings.deadlineReminders")} desc={t("settings.deadlineRemindersDesc")} />
+								<NotifyRow
+									title={t("settings.morningSummary")}
+									desc={t("settings.morningSummaryDesc")}
+									status={t("settings.notificationPlanned")}
+									divider
+								/>
+								<NotifyRow
+									title={t("settings.deadlineReminders")}
+									desc={t("settings.deadlineRemindersDesc")}
+									status={t("settings.notificationPerTask")}
+								/>
 							</div>
 						</>
 					)}
@@ -1783,8 +1792,18 @@ function Avatar({ text, size, bg }: { text: string; size: number; bg: string }) 
 	);
 }
 
-/** Řádek oznámení — dekorativní zapnutý přepínač (dle designu napevno ON). */
-function NotifyRow({ title, desc, divider }: { title: string; desc: string; divider?: boolean }) {
+/** Pravdivý stav oznámení; nepředstírá interaktivní přepínač bez write-path. */
+function NotifyRow({
+	title,
+	desc,
+	status,
+	divider,
+}: {
+	title: string;
+	desc: string;
+	status: string;
+	divider?: boolean;
+}) {
 	return (
 		<div
 			style={{
@@ -1796,26 +1815,21 @@ function NotifyRow({ title, desc, divider }: { title: string; desc: string; divi
 				<RowTitle>{title}</RowTitle>
 				<RowDesc>{desc}</RowDesc>
 			</div>
-			<div
+			<span
 				style={{
-					width: 42,
-					height: 24,
+					minHeight: 28,
 					borderRadius: 999,
-					padding: 2,
-					background: "var(--w-brass)",
-					display: "flex",
+					padding: "6px 10px",
+					background: "var(--w-panel-2)",
+					border: "1px solid var(--w-line)",
+					color: "var(--w-ink-3)",
+					fontSize: 11,
+					fontWeight: 700,
+					whiteSpace: "nowrap",
 				}}
 			>
-				<span
-					style={{
-						width: 20,
-						height: 20,
-						borderRadius: "50%",
-						background: "#fff",
-						marginLeft: 20,
-					}}
-				/>
-			</div>
+				{status}
+			</span>
 		</div>
 	);
 }

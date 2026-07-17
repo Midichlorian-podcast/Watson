@@ -582,6 +582,22 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		[realId, session?.user?.id ?? ""],
 	);
 	const [reminderBusyKey, setReminderBusyKey] = useState<string | null>(null);
+	const [reminderChannel, setReminderChannel] = useState<"push" | "email">("push");
+	const reminderCapabilities = useQuery({
+		queryKey: ["reminder-capabilities", session?.user?.id],
+		enabled: Boolean(session?.user?.id),
+		staleTime: 60_000,
+		queryFn: async () => {
+			const response = await fetch(`${API_URL}/api/reminders/capabilities`, {
+				credentials: "include",
+			});
+			if (!response.ok) throw new Error("reminder_capabilities_failed");
+			return (await response.json()) as {
+				push: { enabled: boolean };
+				email: { enabled: boolean; reason: string | null };
+			};
+		},
+	});
 	const [attachmentBusy, setAttachmentBusy] = useState(false);
 	const [attachmentDeleteConfirm, setAttachmentDeleteConfirm] = useState<string | null>(null);
 	const { data: incomingDependencies } = usePsQuery<{
@@ -677,6 +693,19 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		startDate: task?.start_date ?? null,
 		dueDate: task?.due_date ?? null,
 	};
+	const channelAvailable =
+		reminderChannel === "push"
+			? reminderCapabilities.data?.push.enabled === true
+			: reminderCapabilities.data?.email.enabled === true;
+	useEffect(() => {
+		if (
+			reminderCapabilities.data &&
+			!reminderCapabilities.data.push.enabled &&
+			reminderCapabilities.data.email.enabled
+		) {
+			setReminderChannel("email");
+		}
+	}, [reminderCapabilities.data]);
 	const orderedReminders = sortReminders(reminders ?? [], reminderTiming);
 	const relativeBase = task?.start_date ? "start" : task?.due_date ? "due" : null;
 	const relativeLabel = (offsetMin: number) => {
@@ -705,16 +734,19 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			showToast(t("detail.remPast"));
 			return;
 		}
-		if (hasEquivalentReminder(reminders ?? [], candidate)) {
+		const sameChannelReminders = (reminders ?? []).filter(
+			(reminder) => reminder.channel === reminderChannel,
+		);
+		if (hasEquivalentReminder(sameChannelReminders, candidate)) {
 			showToast(t("detail.remDuplicate"));
 			return;
 		}
-		const busyKey = reminderCandidateKey(candidate);
+		const busyKey = `${reminderChannel}:${reminderCandidateKey(candidate)}`;
 		if (reminderBusyKey === busyKey) return;
 		setReminderBusyKey(busyKey);
 		try {
 			await powerSync.execute(
-				"INSERT INTO reminders (id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, 'push', ?)",
+				"INSERT INTO reminders (id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?)",
 				[
 					realId,
 					task.project_id,
@@ -722,11 +754,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 					candidate.type,
 					candidate.type === "time" ? candidate.remindAt : null,
 					candidate.type === "relative" ? candidate.offsetMin : null,
+					reminderChannel,
 					new Date().toISOString(),
 				],
 			);
 			showToast(t("detail.remAdded"));
-			void enablePush(); // vyžádá povolení notifikací v momentě záměru
+			if (reminderChannel === "push") void enablePush(); // vyžádá povolení v momentě záměru
 		} catch {
 			showToast(t("detail.remAddFailed"));
 		} finally {
@@ -2508,11 +2541,39 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 						</div>
 
 						{/* PŘIPOMÍNKY — relativní (před termínem) / absolutní; doručení Web Push. */}
-						<SectionLabel>
-							{t("detail.remindersCount", { count: reminders?.length ?? 0 })}
-						</SectionLabel>
-						<div style={{ marginBottom: 4 }}>
-							{orderedReminders.map((r) => {
+							<SectionLabel>
+								{t("detail.remindersCount", { count: reminders?.length ?? 0 })}
+							</SectionLabel>
+							<div style={{ marginBottom: 4 }}>
+								<div
+									className="mb-2 grid grid-cols-2 rounded-lg border border-line bg-panel-2 p-1"
+									role="group"
+									aria-label={t("detail.remChannel")}
+								>
+									{(["push", "email"] as const).map((channel) => {
+										const available =
+											channel === "push"
+												? reminderCapabilities.data?.push.enabled === true
+												: reminderCapabilities.data?.email.enabled === true;
+										return (
+											<button
+												key={channel}
+												type="button"
+												disabled={!available}
+												aria-pressed={reminderChannel === channel}
+												onClick={() => setReminderChannel(channel)}
+												className={`min-h-11 rounded-md px-3 font-display text-xs font-semibold ${
+													reminderChannel === channel
+														? "bg-card text-ink shadow-sm"
+														: "text-ink-3"
+												}`}
+											>
+												{t(`detail.remChannel${channel === "push" ? "Push" : "Email"}`)}
+											</button>
+										);
+									})}
+								</div>
+								{orderedReminders.map((r) => {
 								const dateLabel = reminderDateLabel(r);
 								return (
 									<div
@@ -2521,18 +2582,21 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									style={{ minHeight: 44, padding: "4px 0", fontSize: 12.5, gap: 8 }}
 								>
 									<div className="flex min-w-0 items-center" style={{ gap: 8 }}>
-										<span aria-hidden>🔔</span>
+											<span aria-hidden>{r.channel === "email" ? "✉" : "🔔"}</span>
 										<span className="min-w-0" style={{ color: "var(--w-ink-2)" }}>
 											<span className="block font-display font-semibold">
 												{r.type === "relative" && r.offset_min != null
 													? relativeLabel(r.offset_min)
 													: t("detail.remCustom")}
 											</span>
-											{dateLabel && (
+												{dateLabel && (
 												<span className="block text-ink-3" style={{ fontSize: 11.5 }}>
 													{dateLabel}
 												</span>
-											)}
+												)}
+												<span className="block text-ink-3" style={{ fontSize: 11.5 }}>
+													{t(`detail.remChannel${r.channel === "email" ? "Email" : "Push"}`)}
+												</span>
 										</span>
 									</div>
 									<button
@@ -2560,15 +2624,19 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								{[0, 10, 30, 60, 1440].map((min) => {
 									const noBase = !relativeBase;
 									const candidate = { type: "relative", offsetMin: min } as const;
-									const duplicate = hasEquivalentReminder(reminders ?? [], candidate);
+									const duplicate = hasEquivalentReminder(
+										(reminders ?? []).filter((reminder) => reminder.channel === reminderChannel),
+										candidate,
+									);
 									const candidateTime = reminderCandidateFireAt(candidate, reminderTiming);
 									const past = candidateTime != null && candidateTime <= Date.now();
-									const busy = reminderBusyKey === reminderCandidateKey(candidate);
+									const busy =
+										reminderBusyKey === `${reminderChannel}:${reminderCandidateKey(candidate)}`;
 									return (
 										<button
 											key={min}
 											type="button"
-											disabled={noBase || duplicate || past || busy}
+											disabled={!channelAvailable || noBase || duplicate || past || busy}
 											onClick={() => void addReminder(candidate)}
 											title={
 												noBase
@@ -2586,8 +2654,11 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 												padding: "7px 10px",
 												borderRadius: 8,
 												border: "1px solid var(--w-line)",
-												opacity: noBase || duplicate || past ? 0.45 : 1,
-												cursor: noBase || duplicate || past ? "not-allowed" : "pointer",
+												opacity: !channelAvailable || noBase || duplicate || past ? 0.45 : 1,
+												cursor:
+													!channelAvailable || noBase || duplicate || past
+														? "not-allowed"
+														: "pointer",
 											}}
 										>
 											{relativeLabel(min)}
@@ -2596,6 +2667,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								})}
 								<input
 									type="datetime-local"
+									disabled={!channelAvailable}
 									min={new Date(Date.now() - new Date().getTimezoneOffset() * 60_000)
 										.toISOString()
 										.slice(0, 16)}
@@ -2612,7 +2684,29 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									style={{ fontSize: 12, padding: "7px 9px" }}
 								/>
 							</div>
-						{notificationPermission() === "denied" && (
+							{reminderCapabilities.isError && (
+								<div className="font-body text-overdue" style={{ fontSize: 11, marginTop: 6 }}>
+									{t("detail.remCapabilitiesError")}
+								</div>
+							)}
+							{reminderCapabilities.isLoading && (
+								<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 6 }} role="status">
+									{t("detail.remCapabilitiesLoading")}
+								</div>
+							)}
+							{reminderChannel === "email" && reminderCapabilities.data?.email.enabled !== true && (
+								<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 6 }}>
+									{t("detail.remEmailUnavailable")}
+								</div>
+							)}
+							{reminderChannel === "push" &&
+								reminderCapabilities.data &&
+								!reminderCapabilities.data.push.enabled && (
+									<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 6 }}>
+										{t("detail.remPushUnavailable")}
+									</div>
+								)}
+							{reminderChannel === "push" && notificationPermission() === "denied" && (
 								<div className="font-body text-overdue" style={{ fontSize: 11, marginTop: 6 }}>
 									{t("detail.remPushDenied")}
 								</div>

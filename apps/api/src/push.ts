@@ -3,8 +3,8 @@
  *
  * - `pushRoutes` — REST: VAPID veřejný klíč, (od)hlášení odběru, testovací push.
  * - `startReminderWorker` — periodicky projde splatné `reminders`, doručí přes Web Push
- *   a `sent_at` nastaví AŽ po potvrzeném doručení aspoň jednomu odběru (CC-P0-09);
- *   kanál `email` je neimplementovaný a scan ho přeskakuje (zůstává pending).
+ *   nebo e-mailový adapter a `sent_at` nastaví AŽ po potvrzení provideru (CC-P0-09).
+ *   E-mail používá stabilní idempotency key a ukládá redigované provider message ID.
  *
  * `push_subscriptions` se NEsynchronizuje do klienta (server-only) — odběry drží jen server.
  */
@@ -18,13 +18,15 @@ import {
 	reminders,
 	sql,
 	tasks,
+	users,
 } from "@watson/db";
 import { Hono } from "hono";
 import webpush from "web-push";
 import { z } from "zod";
 import { auth } from "./auth";
 import { readNotificationHold } from "./availability";
-import { env, pushEnabled } from "./env";
+import { emailEnabled, env, pushEnabled } from "./env";
+import { reminderEmailAvailability, sendTaskReminderEmail } from "./serviceIntegrations";
 
 if (pushEnabled) {
 	webpush.setVapidDetails(
@@ -42,6 +44,8 @@ interface DueReminder {
 	offsetMin: number | null;
 	channel: string;
 	taskName: string;
+	taskId: string;
+	userEmail: string;
 	dueDate: Date | null;
 	startDate: Date | null;
 	workspaceId: string;
@@ -72,7 +76,11 @@ async function sendOne(
 		const code = (e as { statusCode?: number }).statusCode;
 		if (code === 404 || code === 410) return { result: "expired", errorCode: `http_${code}` };
 		console.error(
-			JSON.stringify({ level: "error", event: "push_delivery_failed", providerStatus: code ?? null }),
+			JSON.stringify({
+				level: "error",
+				event: "push_delivery_failed",
+				providerStatus: code ?? null,
+			}),
 		);
 		return { result: "error", errorCode: code ? `http_${code}` : "provider_error" };
 	}
@@ -82,14 +90,17 @@ interface PushDeliveryResult {
 	delivered: number;
 	errorCode: string | null;
 	providerMessageId: string | null;
+	permanent: boolean;
 }
 
-async function deliverPushToUser(
-	userId: string,
-	payload: object,
-): Promise<PushDeliveryResult> {
+async function deliverPushToUser(userId: string, payload: object): Promise<PushDeliveryResult> {
 	if (!pushEnabled)
-		return { delivered: 0, errorCode: "push_not_configured", providerMessageId: null };
+		return {
+			delivered: 0,
+			errorCode: "push_not_configured",
+			providerMessageId: null,
+			permanent: true,
+		};
 	const db = getDb();
 	const subs = await db
 		.select({
@@ -101,7 +112,12 @@ async function deliverPushToUser(
 		.from(pushSubscriptions)
 		.where(eq(pushSubscriptions.userId, userId));
 	if (subs.length === 0)
-		return { delivered: 0, errorCode: "no_subscription", providerMessageId: null };
+		return {
+			delivered: 0,
+			errorCode: "no_subscription",
+			providerMessageId: null,
+			permanent: false,
+		};
 	let ok = 0;
 	let lastError: string | null = null;
 	for (const s of subs) {
@@ -115,6 +131,7 @@ async function deliverPushToUser(
 		delivered: ok,
 		errorCode: ok > 0 ? null : (lastError ?? "no_subscription"),
 		providerMessageId: null,
+		permanent: false,
 	};
 }
 
@@ -123,12 +140,8 @@ export async function pushToUser(userId: string, payload: object): Promise<numbe
 	return (await deliverPushToUser(userId, payload)).delivered;
 }
 
-// E-mailový kanál připomínek: záměrně BEZ implementace i BEZ fake „sent" větve
-// (CC-P0-09). Scan e-mailové připomínky přeskakuje; kanál se zapne až s reálným
-// mailerem (Resend) a delivery state machine v F5.
-
 /**
- * Atomicky claimne splatné push připomínky. SKIP LOCKED zaručuje, že dvě API
+ * Atomicky claimne splatné push/e-mail připomínky. SKIP LOCKED zaručuje, že dvě API
  * instance nevezmou stejný řádek; pětiminutový lease obnoví práci po pádu workeru.
  */
 async function claimDue(now: Date): Promise<(DueReminder & { attempts: number })[]> {
@@ -141,7 +154,7 @@ async function claimDue(now: Date): Promise<(DueReminder & { attempts: number })
 				FROM reminders r
 				JOIN tasks t ON t.id = r.task_id
 				WHERE t.completed_at IS NULL
-				  AND r.channel = 'push'
+				  AND r.channel IN ('push', 'email')
 				  AND (
 					(r.delivery_state IN ('pending', 'retry')
 					 AND (r.next_attempt_at IS NULL OR r.next_attempt_at <= ${nowIso}::timestamptz)
@@ -182,6 +195,8 @@ async function claimDue(now: Date): Promise<(DueReminder & { attempts: number })
 			offsetMin: reminders.offsetMin,
 			channel: reminders.channel,
 			taskName: tasks.name,
+			taskId: tasks.id,
+			userEmail: users.email,
 			dueDate: tasks.dueDate,
 			startDate: tasks.startDate,
 			workspaceId: projects.workspaceId,
@@ -190,13 +205,22 @@ async function claimDue(now: Date): Promise<(DueReminder & { attempts: number })
 		.from(reminders)
 		.innerJoin(tasks, eq(tasks.id, reminders.taskId))
 		.innerJoin(projects, eq(projects.id, tasks.projectId))
+		.innerJoin(users, eq(users.id, reminders.userId))
 		.where(inArray(reminders.id, ids))) as (DueReminder & { attempts: number })[];
 }
 
+type ReminderDependencies = {
+	sendEmail?: typeof sendTaskReminderEmail;
+};
+
 /** Projde splatné připomínky přes delivery state machine a označí sent jen po ACK. */
-export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
+export async function scanAndSendDue(
+	now: Date = new Date(),
+	dependencies: ReminderDependencies = {},
+): Promise<number> {
 	const db = getDb();
 	const rows = await claimDue(now);
+	const sendEmail = dependencies.sendEmail ?? sendTaskReminderEmail;
 
 	let fired = 0;
 	for (const r of rows) {
@@ -216,13 +240,26 @@ export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
 				.where(and(eq(reminders.id, r.id), eq(reminders.deliveryState, "claimed")));
 			continue;
 		}
-		const payload = {
-			title: "Watson · připomínka",
-			body: r.taskName,
-			tag: `reminder-${r.id}`,
-			url: "/dnes",
-		};
-		const delivery = await deliverPushToUser(r.userId, payload);
+		const delivery =
+			r.channel === "email"
+				? await sendEmail({
+						reminderId: r.id,
+						userId: r.userId,
+						to: r.userEmail,
+						taskId: r.taskId,
+						taskName: r.taskName,
+					}).then((result) => ({
+						delivered: result.ok ? 1 : 0,
+						errorCode: result.ok ? null : result.errorCode,
+						providerMessageId: result.ok ? result.messageId : null,
+						permanent: result.ok ? false : result.permanent,
+					}))
+				: await deliverPushToUser(r.userId, {
+						title: "Watson · připomínka",
+						body: r.taskName,
+						tag: `reminder-${r.id}`,
+						url: `/ukoly?ukol=${encodeURIComponent(r.taskId)}`,
+					});
 		if (delivery.delivered > 0) {
 			await db
 				.update(reminders)
@@ -240,7 +277,7 @@ export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
 			fired++;
 			continue;
 		}
-		const dead = r.attempts >= 5;
+		const dead = delivery.permanent || r.attempts >= 5;
 		const delayMinutes = Math.min(2 ** Math.max(0, r.attempts - 1), 60);
 		await db
 			.update(reminders)
@@ -254,16 +291,16 @@ export async function scanAndSendDue(now: Date = new Date()): Promise<number> {
 			})
 			.where(and(eq(reminders.id, r.id), eq(reminders.deliveryState, "claimed")));
 	}
-	if (fired) console.log(`[reminders] doručeno ${fired}`);
+	if (fired) console.log(`[reminders] provider potvrdil ${fired}`);
 	return fired;
 }
 
 let timer: ReturnType<typeof setInterval> | null = null;
-/** Spustí periodický scan (default každých 30 s). Idempotentní; bez VAPID neběží. */
+/** Spustí periodický scan (default každých 30 s). Idempotentní; bez provideru neběží. */
 export function startReminderWorker(intervalMs = 30_000): void {
 	if (timer) return;
-	if (!pushEnabled) {
-		console.warn("[reminders] worker neběží — chybí VAPID klíče v .env");
+	if (!pushEnabled && !emailEnabled) {
+		console.warn("[reminders] worker neběží — chybí push i e-mail provider");
 		return;
 	}
 	timer = setInterval(() => {
@@ -290,7 +327,9 @@ const pushEndpoint = z
 	.refine((value) => new URL(value).protocol === "https:", "push_endpoint_must_use_https")
 	.refine((value) => {
 		const host = new URL(value).hostname.toLowerCase();
-		return host !== "localhost" && host !== "::1" && !host.endsWith(".local") && !/^127\./.test(host);
+		return (
+			host !== "localhost" && host !== "::1" && !host.endsWith(".local") && !/^127\./.test(host)
+		);
 	}, "push_endpoint_must_be_public");
 const subscribeSchema = z
 	.object({
@@ -305,6 +344,16 @@ const subscribeSchema = z
 	.strict();
 const unsubscribeSchema = z.object({ endpoint: pushEndpoint }).strict();
 
+pushRoutes.get("/api/reminders/capabilities", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const email = await reminderEmailAvailability(session.user.id);
+	return c.json({
+		push: { enabled: pushEnabled },
+		email,
+	});
+});
+
 /** Veřejný VAPID klíč (klient ho potřebuje k subscribe). */
 pushRoutes.get("/api/push/vapid", (c) =>
 	c.json({ publicKey: env.vapid.publicKey ?? null, enabled: pushEnabled }),
@@ -317,7 +366,10 @@ pushRoutes.post("/api/push/subscribe", async (c) => {
 	const parsed = subscribeSchema.safeParse(await c.req.json().catch(() => null));
 	if (!parsed.success)
 		return c.json({ error: "invalid_subscription", issues: parsed.error.issues }, 422);
-	const { endpoint, keys: { p256dh, auth: authKey } } = parsed.data;
+	const {
+		endpoint,
+		keys: { p256dh, auth: authKey },
+	} = parsed.data;
 	const userAgent = (c.req.header("user-agent") ?? "").slice(0, 512) || null;
 
 	const db = getDb();
@@ -377,10 +429,7 @@ pushRoutes.post("/api/push/unsubscribe", async (c) => {
 	await db
 		.delete(pushSubscriptions)
 		.where(
-			and(
-				eq(pushSubscriptions.endpoint, endpoint),
-				eq(pushSubscriptions.userId, session.user.id),
-			),
+			and(eq(pushSubscriptions.endpoint, endpoint), eq(pushSubscriptions.userId, session.user.id)),
 		);
 	return c.json({ ok: true });
 });

@@ -23,6 +23,7 @@ import { z } from "zod";
 import { auth } from "./auth";
 import { env, luckyOsEnabled } from "./env";
 import { issueBridgeToken } from "./powersync";
+import { listServiceIntegrations } from "./serviceIntegrations";
 
 export const integrationRoutes = new Hono<{ Variables: { requestId: string } }>();
 type IntegrationContext = Context<{ Variables: { requestId: string } }>;
@@ -337,6 +338,8 @@ function publicConnection(row: Awaited<ReturnType<typeof ensureLuckyOsConnection
 		status: row.revokedAt ? "revoked" : row.status,
 		mode: providerMode(),
 		enabled: luckyOsEnabled && !row.revokedAt,
+		canTest: true,
+		canRevoke: true,
 		scopes: row.scopes,
 		capabilities: row.capabilities,
 		lastTestedAt: row.lastTestedAt?.toISOString() ?? null,
@@ -450,8 +453,11 @@ function requestHash(action: "revoke" | "reconnect", input: z.infer<typeof lifec
 integrationRoutes.get("/api/integrations", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const connection = await ensureLuckyOsConnection(session.user.id);
-	return c.json({ integrations: [publicConnection(connection)] });
+	const [connection, services] = await Promise.all([
+		ensureLuckyOsConnection(session.user.id),
+		listServiceIntegrations(session.user.id),
+	]);
+	return c.json({ integrations: [publicConnection(connection), ...services] });
 });
 
 integrationRoutes.post("/api/integrations/luckyos/test", async (c) => {

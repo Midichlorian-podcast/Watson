@@ -44,6 +44,7 @@ function validEnv() {
     OPS_METRICS_TOKEN: "metrics_9Z4x7C1v5B8n2M6a0S3d7F1g4H8j2K5l",
     RESEND_API_KEY: "re_production_provider_key_123456789",
     AUTH_EMAIL_FROM: "Watson <auth@watson.cz>",
+    REMINDER_EMAIL_FROM: "Watson <reminders@watson.cz>",
     POWERSYNC_URL: "https://sync.watson.cz",
     POWERSYNC_SIGNING_KEYS_JSON: keyRing("powersync-key"),
     VAPID_PUBLIC_KEY: `B${"p".repeat(86)}`,

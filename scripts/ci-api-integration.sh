@@ -4,6 +4,7 @@ set -euo pipefail
 API_URL="http://127.0.0.1:8790"
 API_PID=""
 LUCKYOS_STUB_PID=""
+EMAIL_STUB_PID=""
 API_LOG="${RUNNER_TEMP:-/tmp}/watson-api-integration.log"
 RUN_NONCE="${GITHUB_RUN_ID:-local}-$$-$(date +%s)"
 
@@ -22,6 +23,10 @@ export OPS_METRICS_TOKEN="ci-ops-metrics-token-${RUN_NONCE}-at-least-32-bytes"
 # ověřuje bridge JWT a dovolí otestovat celý revoke/reconnect lifecycle bez sítě.
 export LUCKYOS_BASE_URL="http://127.0.0.1:8791"
 export LUCKYOS_MOCK=0
+export RESEND_API_KEY="re_ci_provider_key"
+export RESEND_API_BASE_URL="http://127.0.0.1:8792"
+export AUTH_EMAIL_FROM="Watson CI <auth@watson.test>"
+export REMINDER_EMAIL_FROM="Watson CI <reminders@watson.test>"
 
 stop_api() {
 	if [[ -n "$API_PID" ]] && kill -0 "$API_PID" 2>/dev/null; then
@@ -37,17 +42,33 @@ cleanup() {
 		kill "$LUCKYOS_STUB_PID"
 		wait "$LUCKYOS_STUB_PID" 2>/dev/null || true
 	fi
+	if [[ -n "$EMAIL_STUB_PID" ]] && kill -0 "$EMAIL_STUB_PID" 2>/dev/null; then
+		kill "$EMAIL_STUB_PID"
+		wait "$EMAIL_STUB_PID" 2>/dev/null || true
+	fi
 }
 trap cleanup EXIT
 
 node apps/api/verify-luckyos-provider-stub.mjs >"${RUNNER_TEMP:-/tmp}/watson-luckyos-stub.log" 2>&1 &
 LUCKYOS_STUB_PID=$!
+node apps/api/verify-email-provider-stub.mjs >"${RUNNER_TEMP:-/tmp}/watson-email-stub.log" 2>&1 &
+EMAIL_STUB_PID=$!
 for _ in $(seq 1 40); do
 	if curl --fail --silent "http://127.0.0.1:8791/health" >/dev/null; then
 		break
 	fi
 	if ! kill -0 "$LUCKYOS_STUB_PID" 2>/dev/null; then
 		cat "${RUNNER_TEMP:-/tmp}/watson-luckyos-stub.log"
+		exit 1
+	fi
+	sleep 0.1
+done
+for _ in $(seq 1 40); do
+	if curl --fail --silent "http://127.0.0.1:8792/health" >/dev/null; then
+		break
+	fi
+	if ! kill -0 "$EMAIL_STUB_PID" 2>/dev/null; then
+		cat "${RUNNER_TEMP:-/tmp}/watson-email-stub.log"
 		exit 1
 	fi
 	sleep 0.1

@@ -13,11 +13,13 @@ type IntegrationStatus =
 
 type Integration = {
 	id: string;
-	provider: "luckyos";
+	provider: "luckyos" | "resend_email" | "watson_attachments";
 	name: string;
 	status: IntegrationStatus;
-	mode: "configured" | "demo" | "not_configured";
+	mode: "configured" | "demo" | "not_configured" | "built_in";
 	enabled: boolean;
+	canTest: boolean;
+	canRevoke: boolean;
 	scopes: string[];
 	capabilities: string[];
 	lastTestedAt: string | null;
@@ -36,6 +38,12 @@ const STATUS_COLOR: Record<IntegrationStatus, string> = {
 	degraded: "var(--w-p2)",
 	not_configured: "var(--w-ink-3)",
 	revoked: "var(--w-overdue)",
+};
+
+const PROVIDER_MARK: Record<Integration["provider"], string> = {
+	luckyos: "LO",
+	resend_email: "E",
+	watson_attachments: "P",
 };
 
 async function readIntegrations(): Promise<Integration[]> {
@@ -91,7 +99,7 @@ export function IntegrationCenter() {
 			setConfirmRevoke(null);
 			setNotice({
 				kind: "ok",
-				text: t(`settings.integration${action[0]?.toUpperCase()}${action.slice(1)}Success`),
+				text: t(`settings.integrationProvider.${integration.provider}.${action}Success`),
 			});
 		} catch {
 			setNotice({ kind: "error", text: t("settings.integrationActionError") });
@@ -142,11 +150,11 @@ export function IntegrationCenter() {
 					<article className="w-integration-card" key={integration.id}>
 						<div className="w-integration-head">
 							<div className="w-integration-mark" aria-hidden="true">
-								LO
+								{PROVIDER_MARK[integration.provider]}
 							</div>
 							<div className="w-integration-title">
 								<div>
-									<h3>{integration.name}</h3>
+									<h3>{t(`settings.integrationProvider.${integration.provider}.name`)}</h3>
 									<span
 										className="w-integration-status"
 										style={{ "--integration-status": STATUS_COLOR[integration.status] } as CSSProperties}
@@ -154,7 +162,7 @@ export function IntegrationCenter() {
 										{t(`settings.integrationStatus.${integration.status}`)}
 									</span>
 								</div>
-								<p>{t("settings.integrationLuckyOsDesc")}</p>
+								<p>{t(`settings.integrationProvider.${integration.provider}.desc`)}</p>
 							</div>
 						</div>
 
@@ -168,6 +176,12 @@ export function IntegrationCenter() {
 							<div className="w-integration-mode warning" role="note">
 								<strong>{t("settings.integrationNotConfiguredTitle")}</strong>{" "}
 								{t("settings.integrationNotConfiguredDesc")}
+							</div>
+						)}
+						{integration.mode === "built_in" && (
+							<div className="w-integration-mode" role="note">
+								<strong>{t("settings.integrationBuiltInTitle")}</strong>{" "}
+								{t("settings.integrationBuiltInDesc")}
 							</div>
 						)}
 
@@ -203,16 +217,18 @@ export function IntegrationCenter() {
 						</details>
 
 						<div className="w-integration-actions">
-							<button
-								type="button"
-								disabled={actionBusy || !canContact}
-								onClick={() => void command(integration, "test")}
-							>
-								{busy === `${integration.provider}:test`
-									? t("settings.integrationTesting")
-									: t("settings.integrationTest")}
-							</button>
-							{integration.status === "revoked" ? (
+							{integration.canTest && (
+								<button
+									type="button"
+									disabled={actionBusy || !canContact}
+									onClick={() => void command(integration, "test")}
+								>
+									{busy === `${integration.provider}:test`
+										? t("settings.integrationTesting")
+										: t("settings.integrationTest")}
+								</button>
+							)}
+							{integration.canRevoke && integration.status === "revoked" ? (
 								<button
 									type="button"
 									className="primary"
@@ -223,7 +239,7 @@ export function IntegrationCenter() {
 										? t("settings.integrationReconnecting")
 										: t("settings.integrationReconnect")}
 								</button>
-							) : (
+							) : integration.canRevoke ? (
 								<button
 									type="button"
 									className="danger"
@@ -232,14 +248,16 @@ export function IntegrationCenter() {
 								>
 									{t("settings.integrationRevoke")}
 								</button>
-							)}
+							) : null}
 						</div>
 
 						{confirmRevoke === integration.id && integration.status !== "revoked" && (
 							<div className="w-integration-confirm" role="alert">
 								<div>
-									<strong>{t("settings.integrationRevokeConfirmTitle")}</strong>
-									<p>{t("settings.integrationRevokeConfirmDesc")}</p>
+									<strong>
+										{t(`settings.integrationProvider.${integration.provider}.revokeTitle`)}
+									</strong>
+									<p>{t(`settings.integrationProvider.${integration.provider}.revokeDesc`)}</p>
 								</div>
 								<div>
 									<button type="button" onClick={() => setConfirmRevoke(null)}>

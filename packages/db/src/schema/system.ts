@@ -119,9 +119,9 @@ export const calendarLinks = pgTable(
  * payloady; ty patří do odděleného vaultu/adaptéru. Klient čte pouze redigovaný
  * health snapshot přes API, tabulka se proto záměrně nesynchronizuje PowerSyncem.
  *
- * První adapter je osobní LuckyOS bridge. Workspace je osobní prostor vlastníka,
- * takže audit i lifecycle zůstávají tenant-scoped a případný budoucí týmový
- * provider může použít stejný model s jiným owner modelem.
+	 * Osobní registry dnes eviduje LuckyOS bridge, e-mailové remindery a vestavěné
+	 * úložiště task příloh. Workspace je osobní prostor vlastníka, takže audit i
+	 * lifecycle zůstávají tenant-scoped.
  */
 export const integrationConnections = pgTable(
 	"integration_connections",
@@ -150,7 +150,10 @@ export const integrationConnections = pgTable(
 		updatedAt: updatedAt(),
 	},
 	(t) => [
-		check("integration_connections_provider_valid", sql`${t.provider} in ('luckyos')`),
+		check(
+			"integration_connections_provider_valid",
+			sql`${t.provider} in ('luckyos', 'resend_email', 'watson_attachments')`,
+		),
 		check(
 			"integration_connections_status_valid",
 			sql`${t.status} in ('configured', 'healthy', 'degraded', 'not_configured', 'revoked')`,
@@ -161,7 +164,7 @@ export const integrationConnections = pgTable(
 		),
 		check(
 			"integration_connections_error_code_valid",
-			sql`${t.lastErrorCode} IS NULL OR ${t.lastErrorCode} in ('luckyos_not_configured', 'luckyos_timeout', 'luckyos_unavailable', 'luckyos_identity_rejected', 'luckyos_identity_not_linked', 'luckyos_contract_rejected', 'luckyos_upstream_error')`,
+			sql`${t.lastErrorCode} IS NULL OR ${t.lastErrorCode} in ('luckyos_not_configured', 'luckyos_timeout', 'luckyos_unavailable', 'luckyos_identity_rejected', 'luckyos_identity_not_linked', 'luckyos_contract_rejected', 'luckyos_upstream_error', 'email_not_configured', 'email_timeout', 'email_rate_limited', 'email_rejected', 'email_unavailable', 'email_contract_rejected', 'email_provider_error', 'email_revoked', 'attachment_storage_unavailable')`,
 		),
 		check("integration_connections_scopes_array", sql`jsonb_typeof(${t.scopes}) = 'array'`),
 		check(

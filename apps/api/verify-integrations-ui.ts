@@ -1,16 +1,7 @@
 /** Browser audit Integration Centeru v Chromium/WebKitu včetně lifecycle a mobilního reflow. */
 import "./src/env";
 import { mkdir } from "node:fs/promises";
-import {
-	accounts,
-	auditEvents,
-	and,
-	eq,
-	getDb,
-	memberships,
-	users,
-	workspaces,
-} from "@watson/db";
+import { accounts, auditEvents, and, eq, getDb, memberships, users, workspaces } from "@watson/db";
 import axe from "axe-core";
 import { hashPassword } from "better-auth/crypto";
 import { type Browser, chromium, webkit } from "playwright";
@@ -89,7 +80,11 @@ async function run(browserName: "chromium" | "webkit") {
 		});
 		await page.getByRole("heading", { name: "Propojené služby", exact: true }).waitFor();
 		const card = page.getByRole("article").filter({ hasText: "LuckyOS" });
+		const emailCard = page.getByRole("article").filter({ hasText: "E-mailové připomínky" });
+		const attachmentCard = page.getByRole("article").filter({ hasText: "Přílohy Watson" });
 		await card.getByText("Připraveno k testu", { exact: true }).waitFor();
+		await emailCard.getByText("Připraveno k testu", { exact: true }).waitFor();
+		await attachmentCard.getByText("Vestavěná služba.", { exact: true }).waitFor();
 		await card.getByText("Co propojení smí", { exact: true }).click();
 		for (const permission of [
 			"Ověřit identitu zaměstnance",
@@ -101,8 +96,28 @@ async function run(browserName: "chromium" | "webkit") {
 		}
 		await card.getByRole("button", { name: "Otestovat spojení", exact: true }).click();
 		await card.getByText("V pořádku", { exact: true }).waitFor();
-		await page.getByText("Spojení bylo ověřeno.", { exact: true }).waitFor();
+		await page.getByText("Spojení s LuckyOS bylo ověřeno.", { exact: true }).waitFor();
+		await emailCard.getByRole("button", { name: "Otestovat spojení", exact: true }).click();
+		await emailCard.getByText("V pořádku", { exact: true }).waitFor();
+		await page.getByText("Testovací e-mail provider přijal.", { exact: true }).waitFor();
+		await attachmentCard.getByRole("button", { name: "Otestovat spojení", exact: true }).click();
+		await attachmentCard.getByText("V pořádku", { exact: true }).waitFor();
+		await page.getByText("Úložiště příloh bylo ověřeno.", { exact: true }).waitFor();
 		await assertAxeClean(page, `${browserName}_desktop`);
+		await page.goto(`${WEB}/nastaveni?sekce=oznameni`, {
+			waitUntil: "domcontentloaded",
+			timeout: 30_000,
+		});
+		await page.getByText("Zatím neaktivní", { exact: true }).waitFor();
+		await page.getByText("Nastavení u úkolu", { exact: true }).waitFor();
+		if ((await page.getByRole("switch").count()) !== 0)
+			throw new Error("notification_settings_fake_switch");
+		await assertAxeClean(page, `${browserName}_notifications`);
+		await page.goto(`${WEB}/nastaveni?sekce=integrace`, {
+			waitUntil: "domcontentloaded",
+			timeout: 30_000,
+		});
+		await card.getByText("V pořádku", { exact: true }).waitFor();
 
 		await card.getByRole("button", { name: "Odpojit", exact: true }).click();
 		const confirmation = card.getByRole("alert").filter({ hasText: "Odpojit LuckyOS od Watsonu?" });
@@ -159,6 +174,12 @@ async function run(browserName: "chromium" | "webkit") {
 				path: `${SCREENSHOT_DIR}/${browserName}-integration-center-390.png`,
 				fullPage: true,
 			});
+			await emailCard.screenshot({
+				path: `${SCREENSHOT_DIR}/${browserName}-email-card-390.png`,
+			});
+			await attachmentCard.screenshot({
+				path: `${SCREENSHOT_DIR}/${browserName}-attachment-card-390.png`,
+			});
 		}
 		await reconnect.click();
 		await card.getByText("V pořádku", { exact: true }).waitFor();
@@ -171,11 +192,11 @@ async function run(browserName: "chromium" | "webkit") {
 					eq(auditEvents.entity, "integration_connection"),
 				),
 			);
-		if (audits.length !== 3) throw new Error(`integration_ui_audit:${JSON.stringify(audits)}`);
+		if (audits.length !== 5) throw new Error(`integration_ui_audit:${JSON.stringify(audits)}`);
 		if (runtimeErrors.length > 0) {
 			throw new Error(`integration_ui_runtime:${runtimeErrors.join(" | ")}`);
 		}
-		console.log(`  ✓ ${browserName}: health, permissions, revoke/reconnect, mobile reflow a axe`);
+		console.log(`  ✓ ${browserName}: tři providery, health, revoke/reconnect, mobile reflow a axe`);
 	} finally {
 		await browser?.close();
 		await db.delete(workspaces).where(eq(workspaces.id, fixture.workspaceId));

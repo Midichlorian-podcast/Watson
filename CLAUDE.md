@@ -140,7 +140,8 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
   vytvoří skutečný meet. Rezervace respektuje Focus, dostupnost i obsazený kalendář;
   zrušení bezpečně otevře slot a zachová auditní historii.
 - Workspace pozvánky, role a profilové metadata.
-- Web Push reminder state machine; e-mail reminder je poctivě unavailable, ne fake success.
+- Web Push a volitelné e-mailové remindery sdílejí lease/retry/hold state machine; e-mail
+  dostane `sent` až po provider ACK, stabilní idempotency key a message ID.
 - LuckyOS broker s odděleným bridge keyringem, tenant dedup a transakční reconciliation; reálný provider je externí prerequisite.
 - Export/restore s ACL scope, checksumem, HMAC, schema verzí, dry-run, conflict módem a lokálním AES-GCM obalem.
 - PWA/offline shell, šifrovaná per-user PowerSync SQLite a Centrum problémů pro odmítnuté zápisy.
@@ -150,7 +151,8 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
 - Mail je rozsáhlý interaktivní demo modul. Permanentní `MailDemoBanner` je povinný na všech vstupních plochách. OAuth/IMAP, odeslání, doručení, vault, provider sync a mailbox audit nejsou produkční.
 - AI meeting extraction bez klíče je dostupná pouze v non-production ukázkovém režimu a musí být označena `mock`. Produkce bez klíče vrací 503.
 - LuckyOS canned data lze zapnout pouze mimo produkci. Produkce bez base URL vrací 503.
-- E-mail reminders nejsou implementované; write path odmítá `channel=email` 422.
+- E-mail reminder není totéž co produkční Mail M1: provider potvrzuje přijetí k odeslání,
+  ne doručení do cílové schránky. Bez konfigurace nebo po osobním revoke write path fail-closed odmítá.
 
 ### 2.3 Technická architektura
 
@@ -162,7 +164,7 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
 | Databáze | PostgreSQL + Drizzle | tenant, constrainty, transakce, audit |
 | Sync | PowerSync buckets + strict write registry | distribuce dat a upload envelope |
 | AI | Anthropic přes server policy | default-deny, explicitní consent |
-| Notifikace | Web Push worker + DB leases/state | provider potvrzuje doručení/pokus |
+| Notifikace | Web Push/Resend adapter + DB leases/state | provider potvrzuje push doručení nebo přijetí e-mailu |
 
 Klíčové adresáře:
 
@@ -374,7 +376,6 @@ Acceptance: skutečný PITR test na izolované instanci, změřené RPO ≤15 mi
 ### R-05 — reálné integrace
 
 - Mail provider + token vault + verified delivery.
-- E-mail reminder provider.
 - LuckyOS credentials, contract test a revoke/failure drill.
 - AI/STT provider DPA, budget a EU/data residency rozhodnutí.
 - Attachment object store, scan a retention.
@@ -501,6 +502,18 @@ Stav dávky:
    revoked/error stavu. Chromium i WebKit ověřily scopes, test, inline potvrzení,
    serverové odpojení, perzistenci, reconnect, 390px reflow a axe. Mail zůstává
    pravdivě označený jako demo a přechází až do samostatného F5 programu.
+
+2. **Reminder e-mail + task attachment health — dokončeno 2026-07-17.**
+   Resend adapter je společný pro auth a remindery, ale reminder má vlastní odesílatele,
+   per-user revoke/reconnect, safe error allowlist a stabilní idempotency key. Worker
+   claimuje push i e-mail přes stejný `SKIP LOCKED` lease, respektuje Focus/snooze,
+   trvalé 4xx ukončí bez marných retry a `sent` zapíše až po validním ACK s provider ID.
+   PowerSync přijme `channel=email` jen při nakonfigurovaném a povoleném provideru.
+   Vestavěné úložiště skutečných task příloh nebylo nahrazeno; Integration Center mu
+   přidal redigovaný health/scopes test. Falešné přepínače Oznámení byly odstraněny:
+   digest je pravdivě „zatím neaktivní“ a osobní remindery odkazují na nastavení u úkolu.
+   Lokální Resend stub dokazuje malformed ACK, žádný upstream leak, worker ACK, CAS,
+   tenant izolaci a revoke; Chromium/WebKit ověřily tři provider karty, mobil a axe.
 
 ### F5 — reálný Mail (8–12 týdnů; samostatný program)
 

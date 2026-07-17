@@ -5,7 +5,11 @@ const [
 	schema,
 	migration,
 	invariantMigration,
+	serviceMigration,
 	integrations,
+	serviceIntegrations,
+	emailProvider,
+	push,
 	employee,
 	index,
 	ui,
@@ -19,7 +23,11 @@ const [
 	read("packages/db/src/schema/system.ts"),
 	read("packages/db/drizzle/0065_happy_stranger.sql"),
 	read("packages/db/drizzle/0066_cultured_cerise.sql"),
+	read("packages/db/drizzle/0067_early_galactus.sql"),
 	read("apps/api/src/integrations.ts"),
+	read("apps/api/src/serviceIntegrations.ts"),
+	read("apps/api/src/emailProvider.ts"),
+	read("apps/api/src/push.ts"),
 	read("apps/api/src/employee.ts"),
 	read("apps/api/src/index.ts"),
 	read("apps/web/src/components/IntegrationCenter.tsx"),
@@ -68,6 +76,9 @@ for (const invariant of [
 ]) {
 	requireText(invariantMigration, invariant, `DB invariant ${invariant}`);
 }
+for (const provider of ["resend_email", "watson_attachments", "email_contract_rejected"]) {
+	requireText(serviceMigration, provider, `rozšířený provider ${provider}`);
+}
 for (const route of [
 	'"/api/integrations"',
 	'"/api/integrations/luckyos/test"',
@@ -75,6 +86,14 @@ for (const route of [
 	'"/api/integrations/luckyos/reconnect"',
 ]) {
 	requireText(integrations, route, `route ${route}`);
+}
+for (const route of [
+	'"/api/integrations/resend_email/test"',
+	'"/api/integrations/resend_email/revoke"',
+	'"/api/integrations/resend_email/reconnect"',
+	'"/api/integrations/watson_attachments/test"',
+]) {
+	requireText(serviceIntegrations, route, `service route ${route}`);
 }
 for (const guarantee of [
 	"safeErrorCode",
@@ -90,6 +109,22 @@ for (const guarantee of [
 ]) {
 	requireText(integrations, guarantee, `serverový kontrakt ${guarantee}`);
 }
+for (const guarantee of [
+	"sendProviderEmail",
+	"Idempotency-Key",
+	"email_contract_rejected",
+	"AbortSignal.timeout",
+]) {
+	requireText(emailProvider, guarantee, `e-mail provider ${guarantee}`);
+}
+for (const guarantee of [
+	"sendTaskReminderEmail",
+	"reminderEmailAvailability",
+	"providerMessageId",
+	"delivery.permanent",
+]) {
+	requireText(push + serviceIntegrations, guarantee, `reminder kontrakt ${guarantee}`);
+}
 requireText(employee, "if (res.revoked)", "employee passthrough respektuje revoke");
 requireText(employee, "isLuckyOsRevoked(session.user.id)", "upload respektuje revoke");
 requireText(index, '"/api/integrations/*"', "provider endpoint má rate limit");
@@ -99,7 +134,7 @@ for (const uiToken of [
 	"integration.lastTestedAt",
 	"integration.lastErrorCode",
 	"integration.scopes.map",
-	"integrationRevokeConfirmTitle",
+	"integrationProvider.${integration.provider}.revokeTitle",
 	"expectedVersion: integration.version",
 	"crypto.randomUUID()",
 ]) {
@@ -121,6 +156,10 @@ for (const [locale, source] of [
 }
 requireText(ci, "verify:integrations", "API integrační důkaz běží v CI");
 requireText(ci, "verify-luckyos-provider-stub.mjs", "CI nepoužívá reálný LuckyOS");
+requireText(ci, "verify-email-provider-stub.mjs", "CI neposílá reálný e-mail");
+requireText(settings, "notificationPlanned", "Oznámení nepředstírá aktivní digest");
+requireText(settings, "notificationPerTask", "Reminder stav odkazuje na skutečný per-task model");
+requireText(powerSyncGateway, "reminderEmailAvailability(userId)", "write-path ověřuje e-mail provider");
 
 for (const forbidden of ["integration_connections", "integration_command_receipts"]) {
 	if (powerSyncSchema.includes(forbidden) || powerSyncGateway.includes(`${forbidden}:`)) {

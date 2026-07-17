@@ -12,9 +12,7 @@ if (existsSync(envPath)) {
 
 // Povolené originy webu (CORS + trustedOrigins). WEB_ORIGIN může být čárkou oddělený seznam;
 // dev default zahrnuje běžné Vite porty (5173 primární, 5180 fallback při kolizi portů).
-const webOrigins = (
-	process.env.WEB_ORIGIN ?? "http://localhost:5173,http://localhost:5180"
-)
+const webOrigins = (process.env.WEB_ORIGIN ?? "http://localhost:5173,http://localhost:5180")
 	.split(",")
 	.map((s) => s.trim())
 	.filter(Boolean);
@@ -56,6 +54,14 @@ export const env = {
 		privateKey: process.env.VAPID_PRIVATE_KEY,
 	},
 	resendApiKey: process.env.RESEND_API_KEY,
+	/** Odesílatel reminderů; může být oddělený od auth domény. */
+	reminderEmailFrom:
+		process.env.REMINDER_EMAIL_FROM ?? process.env.AUTH_EMAIL_FROM ?? "Watson <auth@watson.local>",
+	/** Lokální stub je povolen jen mimo produkci; produkce vždy míří přímo na Resend. */
+	resendApiBaseUrl:
+		process.env.NODE_ENV === "production"
+			? "https://api.resend.com"
+			: (process.env.RESEND_API_BASE_URL ?? "https://api.resend.com").replace(/\/$/, ""),
 	/** Claude (Anthropic) — pohání AI vrstvu (modul Mítingy, Watson příkazy). */
 	anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 	/** Model pro AI extrakci — default Opus, přepnutelný přes .env kvůli ceně. */
@@ -78,9 +84,7 @@ if (
 }
 
 /** Google login se zapne sám, jakmile jsou v .env oba klíče. */
-export const googleEnabled = Boolean(
-	env.google.clientId && env.google.clientSecret,
-);
+export const googleEnabled = Boolean(env.google.clientId && env.google.clientSecret);
 
 /** Web Push se zapne, jakmile jsou v .env oba VAPID klíče. */
 export const pushEnabled = Boolean(env.vapid.publicKey && env.vapid.privateKey);

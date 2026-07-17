@@ -51,6 +51,7 @@ import { pushRoutes, startReminderWorker } from "./push";
 import { rateLimit } from "./rateLimit";
 import { recurrenceCommandRoutes } from "./recurrenceCommands";
 import { savedViewRoutes } from "./savedViews";
+import { serviceIntegrationRoutes } from "./serviceIntegrations";
 import { taskAcceptanceRoutes } from "./taskAcceptances";
 import { taskAvailabilityRoutes } from "./taskAvailability";
 import { taskBulkCommandRoutes } from "./taskBulkCommands";
@@ -426,6 +427,7 @@ app.route("/", pollRoutes);
 app.route("/", projectMilestoneRoutes);
 app.route("/", intakeFormRoutes);
 app.route("/", integrationRoutes);
+app.route("/", serviceIntegrationRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);

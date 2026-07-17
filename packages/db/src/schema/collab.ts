@@ -367,7 +367,7 @@ export const reminders = pgTable(
 		heldReason: varchar("held_reason", { length: 32 }),
 		lastErrorCode: varchar("last_error_code", { length: 64 }),
 		providerMessageId: varchar("provider_message_id", { length: 256 }),
-		/** Kdy provider potvrdil alespoň jedno doručení. Píše jen server. */
+		/** Kdy provider potvrdil push doručení nebo přijetí e-mailu k odeslání. Píše jen server. */
 		sentAt: timestamp("sent_at", { withTimezone: true }),
 		createdAt: createdAt(),
 	},
