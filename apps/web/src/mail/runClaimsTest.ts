@@ -1,6 +1,6 @@
 /**
  * Regresní test CC-P0-08: obsah a akce Mailu jsou demo a nesmí tvrdit
- * neověřený stav. Account lifecycle a owner-only inbound read M1 mají explicitní
+ * neověřený stav. Account lifecycle a owner-only read/send M1 mají explicitní
  * allowlist claimů, které dokládá API E2E + mail static contract.
  *
  * 1) Žádný UI text v src/mail nesmí tvrdit „odesláno / doručeno / připojeno /
@@ -10,7 +10,7 @@
  *
  * Spuštění: pnpm --filter @watson/web test (tsx src/mail/runClaimsTest.ts)
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const MAIL_DIR = join(import.meta.dirname, ".");
@@ -25,6 +25,10 @@ const VERIFIED_ACCOUNT_CLAIMS: Record<string, RegExp[]> = {
 	"MailSub.tsx": [/zatím nepřipojeno/],
 	"PersonalMailWorkspace.tsx": [
 		/Watson zprávy synchronizuje šifrovaně\. Heslo nevidí a obsah zpřístupní jen vlastníkovi účtu/,
+		/Skutečný šifrovaný příjem i odesílání/,
+	],
+	"PersonalMailComposer.tsx": [
+		/Skutečné odeslání přes připojený Gmail · obsah je ve frontě šifrovaný/,
 	],
 };
 

@@ -3,11 +3,13 @@ import "./src/env";
 import { mkdir } from "node:fs/promises";
 import {
 	accounts,
+	and,
 	eq,
 	getDb,
 	mailAccounts,
-	mailTaskLinks,
+	mailOutboundMessages,
 	mailSyncStates,
+	mailTaskLinks,
 	memberships,
 	projectMembers,
 	projects,
@@ -18,6 +20,7 @@ import {
 import axe from "axe-core";
 import { hashPassword } from "better-auth/crypto";
 import { type Browser, chromium, type Page, webkit } from "playwright";
+import { scanMailOutbound } from "./src/mailOutbound";
 import { scanMailSync } from "./src/mailSync";
 
 const WEB = process.env.PERSONAL_MAIL_UI_WEB ?? "http://localhost:5173";
@@ -135,11 +138,13 @@ async function run(browserName: "chromium" | "webkit") {
 		const page = await context.newPage();
 		const runtimeErrors: string[] = [];
 		let expectedDetailFailure = false;
+		let expectedOutboundFailure = false;
 		page.on("pageerror", (error) => runtimeErrors.push(error.message));
 		page.on("console", (message) => {
 			if (message.type() !== "error") return;
-			if (expectedDetailFailure && message.text().includes("503")) {
-				expectedDetailFailure = false;
+			if ((expectedDetailFailure || expectedOutboundFailure) && message.text().includes("503")) {
+				if (expectedOutboundFailure) expectedOutboundFailure = false;
+				else expectedDetailFailure = false;
 				return;
 			}
 			runtimeErrors.push(message.text());
@@ -177,6 +182,104 @@ async function run(browserName: "chromium" | "webkit") {
 		if ((await workspace.getByText(/Text zprávy \d/).count()) !== 0) {
 			throw new Error("personal_mail_ui_body_leaked_in_summary");
 		}
+
+		await workspace.getByRole("button", { name: "Napsat", exact: true }).click();
+		let composer = page.getByRole("dialog", { name: "Nová osobní zpráva", exact: true });
+		await composer.getByLabel("Komu", { exact: true }).fill("undo-ui@example.test");
+		await composer.getByLabel("Předmět", { exact: true }).fill(`UI Undo ${browserName}`);
+		await composer.getByLabel("Zpráva", { exact: true }).fill("Podklady najdeš v příloze.");
+		await composer.getByText("Nezapomněl/a jsi přílohu?", { exact: true }).waitFor();
+		await composer.getByRole("checkbox", { name: "Rozumím, odeslat tuto zprávu bez přílohy", exact: true }).check();
+		await assertAxeClean(page, `${browserName}_composer_attachment_warning`);
+		if (SCREENSHOT_DIR) {
+			await mkdir(SCREENSHOT_DIR, { recursive: true });
+			await composer.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-personal-composer.png` });
+		}
+		const outboundRoute = /\/api\/mail\/accounts\/[^/]+\/outbound$/;
+		await page.route(outboundRoute, async (route) => {
+			await route.fetch();
+			await route.fulfill({
+				status: 503,
+				contentType: "application/json",
+				body: '{"error":"mail_outbound_unavailable"}',
+			});
+		});
+		expectedOutboundFailure = true;
+		await composer.getByRole("button", { name: "Odeslat", exact: true }).click();
+		await composer.getByText("Obsah zůstává v tomto okně.", { exact: false }).waitFor();
+		await page.unroute(outboundRoute);
+		await composer.getByRole("button", { name: "Odeslat", exact: true }).click();
+		await composer.waitFor({ state: "hidden" });
+		await workspace.getByText(`UI Undo ${browserName}`, { exact: true }).waitFor();
+		const queuedAfterLostResponse = await db
+			.select()
+			.from(mailOutboundMessages)
+			.where(eq(mailOutboundMessages.accountId, account.id));
+		if (queuedAfterLostResponse.length !== 1) {
+			throw new Error(`personal_mail_ui_retry_duplicated:${JSON.stringify(queuedAfterLostResponse)}`);
+		}
+		await workspace.getByRole("button", { name: "Vrátit odeslání", exact: true }).click();
+		await workspace.getByText("Odeslání vráceno", { exact: true }).waitFor();
+		const undone = (
+			await db
+				.select()
+				.from(mailOutboundMessages)
+				.where(
+					and(
+						eq(mailOutboundMessages.accountId, account.id),
+						eq(mailOutboundMessages.status, "cancelled"),
+					),
+				)
+		)[0];
+		if (!undone || undone.ownerUserId !== fixture.userId) {
+			throw new Error(`personal_mail_ui_undo_missing:${JSON.stringify(undone)}`);
+		}
+
+		await workspace.getByRole("button", { name: "Napsat", exact: true }).click();
+		composer = page.getByRole("dialog", { name: "Nová osobní zpráva", exact: true });
+		await composer.getByLabel("Komu", { exact: true }).fill("recipient-ui@example.test");
+		await composer.getByLabel("Předmět", { exact: true }).fill(`UI Send ${browserName}`);
+		await composer.getByLabel("Zpráva", { exact: true }).fill("Skutečný odchozí text z Watsonu.");
+		await composer.getByRole("button", { name: "Odeslat", exact: true }).click();
+		await composer.waitFor({ state: "hidden" });
+		await workspace.getByText(`UI Send ${browserName}`, { exact: true }).waitFor();
+		const queued = (
+			await db
+				.select()
+				.from(mailOutboundMessages)
+				.where(
+					and(
+						eq(mailOutboundMessages.accountId, account.id),
+						eq(mailOutboundMessages.status, "queued"),
+					),
+				)
+		)[0];
+		if (!queued) throw new Error("personal_mail_ui_send_queue_missing");
+		await scanMailOutbound(new Date(Date.now() + 60_000));
+		await workspace.getByText("Google přijal zprávu", { exact: true }).waitFor({ timeout: 10_000 });
+		if (SCREENSHOT_DIR) {
+			await workspace.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-personal-outbound-status.png` });
+		}
+		const accepted = (
+			await db
+				.select()
+				.from(mailOutboundMessages)
+				.where(eq(mailOutboundMessages.id, queued.id))
+				.limit(1)
+		)[0];
+		if (accepted?.status !== "accepted" || accepted.attempts !== 1) {
+			throw new Error(`personal_mail_ui_send_not_accepted:${JSON.stringify(accepted)}`);
+		}
+		const sentResponse = await fetch(`${STUB}/test/sent?email=${encodeURIComponent(fixture.email)}`);
+		const sentBody = (await sentResponse.json()) as { messages: Array<{ messageId: string; raw: string }> };
+		const sentMessage = sentBody.messages.find(
+			(message) => message.messageId === `watson-${queued.id}@watson.invalid`,
+		);
+		if (!sentMessage?.raw.includes("To: recipient-ui@example.test")) {
+			throw new Error(`personal_mail_ui_provider_send_missing:${JSON.stringify(sentBody)}`);
+		}
+		await assertAxeClean(page, `${browserName}_outbound_status`);
+
 		await workspace.getByText("Synchronizovaná zpráva 3", { exact: true }).click();
 		await workspace.getByText("Text zprávy 3. Token sem nikdy nepatří.", { exact: true }).waitFor();
 		await workspace.getByText("Surové HTML, tracking pixely a vzdálené obrázky se nespouštějí.", { exact: false }).waitFor();
@@ -252,7 +355,7 @@ async function run(browserName: "chromium" | "webkit") {
 		if (runtimeErrors.length > 0) {
 			throw new Error(`personal_mail_ui_runtime:${runtimeErrors.join(" | ")}`);
 		}
-		console.log(`  ✓ ${browserName}: real OAuth, encrypted sync, lazy detail, failure state, mobile reflow and axe`);
+		console.log(`  ✓ ${browserName}: OAuth, encrypted sync/send, Undo, attachment warning, lazy detail, mobile reflow and axe`);
 	} finally {
 		await browser?.close();
 		await db.delete(workspaces).where(eq(workspaces.id, fixture.workspaceId));

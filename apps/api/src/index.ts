@@ -42,11 +42,12 @@ import { exportRoutes } from "./export";
 import { importRoutes } from "./imports";
 import { intakeFormRoutes } from "./intakeForms";
 import { integrationRoutes } from "./integrations";
-import { meetingsRoutes } from "./meetings";
 import { mailAccountRoutes } from "./mailAccounts";
-import { mailSyncRoutes, startMailSyncWorker } from "./mailSync";
 import { mailExecutionRoutes } from "./mailExecution";
+import { mailOutboundRoutes, startMailOutboundWorker } from "./mailOutbound";
+import { mailSyncRoutes, startMailSyncWorker } from "./mailSync";
 import { parseMailVaultKeyring } from "./mailVault";
+import { meetingsRoutes } from "./meetings";
 import { isOpsTokenAuthorized, readOpsSloSnapshot, recordHttpMetric } from "./opsMetrics";
 import { pollRoutes } from "./polls";
 import { powersyncRoutes } from "./powersync";
@@ -439,6 +440,7 @@ app.route("/", serviceIntegrationRoutes);
 app.route("/", mailAccountRoutes);
 app.route("/", mailSyncRoutes);
 app.route("/", mailExecutionRoutes);
+app.route("/", mailOutboundRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);
@@ -1328,6 +1330,7 @@ serve({ fetch: app.fetch, port: env.apiPort }, (info) => {
 	);
 	startReminderWorker();
 	startMailSyncWorker();
+	startMailOutboundWorker();
 });
 
 export type AppType = typeof app;

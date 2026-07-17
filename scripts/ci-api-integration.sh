@@ -153,6 +153,7 @@ INTEGRATIONS_API="$API_URL" pnpm --filter @watson/api verify:integrations
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-google
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-sync
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-execution
+MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-outbound
 RECURRENCE_API="$API_URL" pnpm --filter @watson/api verify:recurrence
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:meet-acl
 MEETING_API="$API_URL" pnpm --filter @watson/api verify:meeting-commands

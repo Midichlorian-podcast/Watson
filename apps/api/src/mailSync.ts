@@ -217,7 +217,10 @@ async function providerFetch(url: string, init: RequestInit): Promise<Response> 
 	}
 }
 
-async function readJsonLimited(response: Response, maxBytes = PROVIDER_JSON_LIMIT): Promise<unknown> {
+export async function readMailProviderJson(
+	response: Response,
+	maxBytes = PROVIDER_JSON_LIMIT,
+): Promise<unknown> {
 	const declared = Number(response.headers.get("content-length") ?? "0");
 	if (Number.isFinite(declared) && declared > maxBytes) {
 		throw new MailSyncError("mail_contract_rejected", false);
@@ -356,7 +359,7 @@ async function accessToken(accountId: string, forceRefresh = false, depth = 0): 
 		}
 		throw new MailSyncError(response.status === 429 ? "mail_rate_limited" : "mail_provider_unavailable", true);
 	}
-	const parsed = refreshSchema.safeParse(await readJsonLimited(response, 128 * 1024));
+	const parsed = refreshSchema.safeParse(await readMailProviderJson(response, 128 * 1024));
 	if (!parsed.success) throw new MailSyncError("mail_contract_rejected", false);
 	const grantedScopes = parsed.data.scope
 		? [...new Set(parsed.data.scope.split(/\s+/).filter(Boolean))].sort()
@@ -392,18 +395,33 @@ async function accessToken(accountId: string, forceRefresh = false, depth = 0): 
 	return parsed.data.access_token;
 }
 
-async function googleFetch(accountId: string, path: string): Promise<Response> {
+/**
+ * Sdílený owner-mailbox transport pro inbound i outbound Gmail cesty.
+ * Každý request dostane čerstvý server-only bearer; po 401 proběhne právě jeden
+ * refresh. Volající stále musí validovat konkrétní provider response kontrakt.
+ */
+export async function authenticatedGoogleMailFetch(
+	accountId: string,
+	path: string,
+	init: RequestInit = {},
+): Promise<Response> {
 	let token = await accessToken(accountId);
-	let response = await providerFetch(`${env.mailGoogle.apiBaseUrl}${path}`, {
-		headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-	});
+	const request = (access: string) => {
+		const headers = new Headers(init.headers);
+		headers.set("Authorization", `Bearer ${access}`);
+		headers.set("Accept", "application/json");
+		return providerFetch(`${env.mailGoogle.apiBaseUrl}${path}`, { ...init, headers });
+	};
+	let response = await request(token);
 	if (response.status === 401) {
 		token = await accessToken(accountId, true);
-		response = await providerFetch(`${env.mailGoogle.apiBaseUrl}${path}`, {
-			headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-		});
+		response = await request(token);
 	}
 	return response;
+}
+
+async function googleFetch(accountId: string, path: string): Promise<Response> {
+	return authenticatedGoogleMailFetch(accountId, path);
 }
 
 function providerError(response: Response, historyRequest = false): never {
@@ -520,7 +538,7 @@ async function fetchMessage(accountId: string, messageId: string) {
 	);
 	if (response.status === 404) return null;
 	if (!response.ok) providerError(response);
-	const parsed = gmailMessageSchema.safeParse(await readJsonLimited(response));
+	const parsed = gmailMessageSchema.safeParse(await readMailProviderJson(response));
 	if (!parsed.success || parsed.data.id !== messageId) {
 		throw new MailSyncError("mail_contract_rejected", false);
 	}
@@ -722,7 +740,7 @@ async function fullSyncPage(state: ClaimedState) {
 		`/gmail/v1/users/me/messages?${query.toString()}`,
 	);
 	if (!response.ok) providerError(response);
-	const list = messageListSchema.safeParse(await readJsonLimited(response, 512 * 1024));
+	const list = messageListSchema.safeParse(await readMailProviderJson(response, 512 * 1024));
 	if (!list.success) throw new MailSyncError("mail_contract_rejected", false);
 	const fetched = await mapLimited(list.data.messages, 4, (message) =>
 		fetchMessage(state.account_id, message.id),
@@ -732,7 +750,7 @@ async function fullSyncPage(state: ClaimedState) {
 	if (!baseline) {
 		const profileResponse = await googleFetch(state.account_id, "/gmail/v1/users/me/profile");
 		if (!profileResponse.ok) providerError(profileResponse);
-		const profile = profileSchema.safeParse(await readJsonLimited(profileResponse, 128 * 1024));
+		const profile = profileSchema.safeParse(await readMailProviderJson(profileResponse, 128 * 1024));
 		if (!profile.success) throw new MailSyncError("mail_contract_rejected", false);
 		baseline = profile.data.historyId;
 	}
@@ -762,7 +780,7 @@ async function partialSyncPage(state: ClaimedState) {
 		);
 		if (!response.ok) providerError(response, true);
 		stage = "history_contract";
-		const history = historyListSchema.safeParse(await readJsonLimited(response));
+		const history = historyListSchema.safeParse(await readMailProviderJson(response));
 		if (!history.success) throw new MailSyncError("mail_contract_rejected", false, stage);
 		stage = "history_collect";
 		const changed = new Set<string>();

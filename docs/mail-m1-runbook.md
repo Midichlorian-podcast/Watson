@@ -3,9 +3,9 @@
 ## Rozsah
 
 Tato etapa provozuje osobní Gmail / Google Workspace účty. Skutečné jsou OAuth
-lifecycle, šifrovaný inbound sync, owner-only read API a osobní read-only inbox ve webu.
-Odesílání, poštovní akce, IMAP/SMTP a týmové schránky zůstávají mimo tento runbook a
-musí být označené jako demo.
+lifecycle, šifrovaný inbound sync, owner-only read API, osobní inbox a textové odesílání
+s Undo Send a Send Later. Další poštovní akce, přílohy odchozích zpráv, IMAP/SMTP a
+týmové schránky zůstávají mimo tento runbook a musí být označené jako demo.
 
 Execution Inbox M2 v tomto programu zahrnuje osobní „zpráva → úkol“ a kanonický odkaz
 zpět. Týmové přiřazování pošty zůstává až v M3.
@@ -41,6 +41,35 @@ Google OAuth verifikaci a podle způsobu ukládání také požadované bezpečn
    každou minutu obnoví serverový read model a neukládá obsah do `localStorage` ani jiné
    nešifrované offline cache. Přílohy se v této etapě nestahují; detail ukazuje jen jejich
    dešifrovaná metadata.
+9. Composer vloží zprávu do owner-only `mail_outbound_messages`. Příjemci, předmět i tělo
+   existují pouze v AES-GCM envelope svázaném s účtem a stabilním outbound ID; cleartext
+   fronta obsahuje jen plánovací/lifecycle metadata.
+10. Okamžité odeslání čeká deset sekund. Do té doby je vratné stejným CAS + idempotentním
+    commandem jako naplánované odeslání. Send Later přijímá pouze budoucí čas nejvýše 366
+    dní dopředu.
+11. Worker claimuje splatné řádky přes `FOR UPDATE SKIP LOCKED`, sestaví plain-text RFC 5322
+    zprávu se stabilním `Message-ID` a odešle ji přes Gmail `users/me/messages/send`.
+    Provider ID uloží až po validním bounded ACK. Přijetí providerem není tvrzení o
+    doručení příjemci.
+
+## Outbound M1 — stavy a duplicate safety
+
+- `queued`: zpráva je v Undo okně nebo čeká na Send Later; lze ji explicitně zrušit.
+- `sending`: jediný worker drží krátký lease. Během něj nelze zprávu uživatelsky zrušit.
+- `retry`: pouze jednoznačné 429, kdy provider zprávu nepřijal. Po omezeném backoffu se
+  použije stejné Watson ID a stejné `Message-ID`; nejvýše pět pokusů.
+- `accepted`: Gmail vrátil syntakticky validní message/thread ID. Watson tím potvrzuje
+  přijetí providerem, nikoli doručení do cílové schránky.
+- `cancelled`: zpráva byla vrácena uživatelem nebo bezpečně zrušena při revoke účtu.
+- `uncertain`: timeout, 5xx, vadný 2xx ACK nebo expirovaný `sending` lease mohl nastat po
+  přijetí zprávy providerem. Stav je záměrně konečný a nikdy se automaticky neretryuje,
+  aby Watson nevytvořil duplicitní skutečný e-mail.
+- `failed`: jednoznačná autentizační nebo kontraktní chyba před přijetím.
+
+DB trigger nezávisle vynucuje osobní owner/account/workspace scope, neměnnost encrypted
+zdroje, přesně rostoucí verzi a povolené lifecycle přechody. Outbound tabulka ani credential
+nejsou v PowerSync pravidlech. Audit ukládá pouze stav, počet příjemců a velikost těla;
+nikdy adresy, předmět ani obsah.
 
 ## Execution Inbox M2
 
@@ -81,7 +110,8 @@ nebo znovu připoj účet. Při podezření na kompromitaci nejdřív revokuj u 
 ## Revokace a výmaz
 
 Odpojení je provider-first: Watson nejdřív vyžádá potvrzení revokace od Google a až potom
-v jedné lokální transakci odstraní credential, sync cursor a veškerý synchronizovaný obsah.
+v jedné lokální transakci zruší čekající odchozí zprávy, označí právě odesílané zprávy jako
+`uncertain` a odstraní credential, sync cursor a veškerý synchronizovaný inbound obsah.
 Při provider výpadku se lokální credential nemaže a UI musí přiznat, že odpojení nebylo
 dokončeno. Příkaz je idempotentní a svázaný s očekávanou verzí.
 
@@ -100,19 +130,21 @@ Odstranění starého klíče před bodem 3 je destruktivní a záměrně fail-c
 
 - Zneplatni OAuth klienta nebo dotčené refresh tokeny v Google Console.
 - Zastav mail worker, zachovej redigované auditní události a neexportuj ciphertext společně
-  s keyringem.
+  s keyringem. Odchozí ciphertext zachovej jen podle retenční politiky a bez keyringu.
 - Rotuj mail keyring odděleně od PowerSync, Better Auth a LuckyOS klíčů.
 - Po obnově vynucuj nový consent dotčených účtů a kontroluj tenant/owner scope.
 - Částečný demo banner lze odstranit až po samostatném E2E důkazu skutečného read/send UI
   a odstranění seedovaných týmových schránek.
 
-## Ověření webového read modelu
+## Ověření webového read/send modelu
 
 S lokálním Google stubem, API a webem spusť `pnpm --filter @watson/api
 verify:personal-mail-ui`. Verifier vytvoří izolovaného uživatele a dokáže v Chromiu i
-WebKitu skutečný OAuth callback, encrypted sync, počty, lazy detail, zákaz demo akcí,
-Execution dialog a reálný task command, přímý mail deep link, bezpečný chybový stav,
-mobilní list/detail reflow, nulový horizontální overflow a axe WCAG A/AA. Samostatný
+WebKitu skutečný OAuth callback, encrypted sync/send, počty, lazy detail, zapomenutou
+přílohu, Undo Send, provider ACK, Execution dialog a reálný task command, přímý mail deep
+link, bezpečný chybový stav, mobilní list/detail reflow, nulový horizontální overflow a axe
+WCAG A/AA. Samostatný `pnpm --filter @watson/api verify:mail-outbound` pokrývá Send Later,
+paralelní claim, 429, uncertain/no-retry, šifrování, lifecycle DB trigger a revoke. Samostatný
 `pnpm --filter @watson/api verify:mail-execution` ověřuje DB/API izolaci, idempotenci,
 delete/replace lifecycle a redigovaný audit. Testovací screenshoty lze zapnout přes
 `PERSONAL_MAIL_UI_SCREENSHOT_DIR`.

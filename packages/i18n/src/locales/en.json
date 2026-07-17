@@ -1566,7 +1566,7 @@
 	},
 	"mail": {
 		"demoBadge": "PARTLY DEMO",
-		"demoBanner": "team inboxes and mail actions are simulated; personal Gmail has a real encrypted read view",
+		"demoBanner": "team inboxes and their actions are simulated; personal Gmail has real encrypted receiving and sending",
 		"taskCreatedToast": "Task from mail added to Inbox — due today",
 		"taskCreatedOpen": "Open",
 		"taskNoInbox": "No inbox project found — task not created"

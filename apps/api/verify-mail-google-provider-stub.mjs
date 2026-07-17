@@ -12,7 +12,10 @@ let revocations = 0;
 let refreshes = 0;
 let messageGets = 0;
 let historyLists = 0;
+let sendPosts = 0;
 const mailboxes = new Map();
+const sentMessages = [];
+const rateLimitedMessageIds = new Set();
 
 function message(email, index, historyId) {
   const id = `msg-${String(index).padStart(3, "0")}`;
@@ -81,6 +84,33 @@ function historyEvent(mailbox, event) {
   return entry;
 }
 
+function acceptSentMessage(email, raw) {
+  const messageId = /^Message-ID:\s*<([^>]+)>/im.exec(raw)?.[1] ?? `missing-${randomUUID()}`;
+  const providerId = `sent-${randomUUID()}`;
+  const threadId = `sent-thread-${randomUUID()}`;
+  const mailbox = ensureMailbox(email);
+  const history = historyEvent(mailbox, {
+    messagesAdded: [{ message: { id: providerId, threadId } }],
+  });
+  const subject = /^Subject:\s*(.+)$/im.exec(raw)?.[1] ?? "";
+  const to = /^To:\s*(.+)$/im.exec(raw)?.[1] ?? "";
+  const item = message(email, mailbox.messages.size + 100, Number(history.id));
+  item.id = providerId;
+  item.threadId = threadId;
+  item.historyId = history.id;
+  item.labelIds = ["SENT"];
+  item.snippet = "Odesláno přes Watson test provider";
+  item.payload.headers = [
+    { name: "Subject", value: subject },
+    { name: "From", value: email },
+    { name: "To", value: to },
+    { name: "Date", value: new Date().toUTCString() },
+  ];
+  mailbox.messages.set(providerId, item);
+  sentMessages.push({ email, id: providerId, threadId, messageId, raw });
+  return { id: providerId, threadId };
+}
+
 function json(response, status, payload) {
   response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
   response.end(JSON.stringify(payload));
@@ -109,9 +139,17 @@ const server = createServer(async (request, response) => {
       refreshes,
       messageGets,
       historyLists,
+      sendPosts,
+	  sentMessages: sentMessages.length,
       activeTokens: accessTokens.size,
     });
   }
+	if (request.method === "GET" && url.pathname === "/test/sent") {
+	  const email = (url.searchParams.get("email") ?? "").trim().toLowerCase();
+	  return json(response, 200, {
+		messages: sentMessages.filter((item) => !email || item.email === email),
+	  });
+	}
   if (request.method === "POST" && url.pathname === "/test/mailbox") {
     let input;
     try {
@@ -124,6 +162,9 @@ const server = createServer(async (request, response) => {
     if (!email) return json(response, 422, { error: "email_required" });
     if (action === "reset") {
       mailboxes.delete(email);
+	  for (let index = sentMessages.length - 1; index >= 0; index -= 1) {
+		if (sentMessages[index]?.email === email) sentMessages.splice(index, 1);
+	  }
       const mailbox = ensureMailbox(email, Math.max(0, Math.min(60, Number(input?.count ?? 3))));
       return json(response, 200, { historyId: String(mailbox.historyId), messages: mailbox.messages.size });
     }
@@ -295,6 +336,43 @@ const server = createServer(async (request, response) => {
     const item = ensureMailbox(email).messages.get(id);
     return item ? json(response, 200, item) : json(response, 404, { error: "not_found" });
   }
+	if (request.method === "POST" && url.pathname === "/gmail/v1/users/me/messages/send") {
+	  const token = request.headers.authorization?.replace(/^Bearer\s+/i, "") ?? "";
+	  const email = accessTokens.get(token);
+	  if (!email) return json(response, 401, { error: "invalid_token" });
+	  sendPosts += 1;
+	  let payload;
+	  try {
+		payload = JSON.parse(await body(request));
+	  } catch {
+		return json(response, 400, { error: "invalid_json" });
+	  }
+	  if (typeof payload?.raw !== "string" || payload.raw.length > 2_000_000) {
+		return json(response, 400, { error: "invalid_raw" });
+	  }
+	  let raw;
+	  try {
+		raw = Buffer.from(payload.raw, "base64url").toString("utf8");
+	  } catch {
+		return json(response, 400, { error: "invalid_raw" });
+	  }
+	  if (!/^From:\s*[^\r\n]+/im.test(raw) || !/^To:\s*[^\r\n]+/im.test(raw)) {
+		return json(response, 400, { error: "invalid_rfc_message" });
+	  }
+	  const stableMessageId = /^Message-ID:\s*<([^>]+)>/im.exec(raw)?.[1] ?? "";
+	  if (raw.includes("rate-limit-once@example.test") && !rateLimitedMessageIds.has(stableMessageId)) {
+		rateLimitedMessageIds.add(stableMessageId);
+		return json(response, 429, { error: "rate_limited" });
+	  }
+	  const accepted = acceptSentMessage(email, raw);
+	  if (raw.includes("uncertain@example.test")) {
+		return json(response, 503, { error: "provider_uncertain_after_accept" });
+	  }
+	  if (raw.includes("malformed-send@example.test")) {
+		return json(response, 200, { id: "bad provider id", threadId: accepted.threadId });
+	  }
+	  return json(response, 200, accepted);
+	}
   if (request.method === "GET" && url.pathname === "/gmail/v1/users/me/history") {
     const token = request.headers.authorization?.replace(/^Bearer\s+/i, "") ?? "";
     const email = accessTokens.get(token);

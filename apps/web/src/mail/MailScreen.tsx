@@ -300,7 +300,7 @@ export function MailScreen() {
 			data-wm-theme={theme === "dark" ? "dark" : "light"}
 			style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%" }}
 		>
-			{/* CC-P0-08 — nesundávat před E2E důkazem message sync/send */}
+			{/* CC-P0-08 — zůstává pro týmové schránky, dokud jejich sync/send není skutečný */}
 			<MailDemoBanner />
 			<div
 				data-mailroot

@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { PersonalMailComposer } from "./PersonalMailComposer";
 import { PersonalMailTaskDialog } from "./PersonalMailTaskDialog";
 import { useMail } from "./state";
 import type {
@@ -25,8 +26,22 @@ const errorLabels: Record<string, string> = {
 	mail_message_unavailable: "Detail zprávy se nepodařilo načíst.",
 	mail_execution_unavailable: "Úkol se nepodařilo bezpečně navázat.",
 	mail_execution_conflict: "Vazba se mezitím změnila. Stav jsme obnovili.",
+	mail_outbound_unavailable: "Zprávu se nepodařilo bezpečně zařadit k odeslání.",
+	mail_outbound_not_cancellable: "Zprávu už nelze vrátit. Stav jsme obnovili.",
+	mail_outbound_conflict: "Odeslání se mezitím změnilo. Stav jsme obnovili.",
+	stale_version: "Odeslání se mezitím změnilo. Stav jsme obnovili.",
 	mail_account_inactive: "Účet není aktivní. Obnov Google souhlas v Nastavení.",
 	mail_account_not_found: "Účet už není dostupný.",
+};
+
+const outboundLabels: Record<string, string> = {
+	queued: "Čeká na odeslání",
+	sending: "Odesílá se…",
+	retry: "Google dočasně omezuje provoz · Watson zkusí znovu",
+	accepted: "Google přijal zprávu",
+	cancelled: "Odeslání vráceno",
+	uncertain: "Výsledek je nejistý · Watson zprávu automaticky neopakuje",
+	failed: "Zprávu se nepodařilo odeslat",
 };
 
 function formatDate(value: string) {
@@ -139,6 +154,7 @@ export function PersonalMailWorkspace({
 	const navigate = useNavigate();
 	const mail = useMail();
 	const [taskDialogMessage, setTaskDialogMessage] = useState<PersonalMessageSummary | null>(null);
+	const [composerOpen, setComposerOpen] = useState(false);
 	const accountById = new Map(model.accounts.map((account) => [account.id, account]));
 	const selectedKey = model.selected ? `${model.selected.accountId}:${model.selected.messageId}` : null;
 	const selectedAccount = model.detail ? accountById.get(model.detail.accountId) : null;
@@ -190,6 +206,9 @@ export function PersonalMailWorkspace({
 								{syncLabels[aggregateStatus]} · {model.totalCount} zpráv · {model.unreadCount} nepřečtených
 							</div>
 						</div>
+						<button type="button" data-personal-compose onClick={() => setComposerOpen(true)} disabled={model.accounts.every((account) => account.status !== "connected")} style={{ minHeight: 44, border: 0, borderRadius: 10, background: "var(--ink)", color: "var(--panel)", padding: "0 12px", fontWeight: 750, cursor: "pointer" }}>
+							Napsat
+						</button>
 						<button type="button" onClick={() => void model.requestSync()} disabled={model.syncing || model.accounts.every((account) => account.status !== "connected")} title="Zkontrolovat nové zprávy" style={{ minWidth: 44, height: 44, border: "1px solid var(--line)", borderRadius: 10, background: "transparent", color: "var(--ink-2)", cursor: "pointer" }}>
 							{model.syncing ? "…" : "↻"}
 						</button>
@@ -204,7 +223,7 @@ export function PersonalMailWorkspace({
 						</label>
 					)}
 					<div style={{ borderRadius: 9, padding: "8px 10px", background: "var(--success-soft)", color: "var(--success-ink)", fontSize: 10.5, lineHeight: 1.4 }}>
-						Skutečná data · šifrovaný read model. Odpovědi a poštovní akce zatím zůstávají demo.
+						Skutečný šifrovaný příjem i odesílání. Hromadné poštovní akce mimo osobní schránku zůstávají demo.
 					</div>
 					{needsAttention && (
 						<div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, borderRadius: 9, padding: "8px 10px", background: "var(--danger-soft)", color: "var(--danger-ink)", fontSize: 10.5, lineHeight: 1.4 }}>
@@ -214,6 +233,25 @@ export function PersonalMailWorkspace({
 					)}
 				</header>
 				{model.error && <div role="alert" style={{ margin: 10, padding: "9px 10px", borderRadius: 9, background: "var(--danger-soft)", color: "var(--danger-ink)", fontSize: 11 }}>{errorLabels[model.error] ?? "Poštu se nepodařilo bezpečně načíst. Zkus obnovení."}</div>}
+				{model.outbound.slice(0, 3).map((message) => {
+					const scheduled = Date.parse(message.scheduledFor) - Date.parse(message.createdAt) > 20_000;
+					const danger = message.status === "failed" || message.status === "uncertain";
+					return (
+						<div key={message.id} data-personal-outbound-status={message.status} role={danger ? "alert" : "status"} style={{ margin: "10px 10px 0", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 10px", background: danger ? "var(--danger-soft)" : message.status === "accepted" ? "var(--success-soft)" : "var(--panel-2)", color: danger ? "var(--danger-ink)" : "var(--ink-2)", fontSize: 10.5, lineHeight: 1.4 }}>
+							<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+								<div style={{ flex: 1, minWidth: 0 }}>
+									<strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{message.subject || "(bez předmětu)"}</strong>
+									<span>{outboundLabels[message.status] ?? message.status}{scheduled && message.status === "queued" ? ` · ${formatDate(message.scheduledFor)}` : ""}</span>
+								</div>
+								{message.canCancel && (
+									<button type="button" onClick={() => void model.cancelOutbound(message).catch(() => undefined)} disabled={model.cancellingOutboundId !== null} style={{ minHeight: 40, border: "1px solid currentColor", borderRadius: 8, background: "transparent", color: "inherit", padding: "0 10px", fontWeight: 750, cursor: "pointer" }}>
+										{model.cancellingOutboundId === message.id ? "Vracím…" : scheduled ? "Zrušit plán" : "Vrátit odeslání"}
+									</button>
+								)}
+							</div>
+						</div>
+					);
+				})}
 				<div style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
 					{model.loadingMessages ? (
 						<div aria-live="polite" style={{ padding: 18, fontSize: 12, color: "var(--ink-3)" }}>Načítám šifrovanou poštu…</div>
@@ -296,7 +334,7 @@ export function PersonalMailWorkspace({
 							</section>
 						)}
 						<div style={{ marginTop: 24, padding: "10px 12px", borderRadius: 10, background: "var(--panel-2)", color: "var(--ink-3)", fontSize: 10.5, lineHeight: 1.5 }}>
-							Bezpečný read-only náhled M1. Surové HTML, tracking pixely a vzdálené obrázky se nespouštějí.
+							Bezpečný textový náhled M1. Surové HTML, tracking pixely a vzdálené obrázky se nespouštějí.
 						</div>
 					</div>
 				)}
@@ -312,6 +350,7 @@ export function PersonalMailWorkspace({
 					onOpenTask={openTask}
 				/>
 			)}
+			{composerOpen && <PersonalMailComposer model={model} onClose={() => setComposerOpen(false)} />}
 		</section>
 	);
 }

@@ -17,6 +17,7 @@ import {
 	mailCommandReceipts,
 	mailMessages,
 	mailOauthSessions,
+	mailOutboundMessages,
 	mailSyncStates,
 	sql,
 	workspaces,
@@ -564,6 +565,38 @@ mailAccountRoutes.post("/api/mail/accounts/:accountId/revoke", async (c) => {
 				);
 				await revokeGoogleToken(credential.refreshToken);
 			}
+			// Neodeslaný obsah po revoke nesmí zůstat čekat na credential. Již
+			// claimnutý send má nejednoznačný výsledek a proto se nikdy neretryuje.
+			await tx
+				.update(mailOutboundMessages)
+				.set({
+					status: "cancelled",
+					cancelledAt: new Date(),
+					nextAttemptAt: null,
+					lastErrorCode: null,
+					version: sql`${mailOutboundMessages.version} + 1`,
+				})
+				.where(
+					and(
+						eq(mailOutboundMessages.accountId, account.id),
+						sql`${mailOutboundMessages.status} in ('queued', 'retry')`,
+					),
+				);
+			await tx
+				.update(mailOutboundMessages)
+				.set({
+					status: "uncertain",
+					leaseToken: null,
+					leaseUntil: null,
+					lastErrorCode: "mail_delivery_uncertain",
+					version: sql`${mailOutboundMessages.version} + 1`,
+				})
+				.where(
+					and(
+						eq(mailOutboundMessages.accountId, account.id),
+						eq(mailOutboundMessages.status, "sending"),
+					),
+				);
 			await tx.delete(mailMessages).where(eq(mailMessages.accountId, account.id));
 			await tx.delete(mailSyncStates).where(eq(mailSyncStates.accountId, account.id));
 			await tx.delete(mailAccountCredentials).where(eq(mailAccountCredentials.accountId, account.id));

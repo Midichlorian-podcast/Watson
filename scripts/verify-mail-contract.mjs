@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
-const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecution, exportRoutes, personalWorkspace, mailScreen, demoBanner, env, preflight, foundationMigration, oauthMigration, syncMigration, generationMigration, executionMigration] =
+const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecution, mailOutbound, exportRoutes, personalWorkspace, personalComposer, mailScreen, demoBanner, env, preflight, foundationMigration, oauthMigration, syncMigration, generationMigration, executionMigration, outboundMigration] =
   await Promise.all([
     read("packages/db/src/schema/mail.ts"),
     read("apps/api/src/mailVault.ts"),
@@ -11,8 +11,10 @@ const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecu
     read("apps/api/src/mailAccounts.ts"),
     read("apps/api/src/mailSync.ts"),
     read("apps/api/src/mailExecution.ts"),
+    read("apps/api/src/mailOutbound.ts"),
     read("apps/api/src/export.ts"),
     read("apps/web/src/mail/PersonalMailWorkspace.tsx"),
+    read("apps/web/src/mail/PersonalMailComposer.tsx"),
     read("apps/web/src/mail/MailScreen.tsx"),
     read("apps/web/src/mail/DemoBanner.tsx"),
     read("apps/api/src/env.ts"),
@@ -22,6 +24,7 @@ const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecu
     read("packages/db/drizzle/0070_mysterious_jackpot.sql"),
     read("packages/db/drizzle/0071_cute_beyonder.sql"),
     read("packages/db/drizzle/0072_smart_cammi.sql"),
+    read("packages/db/drizzle/0073_bored_fat_cobra.sql"),
   ]);
 
 assert.match(schema, /mailAccounts = pgTable/);
@@ -29,6 +32,7 @@ assert.match(schema, /mailAccountCredentials = pgTable/);
 assert.match(schema, /mailSyncStates = pgTable/);
 assert.match(schema, /mailMessages = pgTable/);
 assert.match(schema, /mailTaskLinks = pgTable/);
+assert.match(schema, /mailOutboundMessages = pgTable/);
 assert.doesNotMatch(schema, /accessToken|refreshToken|password/i);
 assert.match(vault, /aes-256-gcm/);
 assert.match(vault, /setAAD\(aad\(context\)\)/);
@@ -42,6 +46,7 @@ assert.doesNotMatch(powersync, /mail_accounts/);
 assert.doesNotMatch(powersync, /mail_messages/);
 assert.doesNotMatch(powersync, /mail_sync_states/);
 assert.doesNotMatch(powersync, /mail_task_links/);
+assert.doesNotMatch(powersync, /mail_outbound_messages/);
 assert.match(mailAccounts, /https:\/\/www\.googleapis\.com\/auth\/gmail\.modify/);
 assert.match(mailAccounts, /code_challenge_method:\s*"S256"/);
 assert.match(mailAccounts, /stateHash:\s*sha256\(state\)/);
@@ -62,10 +67,22 @@ assert.match(mailExecution, /insert\(tasks\)/);
 assert.match(mailExecution, /insert\(assignments\)/);
 assert.match(mailExecution, /insert\(mailTaskLinks\)/);
 assert.match(mailExecution, /action: active \? "replace_from_mail" : "create_from_mail"/);
+assert.match(mailOutbound, /encryptMailContent/);
+assert.match(mailOutbound, /authenticatedGoogleMailFetch/);
+assert.match(mailOutbound, /users\/me\/messages\/send/);
+assert.match(mailOutbound, /status: "uncertain"/);
+assert.match(mailOutbound, /mail_delivery_uncertain/);
+assert.match(mailOutbound, /outbound\.status = 'queued'/);
+assert.match(mailOutbound, /FOR UPDATE OF outbound SKIP LOCKED/);
+assert.match(mailOutbound, /Message-ID: <watson-/);
 assert.match(exportRoutes, /WHEN t\.mail_th LIKE 'personal:%'/);
 assert.match(exportRoutes, /restored tasks do not retain mail deep links/);
 assert.match(personalWorkspace, /Execution Inbox/);
 assert.match(personalWorkspace, /model\.createExecutionTask/);
+assert.match(personalWorkspace, /model\.cancelOutbound/);
+assert.match(personalComposer, /model\.enqueueOutbound/);
+assert.match(personalComposer, /Nezapomněl\/a jsi přílohu/);
+assert.match(personalComposer, /Po kliknutí máš 10 sekund na vrácení odeslání/);
 assert.match(mailScreen, /<MailDemoBanner/);
 assert.match(demoBanner, /data-mail-demo-banner/);
 assert.match(env, /MAIL_VAULT_KEYS_JSON/);
@@ -87,5 +104,9 @@ assert.match(executionMigration, /mail_task_links_scope_guard/);
 assert.match(executionMigration, /mail_task_link_account_scope_mismatch/);
 assert.match(executionMigration, /mail_task_link_message_scope_mismatch/);
 assert.match(executionMigration, /mail_task_link_task_scope_mismatch/);
+assert.match(outboundMigration, /mail_outbound_messages/);
+assert.match(outboundMigration, /mail_outbound_account_scope_mismatch/);
+assert.match(outboundMigration, /mail_outbound_transition_invalid/);
+assert.match(outboundMigration, /mail_outbound_source_immutable/);
 
-console.log("Mail M1/M2 static contract: OAuth, encrypted sync, owner isolation, Execution Inbox, DB guards, and demo claim verified.");
+console.log("Mail M1/M2 static contract: OAuth, encrypted sync/send, Undo/Send Later, duplicate-safe worker, Execution Inbox, DB guards, and honest UI verified.");

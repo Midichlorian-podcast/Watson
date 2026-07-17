@@ -20,6 +20,39 @@ export type PersonalSyncState = {
 
 export type PersonalMailCounts = { total: number; unread: number; inbox: number };
 
+export type PersonalMailOutbound = {
+	id: string;
+	accountId: string;
+	status: "queued" | "sending" | "retry" | "accepted" | "cancelled" | "uncertain" | "failed";
+	subject: string | null;
+	recipientCount: number | null;
+	contentUnavailable: boolean;
+	scheduledFor: string;
+	undoUntil: string;
+	nextAttemptAt: string | null;
+	attempts: number;
+	providerMessageId: string | null;
+	providerThreadId: string | null;
+	acceptedAt: string | null;
+	cancelledAt: string | null;
+	lastErrorCode: string | null;
+	version: number;
+	createdAt: string;
+	canCancel: boolean;
+};
+
+export type EnqueuePersonalMailInput = {
+	id: string;
+	operationId: string;
+	accountId: string;
+	to: string[];
+	cc: string[];
+	bcc: string[];
+	subject: string;
+	textBody: string;
+	sendAt: string | null;
+};
+
 export type PersonalMailExecution = {
 	linkId: string;
 	accountId: string;
@@ -111,6 +144,7 @@ export function usePersonalMail(enabled: boolean) {
 	const [accounts, setAccounts] = useState<PersonalMailAccount[]>([]);
 	const [runtime, setRuntime] = useState<Record<string, AccountRuntime>>({});
 	const [executions, setExecutions] = useState<Record<string, PersonalMailExecution>>({});
+	const [outbound, setOutbound] = useState<PersonalMailOutbound[]>([]);
 	const [projects, setProjects] = useState<Record<string, PersonalMailProject[]>>({});
 	const [messages, setMessages] = useState<PersonalMessageSummary[]>([]);
 	const [cursors, setCursors] = useState<Record<string, string | null>>({});
@@ -122,10 +156,13 @@ export function usePersonalMail(enabled: boolean) {
 	const [loadingDetail, setLoadingDetail] = useState(false);
 	const [syncing, setSyncing] = useState(false);
 	const [creatingTask, setCreatingTask] = useState(false);
+	const [sendingMail, setSendingMail] = useState(false);
+	const [cancellingOutboundId, setCancellingOutboundId] = useState<string | null>(null);
 	const [loadingMore, setLoadingMore] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const firstPagesLoadedFor = useRef("");
 	const hasLoadedPages = useRef(false);
+	const cancelOperations = useRef<Record<string, string>>({});
 
 	const activeAccounts = useMemo(
 		() => accounts.filter((account) => account.status !== "revoked"),
@@ -196,6 +233,23 @@ export function usePersonalMail(enabled: boolean) {
 		}));
 	}, []);
 
+	const loadOutbound = useCallback(async (targets: PersonalMailAccount[]) => {
+		const results = await Promise.allSettled(
+			targets.map(async (account) => {
+				const result = await readJson<{ outbound: PersonalMailOutbound[] }>(
+					`${API_URL}/api/mail/accounts/${account.id}/outbound?limit=30`,
+				);
+				return result.outbound;
+			}),
+		);
+		const successful = results.flatMap((result) =>
+			result.status === "fulfilled" ? result.value : [],
+		);
+		setOutbound(
+			successful.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.id.localeCompare(a.id)),
+		);
+	}, []);
+
 	const loadFirstPages = useCallback(async (targets: PersonalMailAccount[]) => {
 		const foreground = !hasLoadedPages.current;
 		if (foreground) setLoadingMessages(true);
@@ -238,8 +292,10 @@ export function usePersonalMail(enabled: boolean) {
 	}, []);
 
 	useEffect(() => {
-		void loadAccounts().then((targets) => Promise.all([loadRuntime(targets), loadExecutions(targets)]));
-	}, [loadAccounts, loadExecutions, loadRuntime]);
+		void loadAccounts().then((targets) =>
+			Promise.all([loadRuntime(targets), loadExecutions(targets), loadOutbound(targets)]),
+		);
+	}, [loadAccounts, loadExecutions, loadOutbound, loadRuntime]);
 
 	useEffect(() => {
 		if (!enabled || !accountIds || firstPagesLoadedFor.current === accountIds) return;
@@ -259,11 +315,23 @@ export function usePersonalMail(enabled: boolean) {
 			void Promise.all([
 				loadRuntime(activeAccounts),
 				loadExecutions(activeAccounts),
+				loadOutbound(activeAccounts),
 				loadFirstPages(activeAccounts),
 			]);
 		}, 2_000);
 		return () => window.clearTimeout(timer);
-	}, [enabled, activeAccounts, runtime, loadExecutions, loadFirstPages, loadRuntime]);
+	}, [enabled, activeAccounts, runtime, loadExecutions, loadFirstPages, loadOutbound, loadRuntime]);
+
+	useEffect(() => {
+		if (
+			!enabled ||
+			!outbound.some((message) =>
+				message.status === "queued" || message.status === "sending" || message.status === "retry",
+			)
+		) return;
+		const timer = window.setTimeout(() => void loadOutbound(activeAccounts), 1_000);
+		return () => window.clearTimeout(timer);
+	}, [activeAccounts, enabled, loadOutbound, outbound]);
 
 	useEffect(() => {
 		if (accountFilter === "all" || activeAccounts.some((account) => account.id === accountFilter)) return;
@@ -284,11 +352,12 @@ export function usePersonalMail(enabled: boolean) {
 			void Promise.all([
 				loadRuntime(activeAccounts),
 				loadExecutions(activeAccounts),
+				loadOutbound(activeAccounts),
 				loadFirstPages(activeAccounts),
 			]);
 		}, 60_000);
 		return () => window.clearInterval(timer);
-	}, [activeAccounts, enabled, loadExecutions, loadFirstPages, loadRuntime]);
+	}, [activeAccounts, enabled, loadExecutions, loadFirstPages, loadOutbound, loadRuntime]);
 
 	const visibleMessages = useMemo(
 		() =>
@@ -346,9 +415,10 @@ export function usePersonalMail(enabled: boolean) {
 		await Promise.all([
 			loadRuntime(targets),
 			loadExecutions(targets),
+			loadOutbound(targets),
 			enabled ? loadFirstPages(targets) : Promise.resolve(),
 		]);
-	}, [enabled, loadAccounts, loadExecutions, loadFirstPages, loadRuntime]);
+	}, [enabled, loadAccounts, loadExecutions, loadFirstPages, loadOutbound, loadRuntime]);
 
 	const executionFor = useCallback(
 		(message: Pick<PersonalMessageSummary, "accountId" | "providerMessageId">) =>
@@ -419,6 +489,83 @@ export function usePersonalMail(enabled: boolean) {
 		}
 	}, [refresh, syncing, visibleAccounts]);
 
+	const enqueueOutbound = useCallback(
+		async (input: EnqueuePersonalMailInput) => {
+			if (sendingMail) throw new Error("mail_outbound_busy");
+			setSendingMail(true);
+			setError(null);
+			try {
+				const result = await readJson<{ outbound: PersonalMailOutbound; replayed: boolean }>(
+					`${API_URL}/api/mail/accounts/${input.accountId}/outbound`,
+					{
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							id: input.id,
+							operationId: input.operationId,
+							to: input.to,
+							cc: input.cc,
+							bcc: input.bcc,
+							subject: input.subject,
+							textBody: input.textBody,
+							sendAt: input.sendAt,
+						}),
+					},
+				);
+				setOutbound((current) => [
+					result.outbound,
+					...current.filter((message) => message.id !== result.outbound.id),
+				]);
+				return result.outbound;
+			} catch (cause) {
+				setError(cause instanceof Error ? cause.message : "mail_outbound_unavailable");
+				throw cause;
+			} finally {
+				setSendingMail(false);
+			}
+		},
+		[sendingMail],
+	);
+
+	const cancelOutbound = useCallback(
+		async (message: PersonalMailOutbound) => {
+			if (cancellingOutboundId) return;
+			setCancellingOutboundId(message.id);
+			setError(null);
+			const operationId = cancelOperations.current[message.id] ?? crypto.randomUUID();
+			cancelOperations.current[message.id] = operationId;
+			try {
+				const result = await readJson<{ outbound: Pick<PersonalMailOutbound, "id" | "status" | "version"> }>(
+					`${API_URL}/api/mail/accounts/${message.accountId}/outbound/${message.id}/cancel`,
+					{
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							operationId,
+							expectedVersion: message.version,
+						}),
+					},
+				);
+				setOutbound((current) =>
+					current.map((item) =>
+						item.id === message.id
+							? { ...item, status: result.outbound.status, version: result.outbound.version, canCancel: false }
+							: item,
+					),
+				);
+				delete cancelOperations.current[message.id];
+				await loadOutbound(activeAccounts);
+			} catch (cause) {
+				setError(cause instanceof Error ? cause.message : "mail_outbound_unavailable");
+				await loadOutbound(activeAccounts);
+				throw cause;
+			} finally {
+				setCancellingOutboundId(null);
+			}
+		},
+		[activeAccounts, cancellingOutboundId, loadOutbound],
+	);
+
 	const loadMore = useCallback(async () => {
 		const targets = visibleAccounts.filter((account) => Boolean(cursors[account.id]));
 		if (!targets.length || loadingMore) return;
@@ -459,6 +606,7 @@ export function usePersonalMail(enabled: boolean) {
 		accounts: activeAccounts,
 		runtime,
 		executions,
+		outbound,
 		projects,
 		messages: visibleMessages,
 		accountFilter,
@@ -471,6 +619,8 @@ export function usePersonalMail(enabled: boolean) {
 		loadingMore,
 		syncing,
 		creatingTask,
+		sendingMail,
+		cancellingOutboundId,
 		error,
 		unreadCount,
 		totalCount,
@@ -483,5 +633,7 @@ export function usePersonalMail(enabled: boolean) {
 		loadMore,
 		executionFor,
 		createExecutionTask,
+		enqueueOutbound,
+		cancelOutbound,
 	};
 }

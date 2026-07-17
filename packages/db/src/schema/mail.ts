@@ -194,7 +194,10 @@ export const mailCommandReceipts = pgTable(
 		createdAt: createdAt(),
 	},
 	(t) => [
-		check("mail_command_receipts_action_valid", sql`${t.action} in ('revoke')`),
+		check(
+			"mail_command_receipts_action_valid",
+			sql`${t.action} in ('revoke', 'cancel_outbound')`,
+		),
 		check(
 			"mail_command_receipts_request_hash_valid",
 			sql`${t.requestHash} ~ '^[0-9a-f]{64}$'`,
@@ -317,6 +320,96 @@ export const mailMessages = pgTable(
 		uniqueIndex("mail_messages_account_provider_uq").on(t.accountId, t.providerMessageId),
 		index("mail_messages_account_date_idx").on(t.accountId, t.internalDate),
 		index("mail_messages_account_thread_idx").on(t.accountId, t.providerThreadId),
+	],
+);
+
+/**
+ * M1 outbound — šifrovaná osobní fronta s Undo Send a Send Later.
+ *
+ * Příjemci, předmět a tělo jsou jedině v AES-GCM envelope. Otevřeně zůstává jen
+ * plánovací/lifecycle stav a opaque provider ACK. `uncertain` je záměrně konečný
+ * stav po nejednoznačném provider výsledku; worker tak nikdy automatickým retry
+ * nevytvoří duplicitní skutečný e-mail.
+ */
+export const mailOutboundMessages = pgTable(
+	"mail_outbound_messages",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		accountId: uuid("account_id")
+			.notNull()
+			.references(() => mailAccounts.id, { onDelete: "cascade" }),
+		ownerUserId: uuid("owner_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		operationId: varchar("operation_id", { length: 128 }).notNull(),
+		requestHash: varchar("request_hash", { length: 64 }).notNull(),
+		status: varchar("status", { length: 24 }).notNull().default("queued"),
+		scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+		undoUntil: timestamp("undo_until", { withTimezone: true }).notNull(),
+		nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+		leaseToken: uuid("lease_token"),
+		leaseUntil: timestamp("lease_until", { withTimezone: true }),
+		attempts: integer("attempts").notNull().default(0),
+		providerMessageId: varchar("provider_message_id", { length: 128 }),
+		providerThreadId: varchar("provider_thread_id", { length: 128 }),
+		acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+		cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+		lastErrorCode: varchar("last_error_code", { length: 64 }),
+		algorithm: varchar("algorithm", { length: 24 }).notNull().default("aes-256-gcm-v1"),
+		keyId: varchar("key_id", { length: 64 }).notNull(),
+		nonce: varchar("nonce", { length: 24 }).notNull(),
+		authTag: varchar("auth_tag", { length: 32 }).notNull(),
+		ciphertext: text("ciphertext").notNull(),
+		contentVersion: integer("content_version").notNull().default(1),
+		version: integer("version").notNull().default(1),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check(
+			"mail_outbound_status_valid",
+			sql`${t.status} in ('queued', 'sending', 'retry', 'accepted', 'cancelled', 'uncertain', 'failed')`,
+		),
+		check("mail_outbound_request_hash_valid", sql`${t.requestHash} ~ '^[0-9a-f]{64}$'`),
+		check("mail_outbound_schedule_valid", sql`${t.undoUntil} <= ${t.scheduledFor}`),
+		check(
+			"mail_outbound_lease_consistent",
+			sql`(${t.status} = 'sending') = (${t.leaseToken} IS NOT NULL AND ${t.leaseUntil} IS NOT NULL)`,
+		),
+		check(
+			"mail_outbound_retry_consistent",
+			sql`(${t.status} = 'retry') = (${t.nextAttemptAt} IS NOT NULL)`,
+		),
+		check(
+			"mail_outbound_provider_refs_consistent",
+			sql`(${t.providerMessageId} IS NULL) = (${t.providerThreadId} IS NULL)`,
+		),
+		check(
+			"mail_outbound_accepted_consistent",
+			sql`(${t.status} = 'accepted') = (${t.acceptedAt} IS NOT NULL AND ${t.providerMessageId} IS NOT NULL)`,
+		),
+		check(
+			"mail_outbound_cancelled_consistent",
+			sql`(${t.status} = 'cancelled') = (${t.cancelledAt} IS NOT NULL)`,
+		),
+		check(
+			"mail_outbound_error_valid",
+			sql`${t.lastErrorCode} IS NULL OR ${t.lastErrorCode} in ('mail_rate_limited', 'mail_auth_rejected', 'mail_provider_unavailable', 'mail_provider_timeout', 'mail_contract_rejected', 'mail_delivery_uncertain')`,
+		),
+		check("mail_outbound_attempts_nonnegative", sql`${t.attempts} >= 0`),
+		check("mail_outbound_algorithm_valid", sql`${t.algorithm} = 'aes-256-gcm-v1'`),
+		check("mail_outbound_key_id_valid", sql`length(${t.keyId}) between 1 and 64`),
+		check("mail_outbound_nonce_valid", sql`length(${t.nonce}) between 16 and 24`),
+		check("mail_outbound_tag_valid", sql`length(${t.authTag}) between 22 and 32`),
+		check("mail_outbound_ciphertext_valid", sql`length(${t.ciphertext}) > 0`),
+		check("mail_outbound_content_version_positive", sql`${t.contentVersion} > 0`),
+		check("mail_outbound_version_positive", sql`${t.version} > 0`),
+		uniqueIndex("mail_outbound_owner_operation_uq").on(t.ownerUserId, t.operationId),
+		index("mail_outbound_claim_idx").on(t.status, t.scheduledFor, t.nextAttemptAt),
+		index("mail_outbound_owner_account_idx").on(t.ownerUserId, t.accountId, t.createdAt),
 	],
 );
 

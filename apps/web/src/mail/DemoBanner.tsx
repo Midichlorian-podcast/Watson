@@ -2,8 +2,8 @@ import { useTranslation } from "@watson/i18n";
 
 /**
  * CC-P0-08 — permanentní, nezaměnitelné označení demo stavu Mailu (rozhodnutí §15/2,
- * varianta B: týmový seed a akce zůstávají viditelně demo. Osobní Gmail read model
- * už je skutečný, banner proto přesně odděluje reálný náhled od simulovaných akcí.
+ * varianta B: týmový seed a akce zůstávají viditelně demo. Osobní Gmail read/send
+ * už je skutečný, banner proto přesně odděluje osobní poštu od simulovaných akcí.
  * Musí být vidět bez scrollu na každé mailové obrazovce i v composerech; zmizí až
  * s ověřeným read/send UI pro celý modul.
  * Regresi hlídá src/mail/runClaimsTest.ts.

@@ -1594,7 +1594,7 @@
 	},
 	"mail": {
 		"demoBadge": "ČÁSTEČNĚ DEMO",
-		"demoBanner": "týmové schránky a mailové akce jsou simulace; osobní Gmail má skutečný šifrovaný náhled",
+		"demoBanner": "týmové schránky a jejich akce jsou simulace; osobní Gmail má skutečný šifrovaný příjem i odesílání",
 		"taskCreatedToast": "Úkol z mailu přidán do Schránky — termín dnes",
 		"taskCreatedOpen": "Otevřít",
 		"taskNoInbox": "Nenašel jsem inbox projekt — úkol nezaložen"

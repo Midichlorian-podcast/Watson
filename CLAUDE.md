@@ -147,14 +147,15 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
   Full + Gmail history sync běží přes distribuovaný lease, obsah zpráv je v odděleném
   AES-GCM envelope a owner-only API nikdy nevrací surové HTML. Osobní Execution Inbox M2
   umí z konkrétní zprávy atomicky vytvořit osobní úkol a trvale drží obousměrnou provenance.
-  Send akce ještě skutečné nejsou.
+  Textový composer odesílá skutečně přes Gmail, s desetisekundovým Undo Send, Send Later,
+  encrypted frontou a konečným `uncertain` stavem místo rizikového duplicitního retry.
 - LuckyOS broker s odděleným bridge keyringem, tenant dedup a transakční reconciliation; reálný provider je externí prerequisite.
 - Export/restore s ACL scope, checksumem, HMAC, schema verzí, dry-run, conflict módem a lokálním AES-GCM obalem.
 - PWA/offline shell, šifrovaná per-user PowerSync SQLite a Centrum problémů pro odmítnuté zápisy.
 
 ### 2.2 Záměrně demo nebo nedostupné
 
-- Mail je částečně skutečný a částečně demo. Permanentní `MailDemoBanner` je povinný na všech vstupních plochách, dokud nejsou hotové send/team cesty. Gmail OAuth, credential vault, šifrovaný inbound sync a osobní read-only inbox jsou skutečné; týmové schránky stále používají seed a IMAP i odeslání/doručení ještě produkční nejsou.
+- Mail je částečně skutečný a částečně demo. Permanentní `MailDemoBanner` je povinný na všech vstupních plochách, dokud nejsou hotové týmové cesty. Gmail OAuth, credential vault, šifrovaný inbound sync, osobní inbox a textový send jsou skutečné; týmové schránky stále používají seed a IMAP, odchozí přílohy i týmové odesílání ještě produkční nejsou.
 - AI meeting extraction bez klíče je dostupná pouze v non-production ukázkovém režimu a musí být označena `mock`. Produkce bez klíče vrací 503.
 - LuckyOS canned data lze zapnout pouze mimo produkci. Produkce bez base URL vrací 503.
 - E-mail reminder není totéž co produkční Mail M1: provider potvrzuje přijetí k odeslání,
@@ -558,8 +559,18 @@ autorizaci, nikdy surové HTML; revoke po provider ACK fyzicky maže credential,
 obsah. Web slučuje skutečné osobní účty nad tímto API, zobrazuje reálné počty a tělo
 dešifruje až po otevření zprávy; nic z obsahu neukládá do nešifrovaného browser storage.
 Chromium i WebKit dokazují celý OAuth → sync → list → detail tok, řízené selhání,
-390px reflow a axe bez A/AA nálezů. Týmové seed UI a send jsou stále demo, proto se
+390px reflow a axe bez A/AA nálezů. Týmové seed UI je stále demo, proto se
 banner změnil jen na „částečně demo“ a nesmí se odstranit.
+
+Osobní outbound M1 dokončen: textový composer ukládá příjemce, předmět a tělo pouze do
+AAD-vázaného AES-GCM envelope. Okamžitý send má desetisekundové Undo okno, Send Later
+zůstává vratný do claimu a paralelní workery používají `SKIP LOCKED`. Gmail ACK je bounded
+a validovaný; stabilní Watson `Message-ID` dovoluje zopakovat jen jednoznačné 429. Timeout,
+5xx, vadný 2xx ACK nebo expirovaný sending lease končí jako `uncertain` bez automatického
+retry, protože provider mohl zprávu přijmout. Revoke zruší queued/retry a sending označí
+uncertain. API + DB verifier dokazuje šifrování, owner scope, idempotenci, souběh, Send Later,
+provider ACK/no-duplicate i redigovaný audit; Chromium a WebKit navíc dokazují composer,
+hlídku zapomenuté přílohy, Undo, skutečné přijetí providerem, mobilní reflow a axe.
 
 Execution Inbox M2 doplněn 2026-07-17: owner může z reálné osobní zprávy přes explicitní
 preview založit skutečný úkol pouze v aktivním projektu stejného osobního workspace.
