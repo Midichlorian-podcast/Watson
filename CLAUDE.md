@@ -422,10 +422,14 @@ Pořadí: trust-state primitive → overlay primitive → Nastavení routes → 
    Desktop má sticky lokální navigaci, mobil 44px horizontální přepínač a profilová
    karta se na úzkém displeji skládá bez ořezu. Menu rolí používá sdílenou popover
    vrstvu a vrací fokus po Escape.
-4. **Mobilní karta a navigace — další aktivní krok.** Nejdřív znovu zmapovat již
-   hotové mobilní task actions, spodní lištu a mailovou navigaci; ponechat funkční
-   části, odstranit duplicitní taxonomii a ověřit 320/360/390 px i 200% reflow.
-5. **Definice KPI — čeká po mobilním auditu.** Každá metrika musí uvádět scope,
+4. **Mobilní karta a navigace — dokončeno 2026-07-17.** Existující task actions,
+   jediná primární spodní lišta a Mail bez druhé navigační taxonomie zůstaly zachované.
+   Karta má na dotyku bezpečné akce v titulním řádku, metadata pod názvem a projektový
+   kontext až ve třetí úrovni. „Více“ je scrollovatelný modální sheet se všemi moduly,
+   prostory, focus trapem a návratem fokusu; aktivní cíle jsou oznámené a 320px popisky
+   se neořezávají. Statický kontrakt brání návratu duplicitní lišty a browser audit
+   pokrývá 320/360/390 px v Chromium i WebKitu.
+5. **Definice KPI — další aktivní krok.** Každá metrika musí uvádět scope,
    období, timezone, vyloučená data a freshness přímo v rozhraní.
 
 Acceptance: vizuální regression snapshots, keyboard/axe gate, žádná změna doménové logiky bez testu.
@@ -620,6 +624,15 @@ Poslední ověření 2026-07-16:
   fokusu menu rolí, legacy mail-admin redirect, 0 axe WCAG A/AA nálezů, 0 overflow
   a 0 runtime chyb. Důkaz je v
   `docs/release-evidence/settings-runtime-a11y-2026-07-17.json`.
+- F2 mobilní karta a navigace zachovaly jedinou spodní lištu i existující Mail a
+  task flows, ale opravily pořadí titul → metadata → projektový kontext, přidaly
+  44px dotykovou nabídku bezpečných akcí a plně dosažitelný scrollovatelný sheet
+  „Více“. Vizuální audit opravil stísněné „Nadcházející“ na 320 px a chybnou vrstvu
+  lišty nad otevřeným sheetem. Chromium i WebKit ověřily 320/360/390 px: právě jednu
+  navigaci také v Mailu, 22/22 task karet s novou hierarchií, focus trap, scroll lock,
+  překrytí lišty, Escape + návrat fokusu, 0 overflow a 0 runtime chyb. Matice Domov/
+  Mail má současně 0 axe WCAG A/AA nálezů. Důkaz je v
+  `docs/release-evidence/mobile-runtime-a11y-2026-07-17.json`.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
   44 px, offline zápisem a následným autoritativním uploadem. Jediný zachycený

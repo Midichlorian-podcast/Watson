@@ -14,13 +14,19 @@ const TABS: {
 	to: "/prehled" | "/" | "/mail" | "/nadchazejici";
 	icon: IconName;
 	labelKey: string;
+	mobileLabelKey?: string;
 	/** Další prefix cesty, který má tab také zvýraznit (sloučený modul). */
 	activePrefix?: string;
 }[] = [
 	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
 	{ to: "/", icon: "ukoly", labelKey: "nav.tasks", activePrefix: "/ukoly" },
 	{ to: "/mail", icon: "mail", labelKey: "nav.mail" },
-	{ to: "/nadchazejici", icon: "nadchazejici", labelKey: "nav.upcoming" },
+	{
+		to: "/nadchazejici",
+		icon: "nadchazejici",
+		labelKey: "nav.upcoming",
+		mobileLabelKey: "nav.upcomingShort",
+	},
 ];
 
 /** Sekce dostupné přes „Více" (na mobilu není sidebar → jinak nedosažitelné). „Úkoly" už není
@@ -44,7 +50,7 @@ const MORE: { to: string; icon: IconName; labelKey: string }[] = [
 /** Mobilní spodní lišta: 4 hlavní moduly + „Více" (list ostatních sekcí) + Watson. */
 export function MobileTabBar() {
 	const { t } = useTranslation();
-	const { toggleWatson } = useWatson();
+	const { toggleWatson, watsonOpen } = useWatson();
 	const path = useRouterState({ select: (s) => s.location.pathname });
 	const [moreOpen, setMoreOpen] = useState(false);
 	const { data: workspaces } = useWorkspaces();
@@ -81,12 +87,16 @@ export function MobileTabBar() {
 					/>
 					<div
 						ref={sheetRef}
+						id="mobile-more-sheet"
 						role="dialog"
 						aria-modal="true"
-						aria-label={t("nav.more")}
+						aria-labelledby="mobile-more-title"
 						className="fixed right-0 bottom-0 left-0 rounded-t-2xl border-line border-t bg-card"
 						style={{
-							paddingBottom: "calc(58px + env(safe-area-inset-bottom))",
+							paddingBottom: "calc(12px + env(safe-area-inset-bottom))",
+							maxHeight: "calc(100dvh - 12px)",
+							overflowY: "auto",
+							overscrollBehavior: "contain",
 							zIndex: 1,
 						}}
 					>
@@ -94,6 +104,19 @@ export function MobileTabBar() {
 							className="mx-auto my-2 rounded-full"
 							style={{ width: 40, height: 4, background: "var(--w-line)" }}
 						/>
+						<div className="flex items-center justify-between px-3 pb-1">
+							<h2 id="mobile-more-title" className="font-display text-base font-bold text-ink">
+								{t("nav.moreSections")}
+							</h2>
+							<button
+								type="button"
+								aria-label={t("common.close")}
+								onClick={() => setMoreOpen(false)}
+								className="grid h-11 w-11 place-items-center rounded-lg text-ink-2 hover:bg-panel-2 hover:text-ink"
+							>
+								<Icon name="zavrit" size={18} />
+							</button>
+						</div>
 						{/* P1-13: přepínač prostorů — na mobilu jinak nedosažitelný (žije v sidebaru) */}
 						{(workspaces ?? []).length > 1 && (
 							<div
@@ -112,6 +135,7 @@ export function MobileTabBar() {
 										style={{
 											fontSize: 11.5,
 											padding: "5px 11px",
+											minHeight: 44,
 											borderColor: activeWs === w.id ? "var(--w-brass)" : "var(--w-line)",
 											color: activeWs === w.id ? "var(--w-brass-text)" : "var(--w-ink-2)",
 											background: activeWs === w.id ? "var(--w-brass-soft)" : "transparent",
@@ -122,7 +146,7 @@ export function MobileTabBar() {
 								))}
 							</div>
 						)}
-						<nav className="grid grid-cols-2 gap-1 p-3">
+						<nav aria-label={t("nav.moreSections")} className="grid grid-cols-2 gap-1 p-3">
 							{more.map((m) => {
 								const active = path.startsWith(m.to);
 								return (
@@ -130,6 +154,7 @@ export function MobileTabBar() {
 										key={m.to}
 										to={m.to}
 										onClick={() => setMoreOpen(false)}
+										aria-current={active ? "page" : undefined}
 										className="flex items-center rounded-xl"
 										style={{
 											gap: 12,
@@ -149,10 +174,14 @@ export function MobileTabBar() {
 					</div>
 				</div>
 			)}
-			<div
+			<nav
+				data-mobile-primary
+				aria-label={t("nav.mobilePrimary")}
 				className="fixed right-0 bottom-0 left-0 flex border-line border-t bg-card"
 				style={{
-					zIndex: "calc(var(--w-layer-drawer) + 1)",
+					zIndex: moreOpen
+						? "calc(var(--w-layer-drawer) - 1)"
+						: "calc(var(--w-layer-drawer) + 1)",
 					paddingBottom: "env(safe-area-inset-bottom)",
 				}}
 			>
@@ -166,6 +195,8 @@ export function MobileTabBar() {
 							key={tab.to}
 							to={tab.to}
 							onClick={() => setMoreOpen(false)}
+							aria-label={t(tab.labelKey)}
+							aria-current={active ? "page" : undefined}
 							className="flex flex-1 flex-col items-center"
 							style={{
 								gap: 3,
@@ -198,13 +229,18 @@ export function MobileTabBar() {
 								)}
 							</span>
 							<span className="font-display font-semibold" style={{ fontSize: 10 }}>
-								{t(tab.labelKey)}
+								{t(tab.mobileLabelKey ?? tab.labelKey)}
 							</span>
 						</Link>
 					);
 				})}
 				<button
 					type="button"
+					aria-label={t("nav.more")}
+					aria-expanded={moreOpen}
+					aria-controls="mobile-more-sheet"
+					aria-haspopup="dialog"
+					aria-current={moreActive ? "page" : undefined}
 					onClick={() => setMoreOpen((o) => !o)}
 					className="flex flex-1 flex-col items-center"
 					style={{
@@ -220,9 +256,15 @@ export function MobileTabBar() {
 				</button>
 				<button
 					type="button"
+					aria-label={t("shell.assistant")}
+					aria-pressed={watsonOpen}
 					onClick={toggleWatson}
 					className="flex flex-1 flex-col items-center text-brass-text"
-					style={{ gap: 3, padding: "9px 0" }}
+					style={{
+						gap: 3,
+						padding: "9px 0",
+						background: watsonOpen ? "var(--w-panel-2)" : undefined,
+					}}
 				>
 					<span
 						className="flex items-center justify-center rounded-full font-display font-extrabold"
@@ -239,7 +281,7 @@ export function MobileTabBar() {
 						Watson
 					</span>
 				</button>
-			</div>
+			</nav>
 		</>
 	);
 }

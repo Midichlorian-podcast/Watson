@@ -254,7 +254,7 @@ export function TaskCard({
 			/>
 
 			{/* název + podřádek */}
-			<div className="min-w-0 flex-1">
+			<div className="w-taskmain min-w-0 flex-1">
 				<div
 					data-task-title
 					className={cn(
@@ -418,6 +418,23 @@ export function TaskCard({
 				)}
 			</div>
 
+			{/* Na dotyku je vstup do bezpečných akcí přímo v prvním řádku vedle názvu.
+			    Na desktopu zůstává skrytý a stejné akce obslouží context menu. */}
+			{quickMenu && (
+				<button
+					type="button"
+					aria-label={quickMenu.label}
+					title={quickMenu.label}
+					onClick={(event) => {
+						event.stopPropagation();
+						quickMenu.onOpen(event);
+					}}
+					className="w-taskquick relative z-[2] shrink-0 place-items-center rounded-lg border border-line bg-card text-ink-2 hover:border-brass hover:text-brass-text"
+				>
+					<Icon name="vice" size={18} />
+				</button>
+			)}
+
 			{/* Pravostranná metadata: na desktopu display:contents (layout 1:1 beze změny),
 			    na ≤480 px vlastní zalomený řádek pod názvem (CC-P0-17). */}
 			<span className="w-taskmeta">
@@ -578,20 +595,6 @@ export function TaskCard({
 							</span>
 						))}
 					</span>
-				)}
-				{quickMenu && (
-					<button
-						type="button"
-						aria-label={quickMenu.label}
-						title={quickMenu.label}
-						onClick={(event) => {
-							event.stopPropagation();
-							quickMenu.onOpen(event);
-						}}
-						className="w-taskquick relative z-[2] shrink-0 place-items-center rounded-lg border border-line bg-card text-ink-2 hover:border-brass hover:text-brass-text"
-					>
-						<Icon name="vice" size={18} />
-					</button>
 				)}
 			</span>
 		</div>

@@ -125,6 +125,7 @@
 		"inbox": "Inbox",
 		"today": "Today",
 		"upcoming": "Upcoming",
+		"upcomingShort": "Plan",
 		"tasks": "Tasks",
 		"board": "Board",
 		"calendar": "Calendar",
@@ -138,6 +139,8 @@
 		"assignedToMe": "Assigned to me",
 		"workspaces": "Workspaces",
 		"more": "More",
+		"mobilePrimary": "Primary mobile navigation",
+		"moreSections": "More sections",
 		"intake": "Work intake"
 	},
 	"shell": {

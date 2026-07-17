@@ -125,6 +125,7 @@
 		"inbox": "Schránka",
 		"today": "Dnes",
 		"upcoming": "Nadcházející",
+		"upcomingShort": "Plán",
 		"tasks": "Úkoly",
 		"board": "Board",
 		"calendar": "Kalendář",
@@ -138,6 +139,8 @@
 		"assignedToMe": "Přiřazeno mně",
 		"workspaces": "Pracovní prostory",
 		"more": "Více",
+		"mobilePrimary": "Hlavní mobilní navigace",
+		"moreSections": "Další sekce",
 		"intake": "Příjem práce"
 	},
 	"shell": {

@@ -191,14 +191,32 @@ body {
 	.w-taskcard {
 		flex-wrap: wrap;
 	}
+	/* Mobilní informační hierarchie: 1) stav + název + akce, 2) termín/deadline/
+	   priorita/status/lidé, 3) projekt a kontext. `display: contents` mění pouze
+	   layout; sémantika a klikací plocha karty zůstávají beze změny. */
+	.w-taskmain {
+		display: contents;
+	}
+	.w-taskcard [data-task-title] {
+		order: 0;
+		min-width: 0;
+		flex: 1 1 120px;
+	}
 	.w-taskmeta {
 		display: flex;
+		order: 1;
 		flex-basis: 100%;
 		min-width: 0;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 4px 8px;
-		margin: 2px 0 0 37px;
+		margin: 3px 0 0 37px;
+	}
+	.w-tasksub {
+		order: 2;
+		flex: 1 1 100%;
+		min-width: 0;
+		margin: 1px 0 0 37px !important;
 	}
 	/* hover-only rychlé přeplánování na dotyku neexistuje — jen by kradlo šířku */
 	.w-taskmeta [data-qsched] {
@@ -207,6 +225,7 @@ body {
 	/* Na dotyku zpřístupni stejné bezpečné akce, které jsou na desktopu v context menu. */
 	.w-taskquick {
 		display: grid;
+		order: 0;
 		width: 44px;
 		height: 44px;
 		margin-left: auto;

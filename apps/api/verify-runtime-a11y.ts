@@ -8,7 +8,7 @@
  *   WATSON_RUNTIME_BROWSERS=webkit pnpm --filter @watson/api verify:runtime-a11y
  */
 import "./src/env";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { getDb, sql } from "@watson/db";
 import axe from "axe-core";
 import {
@@ -24,6 +24,7 @@ const API = process.env.WATSON_RUNTIME_API ?? "http://localhost:8787";
 const WEB = process.env.WATSON_RUNTIME_WEB ?? "http://localhost:5173";
 const EMAIL = process.env.WATSON_RUNTIME_EMAIL ?? "demo@watson.test";
 const ARTIFACT = process.env.WATSON_RUNTIME_ARTIFACT ?? "/tmp/watson-runtime-a11y.json";
+const SCREENSHOT_DIR = process.env.WATSON_RUNTIME_SCREENSHOT_DIR;
 const ROUTES = [
 	"/",
 	"/prehled",
@@ -367,6 +368,170 @@ async function settingsSectionsAudit(page: Page, events: RuntimeEvent[]) {
 	return { results, legacyMailAdminLink: true, roleMenuEscapeFocus };
 }
 
+async function mobileNavigationAudit(page: Page, events: RuntimeEvent[], browserName: BrowserName) {
+	const results: {
+		width: 320 | 360 | 390;
+		primaryNavigations: number;
+		activeDestinations: number;
+		minTargetWidth: number;
+		minTargetHeight: number;
+		taskCards: number;
+		taskCardsWithSubrow: number;
+		taskCardsWithQuickAction: number;
+		emptyTaskSurfaceText: string | null;
+		taskHierarchy: boolean;
+		quickActionInTitleRow: boolean;
+		sheetWithinViewport: boolean;
+		sheetLinks: number;
+		sheetFocusContained: boolean;
+		sheetScrollLocked: boolean;
+		sheetCoversPrimaryNavigation: boolean;
+		focusRestored: boolean;
+		mailPrimaryNavigations: number;
+		overflow: boolean;
+		events: RuntimeEvent[];
+	}[] = [];
+
+	await activateTheme(page, "light");
+	for (const width of [320, 360, 390] as const) {
+		await page.setViewportSize({ width, height: width === 320 ? 568 : width === 360 ? 740 : 844 });
+		const eventStart = events.length;
+		await navigate(page, "/");
+		await page.waitForFunction(
+			() => !/(Synchronizuji|Syncing)/.test(document.querySelector("main")?.textContent ?? ""),
+			undefined,
+			{ timeout: 15_000 },
+		);
+		const primary = page.locator("[data-mobile-primary]");
+		const primaryNavigations = await primary.count();
+		const activeDestinations = await primary.locator('[aria-current="page"]').count();
+		const targets = await primary.locator(":scope > a, :scope > button").evaluateAll((nodes) =>
+			nodes.map((node) => {
+				const rect = node.getBoundingClientRect();
+				return { width: rect.width, height: rect.height };
+			}),
+		);
+		const minTargetWidth = Math.min(...targets.map((target) => target.width));
+		const minTargetHeight = Math.min(...targets.map((target) => target.height));
+		const taskCards = await page.locator(".w-taskcard").count();
+		const taskCardsWithSubrow = await page.locator(".w-taskcard:has(.w-tasksub)").count();
+		const taskCardsWithQuickAction = await page.locator(".w-taskcard:has(.w-taskquick)").count();
+		const emptyTaskSurfaceText = taskCards === 0
+			? await page.locator("main").innerText().then((text) => sanitize(text))
+			: null;
+		if (SCREENSHOT_DIR && (width === 320 || width === 390)) {
+			await mkdir(SCREENSHOT_DIR, { recursive: true });
+			await page.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-${width}-tasks.png`, fullPage: true });
+		}
+
+		const taskLayouts = await page
+			.locator(".w-taskcard:has(.w-tasksub):has(.w-taskmeta):has(.w-taskquick)")
+			.evaluateAll((cards) =>
+				cards.flatMap((card) => {
+					const title = card.querySelector<HTMLElement>("[data-task-title]")?.getBoundingClientRect();
+					const metadata = card.querySelector<HTMLElement>(".w-taskmeta")?.getBoundingClientRect();
+					const subrow = card.querySelector<HTMLElement>(".w-tasksub")?.getBoundingClientRect();
+					const quick = card.querySelector<HTMLElement>(".w-taskquick")?.getBoundingClientRect();
+					if (!title || !metadata || !subrow || !quick || subrow.height < 1) return [];
+					return [{
+						hierarchy:
+						metadata.height < 1 ||
+						(metadata.top >= title.bottom - 2 && subrow.top >= metadata.bottom - 2),
+						quickInTitleRow:
+							title.top >= quick.top - 2 &&
+							title.bottom <= quick.bottom + 2 &&
+							quick.width >= 44 &&
+							quick.height >= 44,
+					}];
+				}),
+			);
+		const taskLayout = taskLayouts.find((layout) => layout.hierarchy && layout.quickInTitleRow) ?? taskLayouts[0];
+
+		const moreButton = primary.getByRole("button", { name: "Více", exact: true });
+		await moreButton.focus();
+		await page.keyboard.press("Enter");
+		const sheet = page.getByRole("dialog", { name: "Další sekce" });
+		await sheet.waitFor({ state: "visible", timeout: 5_000 });
+		const sheetMetrics = await sheet.evaluate((node) => {
+			const rect = node.getBoundingClientRect();
+			return {
+				withinViewport: rect.top >= 0 && rect.bottom <= window.innerHeight + 1,
+				scrollLocked: getComputedStyle(document.body).overflow === "hidden",
+			};
+		});
+		const sheetCoversPrimaryNavigation = await primary.evaluate((node) => {
+			const rect = node.getBoundingClientRect();
+			const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+			return Boolean(hit && !node.contains(hit));
+		});
+		const sheetLinks = await sheet.getByRole("link").count();
+		if (SCREENSHOT_DIR && (width === 320 || width === 390)) {
+			await page.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-${width}-more.png`, fullPage: true });
+		}
+		const focusTrail: boolean[] = [];
+		for (let index = 0; index < 16; index += 1) {
+			await page.keyboard.press("Tab");
+			focusTrail.push(await sheet.evaluate((node) => node.contains(document.activeElement)));
+		}
+		await page.keyboard.press("Escape");
+		await sheet.waitFor({ state: "hidden", timeout: 5_000 });
+		const focusRestored = await moreButton.evaluate((node) => node === document.activeElement);
+
+		await navigate(page, "/mail");
+		const mailPrimaryNavigations = await page.locator("[data-mobile-primary]").count();
+		const overflow = await page.evaluate(
+			() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+		);
+		const result = {
+			width,
+			primaryNavigations,
+			activeDestinations,
+			minTargetWidth,
+			minTargetHeight,
+			taskCards,
+			taskCardsWithSubrow,
+			taskCardsWithQuickAction,
+			emptyTaskSurfaceText,
+			taskHierarchy: taskLayout?.hierarchy ?? false,
+			quickActionInTitleRow: taskLayout?.quickInTitleRow ?? false,
+			sheetWithinViewport: sheetMetrics.withinViewport,
+			sheetLinks,
+			sheetFocusContained: focusTrail.every(Boolean),
+			sheetScrollLocked: sheetMetrics.scrollLocked,
+			sheetCoversPrimaryNavigation,
+			focusRestored,
+			mailPrimaryNavigations,
+			overflow,
+			events: events.slice(eventStart),
+		};
+		results.push(result);
+	}
+
+	if (
+		results.some(
+			(result) =>
+				result.primaryNavigations !== 1 ||
+				result.activeDestinations !== 1 ||
+				result.minTargetWidth < 44 ||
+				result.minTargetHeight < 44 ||
+				!result.taskHierarchy ||
+				!result.quickActionInTitleRow ||
+				!result.sheetWithinViewport ||
+				result.sheetLinks < 12 ||
+				!result.sheetFocusContained ||
+				!result.sheetScrollLocked ||
+				!result.sheetCoversPrimaryNavigation ||
+				!result.focusRestored ||
+				result.mailPrimaryNavigations !== 1 ||
+				result.overflow ||
+				result.events.length > 0,
+		)
+	) {
+		throw new Error(`runtime_mobile_navigation_failed_${JSON.stringify(results)}`);
+	}
+	return results;
+}
+
 async function auditBrowser(
 	browserName: BrowserName,
 	launcher: typeof chromium | typeof webkit,
@@ -410,7 +575,8 @@ async function auditBrowser(
 		const keyboard = await keyboardAudit(page);
 		const reflow = await reflowAudit(page);
 		const settings = await settingsSectionsAudit(page, events);
-		return { browser: browserName, matrix, keyboard, reflow, settings };
+		const mobile = await mobileNavigationAudit(page, events, browserName);
+		return { browser: browserName, matrix, keyboard, reflow, settings, mobile };
 	} finally {
 		await context?.close().catch(() => undefined);
 		await browser?.close().catch(() => undefined);
@@ -456,6 +622,7 @@ async function main() {
 		keyboard: audits.map((audit) => ({ browser: audit.browser, ...audit.keyboard })),
 		reflow: audits.map((audit) => ({ browser: audit.browser, results: audit.reflow })),
 		settings: audits.map((audit) => ({ browser: audit.browser, ...audit.settings })),
+		mobile: audits.map((audit) => ({ browser: audit.browser, results: audit.mobile })),
 		failureCounts: Object.fromEntries(Object.entries(failures).map(([key, value]) => [key, value.length])),
 		failures,
 	};
