@@ -22,6 +22,7 @@ import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { auth } from "./auth";
 import { env, luckyOsEnabled } from "./env";
+import { activeLuckyOsV1Binding, luckyOsV1EmployeeFetch } from "./luckyOsV1";
 import { issueBridgeToken } from "./powersync";
 import { listServiceIntegrations } from "./serviceIntegrations";
 
@@ -215,6 +216,9 @@ async function rawLuckyFetch(
 	path: string,
 	init?: RequestInit,
 ): Promise<LuckyResult> {
+	if (env.luckyOs.protocol !== "legacy") {
+		return { ok: false, status: 409, data: null, notConfigured: true };
+	}
 	if (env.luckyOs.mock && !env.luckyOs.baseUrl) {
 		return { ok: true, status: 200, data: mockLucky(email, path, init?.method ?? "GET") };
 	}
@@ -262,7 +266,24 @@ function validateLuckyPayload(path: string, result: LuckyResult): LuckyResult {
 	return valid ? result : { ok: false, status: 422, data: null };
 }
 
-async function probeLuckyIdentity(email: string): Promise<LuckyResult> {
+async function probeLuckyIdentity(userId: string, email: string | null): Promise<LuckyResult> {
+	if (env.luckyOs.protocol === "v1") {
+		const binding = await activeLuckyOsV1Binding(userId);
+		if (!binding) return { ok: false, status: 404, data: null };
+		const result = await luckyOsV1EmployeeFetch({
+			userId,
+			scopes: ["profile:read"],
+			pathSuffix: "/profile",
+		});
+		const valid = z
+			.object({ resource: z.literal("profile"), data: z.record(z.string(), z.unknown()) })
+			.passthrough()
+			.safeParse(result.data).success;
+		return result.ok && valid
+			? { ok: true, status: result.status, data: result.data }
+			: { ok: false, status: result.ok ? 422 : result.status, data: null };
+	}
+	if (!email) return { ok: false, status: 400, data: null };
 	return validateLuckyPayload(
 		"/api/employee/me",
 		await rawLuckyFetch(email, null, "/api/employee/me"),
@@ -337,6 +358,7 @@ function publicConnection(row: Awaited<ReturnType<typeof ensureLuckyOsConnection
 		name: "LuckyOS",
 		status: row.revokedAt ? "revoked" : row.status,
 		mode: providerMode(),
+		protocol: env.luckyOs.protocol,
 		enabled: luckyOsEnabled && !row.revokedAt,
 		canTest: true,
 		canRevoke: true,
@@ -464,8 +486,8 @@ integrationRoutes.post("/api/integrations/luckyos/test", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	const email = session.user.email;
-	if (!email) return c.json({ error: "no_email" }, 400);
-	const result = await probeLuckyIdentity(email);
+	if (!email && env.luckyOs.protocol === "legacy") return c.json({ error: "no_email" }, 400);
+	const result = await probeLuckyIdentity(session.user.id, email ?? null);
 	await recordLuckyOsHealth(session.user.id, { ...result, tested: true });
 	const connection = await ensureLuckyOsConnection(session.user.id);
 	await getDb().insert(auditEvents).values({
@@ -509,8 +531,8 @@ async function lifecycleCommand(
 
 	if (action === "reconnect") {
 		const email = session.user.email;
-		if (!email) return c.json({ error: "no_email" }, 400);
-		const test = await probeLuckyIdentity(email);
+		if (!email && env.luckyOs.protocol === "legacy") return c.json({ error: "no_email" }, 400);
+		const test = await probeLuckyIdentity(session.user.id, email ?? null);
 		await recordLuckyOsHealth(session.user.id, { ...test, tested: true });
 		if (!test.ok) {
 			return c.json(

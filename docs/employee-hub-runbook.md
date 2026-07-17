@@ -37,11 +37,50 @@ Lokální CI používá uzavřený LuckyOS stub. Produkční zapnutí vyžaduje:
 - kompatibilní `/api/employee/me` a `/api/employee/status` kontrakt;
 - DPA, rozhodnutí o regionu dat, rotaci credentialů a ověřený revoke/restore postup.
 
+## Verzovaný LuckyOS v1 kontrakt
+
+Nové odevzdávací vertikály nepoužívají starou e-mailovou raw proxy. Cutover je
+výslovný přes `LUCKYOS_PROTOCOL=v1`; výchozí `legacy` zachovává stávající modul,
+takže deploy samotného kódu provoz nepřepne. V1 navíc vyžaduje přesný
+`LUCKYOS_ORGANIZATION_ID` a samostatný `LUCKYOS_WEBHOOK_SIGNING_SECRET` o délce
+32–512 znaků. Produkční preflight neúplnou nebo sdílenou konfiguraci odmítne.
+
+LuckyOS doručuje outbox na `POST /api/integrations/luckyos/v1/events`. Watson
+ověřuje HMAC nad nezměněným tělem, pětiminutové timestamp okno, event ID, tenant,
+64KiB limit a idempotency key. Receipt a safe payload se ukládají pouze na serveru;
+nejsou v PowerSyncu. Identity event vytvoří vazbu stabilního Watson user UUID na
+opaque LuckyOS person/link ID. Starší verze nesmí přepsat novější, jedna LuckyOS
+osoba nesmí patřit dvěma Watson účtům a nový provider link může nahradit pouze již
+revokovaný link.
+
+Odchozí v1 JWT má `iss=watson`, `aud=lucky-os`, unikátní `jti`, maximálně
+pětiminutovou platnost, tenant, stabilní `watson_user_id` a nejmenší potřebné
+scopes. Neobsahuje e-mail ani person ID. Person ID do URL doplní výhradně server z
+podepsané vazby; browser jej nemůže zvolit. Lokální odpojení v Integration Center
+se kontroluje ještě před vydáním tokenu. Redirect provideru je zakázán, odpověď
+má 2MiB strop a timeout se rozlišuje od ostatní nedostupnosti.
+
+LuckyOS musí pro společný staging nastavit:
+
+- Watson RSA public key mapu podle `/api/integrations/luckyos/jwks`;
+- Watson webhook URL končící `/api/integrations/luckyos/v1/events`;
+- shodný webhook signing secret a organization ID;
+- ruční identity provisioning v LuckyOS před prvním přihlášením zaměstnance;
+- agenda read/write channel nejprve `legacy`, potom jednotlivě `shadow` a až po
+  reconciliation `watson`.
+
+Legacy a v1 token mají různé issuer/audience kontrakty, ale sdílejí pouze LuckyOS
+RSA compromise domain; PowerSync, Better Auth, mail vault a webhook HMAC zůstávají
+oddělené. Legacy endpoint se v režimu v1 odmítne a nikdy se nepoužívá jako tichý
+fallback.
+
 ## Automatické důkazy
 
 ```bash
 node scripts/verify-employee-hub-contract.mjs
+node scripts/verify-luckyos-v1-contract.mjs
 EMPLOYEE_HUB_API=http://127.0.0.1:8790 pnpm --filter @watson/api verify:employee-hub
+pnpm --filter @watson/api verify:luckyos-v1
 EMPLOYEE_HUB_UI_WEB=http://localhost:5173 pnpm --filter @watson/api verify:employee-hub-ui
 bash scripts/ci-api-integration.sh
 pnpm gate

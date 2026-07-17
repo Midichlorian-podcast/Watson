@@ -399,6 +399,9 @@ export function validateProductionConfig(source = process.env) {
 
   const luckyBase = source.LUCKYOS_BASE_URL?.trim();
   const luckyRing = source.LUCKYOS_SIGNING_KEYS_JSON?.trim();
+  const luckyProtocol = source.LUCKYOS_PROTOCOL?.trim() || "legacy";
+  const luckyOrganizationId = source.LUCKYOS_ORGANIZATION_ID?.trim();
+  const luckyWebhookSecret = source.LUCKYOS_WEBHOOK_SIGNING_SECRET ?? "";
   if (source.LUCKYOS_MOCK === "1") {
     record("luckyos_mock", "failed", "LUCKYOS_MOCK must not be enabled in production.");
   } else {
@@ -411,7 +414,7 @@ export function validateProductionConfig(source = process.env) {
       "LuckyOS must provide both HTTPS base URL and signing keyring, or neither.",
     );
   } else if (!luckyBase) {
-    record("luckyos_bridge", "warning", "LuckyOS bridge is disabled for this release.");
+	record("luckyos_bridge", "warning", "LuckyOS bridge is disabled for this release.");
   } else {
     const luckyUrl = parseUrl(luckyBase, ["https:"]);
     const validBridge =
@@ -421,10 +424,37 @@ export function validateProductionConfig(source = process.env) {
       validBridge ? "passed" : "failed",
       "LuckyOS bridge requires a non-local HTTPS URL and a structurally valid version 1 RSA keyring.",
     );
+	record(
+	  "signing_keyring_isolation",
+	  luckyRing !== powersyncRing ? "passed" : "failed",
+	  "PowerSync and LuckyOS must use different signing keyrings.",
+	);
+  }
+  const protocolValid = luckyProtocol === "legacy" || luckyProtocol === "v1";
+  const v1Ready =
+    luckyProtocol !== "v1" ||
+    (Boolean(luckyBase) &&
+      Boolean(luckyOrganizationId) &&
+      luckyOrganizationId.length <= 255 &&
+      luckyWebhookSecret.length >= 32 &&
+      luckyWebhookSecret.length <= 512 &&
+      !isPlaceholder(luckyWebhookSecret));
+  record(
+    "luckyos_protocol",
+    protocolValid && v1Ready ? "passed" : "failed",
+    "LuckyOS v1 requires an explicit tenant and a dedicated 32–512 character webhook secret.",
+  );
+  if (luckyProtocol === "v1" && v1Ready) {
+    const isolated = ![
+      source.BETTER_AUTH_SECRET,
+      source.BACKUP_SIGNING_SECRET,
+      source.LOCAL_DATA_ENCRYPTION_SECRET,
+      source.OPS_METRICS_TOKEN,
+    ].includes(luckyWebhookSecret);
     record(
-      "signing_keyring_isolation",
-      luckyRing !== powersyncRing ? "passed" : "failed",
-      "PowerSync and LuckyOS must use different signing keyrings.",
+      "luckyos_webhook_secret_isolation",
+      isolated ? "passed" : "failed",
+      "LuckyOS webhook signing secret must have its own compromise domain.",
     );
   }
 

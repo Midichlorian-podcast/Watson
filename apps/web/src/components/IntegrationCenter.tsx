@@ -17,6 +17,7 @@ type Integration = {
 	name: string;
 	status: IntegrationStatus;
 	mode: "configured" | "demo" | "not_configured" | "built_in";
+	protocol?: "legacy" | "v1";
 	enabled: boolean;
 	canTest: boolean;
 	canRevoke: boolean;

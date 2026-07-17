@@ -11,6 +11,7 @@ export * from "./availability";
 export * from "./bookings";
 export * from "./collab";
 export * from "./contacts";
+export * from "./employeeIntegration";
 export * from "./enums";
 export * from "./flow";
 export * from "./goals";

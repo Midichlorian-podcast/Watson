@@ -44,6 +44,7 @@ import { exportRoutes } from "./export";
 import { importRoutes } from "./imports";
 import { intakeFormRoutes } from "./intakeForms";
 import { integrationRoutes } from "./integrations";
+import { luckyOsV1Routes } from "./luckyOsV1";
 import { mailAccountRoutes } from "./mailAccounts";
 import { mailExecutionRoutes } from "./mailExecution";
 import { mailOutboundRoutes, startMailOutboundWorker } from "./mailOutbound";
@@ -285,9 +286,22 @@ app.use(
 	"/api/employee/*",
 	rateLimit({ name: "employee", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
 );
-app.use(
-	"/api/integrations/*",
-	rateLimit({ name: "integrations", windowMs: 60_000, max: 30, scope: "session-or-ip" }),
+const integrationRateLimit = rateLimit({
+	name: "integrations",
+	windowMs: 60_000,
+	max: 30,
+	scope: "session-or-ip",
+});
+const luckyOsWebhookRateLimit = rateLimit({
+	name: "luckyos-webhook",
+	windowMs: 60_000,
+	max: 600,
+	scope: "ip",
+});
+app.use("/api/integrations/*", (c, next) =>
+	c.req.path === "/api/integrations/luckyos/v1/events"
+		? luckyOsWebhookRateLimit(c, next)
+		: integrationRateLimit(c, next),
 );
 app.use(
 	"/api/attachments/*",
@@ -450,6 +464,7 @@ app.route("/", pollRoutes);
 app.route("/", projectMilestoneRoutes);
 app.route("/", intakeFormRoutes);
 app.route("/", integrationRoutes);
+app.route("/", luckyOsV1Routes);
 app.route("/", serviceIntegrationRoutes);
 app.route("/", mailAccountRoutes);
 app.route("/", mailSyncRoutes);

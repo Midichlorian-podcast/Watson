@@ -127,6 +127,7 @@ pnpm --filter @watson/api verify:mail-vault
 pnpm --filter @watson/api verify:mail-foundation
 pnpm --filter @watson/api verify:mail-content-vault
 pnpm --filter @watson/api verify:employee-reconcile
+pnpm --filter @watson/api verify:luckyos-v1
 pnpm --filter @watson/api verify:db-invariants
 pnpm --filter @watson/api verify:signing-keys
 

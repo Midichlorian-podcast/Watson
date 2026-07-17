@@ -12,6 +12,7 @@ import {
 	getLuckyOsJwks,
 	getPowerSyncJwks,
 	issueBridgeToken,
+	issueLuckyOsV1Token,
 	issuePowerSyncToken,
 } from "./src/powersync";
 import { loadSigningKeyRingFromJson, SIGNING_ALG } from "./src/signingKeys";
@@ -24,6 +25,11 @@ function check(condition: unknown, label: string) {
 const userId = crypto.randomUUID();
 const powerToken = await issuePowerSyncToken(userId);
 const bridgeToken = await issueBridgeToken({ email: "employee@example.test", personId: userId });
+const luckyV1Token = await issueLuckyOsV1Token({
+	organizationId: "tgroup-cz",
+	watsonUserId: userId,
+	scopes: ["profile:read", "documents:write", "profile:read"],
+});
 const powerHeader = decodeProtectedHeader(powerToken);
 const bridgeHeader = decodeProtectedHeader(bridgeToken);
 const powerJwks = getPowerSyncJwks();
@@ -48,6 +54,22 @@ const bridgeVerified = await jwtVerify(bridgeToken, await importJWK(luckyPublic,
 	issuer: "watson-luckyos",
 });
 check(bridgeVerified.payload.email === "employee@example.test", "bridge token ověří jen LuckyOS keyring");
+const luckyV1Verified = await jwtVerify(
+	luckyV1Token,
+	await importJWK(luckyPublic, SIGNING_ALG),
+	{ audience: "lucky-os", issuer: "watson" },
+);
+check(
+	luckyV1Verified.payload.sub === userId &&
+		luckyV1Verified.payload.watson_user_id === userId &&
+		luckyV1Verified.payload.organization_id === "tgroup-cz" &&
+		luckyV1Verified.payload.scope === "profile:read documents:write" &&
+		Boolean(luckyV1Verified.payload.jti) &&
+		!luckyV1Verified.payload.email &&
+		!luckyV1Verified.payload.person_id &&
+		Number(luckyV1Verified.payload.exp) - Number(luckyV1Verified.payload.iat) <= 5 * 60,
+	"LuckyOS v1 token má přesný tenant, identitu, deduplikované scopes a žádný e-mail/person ID",
+);
 
 let crossVerifyRejected = false;
 try {

@@ -1,0 +1,2 @@
+ALTER TABLE "luckyos_identity_bindings" ADD COLUMN "provider_link_id" varchar(255) NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "luckyos_identity_bindings_provider_link_uq" ON "luckyos_identity_bindings" USING btree ("organization_id","provider_link_id");

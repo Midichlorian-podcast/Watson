@@ -613,6 +613,21 @@ ruční vizuální audit následně přeskládal mobilní hlavičku. Provozní h
 `docs/employee-hub-runbook.md`. Odevzdávací formuláře, dokumenty/podpisy, absence a
 onboarding/offboarding jsou další samostatné F7 vertikály a tento core je nepředstírá.
 
+LuckyOS v1 integrační základ dokončen 2026-07-17: starý e-mailový broker zůstává
+výslovným `legacy` režimem a žádný deploy ho automaticky nepřepne. V1 vydává přesný
+čtyřminutový RS256 token `iss=watson`, `aud=lucky-os`, `jti`, tenant,
+`watson_user_id` a nejmenší scopes bez e-mailu/person ID. Podepsaný LuckyOS outbox
+má HMAC/timestamp/body limit, trvalý idempotentní inbox a server-only identitu
+uživatel → provider link/osoba. DB i command vrstva odmítají cross-tenant, dvojí
+napárování osoby, konfliktní verzi, stale downgrade a použití stejného klíče pro
+jiný payload; nový link nahradí jen revokovaný. Odchozí adapter odvozuje person ID
+výhradně z této vazby, před tokenem respektuje lokální revoke, zakazuje redirect a
+limituje timeout i odpověď. Produkční preflight vyžaduje tenant a izolovaný webhook
+secret. Integrační důkaz používá reálnou DB a dual-contract LuckyOS stub a pokrývá
+podpis, replay, pořadí, replacement, lokální/provider revoke a přesný M2M scope.
+Formuláře stále nejsou zpřístupněné, dokud jejich vlastní response allowlist a
+agenda command kontrakt neprojdou stejným důkazem.
+
 ## 10. Detailní acceptance checklist pro budoucí funkce
 
 Každá produkční funkce musí odpovědět ano na vše relevantní:

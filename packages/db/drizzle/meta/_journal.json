@@ -540,6 +540,20 @@
       "when": 1784302080605,
       "tag": "0076_boring_gauntlet",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1784305136126,
+      "tag": "0077_blushing_wasp",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1784305590021,
+      "tag": "0078_right_doorman",
+      "breakpoints": true
     }
   ]
 }

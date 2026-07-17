@@ -21,6 +21,42 @@ const server = createServer((request, response) => {
 		return;
 	}
 	const payload = tokenPayload(request.headers.authorization);
+	const isV1 =
+		payload?.aud === "lucky-os" &&
+		payload?.iss === "watson" &&
+		typeof payload?.watson_user_id === "string" &&
+		typeof payload?.organization_id === "string" &&
+		typeof payload?.scope === "string" &&
+		typeof payload?.jti === "string" &&
+		payload?.sub === payload?.watson_user_id &&
+		payload?.email === undefined &&
+		payload?.person_id === undefined;
+	if (isV1 && request.url?.startsWith("/api/integrations/watson/v1/employees/")) {
+		if (!request.headers["x-correlation-id"]) {
+			response.statusCode = 400;
+			response.end(JSON.stringify({ error: { code: "invalid_correlation_id" } }));
+			return;
+		}
+		const match = request.url.match(
+			/^\/api\/integrations\/watson\/v1\/employees\/([^/]+)\/(.+)$/,
+		);
+		if (!match) {
+			response.statusCode = 404;
+			response.end(JSON.stringify({ error: { code: "not_found" } }));
+			return;
+		}
+		response.end(
+			JSON.stringify({
+				resource: match[2],
+				data: { status: "available" },
+				provider_person_id: decodeURIComponent(match[1]),
+				watson_user_id: payload.watson_user_id,
+				organization_id: payload.organization_id,
+				scope: payload.scope,
+			}),
+		);
+		return;
+	}
 	if (!payload || payload.aud !== "luckyos" || typeof payload.email !== "string") {
 		response.statusCode = 401;
 		response.end(JSON.stringify({ error: "invalid_bridge_token" }));

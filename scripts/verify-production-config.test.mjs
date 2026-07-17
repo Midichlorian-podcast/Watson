@@ -171,9 +171,30 @@ test("fully configured optional providers can produce a clean pass", () => {
   env.ANTHROPIC_API_KEY = "sk-ant-production-credential";
   env.LUCKYOS_BASE_URL = "https://people.watson.cz";
   env.LUCKYOS_SIGNING_KEYS_JSON = keyRing("luckyos-key");
+  env.LUCKYOS_PROTOCOL = "v1";
+  env.LUCKYOS_ORGANIZATION_ID = "tgroup-cz";
+  env.LUCKYOS_WEBHOOK_SIGNING_SECRET = "lucky_webhook_7Q2w5E9r3T6y1U4i8O0p";
   const report = validateProductionConfig(env);
   assert.equal(report.status, "passed");
   assert.deepEqual(report.summary, { passed: report.checks.length, warnings: 0, failed: 0 });
+});
+
+test("LuckyOS v1 fails closed without tenant, webhook secret, or secret isolation", () => {
+  const env = validEnv();
+  env.LUCKYOS_BASE_URL = "https://people.watson.cz";
+  env.LUCKYOS_SIGNING_KEYS_JSON = keyRing("luckyos-key");
+  env.LUCKYOS_PROTOCOL = "v1";
+  let report = validateProductionConfig(env);
+  assert.equal(report.checks.find((check) => check.id === "luckyos_protocol")?.status, "failed");
+
+  env.LUCKYOS_ORGANIZATION_ID = "tgroup-cz";
+  env.LUCKYOS_WEBHOOK_SIGNING_SECRET = env.BETTER_AUTH_SECRET;
+  report = validateProductionConfig(env);
+  assert.equal(report.checks.find((check) => check.id === "luckyos_protocol")?.status, "passed");
+  assert.equal(
+    report.checks.find((check) => check.id === "luckyos_webhook_secret_isolation")?.status,
+    "failed",
+  );
 });
 
 test("CLI writes a private sanitized artifact and returns a failing exit code", async () => {

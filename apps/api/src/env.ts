@@ -17,6 +17,11 @@ const webOrigins = (process.env.WEB_ORIGIN ?? "http://localhost:5173,http://loca
 	.map((s) => s.trim())
 	.filter(Boolean);
 
+const luckyOsProtocolRaw = process.env.LUCKYOS_PROTOCOL?.trim() || "legacy";
+if (luckyOsProtocolRaw !== "legacy" && luckyOsProtocolRaw !== "v1") {
+	throw new Error("[watson-api] LUCKYOS_PROTOCOL musí být 'legacy' nebo 'v1'.");
+}
+
 export const env = {
 	apiPort: Number(process.env.API_PORT ?? 8787),
 	webOrigin: webOrigins[0] ?? "http://localhost:5173",
@@ -99,6 +104,11 @@ export const env = {
 	luckyOs: {
 		baseUrl: process.env.LUCKYOS_BASE_URL,
 		mock: process.env.NODE_ENV !== "production" && process.env.LUCKYOS_MOCK === "1",
+		/** Explicit cutover switch. Legacy remains the default until the signed v1 contract is ready. */
+		protocol: luckyOsProtocolRaw,
+		organizationId: process.env.LUCKYOS_ORGANIZATION_ID?.trim() || undefined,
+		/** HMAC secret used only to verify LuckyOS → Watson event delivery. */
+		webhookSigningSecret: process.env.LUCKYOS_WEBHOOK_SIGNING_SECRET,
 	},
 };
 
@@ -129,5 +139,8 @@ export const aiEnabled = Boolean(env.anthropicApiKey);
 /** Deterministická ukázková extrakce je výhradně lokální/dev funkce. */
 export const aiMockEnabled = !aiEnabled && process.env.NODE_ENV !== "production";
 
-/** Zaměstnanecký modul (most na LuckyOS) — zapnut, když je base URL, nebo dev mock. */
-export const luckyOsEnabled = Boolean(env.luckyOs.baseUrl) || env.luckyOs.mock;
+/** Zaměstnanecký modul je zapnut pouze s úplným kontraktem zvoleného protokolu. */
+export const luckyOsEnabled =
+	env.luckyOs.protocol === "legacy"
+		? Boolean(env.luckyOs.baseUrl) || env.luckyOs.mock
+		: Boolean(env.luckyOs.baseUrl && env.luckyOs.organizationId);

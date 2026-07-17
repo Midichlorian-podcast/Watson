@@ -8,7 +8,7 @@
  * kontrolou (R5) přes členství v projektu. Přidat tabulku = přidat záznam do registru,
  * žádné natvrdo psané SQL per tabulka.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { getDb, sql } from "@watson/db";
 import { Hono } from "hono";
 import { SignJWT } from "jose";
@@ -62,6 +62,47 @@ export async function issueBridgeToken(claims: { email: string; personId?: strin
 		.setIssuer(LUCKYOS_ISSUER)
 		.setIssuedAt()
 		.setExpirationTime("5m")
+		.sign(luckyOsKeyRing.privateKey);
+}
+
+/**
+ * LuckyOS v1 M2M token. Unlike the compatibility token above it never carries
+ * e-mail or a browser-provided person ID. LuckyOS resolves `watson_user_id`
+ * through its active external identity link and independently verifies the
+ * person ID encoded in the request path.
+ */
+export async function issueLuckyOsV1Token(claims: {
+	organizationId: string;
+	watsonUserId: string;
+	scopes: readonly string[];
+}) {
+	const organizationId = claims.organizationId.trim();
+	const watsonUserId = claims.watsonUserId.trim();
+	const scopes = [...new Set(claims.scopes.map((scope) => scope.trim()))];
+	if (
+		!organizationId ||
+		organizationId.length > 255 ||
+		!watsonUserId ||
+		watsonUserId.length > 255 ||
+		scopes.length < 1 ||
+		scopes.length > 64 ||
+		scopes.some((scope) => !/^[a-z][a-z0-9-]*:(read|write)$/.test(scope)) ||
+		scopes.join(" ").length > 2_000
+	) {
+		throw new Error("invalid_luckyos_v1_token_claims");
+	}
+	return new SignJWT({
+		organization_id: organizationId,
+		watson_user_id: watsonUserId,
+		scope: scopes.join(" "),
+	})
+		.setProtectedHeader({ alg: SIGNING_ALG, kid: luckyOsKeyRing.currentKid, typ: "JWT" })
+		.setJti(randomUUID())
+		.setSubject(watsonUserId)
+		.setAudience("lucky-os")
+		.setIssuer("watson")
+		.setIssuedAt()
+		.setExpirationTime("4m")
 		.sign(luckyOsKeyRing.privateKey);
 }
 
