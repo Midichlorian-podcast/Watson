@@ -53,6 +53,7 @@ export function SyncProblems() {
 	return (
 		<>
 			<div
+				id="sync-problems-title"
 				className="font-display"
 				style={{
 					fontSize: 11,
@@ -91,13 +92,14 @@ export function SyncProblems() {
 						style={{
 							display: "flex",
 							alignItems: "center",
+							flexWrap: "wrap",
 							gap: 10,
 							padding: "9px 14px",
 							borderBottom: "1px solid var(--w-line)",
 							minWidth: 0,
 						}}
 					>
-						<div style={{ flex: 1, minWidth: 0 }}>
+						<div style={{ flex: "1 1 220px", minWidth: 0 }}>
 							<div className="font-display" style={{ fontSize: 12.5, fontWeight: 600 }}>
 								<span style={{ color: "var(--w-ink)" }}>
 									{r.table_name} · {r.op}

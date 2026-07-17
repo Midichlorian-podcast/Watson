@@ -1,6 +1,6 @@
-import { useStatus } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
 import { type ReactNode, useEffect, useState } from "react";
+import { SyncUnavailable, useTrustState } from "./TrustState";
 
 /** Nenápadný brass spinner (SVG, respektuje prefers-reduced-motion přes CSS). */
 export function Spinner({ size = 22 }: { size?: number }) {
@@ -44,7 +44,7 @@ export function DataLoading() {
  */
 export function SyncGate({ children }: { children: ReactNode }) {
 	const { t } = useTranslation();
-	const status = useStatus();
+	const { sync } = useTrustState();
 	// Krátká prodleva, ať spinner nebliká, když data dorazí z lokální cache okamžitě.
 	const [showAfterDelay, setShowAfterDelay] = useState(false);
 	useEffect(() => {
@@ -52,8 +52,10 @@ export function SyncGate({ children }: { children: ReactNode }) {
 		return () => clearTimeout(id);
 	}, []);
 
-	const firstSyncing = !!status?.connected && !status?.hasSynced;
-	if (firstSyncing && showAfterDelay) {
+	if (sync.dataUsable) return <>{children}</>;
+	if (!showAfterDelay) return <div className="min-h-full" aria-hidden />;
+	if (sync.kind === "offline_empty" || sync.kind === "sync_error") return <SyncUnavailable />;
+	if (showAfterDelay) {
 		return (
 			<div
 				className="grid min-h-full place-items-center"
@@ -68,5 +70,5 @@ export function SyncGate({ children }: { children: ReactNode }) {
 			</div>
 		);
 	}
-	return <>{children}</>;
+	return null;
 }

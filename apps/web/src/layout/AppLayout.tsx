@@ -4,7 +4,7 @@ import { BulkBar } from "../components/BulkBar";
 import { SyncGate } from "../components/Loading";
 import { ProjectDetailPanel } from "../components/ProjectDetailPanel";
 import { TaskDetailPanel } from "../components/TaskDetailPanel";
-import { WriteRejectedToast } from "../components/WriteRejectedToast";
+import { TrustStateBanner, TrustStateProvider } from "../components/TrustState";
 import { AddTaskProvider } from "../lib/addTask";
 import { BulkSelectProvider } from "../lib/bulkSelect";
 import { MailBridgeProvider } from "../mail/bridge";
@@ -68,71 +68,74 @@ export function AppLayout() {
 	}, [collapsed]);
 	return (
 		<WorkspaceProvider>
-			<WorkspaceDeepLinkSync />
-			<RowMetaProvider>
-				<ViewModeProvider>
-					<ListSearchProvider>
-						<WatsonProvider>
-							<AddTaskProvider>
-								<TaskDetailProvider>
-									<ProjectDetailProvider>
-										<BulkSelectProvider>
-											<MailBridgeProvider>
-												<KeyboardProvider>
-													<ContextMenuProvider>
-														<div
-															className="flex h-full min-h-full"
-															style={{ background: "var(--w-paper)" }}
-														>
-															{!isMobile && (
-																<Sidebar
-																	collapsed={collapsed}
-																	onToggle={() => setCollapsed((c) => !c)}
-																/>
-															)}
-															<div className="flex min-w-0 flex-1 flex-col">
-																{!onMail && <Header />}
-																<main
-																	className={
-																		onMail
-																			? "flex flex-1 flex-col overflow-hidden"
-																			: "flex-1 overflow-auto"
-																	}
-																	// MobileTabBar roste o safe-area (home indikátor) — main musí rezervovat
-																	// stejnou výšku, jinak zůstane spodní obsah schovaný za lištou.
-																	style={
-																		isMobile
-																			? {
-																					paddingBottom: "calc(58px + env(safe-area-inset-bottom))",
-																				}
-																			: undefined
-																	}
-																>
-																	<SyncGate>
-																		<Suspense fallback={null}>
-																			<Outlet />
-																		</Suspense>
-																	</SyncGate>
-																</main>
+			<TrustStateProvider>
+				<WorkspaceDeepLinkSync />
+				<RowMetaProvider>
+					<ViewModeProvider>
+						<ListSearchProvider>
+							<WatsonProvider>
+								<AddTaskProvider>
+									<TaskDetailProvider>
+										<ProjectDetailProvider>
+											<BulkSelectProvider>
+												<MailBridgeProvider>
+													<KeyboardProvider>
+														<ContextMenuProvider>
+															<div
+																className="flex h-full min-h-full"
+																style={{ background: "var(--w-paper)" }}
+															>
+																{!isMobile && (
+																	<Sidebar
+																		collapsed={collapsed}
+																		onToggle={() => setCollapsed((c) => !c)}
+																	/>
+																)}
+																<div className="flex min-w-0 flex-1 flex-col">
+																	{!onMail && <Header />}
+																	<TrustStateBanner />
+																	<main
+																		className={
+																			onMail
+																				? "flex flex-1 flex-col overflow-hidden"
+																				: "flex-1 overflow-auto"
+																		}
+																		// MobileTabBar roste o safe-area (home indikátor) — main musí rezervovat
+																		// stejnou výšku, jinak zůstane spodní obsah schovaný za lištou.
+																		style={
+																			isMobile
+																				? {
+																						paddingBottom:
+																							"calc(58px + env(safe-area-inset-bottom))",
+																					}
+																				: undefined
+																		}
+																	>
+																		<SyncGate>
+																			<Suspense fallback={null}>
+																				<Outlet />
+																			</Suspense>
+																		</SyncGate>
+																	</main>
+																</div>
+																{isMobile && <MobileTabBar />}
+																	<ActionToast />
+																<TaskDetailPanel />
+																<ProjectDetailPanel />
+																<BulkBar />
 															</div>
-															{isMobile && <MobileTabBar />}
-															<WriteRejectedToast />
-															<ActionToast />
-															<TaskDetailPanel />
-															<ProjectDetailPanel />
-															<BulkBar />
-														</div>
-													</ContextMenuProvider>
-												</KeyboardProvider>
-											</MailBridgeProvider>
-										</BulkSelectProvider>
-									</ProjectDetailProvider>
-								</TaskDetailProvider>
-							</AddTaskProvider>
-						</WatsonProvider>
-					</ListSearchProvider>
-				</ViewModeProvider>
-			</RowMetaProvider>
+														</ContextMenuProvider>
+													</KeyboardProvider>
+												</MailBridgeProvider>
+											</BulkSelectProvider>
+										</ProjectDetailProvider>
+									</TaskDetailProvider>
+								</AddTaskProvider>
+							</WatsonProvider>
+						</ListSearchProvider>
+					</ViewModeProvider>
+				</RowMetaProvider>
+			</TrustStateProvider>
 		</WorkspaceProvider>
 	);
 }

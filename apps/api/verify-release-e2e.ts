@@ -7,7 +7,7 @@
  */
 import "./src/env";
 import { createHmac } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import {
 	accounts,
 	eq,
@@ -27,6 +27,7 @@ const API = process.env.WATSON_RELEASE_API ?? "http://localhost:8787";
 const WEB = process.env.WATSON_RELEASE_WEB ?? "http://localhost:5173";
 const ARTIFACT =
 	process.env.WATSON_RELEASE_ARTIFACT ?? "/tmp/watson-release-e2e.json";
+const SCREENSHOT_DIR = process.env.WATSON_RELEASE_SCREENSHOT_DIR;
 const BROWSERS = (process.env.WATSON_RELEASE_BROWSERS ?? "chromium,webkit")
 	.split(",")
 	.map((value) => value.trim())
@@ -48,11 +49,14 @@ type BrowserResult = {
 	signIn: boolean;
 	initialSync: boolean;
 	offlineLocalCreate: boolean;
+	offlineTrustState: boolean;
+	trustStateMobileReflow: boolean;
 	serverWriteHeldOffline: boolean;
 	reconnectUpload: boolean;
 	editRoundTrip: boolean;
 	moveRoundTrip: boolean;
 	rejectionCaptured: boolean;
+	syncProblemTrustState: boolean;
 	rejectionDiscarded: boolean;
 	retryResolved: boolean;
 	addDialogA11y: boolean;
@@ -98,6 +102,22 @@ async function eventually<T>(
 	}
 	if (!accept(value)) throw new Error(`release_timeout_${label}`);
 	return value;
+}
+
+async function assertNoHorizontalOverflow(page: Page, label: string) {
+	const overflow = await page.evaluate(
+		() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+	);
+	if (overflow) throw new Error(`release_horizontal_overflow_${label}`);
+}
+
+async function captureEvidence(page: Page, browserName: BrowserName, label: string) {
+	if (!SCREENSHOT_DIR) return;
+	await mkdir(SCREENSHOT_DIR, { recursive: true, mode: 0o700 });
+	await page.screenshot({
+		path: `${SCREENSHOT_DIR}/${browserName}-${label}.png`,
+		fullPage: true,
+	});
 }
 
 async function provision(browserName: BrowserName): Promise<Fixture> {
@@ -518,6 +538,7 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 				),
 			{ timeout: 30_000 },
 		);
+		await captureEvidence(page, browserName, "synced-1280");
 		const taskName = `Release offline ${browserName} ${crypto.randomUUID().slice(0, 8)}`;
 		const editedName = `${taskName} upraveno`;
 		await page.getByRole("button", { name: "Přidat úkol", exact: true }).first().click();
@@ -526,6 +547,13 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		await addDialog.getByRole("button", { name: "Inbox", exact: true }).waitFor();
 		await assertAxeClean(page, "add_dialog");
 		await context.setOffline(true);
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page
+			.locator('[data-trust-notice="offline_cached"]')
+			.waitFor({ state: "visible", timeout: 10_000 });
+		await assertNoHorizontalOverflow(page, "offline_trust_state_390");
+		await assertAxeClean(page, "offline_trust_state");
+		await captureEvidence(page, browserName, "offline-390");
 		await addDialog.getByPlaceholder(/Název úkolu/).fill(`${taskName} zítra`);
 		await addDialog.getByRole("button", { name: "Přidat úkol", exact: true }).click();
 
@@ -543,6 +571,12 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		if (!held) throw new Error("release_offline_write_reached_server");
 
 		await context.setOffline(false);
+		await page
+			.locator(
+				'[data-trust-notice="offline_cached"], [data-trust-notice="connecting_cached"], [data-trust-notice="sync_error_cached"]',
+			)
+			.waitFor({ state: "hidden", timeout: 30_000 });
+		await page.setViewportSize({ width: 1280, height: 720 });
 		const uploaded = await eventually(
 			"reconnect_upload",
 			() => serverTaskById(localTask.id),
@@ -594,6 +628,14 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			() => localProblemCount(page),
 			(value) => value === 1,
 		);
+		await page
+			.locator('[data-trust-notice="sync_problems"]')
+			.waitFor({ state: "visible", timeout: 5_000 });
+		await page.setViewportSize({ width: 390, height: 844 });
+		await assertNoHorizontalOverflow(page, "sync_problem_trust_state_390");
+		await assertAxeClean(page, "sync_problem_trust_state");
+		await captureEvidence(page, browserName, "sync-problem-390");
+		await page.setViewportSize({ width: 1280, height: 720 });
 		await navigate(page, "/nastaveni");
 		await page.getByText("Problémy se synchronizací", { exact: false }).first().waitFor();
 		page.once("dialog", (dialog) => dialog.accept());
@@ -680,11 +722,14 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			signIn: true,
 			initialSync: true,
 			offlineLocalCreate: true,
+			offlineTrustState: true,
+			trustStateMobileReflow: true,
 			serverWriteHeldOffline: true,
 			reconnectUpload: true,
 			editRoundTrip: true,
 			moveRoundTrip: true,
 			rejectionCaptured: true,
+			syncProblemTrustState: true,
 			rejectionDiscarded: true,
 			retryResolved: true,
 			addDialogA11y: true,

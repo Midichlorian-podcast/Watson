@@ -1,5 +1,6 @@
-import { useStatus } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
+import { useTrustState } from "../components/TrustState";
+import { formatSyncTimestamp } from "./syncTrust";
 
 /**
  * CC-P0-01 — připravenost dat. `0` a „vše hotovo" jsou OBCHODNÍ TVRZENÍ a smí
@@ -12,9 +13,8 @@ export function useAllReady(...isLoadings: boolean[]): boolean {
 	// (isLoading=false), ale před dokončením PRVNÍHO syncu je prázdno
 	// „ještě nevím", ne autoritativní nula. Offline s dřívějším syncem = ready
 	// (stará data označí SyncStamp), offline BEZ jakéhokoli syncu = neready.
-	const status = useStatus();
-	const everSynced = status.hasSynced || (!status.connected && status.lastSyncedAt != null);
-	return everSynced && isLoadings.every((l) => !l);
+	const { sync } = useTrustState();
+	return sync.dataUsable && isLoadings.every((l) => !l);
 }
 
 /** KPI hodnota: před ready pomlčka, ne nula. */
@@ -25,15 +25,12 @@ export const kpi = (ready: boolean, n: number | string): string => (ready ? Stri
  * poslední synchronizace — stará data nesmí vypadat jako aktuální.
  */
 export function SyncStamp() {
-	const { t } = useTranslation();
-	const status = useStatus();
-	if (status.connected) return null;
-	const at = status.lastSyncedAt
-		? new Date(status.lastSyncedAt).toLocaleTimeString("cs-CZ", {
-				hour: "2-digit",
-				minute: "2-digit",
-			})
-		: "—";
+	const { t, i18n } = useTranslation();
+	const { sync } = useTrustState();
+	if (!sync.dataStale) return null;
+	const at =
+		formatSyncTimestamp(sync.lastSyncedAt, i18n.resolvedLanguage ?? i18n.language ?? "cs") ??
+		t("sync.timeUnknown");
 	return (
 		<span
 			className="font-mono"

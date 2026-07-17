@@ -122,7 +122,9 @@ export function Header() {
 
 	return (
 		<header
-			className="flex items-center gap-3 overflow-x-auto border-line border-b bg-card px-4"
+			className={`flex items-center gap-3 border-line border-b bg-card px-4 ${
+				isMobile ? "flex-wrap overflow-visible" : "overflow-x-auto"
+			}`}
 			style={{ padding: "11px 16px", flex: "none" }}
 		>
 			<div style={{ flex: "none", minWidth: 0, maxWidth: isMobile ? "40vw" : "34vw" }}>
@@ -143,7 +145,7 @@ export function Header() {
 				)}
 			</div>
 
-			{showViewSwitcher && (
+			{showViewSwitcher && !isMobile && (
 				<>
 					<div
 						className="flex border border-line bg-panel-2"
@@ -473,6 +475,34 @@ export function Header() {
 					{!isMobile && t("shell.newTask")}
 				</button>
 			</div>
+
+			{showViewSwitcher && isMobile && (
+				<div
+					className="flex w-full items-center border-line border-t"
+					style={{
+						gap: 4,
+						margin: "0 -16px -11px",
+						padding: "6px 14px",
+						width: "calc(100% + 32px)",
+					}}
+				>
+					{viewOptions.map((v) => (
+						<button
+							key={v}
+							type="button"
+							onClick={() => setView(v)}
+							className="min-h-11 flex-1 rounded-lg font-display font-semibold"
+							style={{
+								fontSize: 12.5,
+								background: view === v ? "var(--w-brass-soft)" : "transparent",
+								color: view === v ? "var(--w-brass-text)" : "var(--w-ink-3)",
+							}}
+						>
+							{viewLabels[v]}
+						</button>
+					))}
+				</div>
+			)}
 		</header>
 	);
 }

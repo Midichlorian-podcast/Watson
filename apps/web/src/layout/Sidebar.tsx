@@ -1,9 +1,10 @@
-import { useQuery as usePsQuery, useStatus } from "@powersync/react";
+import { useQuery as usePsQuery } from "@powersync/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { type CSSProperties, Fragment, useMemo } from "react";
 import { useAddTask } from "../lib/addTask";
+import { SidebarTrustState } from "../components/TrustState";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
 import { inboxProjectIds } from "../lib/inbox";
@@ -102,7 +103,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 	const navigate = useNavigate();
 	const { openAdd } = useAddTask();
 	const { data: session } = useSession();
-	const status = useStatus();
 	const path = useRouterState({ select: (s) => s.location.pathname });
 	// Aktivní projektový filtr (?projekt=) — zvýraznění řádku projektu (prototyp data-projrow).
 	const activeProjekt = useRouterState({
@@ -240,29 +240,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 					padding: "2px 4px 14px",
 				}}
 			>
-				<span
-					title={status?.connected ? t("shell.synced") : t("shell.offline")}
-					style={{
-						width: 9,
-						height: 9,
-						borderRadius: "50%",
-						flex: "none",
-						background: status?.connected ? "var(--w-brass)" : "var(--w-sidebar-ink-2)",
-					}}
-				/>
-				{!collapsed && (
-					<span
-						className="font-display"
-						style={{
-							fontWeight: 800,
-							fontSize: 18,
-							color: "var(--w-sidebar-ink)",
-							flex: 1,
-						}}
-					>
-						{t("app.name")}
-					</span>
-				)}
+				<SidebarTrustState collapsed={collapsed} appName={t("app.name")} />
 				<button
 					type="button"
 					onClick={onToggle}
