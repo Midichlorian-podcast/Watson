@@ -5,6 +5,7 @@ import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CopyLinkButton } from "../components/CopyLinkButton";
+import { AutomationCenter } from "../components/AutomationCenter";
 import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
@@ -372,6 +373,15 @@ export function Postupy() {
 
 	const shown = mineOnly ? view.filter((v) => v.mine) : view;
 	const selected = search.postup ? (view.find((v) => v.ch.id === search.postup) ?? null) : null;
+	if (search.view === "automation") {
+		return (
+			<AutomationCenter
+				workspaceId={activeWs}
+				projects={wsProjects}
+				onBack={() => void navigate({ to: "/postupy", search: {} })}
+			/>
+		);
+	}
 
 	return (
 		<div className="mx-auto max-w-[920px]" style={{ padding: "20px 22px 90px" }}>
@@ -396,8 +406,15 @@ export function Postupy() {
 				</span>
 				<button
 					type="button"
+					onClick={() => void navigate({ to: "/postupy", search: { view: "automation" } })}
+					className="ml-auto min-h-11 rounded-lg border border-line bg-card px-3 font-display text-xs font-bold text-ink-2 hover:border-brass"
+				>
+					Automatizace
+				</button>
+				<button
+					type="button"
 					onClick={() => setMineOnly((o) => !o)}
-					className="ml-auto inline-flex items-center gap-1.5 rounded-lg border font-display font-semibold"
+					className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border font-display font-semibold"
 					style={{
 						fontSize: 12,
 						padding: "7px 11px",

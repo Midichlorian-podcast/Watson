@@ -6,6 +6,7 @@
  */
 
 export * from "./auth";
+export * from "./automation";
 export * from "./availability";
 export * from "./bookings";
 export * from "./collab";

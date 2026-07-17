@@ -147,9 +147,10 @@ const postupyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/postupy",
 	component: Postupy,
-	validateSearch: (s: Record<string, unknown>): { postup?: string; prostor?: string } => ({
+	validateSearch: (s: Record<string, unknown>): { postup?: string; prostor?: string; view?: "automation" } => ({
 		postup: typeof s.postup === "string" ? s.postup : undefined,
 		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
+		view: s.view === "automation" ? "automation" : undefined,
 	}),
 });
 const reportyRoute = createRoute({

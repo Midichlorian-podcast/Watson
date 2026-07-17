@@ -526,6 +526,20 @@
       "when": 1784273875180,
       "tag": "0074_right_luminals",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1784300058071,
+      "tag": "0075_silent_jane_foster",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1784302080605,
+      "tag": "0076_boring_gauntlet",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,3 @@
+ALTER TABLE "automation_rule_versions" ADD COLUMN "draft_revision" integer NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "automation_rule_versions_rule_draft_revision_uq" ON "automation_rule_versions" USING btree ("rule_id","draft_revision");--> statement-breakpoint
+ALTER TABLE "automation_rule_versions" ADD CONSTRAINT "automation_rule_versions_draft_revision_positive" CHECK ("automation_rule_versions"."draft_revision" > 0);

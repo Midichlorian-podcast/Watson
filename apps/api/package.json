@@ -32,6 +32,8 @@
 		"verify:decisions": "tsx verify-decisions.ts",
 		"verify:decision-ui": "tsx verify-decision-ui.ts",
 		"verify:radar": "tsx verify-radar.ts",
+		"verify:automation": "tsx verify-automation.ts",
+		"verify:automation-ui": "tsx verify-automation-ui.ts",
 		"verify:radar-ui": "tsx verify-radar-ui.ts",
 		"verify:saved-views": "tsx verify-saved-views.ts",
 		"verify:project-presets": "tsx verify-project-presets.ts",

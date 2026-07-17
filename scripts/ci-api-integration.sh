@@ -137,6 +137,7 @@ RBAC_API="$API_URL" pnpm --filter @watson/api verify:sync-refs
 DECISIONS_API="$API_URL" pnpm --filter @watson/api verify:comment-decisions
 DECISION_LOG_API="$API_URL" pnpm --filter @watson/api verify:decisions
 RADAR_API="$API_URL" pnpm --filter @watson/api verify:radar
+AUTOMATION_API="$API_URL" pnpm --filter @watson/api verify:automation
 COMMENT_COLLAB_API="$API_URL" pnpm --filter @watson/api verify:comment-collaboration
 TASK_BULK_API="$API_URL" pnpm --filter @watson/api verify:task-bulk
 SAVED_VIEWS_API="$API_URL" pnpm --filter @watson/api verify:saved-views

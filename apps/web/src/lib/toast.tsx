@@ -35,9 +35,16 @@ export function ActionToast() {
 			const ttl = (e as CustomEvent<ToastDetail>).detail.action ? 5000 : 2800;
 			timer = setTimeout(() => setToast(null), ttl);
 		};
+		const dismissPassiveToastOnIntent = () => {
+			setToast((current) => (current?.action ? current : null));
+		};
 		window.addEventListener(EVT, h);
+		window.addEventListener("pointerdown", dismissPassiveToastOnIntent, true);
+		window.addEventListener("keydown", dismissPassiveToastOnIntent, true);
 		return () => {
 			window.removeEventListener(EVT, h);
+			window.removeEventListener("pointerdown", dismissPassiveToastOnIntent, true);
+			window.removeEventListener("keydown", dismissPassiveToastOnIntent, true);
 			clearTimeout(timer);
 		};
 	}, []);

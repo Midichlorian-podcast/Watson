@@ -32,6 +32,7 @@ import { z } from "zod";
 import { aiPolicyRoutes } from "./aiPolicy";
 import { ATTACHMENT_MAX_BYTES, attachmentRoutes } from "./attachments";
 import { auth } from "./auth";
+import { automationRoutes, startAutomationWorker } from "./automation";
 import { availabilityRoutes } from "./availability";
 import { bookingRoutes } from "./bookings";
 import { chainCommandRoutes } from "./chainCommands";
@@ -273,6 +274,10 @@ app.use(
 	rateLimit({ name: "radar", windowMs: 60_000, max: 60, scope: "session-or-ip" }),
 );
 app.use(
+	"/api/automation/*",
+	rateLimit({ name: "automation", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
+);
+app.use(
 	"/api/watson/*",
 	rateLimit({ name: "watson-ai", windowMs: 60_000, max: 20, scope: "session-or-ip" }),
 );
@@ -423,6 +428,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 /** PowerSync — JWKS, token, write upload. */
 app.route("/", powersyncRoutes);
 app.route("/", aiPolicyRoutes);
+app.route("/", automationRoutes);
 app.route("/", availabilityRoutes);
 app.route("/", bookingRoutes);
 app.route("/", taskAvailabilityRoutes);
@@ -1339,6 +1345,7 @@ serve({ fetch: app.fetch, port: env.apiPort }, (info) => {
 	startReminderWorker();
 	startMailSyncWorker();
 	startMailOutboundWorker();
+	startAutomationWorker();
 });
 
 export type AppType = typeof app;
