@@ -16,6 +16,7 @@ export * from "./goals";
 export * from "./imports";
 export * from "./intake";
 export * from "./lists";
+export * from "./mail";
 export * from "./meetings";
 export * from "./polls";
 export * from "./projectMilestones";

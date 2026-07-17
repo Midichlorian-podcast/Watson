@@ -18,6 +18,7 @@ export DEV_AUTH_LOG_LINKS=1
 export BETTER_AUTH_SECRET="ci-better-auth-secret-${RUN_NONCE}-at-least-32-bytes-long"
 export BACKUP_SIGNING_SECRET="ci-backup-signing-secret-at-least-32-bytes"
 export LOCAL_DATA_ENCRYPTION_SECRET="ci-local-data-secret-at-least-32-bytes-long"
+export MAIL_VAULT_KEYS_JSON='{"version":1,"currentKid":"ci-mail","keys":{"ci-mail":"WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo"}}'
 export OPS_METRICS_TOKEN="ci-ops-metrics-token-${RUN_NONCE}-at-least-32-bytes"
 # Test nesmí omylem převzít reálný LuckyOS z lokálního .env. Lokální provider
 # ověřuje bridge JWT a dovolí otestovat celý revoke/reconnect lifecycle bez sítě.
@@ -98,6 +99,8 @@ start_api() {
 pnpm --filter @watson/api verify:contract
 pnpm --filter @watson/api verify:drizzle
 pnpm --filter @watson/api verify:reminders
+pnpm --filter @watson/api verify:mail-vault
+pnpm --filter @watson/api verify:mail-foundation
 pnpm --filter @watson/api verify:employee-reconcile
 pnpm --filter @watson/api verify:db-invariants
 pnpm --filter @watson/api verify:signing-keys

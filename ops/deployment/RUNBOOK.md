@@ -22,6 +22,7 @@ Every row is an independent compromise domain. Reusing a value is forbidden.
 | `BETTER_AUTH_SECRET`           | sessions and authentication            | current sessions become invalid; schedule a user-visible re-login window                                                                                                |
 | `BACKUP_SIGNING_SECRET`        | signed logical export manifests        | existing exports cannot be restored after a single-key rotation; retain the old secret only in a time-limited offline recovery escrow until the retention window closes |
 | `LOCAL_DATA_ENCRYPTION_SECRET` | per-user local PowerSync database keys | local caches become unreadable and must be safely rebuilt from the server; verify outboxes are empty first                                                              |
+| `MAIL_VAULT_KEYS_JSON` | mailbox OAuth/IMAP credential envelopes | add the new current key first, re-encrypt every envelope, verify counts, and only then retire the old key; never reuse another Watson secret |
 | `OPS_METRICS_TOKEN`            | protected SLO endpoint                 | no overlap support; update scraper and API in a monitored window as described in the observability runbook                                                              |
 | PowerSync keyring              | sync JWT signing                       | supports public-key overlap; never reuse the LuckyOS ring                                                                                                               |
 | LuckyOS keyring                | employee bridge JWT signing            | supports public-key overlap; never reuse the PowerSync ring                                                                                                             |
@@ -39,6 +40,12 @@ Every row is an independent compromise domain. Reusing a value is forbidden.
 6. Revoke the old value, record completion without recording the value, and remove time-limited recovery escrow when its retention expires.
 
 Never rotate `LOCAL_DATA_ENCRYPTION_SECRET` while clients may have unsynced outbox entries. Never delete an old export-signing or backup-encryption value until the corresponding recovery artifacts have expired or have been reissued and verified. A PowerSync/LuckyOS rotation is complete only after a token signed by the new key succeeds and one signed by the retired key fails after the overlap window.
+
+Mailbox vault rotation is an overlap operation. Deploy a keyring containing the old key and a new
+`currentKid`, rewrite every `mail_account_credentials` envelope through the authenticated server
+vault, compare the rewritten count with the active account count, and test provider access. Retire
+the old key only after no row references its `key_id`. A mailbox revoke must delete its credential
+row; metadata and redacted audit may remain, but tokens and IMAP passwords may not.
 
 ## Emergency compromise
 

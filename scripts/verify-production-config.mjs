@@ -89,6 +89,42 @@ function validateKeyRing(raw) {
   }
 }
 
+function readMailVaultKeys(raw) {
+  if (!raw) return null;
+  try {
+    const ring = JSON.parse(raw);
+    if (
+      ring?.version !== 1 ||
+      typeof ring.currentKid !== "string" ||
+      !/^[a-zA-Z0-9._-]{1,64}$/.test(ring.currentKid) ||
+      !ring.keys ||
+      typeof ring.keys !== "object" ||
+      Array.isArray(ring.keys)
+    ) {
+      return null;
+    }
+    const entries = Object.entries(ring.keys);
+    if (entries.length < 1 || entries.length > 8) return null;
+    const decoded = new Map();
+    for (const [kid, value] of entries) {
+      if (
+        !/^[a-zA-Z0-9._-]{1,64}$/.test(kid) ||
+        typeof value !== "string" ||
+        !/^[a-zA-Z0-9_-]{43}$/.test(value) ||
+        Buffer.from(value, "base64url").length !== 32 ||
+        decoded.has(value)
+      ) {
+        return null;
+      }
+      decoded.set(value, kid);
+    }
+    if (!Object.hasOwn(ring.keys, ring.currentKid)) return null;
+    return [...decoded.keys()];
+  } catch {
+    return null;
+  }
+}
+
 export function validateProductionConfig(source = process.env) {
   const checks = [];
   const record = (id, status, message) => checks.push({ id, status, message });
@@ -190,6 +226,24 @@ export function validateProductionConfig(source = process.env) {
     "core_secret_isolation",
     new Set(independentSecrets).size === 4 ? "passed" : "failed",
     "Auth, export signing, local-data encryption, and metrics credentials must all be present and different.",
+  );
+
+  const mailVaultRaw = required("MAIL_VAULT_KEYS_JSON");
+  const mailVaultKeys = readMailVaultKeys(mailVaultRaw);
+  record(
+    "mail_vault_keyring",
+    mailVaultKeys ? "passed" : "failed",
+    "MAIL_VAULT_KEYS_JSON must contain a version 1 keyring with unique 32-byte base64url AES keys.",
+  );
+  record(
+    "mail_vault_isolation",
+    mailVaultKeys &&
+      !mailVaultKeys.some((key) =>
+        [authSecret, backupSecret, localDataSecret, metricsToken].includes(key),
+      )
+      ? "passed"
+      : "failed",
+    "Mailbox vault keys must not be reused by auth, export, local-data, or metrics systems.",
   );
 
   const resendKey = required("RESEND_API_KEY");

@@ -45,6 +45,8 @@
 		"verify:availability": "tsx verify-availability.ts",
 		"verify:bookings": "tsx verify-bookings.ts",
 		"verify:integrations": "tsx verify-integrations.ts",
+		"verify:mail-vault": "tsx verify-mail-vault.ts",
+		"verify:mail-foundation": "tsx verify-mail-foundation.ts",
 		"verify:integrations-ui": "tsx verify-integrations-ui.ts",
 		"verify:recurrence": "tsx verify-recurrence.ts",
 		"verify:recurrence-ui": "tsx verify-recurrence-ui.ts",

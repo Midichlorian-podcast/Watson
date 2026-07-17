@@ -43,6 +43,7 @@ import { importRoutes } from "./imports";
 import { intakeFormRoutes } from "./intakeForms";
 import { integrationRoutes } from "./integrations";
 import { meetingsRoutes } from "./meetings";
+import { parseMailVaultKeyring } from "./mailVault";
 import { isOpsTokenAuthorized, readOpsSloSnapshot, recordHttpMetric } from "./opsMetrics";
 import { pollRoutes } from "./polls";
 import { powersyncRoutes } from "./powersync";
@@ -64,6 +65,10 @@ import {
 	type RawLegacyTimelineRow,
 } from "./taskTimeline";
 import { watsonRoutes } from "./watson";
+
+// F5 bezpečnostní startup gate: produkce nesmí naběhnout s fallbackem nebo
+// poškozeným keyringem pro mailbox credentials. Parser nikdy neloguje hodnoty.
+if (process.env.NODE_ENV === "production") parseMailVaultKeyring(env.mailVaultKeysJson);
 
 /** Pořadí workspace rolí (R5) pro kontrolu eskalace práv — owner se řeší zvlášť (99). */
 const WS_ROLE_RANK: Record<string, number> = {

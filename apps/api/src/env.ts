@@ -40,6 +40,8 @@ export const env = {
 	 * cache (serverová data zůstávají autoritativní).
 	 */
 	localDataEncryptionSecret: process.env.LOCAL_DATA_ENCRYPTION_SECRET,
+	/** Rotovatelný AES-256-GCM keyring výhradně pro mailbox OAuth/IMAP credentials. */
+	mailVaultKeysJson: process.env.MAIL_VAULT_KEYS_JSON,
 	/** Forwarded IP hlavičky jsou autoritativní jen za námi spravovanou proxy. */
 	trustProxy: process.env.TRUST_PROXY === "1",
 	/** Samostatný bearer token pro produkční SLO scraper; nikdy nepoužívat jako auth secret. */

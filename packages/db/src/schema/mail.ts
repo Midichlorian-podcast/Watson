@@ -1,0 +1,136 @@
+/**
+ * F5 Mail M1 — autoritativní metadata osobních schránek a oddělený credential vault.
+ *
+ * Mailbox secrets se nikdy nesynchronizují do PowerSyncu ani nevracejí klientovi.
+ * `mail_account_credentials` obsahuje pouze AES-256-GCM envelope; význam AAD a
+ * rotaci klíčů drží serverový `mailVault.ts`.
+ */
+import { sql } from "drizzle-orm";
+import {
+	check,
+	index,
+	integer,
+	jsonb,
+	pgTable,
+	text,
+	timestamp,
+	uniqueIndex,
+	uuid,
+	varchar,
+} from "drizzle-orm/pg-core";
+import { createdAt, pk, updatedAt } from "./_helpers";
+import { users } from "./auth";
+import { workspaces } from "./workspace";
+
+/**
+ * M1 je záměrně osobní: účet vlastní právě jeden uživatel. Sdílené schránky a
+ * delegovaná ACL přijdou až v M3, aby první provider sync nemohl omylem rozšířit
+ * viditelnost soukromé pošty na celý workspace.
+ */
+export const mailAccounts = pgTable(
+	"mail_accounts",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		ownerUserId: uuid("owner_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		provider: varchar("provider", { length: 24 }).notNull(),
+		emailAddress: varchar("email_address", { length: 320 }).notNull(),
+		displayName: varchar("display_name", { length: 160 }),
+		/** SHA-256 provider identity; raw Google `sub` ani přihlašovací jméno sem nepatří. */
+		providerAccountHash: varchar("provider_account_hash", { length: 64 }).notNull(),
+		status: varchar("status", { length: 24 }).notNull().default("connected"),
+		/** Skutečně udělené provider scopes, ne požadované přání klienta. */
+		grantedScopes: jsonb("granted_scopes").$type<string[]>().notNull().default([]),
+		capabilities: jsonb("capabilities").$type<string[]>().notNull().default([]),
+		lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+		lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+		lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+		/** Jen Watson allowlist; upstream error text ani adresy se neukládají. */
+		lastErrorCode: varchar("last_error_code", { length: 64 }),
+		revokedAt: timestamp("revoked_at", { withTimezone: true }),
+		version: integer("version").notNull().default(1),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check("mail_accounts_provider_valid", sql`${t.provider} in ('google', 'imap_smtp')`),
+		check(
+			"mail_accounts_status_valid",
+			sql`${t.status} in ('connected', 'syncing', 'degraded', 'reauth_required', 'revoked')`,
+		),
+		check(
+			"mail_accounts_revoke_consistent",
+			sql`(${t.status} = 'revoked') = (${t.revokedAt} IS NOT NULL)`,
+		),
+		check(
+			"mail_accounts_provider_hash_valid",
+			sql`${t.providerAccountHash} ~ '^[0-9a-f]{64}$'`,
+		),
+		check(
+			"mail_accounts_error_code_valid",
+			sql`${t.lastErrorCode} IS NULL OR ${t.lastErrorCode} in ('mail_auth_revoked', 'mail_token_expired', 'mail_provider_unavailable', 'mail_sync_cursor_invalid', 'mail_credentials_invalid', 'mail_scope_missing', 'mail_contract_rejected', 'mail_rate_limited')`,
+		),
+		check("mail_accounts_scopes_array", sql`jsonb_typeof(${t.grantedScopes}) = 'array'`),
+		check(
+			"mail_accounts_capabilities_array",
+			sql`jsonb_typeof(${t.capabilities}) = 'array'`,
+		),
+		check("mail_accounts_version_positive", sql`${t.version} > 0`),
+		uniqueIndex("mail_accounts_owner_provider_identity_uq").on(
+			t.ownerUserId,
+			t.provider,
+			t.providerAccountHash,
+		),
+		uniqueIndex("mail_accounts_owner_address_uq").on(
+			t.ownerUserId,
+			t.provider,
+			sql`lower(${t.emailAddress})`,
+		),
+		index("mail_accounts_workspace_owner_idx").on(t.workspaceId, t.ownerUserId),
+	],
+);
+
+/**
+ * Jeden rotovatelný credential envelope na účet. Při revoke se řádek fyzicky
+ * smaže; metadata účtu a audit zůstanou jako bezpečná historická stopa.
+ */
+export const mailAccountCredentials = pgTable(
+	"mail_account_credentials",
+	{
+		accountId: uuid("account_id")
+			.primaryKey()
+			.references(() => mailAccounts.id, { onDelete: "cascade" }),
+		secretKind: varchar("secret_kind", { length: 24 }).notNull(),
+		algorithm: varchar("algorithm", { length: 24 }).notNull().default("aes-256-gcm-v1"),
+		keyId: varchar("key_id", { length: 64 }).notNull(),
+		/** Base64url hodnoty; samy o sobě neobsahují žádný plaintext provider údaj. */
+		nonce: varchar("nonce", { length: 24 }).notNull(),
+		authTag: varchar("auth_tag", { length: 32 }).notNull(),
+		ciphertext: text("ciphertext").notNull(),
+		credentialVersion: integer("credential_version").notNull().default(1),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check(
+			"mail_account_credentials_kind_valid",
+			sql`${t.secretKind} in ('google_oauth', 'imap_smtp')`,
+		),
+		check(
+			"mail_account_credentials_algorithm_valid",
+			sql`${t.algorithm} = 'aes-256-gcm-v1'`,
+		),
+		check("mail_account_credentials_key_id_valid", sql`length(${t.keyId}) between 1 and 64`),
+		check("mail_account_credentials_nonce_valid", sql`length(${t.nonce}) between 16 and 24`),
+		check("mail_account_credentials_tag_valid", sql`length(${t.authTag}) between 22 and 32`),
+		check("mail_account_credentials_ciphertext_valid", sql`length(${t.ciphertext}) > 0`),
+		check(
+			"mail_account_credentials_version_positive",
+			sql`${t.credentialVersion} > 0`,
+		),
+	],
+);

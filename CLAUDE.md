@@ -525,6 +525,12 @@ Stav dávky:
 6. Audit, export/delete, incident/revoke runbook.
 7. Teprve po E2E důkazu odstranit demo banner a seed claims.
 
+První bezpečnostní základ dokončen 2026-07-17: osobní `mail_accounts`, oddělený
+`mail_account_credentials` envelope bez plaintext sloupců, rotovatelný AES-256-GCM
+keyring, account/owner/provider AAD, produkční startup/preflight gate a DB triggery pro
+osobní tenant scope i shodu credential/provider. Provider sync a odesílání ještě nejsou
+hotové; permanentní Mail demo banner proto záměrně zůstává.
+
 ### F6 — Radar/automation/AI (4–8 týdnů)
 
 Nejdřív dependency graph a decision log, potom explainable Radar, poté rules engine. AI smí pouze navrhovat, dokud každá action nemá command, preview, permission recheck, audit a undo.
