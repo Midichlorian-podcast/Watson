@@ -14,6 +14,7 @@ import {
 import { showToast } from "../lib/toast";
 import { EmployeeAbsences } from "./EmployeeAbsences";
 import { EmployeeFiles } from "./EmployeeFiles";
+import { EmployeeLifecycle } from "./EmployeeLifecycle";
 
 const card = "rounded-2xl border border-line bg-card";
 const input =
@@ -689,6 +690,7 @@ export function EmployeeSelfService() {
     ["profil", "prirazeni", "profile"],
     ["dochazka", "termin", "attendance"],
     ["mala-cisla", "trvani", "smallNumbers"],
+    ["nastup-a-odchod", "postup", "lifecycle"],
     ["absence", "termin", "absences"],
     ["dokumenty", "priloha", "documents"],
     ["vydaje", "reporty", "expenses"],
@@ -714,6 +716,7 @@ export function EmployeeSelfService() {
         <ProfilePanel />
         <AttendancePanel />
         <SmallNumbersPanel />
+        <EmployeeLifecycle />
         <EmployeeAbsences />
         <EmployeeFiles />
       </div>

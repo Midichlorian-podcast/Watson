@@ -610,9 +610,9 @@ Informativní oznámení úkol nevytvářejí. API důkaz pokrývá session, no-
 bezpečné relativní odkazy, provider kontrakt, task lineage a retry bez duplicity. Chromium
 i WebKit ověřily gating, dashboard, sync, 390px reflow, mobilní 44px akci a axe WCAG A/AA;
 ruční vizuální audit následně přeskládal mobilní hlavičku. Provozní hranice jsou v
-`docs/employee-hub-runbook.md`. Dokumenty/podpisy navazují samostatnou dokončenou
-F7 vertikálou; dovolená/absence je rovněž dokončená a onboarding/offboarding zůstává
-další samostatnou dávkou.
+`docs/employee-hub-runbook.md`. Dokumenty/podpisy, dovolená/absence i
+onboarding/offboarding přes Postupy navazují samostatnými dokončenými F7 vertikálami;
+znalostní/SOP povrch zůstává další samostatnou dávkou.
 
 LuckyOS v1 integrační základ dokončen 2026-07-17: starý e-mailový broker zůstává
 výslovným `legacy` režimem a žádný deploy ho automaticky nepřepne. V1 vydává přesný
@@ -655,8 +655,7 @@ PDF a neměnný audit vytváří LuckyOS. Náhled se nabídne pouze pro publikov
 se stejným názvem i verzí smlouvy; chybějící obsah se poctivě přizná a metadata se
 nevydávají za přečtenou smlouvu. API důkaz pokrývá redakci provider metadata,
 upload/replay, výdaj, challenge, podpis a revoke; Chromium i WebKit pokrývají
-retry, dokument, výdaj, podpis, 390px reflow a axe WCAG A/AA. Další F7 dávka je
-onboarding/offboarding a znalostní/SOP povrch.
+retry, dokument, výdaj, podpis, 390px reflow a axe WCAG A/AA.
 
 LuckyOS v1 dovolená a absence dokončena 2026-07-17: zaměstnanec odesílá
 striktní, idempotentní `absence` case do LuckyOS; Watson ukládá jen minimalizovanou
@@ -669,6 +668,20 @@ projekci do více workspace, pending vs. strict plánování i redakci poznámky
 i WebKit ověřily ztracenou odpověď se stabilním operation ID, explicitní potvrzení,
 desktop, 390px, 44px mobilní cíle a axe WCAG A/AA. Produkční build, celý gate a úplná
 API integrační sada jsou zelené; ruční screenshot audit nenašel overflow ani nečitelný stav.
+
+LuckyOS v1 onboarding/offboarding přes Postupy dokončen 2026-07-17: LuckyOS je
+jediný HR system of record a Watson nevytváří duplicitní `chains`, tasky ani kopii
+odpovědí. Online facade čte onboarding/offboarding oddělenými minimálními scopes,
+validuje celý provider kontrakt a zveřejňuje pouze název, allowlistované kroky,
+stav, termín, progres a verzi. Employee Hub umí výslovně potvrdit, doplnit text či
+údaj, udělit souhlas, položit otázku, odmítnout nebo přes zabezpečený
+`lifecycle_document` upload předat soubor; každý command má přesnou verzi, druhé
+potvrzení a stabilní user-bound operation ID. Postupy zobrazují živý osobní progres
+a vedou do stejného Employee Hubu, takže původní flow engine zůstává beze změny.
+API důkaz pokrývá redakci, invalidní potvrzení, replay, konflikt idempotency a
+souborový submit. Chromium i WebKit ověřily ztracenou odpověď, automatický přechod
+na další krok, Postupy, desktop, 390px, lokalizovaný file picker, bez overflow a
+axe WCAG A/AA. Další F7 dávka je Employee-facing Knowledge a SOP.
 
 ## 10. Detailní acceptance checklist pro budoucí funkce
 

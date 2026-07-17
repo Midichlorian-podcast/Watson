@@ -166,6 +166,30 @@ nepřebírá HR payload naslepo: pod serverovou identitou znovu načte person-sc
 idempotentní update. Pokud refresh nebo projekce selže, webhook vrátí řízené 503;
 LuckyOS může zopakovat stejný event a nevznikne druhý blok.
 
+## Nástupní a výstupní postupy
+
+Onboarding a offboarding jsou autoritativní LuckyOS lifecycle instance. Watson je
+čte online přes oddělené `onboarding:read` a `offboarding:read` scopes a zobrazuje
+je současně v Employee Hubu a jako osobní přehled v Postupech. Nevytváří druhou
+`chain`, kopii HR instance ani sadu duplicitních úkolů; již existující LuckyOS
+work item reconciliation zůstává jedinou cestou pro případný osobní akční úkol.
+
+- Browser dostane pouze název, veřejně popsané povinné kroky, stav, termín,
+  progres a verzi. Libovolný `public_payload`, interní metadata, starší odpovědi a
+  provider person ID se nevracejí.
+- Každé potvrzení, text, údaj, souhlas, otázka nebo odmítnutí je samostatný
+  `lifecycle.respond` command s přesnou verzí, stabilním user-bound operation ID a
+  druhým potvrzením v UI. Souběžná změna skončí 409 a načtením aktuálního stavu.
+- Souborový krok používá stejnou kontrolu magic bytes, SHA-256 a 25MB limit jako
+  dokumenty, ale upload intent má výhradní účel `lifecycle_document`. Watson soubor
+  ani odpověď neukládá do databáze, PowerSyncu nebo browser storage.
+- `decline` a `question` krok nedokončí. Jakmile jsou splněné všechny povinné
+  položky, LuckyOS přepne instanci na `submitted`; finální kontrolu, vrácení ke
+  změnám, dokončení i odvolání identity provádí oprávněná osoba v LuckyOS.
+- Watson bezpečně humanizuje i starší raw item keys, ale pokud LuckyOS poskytne
+  allowlistované `items` metadata, použije jejich popisek, vysvětlení a doporučený
+  typ odpovědi. Neznámá pole se zahodí.
+
 ## Automatické důkazy
 
 ```bash
@@ -174,6 +198,7 @@ node scripts/verify-luckyos-v1-contract.mjs
 node scripts/verify-employee-self-service-contract.mjs
 node scripts/verify-employee-files-contract.mjs
 node scripts/verify-employee-absences-contract.mjs
+node scripts/verify-employee-lifecycle-contract.mjs
 EMPLOYEE_HUB_API=http://127.0.0.1:8790 pnpm --filter @watson/api verify:employee-hub
 pnpm --filter @watson/api verify:luckyos-v1
 EMPLOYEE_SELF_SERVICE_API=http://127.0.0.1:8790 pnpm --filter @watson/api verify:employee-self-service
@@ -182,13 +207,14 @@ bash scripts/ci-api-integration.sh
 pnpm gate
 ```
 
-API verifier musí běžet proti lokálnímu LuckyOS stubu z integrační sady. Browser verifier pokrývá Chromium i WebKit, desktop, 390 px, navigační gating, dashboard, profil, docházku, malá čísla, žádost o absenci se stabilním retry, dokumentový retry, výdaj, podpisovou challenge, explicitní souhlas a axe WCAG A/AA.
+API verifier musí běžet proti lokálnímu LuckyOS stubu z integrační sady. Browser verifier pokrývá Chromium i WebKit, desktop, 390 px, navigační gating, dashboard, profil, docházku, malá čísla, onboarding/offboarding v Employee Hubu i Postupech, lifecycle retry a soubor, žádost o absenci se stabilním retry, dokumentový retry, výdaj, podpisovou challenge, explicitní souhlas a axe WCAG A/AA.
 
 ## Scope této dávky
 
 Tato dávka zpřístupňuje profilové změnové žádosti, docházku, malá čísla,
-dovolenou/absence, dokumenty, výdaje a elektronický podpis. Starší
+dovolenou/absence, dokumenty, výdaje, elektronický podpis a onboarding/offboarding
+přes Postupy. Starší
 broker routy zůstávají zachované kvůli kompatibilitě a výchozí protocol zůstává
 `legacy`; nasazení samotného kódu proto nikoho nepřepne. Retention a malware
-politiku vlastní LuckyOS. Onboarding/offboarding a znalostní vrstva patří do
-následujících samostatně auditovaných F7 vertikál.
+politiku vlastní LuckyOS. Znalostní a SOP vrstva patří do následující samostatně
+auditované F7 vertikály.

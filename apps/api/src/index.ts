@@ -41,6 +41,7 @@ import { decisionRoutes } from "./decisions";
 import { employeeRoutes } from "./employee";
 import { employeeAbsenceRoutes } from "./employeeAbsences";
 import { EMPLOYEE_FILE_MAX_BYTES, employeeFileRoutes } from "./employeeFiles";
+import { employeeLifecycleRoutes } from "./employeeLifecycle";
 import { employeeSelfServiceRoutes } from "./employeeSelfService";
 import { env, googleEnabled, pushEnabled } from "./env";
 import { exportRoutes } from "./export";
@@ -254,7 +255,8 @@ app.use("/*", (c, next) =>
 			? attachmentBodyLimit(c, next)
 			: c.req.method === "POST" &&
 					(c.req.path === "/api/employee/self-service/documents" ||
-						c.req.path === "/api/employee/self-service/expenses")
+						c.req.path === "/api/employee/self-service/expenses" ||
+						c.req.path === "/api/employee/self-service/lifecycle/respond-file")
 				? employeeFileBodyLimit(c, next)
 				: standardBodyLimit(c, next),
 );
@@ -488,6 +490,7 @@ app.route("/", mailOutboundRoutes);
 app.route("/", employeeRoutes);
 app.route("/", employeeSelfServiceRoutes);
 app.route("/", employeeFileRoutes);
+app.route("/", employeeLifecycleRoutes);
 app.route("/", employeeAbsenceRoutes);
 
 /** Web Push — VAPID klíč, (od)hlášení odběru, test. */

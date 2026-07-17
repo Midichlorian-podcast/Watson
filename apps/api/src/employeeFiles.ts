@@ -175,7 +175,7 @@ const uploadIntentEnvelope = z
 		upload: z
 			.object({
 				id: z.string().uuid(),
-				purpose: z.enum(["expense_receipt", "person_document"]),
+				purpose: z.enum(["expense_receipt", "person_document", "lifecycle_document"]),
 				work_item_id: z.string().uuid().nullable(),
 				file_name: z.string().max(255),
 				mime_type: z.string().max(160),
@@ -530,10 +530,10 @@ function verifiedMime(bytes: Uint8Array, fileName: string): string | null {
 	return null;
 }
 
-async function uploadEmployeeFile(args: {
+export async function uploadEmployeeFile(args: {
 	userId: string;
 	operationId: string;
-	purpose: "expense_receipt" | "person_document";
+	purpose: "expense_receipt" | "person_document" | "lifecycle_document";
 	file: File;
 }) {
 	const fileName = safeFileName(args.file.name);

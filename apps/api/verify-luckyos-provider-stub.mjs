@@ -7,6 +7,73 @@ const v1Receipts = new Map();
 const v1Responses = new Map();
 const v1Uploads = new Map();
 const v1Cases = new Map();
+const v1Lifecycles = new Map();
+
+function lifecycleKey(providerPersonId, type, id) {
+	return `${providerPersonId}:${type}:${id}`;
+}
+
+function ensureLifecycles(providerPersonId) {
+	const onboardingId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+	const onboardingKey = lifecycleKey(providerPersonId, "onboarding", onboardingId);
+	if (!v1Lifecycles.has(onboardingKey)) {
+		v1Lifecycles.set(onboardingKey, {
+			id: onboardingId,
+			provider_person_id: providerPersonId,
+			lifecycle_type: "onboarding",
+			status: "invited",
+			title: "Dokončení nástupu",
+			public_payload: {
+				items: [
+					{
+						key: "code_of_conduct",
+						label: "Pravidla spolupráce",
+						description: "Potvrď, že ses s pravidly seznámil(a).",
+						response_type: "confirmation",
+					},
+					{
+						key: "identity_document",
+						label: "Doklad totožnosti",
+						response_type: "file",
+					},
+				],
+				provider_secret: "must-not-leak",
+			},
+			internal_payload: { reviewer_secret: "must-not-leak" },
+			required_item_keys: ["code_of_conduct", "identity_document"],
+			completed_item_keys: [],
+			due_at: "2026-07-31T20:00:00.000Z",
+			submitted_at: null,
+			completed_at: null,
+			cancelled_at: null,
+			version: 1,
+			created_at: "2026-07-17T08:00:00.000Z",
+			updated_at: "2026-07-17T08:00:00.000Z",
+		});
+	}
+	const offboardingId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+	const offboardingKey = lifecycleKey(providerPersonId, "offboarding", offboardingId);
+	if (!v1Lifecycles.has(offboardingKey)) {
+		v1Lifecycles.set(offboardingKey, {
+			id: offboardingId,
+			provider_person_id: providerPersonId,
+			lifecycle_type: "offboarding",
+			status: "completed",
+			title: "Předchozí ukončení spolupráce",
+			public_payload: {},
+			internal_payload: { reviewer_secret: "must-not-leak" },
+			required_item_keys: ["handover"],
+			completed_item_keys: ["handover"],
+			due_at: null,
+			submitted_at: "2026-06-01T08:00:00.000Z",
+			completed_at: "2026-06-02T08:00:00.000Z",
+			cancelled_at: null,
+			version: 3,
+			created_at: "2026-05-20T08:00:00.000Z",
+			updated_at: "2026-06-02T08:00:00.000Z",
+		});
+	}
+}
 
 async function requestBytes(request) {
 	const chunks = [];
@@ -146,6 +213,8 @@ const server = createServer(async (request, response) => {
 			"trainer-projects": "trainer-projects:read",
 			contracts: "contracts:read",
 			cases: "cases:read",
+			onboarding: "onboarding:read",
+			offboarding: "offboarding:read",
 		}[resource];
 		if (request.method === "GET" && (!readScope || !scopes.has(readScope))) {
 			response.statusCode = 403;
@@ -433,6 +502,26 @@ const server = createServer(async (request, response) => {
 			);
 			return;
 		}
+		if (request.method === "GET" && (remainder === "onboarding" || remainder === "offboarding")) {
+			ensureLifecycles(providerPersonId);
+			response.end(
+				JSON.stringify({
+					resource: remainder,
+					data: {
+						instances: [...v1Lifecycles.values()]
+							.filter(
+								(item) =>
+									item.provider_person_id === providerPersonId &&
+									item.lifecycle_type === remainder,
+							)
+							.map(({ provider_person_id: _providerPersonId, ...item }) => item),
+					},
+					request_id: crypto.randomUUID(),
+					correlation_id: request.headers["x-correlation-id"],
+				}),
+			);
+			return;
+		}
 		if (request.method === "POST" && remainder === "upload-intents") {
 			const key = request.headers["idempotency-key"];
 			const raw = await requestBody(request);
@@ -697,6 +786,78 @@ const server = createServer(async (request, response) => {
 			v1Receipts.set(key, raw);
 			v1Responses.set(key, result);
 			response.statusCode = 201;
+			response.end(JSON.stringify(result));
+			return;
+		}
+		if (request.method === "POST" && /^(onboarding|offboarding)\/[^/]+\/commands$/.test(remainder)) {
+			const [type, id] = remainder.split("/");
+			const key = request.headers["idempotency-key"];
+			const raw = await requestBody(request);
+			if (!scopes.has(`${type}:write`) || typeof key !== "string") {
+				response.statusCode = 403;
+				response.end(JSON.stringify({ error: { code: "insufficient_scope" } }));
+				return;
+			}
+			const previous = v1Receipts.get(key);
+			if (previous && previous !== raw) {
+				response.statusCode = 409;
+				response.end(JSON.stringify({ error: { code: "idempotency_conflict" } }));
+				return;
+			}
+			if (previous) {
+				response.setHeader("idempotency-replayed", "true");
+				response.end(JSON.stringify({ ...v1Responses.get(key), idempotency_replayed: true }));
+				return;
+			}
+			ensureLifecycles(providerPersonId);
+			const instance = v1Lifecycles.get(lifecycleKey(providerPersonId, type, id));
+			const command = JSON.parse(raw);
+			if (
+				!instance ||
+				command.command !== "lifecycle.respond" ||
+				command.expected_version !== instance.version ||
+				!["invited", "in_progress", "needs_changes"].includes(instance.status) ||
+				!instance.required_item_keys.includes(command.item_key) ||
+				!["confirmation", "text", "form", "file", "consent", "decline", "question"].includes(
+					command.response_type,
+				)
+			) {
+				response.statusCode = 409;
+				response.end(JSON.stringify({ error: { code: "domain_version_or_state_conflict" } }));
+				return;
+			}
+			if (command.response_type === "file") {
+				const upload = v1Uploads.get(command.response?.upload_id);
+				if (!upload || upload.purpose !== "lifecycle_document" || upload.status !== "uploaded") {
+					response.statusCode = 409;
+					response.end(JSON.stringify({ error: { code: "invalid_file_upload" } }));
+					return;
+				}
+				upload.status = "consumed";
+			}
+			if (!["decline", "question"].includes(command.response_type)) {
+				instance.completed_item_keys = Array.from(
+					new Set([...instance.completed_item_keys, command.item_key]),
+				);
+			}
+			instance.status = instance.required_item_keys.every((item) =>
+				instance.completed_item_keys.includes(item),
+			)
+				? "submitted"
+				: "in_progress";
+			instance.version += 1;
+			instance.updated_at = "2026-07-17T09:00:00.000Z";
+			if (instance.status === "submitted") instance.submitted_at = instance.updated_at;
+			const { provider_person_id: _providerPersonId, ...entity } = instance;
+			const result = {
+				entity_type: `${type}_instance`,
+				entity,
+				idempotency_replayed: false,
+				request_id: crypto.randomUUID(),
+				correlation_id: request.headers["x-correlation-id"],
+			};
+			v1Receipts.set(key, raw);
+			v1Responses.set(key, result);
 			response.end(JSON.stringify(result));
 			return;
 		}

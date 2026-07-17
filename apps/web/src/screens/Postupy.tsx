@@ -1,11 +1,11 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CopyLinkButton } from "../components/CopyLinkButton";
 import { AutomationCenter } from "../components/AutomationCenter";
+import { CopyLinkButton } from "../components/CopyLinkButton";
 import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
@@ -16,15 +16,17 @@ import {
 	rewindToStep,
 } from "../lib/chainAdvance";
 import { shiftChain, toggleChainWeekend } from "../lib/chainReflow";
-import { initials } from "../lib/format";
+import { useEmployeeHub } from "../lib/employee";
+import { useEmployeeLifecycle } from "../lib/employeeLifecycle";
 import { focusOnMount } from "../lib/focusOnMount";
+import { initials } from "../lib/format";
 import type { ChainRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjectsWithState } from "../lib/projects";
+import { storageGet } from "../lib/storage";
 import { useTaskDetail } from "../lib/taskDetail";
 import { NOT_MEETING, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
-import { storageGet } from "../lib/storage";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
@@ -257,6 +259,10 @@ export function Postupy() {
 	const activeWsInfo = (workspaces ?? []).find((w) => w.id === activeWs);
 	const { data: session } = useSession();
 	const meId = session?.user?.id;
+	const employeeHub = useEmployeeHub();
+	const employeeLifecycle = useEmployeeLifecycle(
+		employeeHub.data?.linked === true && employeeHub.data.selfService,
+	);
 
 	const [mineOnly, setMineOnly] = useState(false);
 	const [modalOpen, setModalOpen] = useState(false);
@@ -372,6 +378,9 @@ export function Postupy() {
 	}, [chains, steps, taskById, wsProjectIds, wsProjects, assigneesByTask, meId, memberName, t]);
 
 	const shown = mineOnly ? view.filter((v) => v.mine) : view;
+	const personalLifecycle = (employeeLifecycle.data?.instances ?? []).filter(
+		(instance) => !["completed", "cancelled"].includes(instance.status),
+	);
 	const selected = search.postup ? (view.find((v) => v.ch.id === search.postup) ?? null) : null;
 	if (search.view === "automation") {
 		return (
@@ -445,6 +454,37 @@ export function Postupy() {
 			<p className="mb-4 max-w-[60ch] font-body text-ink-3" style={{ fontSize: 13 }}>
 				{t("flows.subtitle")}
 			</p>
+
+			{personalLifecycle.length > 0 && (
+				<section className="mb-5 rounded-2xl border border-brass/30 bg-brass-soft/40 p-4" aria-labelledby="personal-lifecycle-heading">
+					<div className="flex flex-wrap items-start gap-3">
+						<div className="flex h-9 w-9 items-center justify-center rounded-xl bg-card text-brass-text shadow-sm">
+							<Icon name="postup" size={18} />
+						</div>
+						<div className="min-w-0 flex-1">
+							<h2 id="personal-lifecycle-heading" className="font-display text-sm font-bold text-ink">{t("employee.lifecycle.proceduresTitle")}</h2>
+							<p className="mt-1 font-body text-xs leading-relaxed text-ink-3">{t("employee.lifecycle.proceduresDescription")}</p>
+						</div>
+						<Link to="/zamestnanec" hash="nastup-a-odchod" className="inline-flex min-h-11 items-center rounded-lg border border-brass/30 bg-card px-3 font-display text-xs font-bold text-brass-text hover:border-brass">
+							{t("employee.lifecycle.open")}
+						</Link>
+					</div>
+					<div className="mt-3 grid gap-2 sm:grid-cols-2">
+						{personalLifecycle.map((instance) => {
+							const percent = Math.round((instance.completedCount / instance.totalCount) * 100);
+							return (
+								<Link key={instance.id} to="/zamestnanec" hash={instance.type} className="rounded-xl border border-line bg-card p-3 transition hover:border-brass hover:shadow-sm">
+									<div className="flex items-center gap-2">
+										<span className="min-w-0 flex-1 truncate font-display text-xs font-bold text-ink">{instance.title}</span>
+										<span className="shrink-0 font-mono text-[10px] text-ink-3">{instance.completedCount}/{instance.totalCount}</span>
+									</div>
+									<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-2"><div className="h-full rounded-full bg-brass" style={{ width: `${percent}%` }} /></div>
+								</Link>
+							);
+						})}
+					</div>
+				</section>
+			)}
 
 			{projectsLoading || chainsLoading || stepsLoading || tasksLoading || assignmentsLoading ? (
 				<DataLoading />

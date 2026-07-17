@@ -384,6 +384,127 @@ async function main() {
 			{ invalidMinutes, smallSave },
 		);
 
+		const lifecycle = await request(cookie, "/api/employee/self-service/lifecycle");
+		const lifecycleInstances = lifecycle.body.instances as Array<Record<string, unknown>> | undefined;
+		const onboarding = lifecycleInstances?.find((instance) => instance.type === "onboarding");
+		const onboardingItems = onboarding?.items as Array<Record<string, unknown>> | undefined;
+		check(
+			"nástup a odchod se čtou online jako minimální veřejná projekce",
+			lifecycle.status === 200 &&
+				lifecycle.cacheControl.includes("no-store") &&
+				onboarding?.status === "invited" &&
+				onboarding?.version === 1 &&
+				onboardingItems?.[0]?.label === "Pravidla spolupráce" &&
+				onboardingItems?.[1]?.suggestedResponseType === "file" &&
+				!lifecycle.text.includes("public_payload") &&
+				!lifecycle.text.includes("internal_payload") &&
+				!lifecycle.text.includes("provider_secret") &&
+				!lifecycle.text.includes("must-not-leak"),
+			lifecycle.body,
+		);
+		const invalidLifecycle = await request(cookie, "/api/employee/self-service/lifecycle/respond", {
+			method: "POST",
+			body: {
+				operationId: randomUUID(),
+				lifecycleType: "onboarding",
+				lifecycleId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+				expectedVersion: 1,
+				itemKey: "code_of_conduct",
+				responseType: "confirmation",
+				value: null,
+				confirmed: false,
+			},
+		});
+		check(
+			"potvrzovací krok vyžaduje výslovný souhlas ještě před providerem",
+			invalidLifecycle.status === 422 &&
+				invalidLifecycle.body.error === "invalid_lifecycle_response",
+			invalidLifecycle,
+		);
+		const lifecycleOperation = randomUUID();
+		const lifecycleConfirmationBody = {
+			operationId: lifecycleOperation,
+			lifecycleType: "onboarding",
+			lifecycleId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+			expectedVersion: 1,
+			itemKey: "code_of_conduct",
+			responseType: "confirmation",
+			value: null,
+			confirmed: true,
+		};
+		const lifecycleConfirmation = await request(
+			cookie,
+			"/api/employee/self-service/lifecycle/respond",
+			{ method: "POST", body: lifecycleConfirmationBody },
+		);
+		const lifecycleReplay = await request(
+			cookie,
+			"/api/employee/self-service/lifecycle/respond",
+			{ method: "POST", body: lifecycleConfirmationBody },
+		);
+		const lifecycleIdempotencyConflict = await request(
+			cookie,
+			"/api/employee/self-service/lifecycle/respond",
+			{
+				method: "POST",
+				body: { ...lifecycleConfirmationBody, itemKey: "identity_document" },
+			},
+		);
+		check(
+			"lifecycle odpověď je verzovaná, idempotentní a operationId nejde použít pro jiný krok",
+			lifecycleConfirmation.status === 200 &&
+				(lifecycleConfirmation.body.instance as Record<string, unknown> | undefined)?.version === 2 &&
+				lifecycleReplay.status === 200 &&
+				lifecycleReplay.body.replayed === true &&
+				lifecycleIdempotencyConflict.status === 409 &&
+				!lifecycleConfirmation.text.includes("must-not-leak"),
+			{ lifecycleConfirmation, lifecycleReplay, lifecycleIdempotencyConflict },
+		);
+		const lifecyclePdf = new File(
+			[Buffer.from("%PDF-1.4\nWatson lifecycle document\n%%EOF\n", "utf8")],
+			"doklad.pdf",
+			{ type: "application/pdf", lastModified: 1_752_739_200_000 },
+		);
+		const lifecycleFileOperation = randomUUID();
+		const lifecycleFileFields = {
+			operationId: lifecycleFileOperation,
+			lifecycleType: "onboarding",
+			lifecycleId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+			expectedVersion: "2",
+			itemKey: "identity_document",
+		};
+		const lifecycleFile = await multipartRequest(
+			cookie,
+			"/api/employee/self-service/lifecycle/respond-file",
+			lifecycleFileFields,
+			lifecyclePdf,
+		);
+		const lifecycleFileReplay = await multipartRequest(
+			cookie,
+			"/api/employee/self-service/lifecycle/respond-file",
+			lifecycleFileFields,
+			lifecyclePdf,
+		);
+		const lifecycleAfter = await request(cookie, "/api/employee/self-service/lifecycle");
+		const lifecycleAfterInstances = lifecycleAfter.body.instances as
+			| Array<Record<string, unknown>>
+			| undefined;
+		const onboardingAfter = lifecycleAfterInstances?.find(
+			(instance) => instance.type === "onboarding",
+		);
+		check(
+			"souborový krok používá oddělený účel a po dokončení odevzdá celý postup ke kontrole",
+			lifecycleFile.status === 200 &&
+				(lifecycleFile.body.instance as Record<string, unknown> | undefined)?.status === "submitted" &&
+				lifecycleFileReplay.status === 200 &&
+				lifecycleFileReplay.body.replayed === true &&
+				onboardingAfter?.status === "submitted" &&
+				onboardingAfter?.completedCount === 2 &&
+				!lifecycleFile.text.includes("upload_id") &&
+				!lifecycleFile.text.includes("must-not-leak"),
+			{ lifecycleFile, lifecycleFileReplay, onboardingAfter },
+		);
+
 		const absencesBefore = await request(cookie, "/api/employee/self-service/absences");
 		check(
 			"absence se čtou online z LuckyOS a prázdný stav neobsahuje HR payload",

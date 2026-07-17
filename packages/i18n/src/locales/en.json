@@ -141,6 +141,7 @@
 			"submit": "Submit",
 			"unsaved": "You have unsaved changes.",
 			"reviewerNote": "Reviewer note",
+			"lifecycle": { "nav": "Joining and leaving" },
 			"absences": { "nav": "Leave and absence" },
 			"documents": { "nav": "Documents" },
 			"expenses": { "nav": "Expenses" },
@@ -222,6 +223,57 @@
 				"confirmSubmit": "Submit this entry for review?",
 				"saved": "The small-numbers draft was saved to LuckyOS.",
 				"submitted": "Small numbers were submitted for review."
+			}
+		},
+		"lifecycle": {
+			"title": "Joining and leaving procedures",
+			"description": "Complete required LuckyOS steps directly in Watson. Progress also appears in Procedures, while LuckyOS remains the HR record and review authority.",
+			"proceduresTitle": "My employee procedures",
+			"proceduresDescription": "Live LuckyOS joining or leaving progress. Watson creates neither duplicate tasks nor a copy of HR responses.",
+			"open": "Open my steps",
+			"loading": "Loading current procedures from LuckyOS…",
+			"loadFailed": "Procedures could not be loaded securely. Nothing was changed.",
+			"empty": "You have no joining or leaving procedure to complete right now.",
+			"type": { "onboarding": "Joining", "offboarding": "Leaving" },
+			"status": {
+				"invited": "Ready",
+				"in_progress": "In progress",
+				"submitted": "Pending review",
+				"needs_changes": "Needs changes",
+				"completed": "Completed",
+				"cancelled": "Cancelled"
+			},
+			"due": "Due {{date}}",
+			"item": "Step to complete",
+			"responseTypeLabel": "How to respond",
+			"responseType": {
+				"confirmation": "Confirm completion",
+				"text": "Text response",
+				"form": "Provide a value",
+				"file": "Send a file",
+				"consent": "Give consent",
+				"question": "Ask a question",
+				"decline": "Decline with a reason"
+			},
+			"valueLabel": {
+				"text": "Response",
+				"form": "Requested value",
+				"question": "Question for an authorized reviewer",
+				"decline": "Reason for declining"
+			},
+			"file": "File for this step",
+			"submit": "Confirm this step",
+			"sending": "Sending securely…",
+			"confirm": "Send your response for “{{item}}” to LuckyOS?",
+			"sent": "The step was sent securely to LuckyOS.",
+			"privacy": "Watson only relays the response and file through a secure facade; it stores neither in its database nor in the browser.",
+			"waitingReview": "All required steps were submitted and now await review by an authorized person in LuckyOS.",
+			"completed": "This procedure is complete.",
+			"error": {
+				"invalid": "Check the response or selected file.",
+				"conflict": "The procedure changed in the meantime. The latest state was loaded; please submit again.",
+				"revoked": "LuckyOS access was revoked. Contact an administrator.",
+				"failed": "The step could not be confirmed. Your input was preserved; try again."
 			}
 		},
 		"absences": {

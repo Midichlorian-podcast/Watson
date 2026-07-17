@@ -145,6 +145,7 @@
 			"submit": "Odevzdat",
 			"unsaved": "Máš neuložené změny.",
 			"reviewerNote": "Poznámka kontroly",
+			"lifecycle": { "nav": "Nástup a odchod" },
 			"absences": { "nav": "Dovolená a absence" },
 			"documents": { "nav": "Dokumenty" },
 			"expenses": { "nav": "Výdaje" },
@@ -226,6 +227,57 @@
 				"confirmSubmit": "Opravdu chceš záznam odevzdat ke kontrole?",
 				"saved": "Koncept malých čísel byl uložen do LuckyOS.",
 				"submitted": "Malá čísla byla odevzdána ke kontrole."
+			}
+		},
+		"lifecycle": {
+			"title": "Nástupní a výstupní postupy",
+			"description": "Povinné kroky z LuckyOS vyřešíš přímo ve Watsonu. Postup je vidět také v modulu Postupy, ale personální stav a kontrola zůstávají v LuckyOS.",
+			"proceduresTitle": "Moje zaměstnanecké postupy",
+			"proceduresDescription": "Živý průběh nástupu nebo odchodu z LuckyOS. Watson nevytváří duplicitní úkoly ani kopii personálních odpovědí.",
+			"open": "Otevřít moje kroky",
+			"loading": "Načítám aktuální postupy z LuckyOS…",
+			"loadFailed": "Postupy se nepodařilo bezpečně načíst. Nic se nezměnilo.",
+			"empty": "Teď nemáš žádný nástupní ani výstupní postup k vyřízení.",
+			"type": { "onboarding": "Nástup", "offboarding": "Odchod" },
+			"status": {
+				"invited": "Připraveno",
+				"in_progress": "Rozpracováno",
+				"submitted": "Čeká na kontrolu",
+				"needs_changes": "Vráceno k doplnění",
+				"completed": "Dokončeno",
+				"cancelled": "Zrušeno"
+			},
+			"due": "Termín {{date}}",
+			"item": "Krok k vyřízení",
+			"responseTypeLabel": "Jak chceš odpovědět",
+			"responseType": {
+				"confirmation": "Potvrdit splnění",
+				"text": "Textová odpověď",
+				"form": "Doplnit údaj",
+				"file": "Předat soubor",
+				"consent": "Udělit souhlas",
+				"question": "Položit otázku",
+				"decline": "Odmítnout s důvodem"
+			},
+			"valueLabel": {
+				"text": "Odpověď",
+				"form": "Požadovaný údaj",
+				"question": "Otázka pro oprávněnou osobu",
+				"decline": "Důvod odmítnutí"
+			},
+			"file": "Soubor pro tento krok",
+			"submit": "Potvrdit tento krok",
+			"sending": "Bezpečně odesílám…",
+			"confirm": "Odeslat odpověď ke kroku „{{item}}“ do LuckyOS?",
+			"sent": "Krok byl bezpečně odeslán do LuckyOS.",
+			"privacy": "Odpověď i soubor Watson pouze předá přes zabezpečené rozhraní a neukládá je do vlastní databáze ani prohlížeče.",
+			"waitingReview": "Všechny požadované kroky jsou odevzdané. Teď čekají na kontrolu oprávněnou osobou v LuckyOS.",
+			"completed": "Tento postup je dokončený.",
+			"error": {
+				"invalid": "Zkontroluj odpověď nebo vybraný soubor.",
+				"conflict": "Postup se mezitím změnil. Načetl se aktuální stav; odpověď prosím zopakuj.",
+				"revoked": "Přístup do LuckyOS byl odvolán. Obrať se na správce.",
+				"failed": "Krok se nepodařilo potvrdit. Vyplněná data zůstala zachována; zkus to znovu."
 			}
 		},
 		"absences": {

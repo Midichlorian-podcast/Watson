@@ -135,6 +135,10 @@ async function run(browserName: "chromium" | "webkit") {
     const profileCommands: Array<Record<string, unknown>> = [];
     const attendanceCommands: Array<Record<string, unknown>> = [];
     const smallNumberCommands: Array<Record<string, unknown>> = [];
+    const lifecycleCommands: Array<Record<string, unknown>> = [];
+    const lifecycleFileCommands: Buffer[] = [];
+    let lifecycleVersion = 1;
+    let lifecycleCompleted: string[] = [];
     const absenceCommands: Array<Record<string, unknown>> = [];
     const documentCommands: Buffer[] = [];
     const expenseCommands: Buffer[] = [];
@@ -261,6 +265,59 @@ async function run(browserName: "chromium" | "webkit") {
               },
             ],
           },
+          fetchedAt: "2026-07-17T10:30:00.000Z",
+        }),
+      });
+    });
+    await page.route(/\/api\/employee\/self-service\/lifecycle\/respond-file(?:\?|$)/, async (route) => {
+      lifecycleFileCommands.push(route.request().postDataBuffer() ?? Buffer.alloc(0));
+      lifecycleVersion += 1;
+      lifecycleCompleted = [...new Set([...lifecycleCompleted, "identity_document"])];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ instance: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "submitted", version: lifecycleVersion }, replayed: false }),
+      });
+    });
+    await page.route(/\/api\/employee\/self-service\/lifecycle\/respond(?:\?|$)/, async (route) => {
+      lifecycleCommands.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
+      if (lifecycleCommands.length === 1) {
+        await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "luckyos_unavailable" }) });
+        return;
+      }
+      lifecycleVersion += 1;
+      lifecycleCompleted = [...new Set([...lifecycleCompleted, "code_of_conduct"])];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ instance: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "in_progress", version: lifecycleVersion }, replayed: false }),
+      });
+    });
+    await page.route(/\/api\/employee\/self-service\/lifecycle(?:\?|$)/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Cache-Control": "private, no-store" },
+        body: JSON.stringify({
+          instances: [{
+            id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            type: "onboarding",
+            status: lifecycleCompleted.length === 2 ? "submitted" : lifecycleCompleted.length ? "in_progress" : "invited",
+            title: "Dokončení nástupu",
+            items: [
+              { key: "code_of_conduct", label: "Pravidla spolupráce", description: "Potvrď, že ses s pravidly seznámil(a).", suggestedResponseType: "confirmation", completed: lifecycleCompleted.includes("code_of_conduct") },
+              { key: "identity_document", label: "Doklad totožnosti", description: null, suggestedResponseType: "file", completed: lifecycleCompleted.includes("identity_document") },
+            ],
+            completedCount: lifecycleCompleted.length,
+            totalCount: 2,
+            dueAt: "2026-07-31T20:00:00.000Z",
+            submittedAt: lifecycleCompleted.length === 2 ? "2026-07-17T11:00:00.000Z" : null,
+            completedAt: null,
+            cancelledAt: null,
+            version: lifecycleVersion,
+            createdAt: "2026-07-17T08:00:00.000Z",
+            updatedAt: "2026-07-17T10:30:00.000Z",
+          }],
           fetchedAt: "2026-07-17T10:30:00.000Z",
         }),
       });
@@ -423,6 +480,7 @@ async function run(browserName: "chromium" | "webkit") {
     await page.getByRole("heading", { name: "Profilové údaje", exact: true }).waitFor();
     await page.getByRole("heading", { name: "Docházka", exact: true }).waitFor();
     await page.getByRole("heading", { name: "Malá čísla", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Nástupní a výstupní postupy", exact: true }).waitFor();
 		const maskedAccount = await page.getByLabel("Bankovní účet", { exact: false }).getAttribute("placeholder");
     if (maskedAccount !== "•••• 0100") throw new Error(`employee_hub_ui_bank_mask:${maskedAccount}`);
 
@@ -456,6 +514,45 @@ async function run(browserName: "chromium" | "webkit") {
     if (smallNumberCommands.length !== 1 || smallNumberCommands[0]?.hoursMinutes !== 150) {
       throw new Error(`employee_hub_ui_small_number_command:${JSON.stringify(smallNumberCommands)}`);
     }
+
+    const lifecyclePanel = page.locator("#nastup-a-odchod");
+    await lifecyclePanel.getByText("Dokončení nástupu", { exact: true }).waitFor();
+    page.once("dialog", (dialog) => dialog.accept());
+    await lifecyclePanel.getByRole("button", { name: "Potvrdit tento krok", exact: true }).click();
+    await page.getByText("Krok se nepodařilo potvrdit.", { exact: false }).waitFor();
+    ignoreIntentional502();
+    page.once("dialog", (dialog) => dialog.accept());
+    await lifecyclePanel.getByRole("button", { name: "Potvrdit tento krok", exact: true }).click();
+    await page.getByText("Krok byl bezpečně odeslán do LuckyOS.", { exact: true }).waitFor();
+    if (
+      lifecycleCommands.length !== 2 ||
+      lifecycleCommands[0]?.operationId !== lifecycleCommands[1]?.operationId ||
+      lifecycleCommands[0]?.lifecycleType !== "onboarding" ||
+      lifecycleCommands[0]?.itemKey !== "code_of_conduct" ||
+      lifecycleCommands[0]?.confirmed !== true ||
+      "providerPersonId" in (lifecycleCommands[0] ?? {}) ||
+      "scopes" in (lifecycleCommands[0] ?? {})
+    ) throw new Error(`employee_hub_ui_lifecycle_retry:${JSON.stringify(lifecycleCommands)}`);
+    await lifecyclePanel.locator('option[value="identity_document"]').waitFor({ state: "attached" });
+    if (SCREENSHOT_DIR) {
+      await mkdir(SCREENSHOT_DIR, { recursive: true });
+      await lifecyclePanel.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-lifecycle-next-step.png` });
+    }
+    await lifecyclePanel.locator("select").nth(1).selectOption("file");
+    await lifecyclePanel.locator('input[type="file"]').setInputFiles({
+      name: "doklad.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4\nWatson lifecycle UI\n%%EOF\n", "utf8"),
+    });
+    page.once("dialog", (dialog) => dialog.accept());
+    await lifecyclePanel.getByRole("button", { name: "Potvrdit tento krok", exact: true }).click();
+    await page.getByText("Všechny požadované kroky jsou odevzdané.", { exact: false }).waitFor();
+    if (
+      lifecycleFileCommands.length !== 1 ||
+      multipartField(lifecycleFileCommands[0] ?? Buffer.alloc(0), "lifecycleType") !== "onboarding" ||
+      multipartField(lifecycleFileCommands[0] ?? Buffer.alloc(0), "itemKey") !== "identity_document" ||
+      multipartField(lifecycleFileCommands[0] ?? Buffer.alloc(0), "expectedVersion") !== "2"
+    ) throw new Error(`employee_hub_ui_lifecycle_file:${lifecycleFileCommands[0]?.toString("utf8")}`);
 
     await page.getByRole("heading", { name: "Dovolená a absence", exact: true }).waitFor();
     const absencesPanel = page.locator("#absence");
@@ -574,6 +671,7 @@ async function run(browserName: "chromium" | "webkit") {
       await page.locator("#mala-cisla").screenshot({
         path: `${SCREENSHOT_DIR}/${browserName}-employee-small-numbers-desktop.png`,
       });
+      await page.locator("#nastup-a-odchod").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-lifecycle-desktop.png` });
       await page.locator("#absence").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-absences-desktop.png` });
       await page.locator("#dokumenty").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-documents-desktop.png` });
       await page.locator("#vydaje").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-expenses-desktop.png` });
@@ -583,6 +681,16 @@ async function run(browserName: "chromium" | "webkit") {
     await page.goto(`${WEB}/prehled`, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await page.getByText("Můj stav", { exact: true }).waitFor();
     await page.getByRole("button", { name: "Otevřít přehled", exact: true }).waitFor();
+
+    await page.goto(`${WEB}/postupy`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.getByRole("heading", { name: "Moje zaměstnanecké postupy", exact: true }).waitFor();
+    await page.getByText("Dokončení nástupu", { exact: true }).waitFor();
+    await page.getByRole("link", { name: "Otevřít moje kroky", exact: true }).waitFor();
+    await assertNoOverflow(page, `${browserName}_procedures`);
+    await assertAxeClean(page, `${browserName}_procedures`);
+    if (SCREENSHOT_DIR) {
+      await page.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-procedures-desktop.png`, fullPage: true });
+    }
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${WEB}/zamestnanec`, { waitUntil: "domcontentloaded", timeout: 30_000 });
@@ -605,6 +713,10 @@ async function run(browserName: "chromium" | "webkit") {
     if (!absencesLinkBox || absencesLinkBox.height < 44) {
       throw new Error(`employee_hub_ui_mobile_absences_target:${JSON.stringify(absencesLinkBox)}`);
     }
+    const lifecycleLinkBox = await page.getByRole("link", { name: "Nástup a odchod", exact: true }).boundingBox();
+    if (!lifecycleLinkBox || lifecycleLinkBox.height < 44) {
+      throw new Error(`employee_hub_ui_mobile_lifecycle_target:${JSON.stringify(lifecycleLinkBox)}`);
+    }
     await assertNoOverflow(page, `${browserName}_mobile`);
     await assertAxeClean(page, `${browserName}_mobile`);
     if (SCREENSHOT_DIR) {
@@ -615,6 +727,7 @@ async function run(browserName: "chromium" | "webkit") {
       await page.locator("#dochazka").screenshot({
         path: `${SCREENSHOT_DIR}/${browserName}-employee-attendance-mobile.png`,
       });
+      await page.locator("#nastup-a-odchod").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-lifecycle-mobile.png` });
       await page.locator("#absence").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-absences-mobile.png` });
       await page.locator("#dokumenty").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-documents-mobile.png` });
     }
