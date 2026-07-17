@@ -52,11 +52,13 @@ type BrowserResult = {
 	offlineTrustState: boolean;
 	trustStateMobileReflow: boolean;
 	serverWriteHeldOffline: boolean;
+	pendingOutboxReviewed: boolean;
 	reconnectUpload: boolean;
 	editRoundTrip: boolean;
 	moveRoundTrip: boolean;
 	rejectionCaptured: boolean;
 	syncProblemTrustState: boolean;
+	rejectedOutboxDiff: boolean;
 	rejectionDiscarded: boolean;
 	retryResolved: boolean;
 	addDialogA11y: boolean;
@@ -269,7 +271,9 @@ async function navigate(page: Page, route: string) {
 		window.history.pushState({}, "", path);
 		window.dispatchEvent(new PopStateEvent("popstate"));
 	}, route);
-	await page.waitForFunction((path) => location.pathname === path, route, { timeout: 5_000 });
+	await page.waitForFunction((path) => `${location.pathname}${location.search}` === path, route, {
+		timeout: 5_000,
+	});
 	await page.waitForSelector("main", { timeout: 15_000 });
 }
 
@@ -309,7 +313,7 @@ async function assertAxeClean(page: Page, label: string) {
 }
 
 async function verifyTwoFactor(page: Page, fixture: Fixture) {
-	await navigate(page, "/nastaveni");
+	await navigate(page, "/nastaveni?sekce=zabezpeceni");
 	const password = page.getByLabel("Aktuální heslo (pokud ho účet používá)", {
 		exact: true,
 	});
@@ -425,7 +429,7 @@ async function verifyMeeting(page: Page, fixture: Fixture, browserName: BrowserN
 }
 
 async function verifyBackupRestore(page: Page, fixture: Fixture) {
-	await navigate(page, "/nastaveni");
+	await navigate(page, "/nastaveni?sekce=data");
 	const passphrase = `Release-backup-${crypto.randomUUID()}`;
 	await page.getByLabel("Heslo exportu a obnovy", { exact: true }).fill(passphrase);
 	const [download] = await Promise.all([
@@ -544,6 +548,11 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			{ timeout: 30_000 },
 		);
 		await captureEvidence(page, browserName, "synced-1280");
+		// Data sekci načteme online ještě před offline navigací. V dev režimu je
+		// ImportWizard samostatný lazy chunk a offline audit nesmí měřit jeho cache miss.
+		await navigate(page, "/nastaveni?sekce=data");
+		await page.locator("[data-sync-outbox]").waitFor();
+		await navigate(page, "/");
 		const taskName = `Release offline ${browserName} ${crypto.randomUUID().slice(0, 8)}`;
 		const editedName = `${taskName} upraveno`;
 		await page.getByRole("button", { name: "Přidat úkol", exact: true }).first().click();
@@ -574,6 +583,17 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		}
 		const held = (await serverTaskByName(taskName)) === null;
 		if (!held) throw new Error("release_offline_write_reached_server");
+
+		await navigate(page, "/nastaveni?sekce=data");
+		const pendingOutbox = page.locator(
+			"[data-outbox-pending] details[data-outbox-operation]",
+		).first();
+		await pendingOutbox.waitFor({ state: "visible", timeout: 10_000 });
+		await pendingOutbox.locator("summary").click();
+		await pendingOutbox.locator("[data-outbox-diff]").waitFor({ state: "visible" });
+		await assertNoHorizontalOverflow(page, "offline_outbox_390");
+		await assertAxeClean(page, "offline_outbox");
+		await captureEvidence(page, browserName, "outbox-pending-390");
 
 		const offlineCheckpoint = await page.evaluate(() => {
 			const status = (window as unknown as {
@@ -716,10 +736,19 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		await assertAxeClean(page, "sync_problem_trust_state");
 		await captureEvidence(page, browserName, "sync-problem-390");
 		await page.setViewportSize({ width: 1280, height: 720 });
-		await navigate(page, "/nastaveni");
-		await page.getByText("Problémy se synchronizací", { exact: false }).first().waitFor();
+		await navigate(page, "/nastaveni?sekce=data");
+		const rejectedOutbox = page.locator(
+			"[data-outbox-rejected] details[data-outbox-operation]",
+		).first();
+		await rejectedOutbox.waitFor({ state: "visible" });
+		await rejectedOutbox.locator("[data-outbox-diff]").waitFor({ state: "visible" });
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.locator("[data-action-toast]").waitFor({ state: "hidden", timeout: 6_000 });
+		await assertNoHorizontalOverflow(page, "rejected_outbox_390");
+		await assertAxeClean(page, "rejected_outbox");
+		await captureEvidence(page, browserName, "outbox-rejected-390");
 		page.once("dialog", (dialog) => dialog.accept());
-		await page.getByRole("button", { name: "Zahodit", exact: true }).click();
+		await rejectedOutbox.getByRole("button", { name: "Zahodit", exact: true }).click();
 		await eventually(
 			"rejection_discard",
 			() => localProblemCount(page),
@@ -728,6 +757,7 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		await page
 			.getByRole("button", { name: "Zkusit znovu", exact: true })
 			.waitFor({ state: "detached" });
+		await page.setViewportSize({ width: 1280, height: 720 });
 
 		const retryId = crypto.randomUUID();
 		const clientId = `release-${browserName}-${crypto.randomUUID().slice(0, 8)}`;
@@ -765,8 +795,8 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			},
 		);
 		const retryRow = page
-			.getByText("HTTP 409 · test_retry", { exact: true })
-			.locator("xpath=ancestor::div[button][1]");
+			.locator("[data-outbox-rejected] details[data-outbox-operation]")
+			.filter({ hasText: "test_retry" });
 		await retryRow.waitFor();
 		await retryRow.getByRole("button", { name: "Zkusit znovu", exact: true }).click();
 		const retryStatus = await eventually(
@@ -805,11 +835,13 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			offlineTrustState: true,
 			trustStateMobileReflow: true,
 			serverWriteHeldOffline: true,
+			pendingOutboxReviewed: true,
 			reconnectUpload: true,
 			editRoundTrip: true,
 			moveRoundTrip: true,
 			rejectionCaptured: true,
 			syncProblemTrustState: true,
+			rejectedOutboxDiff: true,
 			rejectionDiscarded: true,
 			retryResolved: true,
 			addDialogA11y: true,

@@ -228,7 +228,7 @@ Resend, LuckyOS, upload a Anthropic cally dostaly explicitní timeout, omezený 
 
 #### A2-05 — PWA/bundle bez rozpočtu
 
-Build nyní selže nad 350 KiB gzip pro největší JS a nad 5.5 MiB offline precache. PWA precachuje jen potřebný encrypted async SQLite WASM. Aktuálně 345 KiB a 5,152 KiB.
+Build nyní selže nad 350 KiB gzip pro největší JS a nad 5.5 MiB offline precache. PWA precachuje jen potřebný encrypted async SQLite WASM. Aktuálně 328 KiB a 5,180 KiB.
 
 #### A2-06 — blokovaný Web Storage mohl rozbít UI
 
@@ -449,6 +449,19 @@ Datové závislosti:
 - timezone setting musí validovat `Intl`, migrovat budoucí plány explicitním preview a nikdy neměnit `due_date`;
 - bulk command musí vracet batch ID pro undo a per-item rejection report.
 
+Stav dávky:
+
+1. **Saved views, bulk preview/undo a pracovní zóna — zachováno po auditu.** Existující
+   řešení už má striktní roundtrip filtrů, dávkový preview/undo kontrakt a IANA/DST
+   testy; F3 je nebude přepisovat. Další změna smí pouze doplnit doloženou mezeru.
+2. **Recovery-first outbox — dokončeno 2026-07-17.** Data a zálohy ukazují veřejnou
+   PowerSync upload frontu, počet/velikost, pravdivý offline/upload/empty stav a lidský
+   redigovaný diff. Čekající změny jsou pouze pro čtení; potvrzení a odstranění zůstává
+   výhradně connectoru. Durable odmítnuté zápisy mají diff, otevření objektu, retry,
+   kopii technického detailu a vědomý discard. Citlivá pole se nikdy nevypisují.
+   Chromium i WebKit dokazují offline create, kontrolu fronty při 390 px, reconnect,
+   odmítnutí, retry/discard, axe, reflow a autoritativní serverový výsledek.
+
 ### F4 — integration center (2–4 týdny)
 
 Provider registry, health, scopes, last success, last error, revoke, test connection a audit. Začít LuckyOS, poté reminder e-mail/attachments. Mail až samostatně.
@@ -492,9 +505,9 @@ Každá produkční funkce musí odpovědět ano na vše relevantní:
 
 ## 11. Aktuální automatické důkazy
 
-Poslední ověření 2026-07-16:
+Poslední ověření 2026-07-17:
 
-- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 105 TSX.
+- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 106 TSX.
 - `pnpm typecheck`: 6/6 balíčků.
 - `pnpm test`: recurrence 14/14, Quick Add, timezone, recent items, proč-teď, deep linky,
   uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
@@ -646,6 +659,15 @@ Poslední ověření 2026-07-16:
   Chromium/WebKit ověřily 3 Report KPI + 5 Velín KPI při 390/1440 px, disclosure
   Mail demo zdroje, 0 axe WCAG A/AA nálezů, 0 overflow a 0 runtime chyb. Důkaz je v
   `docs/release-evidence/kpi-runtime-a11y-2026-07-17.json`.
+- F3 recovery-first outbox rozšířil původní Centrum problémů bez přepsání connectoru.
+  Čekající PowerSync operace jsou čitelné s počtem, velikostí, pravdivým stavem a
+  redigovaným dvou/třísloupcovým diffem; rejected operace zachovávají retry, kopii,
+  otevření objektu a potvrzený discard. Statický kontrakt zakazuje `.complete()` i
+  mazání interní fronty z UI. Chromium + WebKit release E2E ověřily offline create,
+  pending diff na 390 px, nulový předčasný serverový zápis, reconnect upload,
+  rejected diff, discard a retry s receiptem; oba stavy jsou axe-clean, bez overflow
+  a po vizuální opravě používají lidské názvy polí i konzistentní offline copy.
+  Důkaz je v `docs/release-evidence/outbox-e2e-2026-07-17.json`.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
   44 px, offline zápisem a následným autoritativním uploadem. Jediný zachycený

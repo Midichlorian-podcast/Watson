@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build && node scripts/verify-build-budget.mjs",
-    "lint": "turbo run lint && node scripts/verify-accessibility.mjs && node scripts/verify-overlay-contract.mjs && node scripts/verify-mobile-contract.mjs && node scripts/verify-kpi-contract.mjs",
+    "lint": "turbo run lint && node scripts/verify-accessibility.mjs && node scripts/verify-overlay-contract.mjs && node scripts/verify-mobile-contract.mjs && node scripts/verify-kpi-contract.mjs && node scripts/verify-outbox-contract.mjs",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "gate": "pnpm verify:production-config-contract && pnpm verify:backup-contract && pnpm typecheck && pnpm lint && pnpm test && pnpm --filter @watson/web test:corpus && pnpm build",

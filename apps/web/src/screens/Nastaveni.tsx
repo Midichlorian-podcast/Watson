@@ -931,7 +931,7 @@ export function Nastaveni() {
 
 					{activeSection === "data" && (
 						<>
-							{/* CC-P0-04 — Centrum problémů se synchronizací (jen když je co řešit) */}
+							{/* F3 — čitelný outbox pro čekající i odmítnuté lokální změny. */}
 							<SyncProblems />
 
 							<div className="font-display" style={{ ...SECTION_LABEL, marginTop: 22 }}>
