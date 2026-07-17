@@ -3,7 +3,7 @@
  * ř. 2188–2205 + řádky kbVals ř. 4420–4434). Centrovaná karta se scrimem,
  * kbd styl dodává mail.css ([data-wm-theme] kbd).
  */
-import { useEffect } from "react";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 
 /** Řádky zkratek dle prototypu (kbVals.rows) + O/Enter, Esc dle handoff auditu. */
 const ROWS: { k: string; l: string }[] = [
@@ -31,15 +31,7 @@ export function CheatSheet({
 	open: boolean;
 	onClose: () => void;
 }) {
-	// Esc zavírá (vlastní listener; prototyp globální Escape ř. 2746)
-	useEffect(() => {
-		if (!open) return;
-		const h = (e: globalThis.KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [open, onClose]);
+	const overlayRef = useOverlayLayer<HTMLDivElement>(open, onClose);
 
 	if (!open) return null;
 
@@ -49,7 +41,7 @@ export function CheatSheet({
 			style={{
 				position: "fixed",
 				inset: 0,
-				zIndex: 77,
+				zIndex: "var(--w-layer-nested)",
 				animation: "wFade .12s ease",
 			}}
 		>
@@ -60,6 +52,7 @@ export function CheatSheet({
 				style={{ position: "absolute", inset: 0, border: 0, background: "rgba(23,40,63,.32)" }}
 			/>
 			<div
+				ref={overlayRef}
 				role="dialog"
 				aria-modal="true"
 				aria-label="Klávesové zkratky"
@@ -69,7 +62,7 @@ export function CheatSheet({
 					top: "50%",
 					left: "50%",
 					transform: "translate(-50%,-50%)",
-					zIndex: 78,
+					zIndex: "calc(var(--w-layer-nested) + 1)",
 					width: "min(420px, 94vw)",
 					maxHeight: "88vh",
 					overflow: "auto",
@@ -85,13 +78,14 @@ export function CheatSheet({
 					<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 800, fontSize: 14, color: "var(--ink)", flex: 1 }}>
 						Klávesové zkratky
 					</span>
-					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+					<button type="button"
 						onClick={onClose}
+						aria-label="Zavřít zkratky"
 						title="Zavřít (Esc)"
-						style={{ fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
+						style={{ width: 44, height: 44, border: 0, background: "transparent", fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
 					>
 						×
-					</span>
+					</button>
 				</div>
 				{ROWS.map((r) => (
 					<div key={r.k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0" }}>

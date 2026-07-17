@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import { showToast } from "../lib/toast";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { P } from "./data";
 
 type Provider = "gmail" | "m365" | "imap";
@@ -57,17 +57,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 	const [failPort, setFailPort] = useState("143");
 	const [ppl, setPpl] = useState<Record<string, boolean>>({ ad: true, ps: true });
 	// a11y: fokus dovnitř modalu + cyklení Tab uvnitř + návrat po zavření (audit MED MailboxWizard.tsx:120)
-	const trapRef = useFocusTrap<HTMLDivElement>(open);
-
-	// scroll-lock pozadí po dobu otevření modalu (audit MED MailboxWizard.tsx:120)
-	useEffect(() => {
-		if (!open) return;
-		const prev = document.body.style.overflow;
-		document.body.style.overflow = "hidden";
-		return () => {
-			document.body.style.overflow = prev;
-		};
-	}, [open]);
+	const trapRef = useOverlayLayer<HTMLDivElement>(open, onClose);
 
 	// otevření = čistý průvodce (prototyp wizOpen, ř. 3304)
 	useEffect(() => {
@@ -79,16 +69,6 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 		setPort("143");
 		setPpl({ ad: true, ps: true });
 	}, [open]);
-
-	// Esc zavírá (prototyp globální Escape ř. 2746)
-	useEffect(() => {
-		if (!open) return;
-		const h = (e: globalThis.KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [open, onClose]);
 
 	if (!open) return null;
 
@@ -121,7 +101,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 			style={{
 				position: "fixed",
 				inset: 0,
-				zIndex: 79,
+				zIndex: "var(--w-layer-nested)",
 				animation: "wFade .12s ease",
 			}}
 		>
@@ -143,7 +123,7 @@ export function MailboxWizard({ open, onClose }: { open: boolean; onClose: () =>
 					top: "50%",
 					left: "50%",
 					transform: "translate(-50%,-50%)",
-					zIndex: 80,
+					zIndex: "calc(var(--w-layer-nested) + 1)",
 					outline: "none",
 					width: "min(440px, 94vw)",
 					maxHeight: "88vh",

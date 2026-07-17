@@ -15,7 +15,7 @@ import { useSession } from "../lib/auth-client";
 import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { showToast } from "../lib/toast";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace } from "../lib/workspace";
 
 interface Action {
@@ -33,7 +33,7 @@ const EXAMPLES = [
 const OVERLAY: CSSProperties = {
 	position: "fixed",
 	inset: 0,
-	zIndex: 90,
+	zIndex: "var(--w-layer-nested)",
 	background: "transparent",
 	display: "flex",
 	alignItems: "flex-start",
@@ -56,7 +56,7 @@ const CARD: CSSProperties = {
 export function WatsonCard({ onClose }: { onClose: () => void }) {
 	const { activeWs } = useWorkspace();
 	const { data: session } = useSession();
-	const trapRef = useFocusTrap<HTMLDivElement>(true);
+	const trapRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	const { data: allProjects } = usePsQuery<ProjectRow>(
 		"SELECT id, name, workspace_id FROM projects WHERE archived_at IS NULL ORDER BY created_at",
@@ -231,7 +231,13 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 				onClick={onClose}
 				style={{ position: "absolute", inset: 0, border: 0, background: "rgba(20,16,10,.34)" }}
 			/>
-			<div ref={trapRef} style={{ ...CARD, position: "relative", zIndex: 1 }} role="dialog" aria-label="Watson">
+			<div
+				ref={trapRef}
+				style={{ ...CARD, position: "relative", zIndex: 1 }}
+				role="dialog"
+				aria-modal="true"
+				aria-label="Watson"
+			>
 				{/* hlavička */}
 				<div
 					style={{

@@ -1,8 +1,8 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon, type IconName } from "@watson/ui";
-import { useEffect, useRef, useState } from "react";
-import { useFocusTrap } from "../lib/focusTrap";
+import { useState } from "react";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWatson } from "../lib/watson";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
@@ -51,18 +51,7 @@ export function MobileTabBar() {
 	const { activeWs, setActiveWs } = useWorkspace();
 	const mailUnread = useMailUnread();
 	// P1-08: sheet je dialog — past na fokus + návrat fokusu na tlačítko „Více"
-	const sheetRef = useRef<HTMLDivElement | null>(null);
-	useFocusTrap(moreOpen, sheetRef);
-
-	// Esc zavírá sheet „Více" (nese data-esc-layer → ostatní vrstvy mu ustupují)
-	useEffect(() => {
-		if (!moreOpen) return;
-		const h = (e: globalThis.KeyboardEvent) => {
-			if (e.key === "Escape") setMoreOpen(false);
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [moreOpen]);
+	const sheetRef = useOverlayLayer<HTMLDivElement>(moreOpen, () => setMoreOpen(false));
 
 	// Velín jen pro vedení (Vlastník/Admin) — stejný gating jako sidebar.
 	const more = isLeadership(workspaces)
@@ -80,7 +69,7 @@ export function MobileTabBar() {
 				// Spodní sheet „Více" — sekce, které na mobilu nejsou v hlavních tabech.
 				<div
 					className="fixed inset-0"
-					style={{ zIndex: 40 }}
+					style={{ zIndex: "var(--w-layer-drawer)" }}
 					data-esc-layer
 				>
 					<button
@@ -162,7 +151,10 @@ export function MobileTabBar() {
 			)}
 			<div
 				className="fixed right-0 bottom-0 left-0 flex border-line border-t bg-card"
-				style={{ zIndex: 41, paddingBottom: "env(safe-area-inset-bottom)" }}
+				style={{
+					zIndex: "calc(var(--w-layer-drawer) + 1)",
+					paddingBottom: "env(safe-area-inset-bottom)",
+				}}
 			>
 				{TABS.map((tab) => {
 					const active =

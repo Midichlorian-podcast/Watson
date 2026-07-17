@@ -3,9 +3,9 @@
  * ř. 2039–2051 + logika ctxV ř. 3130–3165). Průhledná click-catch vrstva dle
  * prototypu (bez scrimu), pozice clampnutá do viewportu, Esc/klik mimo zavírá.
  */
-import { useEffect } from "react";
 import { copyDeepLink } from "../lib/deepLink";
 import { showToast } from "../lib/toast";
+import { usePopoverLayer } from "../lib/usePopoverLayer";
 import { useMail } from "./state";
 
 type CtxItem =
@@ -20,16 +20,7 @@ export function CtxMenu({
 	onClose: () => void;
 }) {
 	const m = useMail();
-
-	// Esc zavírá (vlastní listener; prototyp globální Escape ř. 2746)
-	useEffect(() => {
-		if (!ctx) return;
-		const h = (e: globalThis.KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [ctx, onClose]);
+	const menuRef = usePopoverLayer<HTMLDivElement>(Boolean(ctx), onClose);
 
 	if (!ctx) return null;
 	const id = ctx.id;
@@ -106,19 +97,28 @@ export function CtxMenu({
 	return (
 		<div data-esc-layer>
 			{/* průhledná click-catch vrstva (ř. 2041) — pravý klik mimo taky zavře */}
-			<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+			<button type="button" aria-label="Zavřít kontextové menu"
 				onClick={onClose}
 				onContextMenu={(ev) => {
 					ev.preventDefault();
 					onClose();
 				}}
-				style={{ position: "fixed", inset: 0, zIndex: 69 }}
+				style={{
+					position: "fixed",
+					inset: 0,
+					zIndex: "var(--w-layer-popover)",
+					border: 0,
+					background: "transparent",
+				}}
 			/>
 			<div
+				ref={menuRef}
+				role="menu"
+				aria-label="Kontextové menu"
 				data-screen-label="Kontextové menu"
 				style={{
 					position: "fixed",
-					zIndex: 70,
+					zIndex: "calc(var(--w-layer-popover) + 1)",
 					width: 232,
 					background: "var(--panel)",
 					border: "1px solid var(--line)",
@@ -135,7 +135,7 @@ export function CtxMenu({
 						// biome-ignore lint/suspicious/noArrayIndexKey: statický seznam položek
 						<div key={i} style={{ height: 1, background: "var(--line)", margin: "4px 6px" }} />
 					) : (
-						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+						<button type="button" role="menuitem"
 							key={it.l}
 							onClick={it.go}
 							data-menuitem
@@ -147,7 +147,7 @@ export function CtxMenu({
 									{it.k}
 								</span>
 							)}
-						</div>
+						</button>
 					),
 				)}
 			</div>

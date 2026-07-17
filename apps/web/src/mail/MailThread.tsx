@@ -12,6 +12,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
 import { copyDeepLink } from "../lib/deepLink";
 import { keyedValues } from "../lib/keyedValues";
 import { showToast } from "../lib/toast";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { TEXT_COLORS } from "./colors";
 import { MB, P, SLA, STL, TPL } from "./data";
 import { HostPreview } from "./HostPreview";
@@ -364,17 +365,8 @@ export function MailThread() {
 		m.checkSend(th, pend.markDone);
 	}, [pend, m]);
 
-	// Esc zavírá JEN warn modal přílohy (vzor NewMessage) — bez data-esc-layer
-	// by globální Esc v MailScreen zavřel i vlákno pod modalem (audit S10)
 	const warnOn = !!m.warn;
-	useEffect(() => {
-		if (!warnOn) return;
-		const h = (e: globalThis.KeyboardEvent) => {
-			if (e.key === "Escape") m.setWarn(null);
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [warnOn, m.setWarn]);
+	const warnDialogRef = useOverlayLayer<HTMLDivElement>(warnOn, () => m.setWarn(null));
 
 	// ── prázdný stav (prototyp ř. 1369–1377) ──
 	if (!t) {
@@ -4026,17 +4018,22 @@ export function MailThread() {
 			{/* ── varování: chybějící příloha (prototyp ř. 2207–2223) ── */}
 			{warn && (
 				<>
-					<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+					<button type="button" aria-label="Zavřít varování"
 						onClick={() => m.setWarn(null)}
 						style={{
 							position: "fixed",
 							inset: 0,
-							zIndex: 79,
+							zIndex: "var(--w-layer-nested)",
+							border: 0,
 							background: "rgba(23,40,63,.32)",
 							animation: "wFade .12s ease",
 						}}
 					/>
 					<div
+						ref={warnDialogRef}
+						role="alertdialog"
+						aria-modal="true"
+						aria-label="Varování — příloha"
 						data-esc-layer
 						data-screen-label="Varování — příloha"
 						style={{
@@ -4044,7 +4041,7 @@ export function MailThread() {
 							top: "50%",
 							left: "50%",
 							transform: "translate(-50%,-50%)",
-							zIndex: 80,
+							zIndex: "calc(var(--w-layer-nested) + 1)",
 							width: "min(400px, 92vw)",
 							background: "var(--panel)",
 							border: "1px solid var(--line)",

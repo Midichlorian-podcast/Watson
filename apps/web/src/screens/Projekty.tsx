@@ -22,6 +22,7 @@ import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjectsWithState } from "../lib/projects";
 import { NOT_MEETING } from "../lib/tasks";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
@@ -297,14 +298,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string | null>(null);
 	const projectId = useRef(crypto.randomUUID());
-
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
+	const modalRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	const create = async () => {
 		if (!name.trim() || busy) return;
@@ -346,13 +340,21 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 				aria-label={t("projects.newCancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.42)", zIndex: 50 }}
+				style={{ background: "rgba(10,14,20,.42)", zIndex: "var(--w-layer-modal)" }}
 			/>
 			<div
 				className="pointer-events-none fixed inset-0 flex items-start justify-center"
-				style={{ zIndex: 51, paddingTop: "max(16px, min(10vh, 96px))" }}
+				style={{
+					zIndex: "calc(var(--w-layer-modal) + 1)",
+					paddingTop: "max(16px, min(10vh, 96px))",
+				}}
 			>
 				<div
+					ref={modalRef}
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("projects.new")}
+					data-esc-layer
 					className="pointer-events-auto rounded-2xl border border-line bg-card"
 					style={{
 						width: 440,

@@ -61,6 +61,11 @@ type BrowserResult = {
 	retryResolved: boolean;
 	addDialogA11y: boolean;
 	taskDetailA11y: boolean;
+	overlayFocusTrap: boolean;
+	nestedOverlayEscape: boolean;
+	overlayFocusRestore: boolean;
+	popoverNestedEscape: boolean;
+	popoverFocusRestore: boolean;
 	twoFactorEnrollment: boolean;
 	twoFactorRecoveryRotation: boolean;
 	meetingPlanTranscriptCommit: boolean;
@@ -570,6 +575,12 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		const held = (await serverTaskByName(taskName)) === null;
 		if (!held) throw new Error("release_offline_write_reached_server");
 
+		const offlineCheckpoint = await page.evaluate(() => {
+			const status = (window as unknown as {
+				__watsonDb?: { currentStatus?: { lastSyncedAt?: Date | string | null } };
+			}).__watsonDb?.currentStatus;
+			return status?.lastSyncedAt ? new Date(status.lastSyncedAt).getTime() : 0;
+		});
 		await context.setOffline(false);
 		await page
 			.locator(
@@ -583,6 +594,30 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			(value) => value?.name === taskName && value.project_id === fixture.projectId,
 		);
 		if (!uploaded) throw new Error("release_reconnect_upload_failed");
+		// Serverový commit ještě není totéž co následný download checkpoint. Detail
+		// lze bezpečně editovat až nad znovu potvrzeným snapshotem; jinak by test
+		// náhodně vyráběl legitimní CAS stale_write mezi uploadem a downsyncem.
+		await eventually(
+			"reconnect_checkpoint",
+			() =>
+				page.evaluate(() => {
+					const status = (window as unknown as {
+						__watsonDb?: {
+							currentStatus?: {
+								lastSyncedAt?: Date | string | null;
+								dataFlowStatus?: { uploading?: boolean; downloading?: boolean };
+							};
+						};
+					}).__watsonDb?.currentStatus;
+					return {
+						checkpoint: status?.lastSyncedAt ? new Date(status.lastSyncedAt).getTime() : 0,
+						transferring: Boolean(
+							status?.dataFlowStatus?.uploading || status?.dataFlowStatus?.downloading,
+						),
+					};
+				}),
+			(value) => value.checkpoint > offlineCheckpoint && !value.transferring,
+		);
 
 		await navigate(page, "/ukoly");
 		await page.getByRole("button", { name: taskName, exact: true }).click();
@@ -607,8 +642,53 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			() => serverTaskById(localTask.id),
 			(value) => value?.due_date?.slice(0, 10) === movedIso,
 		);
-		await detail.getByRole("button", { name: "Zrušit", exact: true }).click();
+
+		// Sdílený overlay kontrakt: command palette nad detailem drží fokus, zamkne
+		// scroll, první Escape zavře jen vrchní vrstvu a fokus vrátí do detailu.
+		const detailClose = detail.getByRole("button", { name: "Zrušit", exact: true });
+		await detailClose.focus();
+		await page.keyboard.press("Control+K");
+		const palette = page.getByRole("dialog", {
+			name: "Najdi úkol, projekt, poradu, člověka nebo příkaz…",
+		});
+		await palette.waitFor({ state: "visible" });
+		if (!(await palette.evaluate((node) => node.contains(document.activeElement))))
+			throw new Error("release_overlay_initial_focus_outside");
+		for (let index = 0; index < 12; index++) await page.keyboard.press("Tab");
+		if (!(await palette.evaluate((node) => node.contains(document.activeElement))))
+			throw new Error("release_overlay_focus_escape");
+		if ((await page.evaluate(() => document.body.style.overflow)) !== "hidden")
+			throw new Error("release_overlay_scroll_unlocked");
+		await assertAxeClean(page, "command_palette_nested");
+		await captureEvidence(page, browserName, "overlay-nested-1280");
+		await page.keyboard.press("Escape");
+		await palette.waitFor({ state: "hidden" });
+		await detail.waitFor({ state: "visible" });
+		if (!(await detail.evaluate((node) => node.contains(document.activeElement))))
+			throw new Error("release_overlay_focus_not_restored");
+		await page.keyboard.press("Escape");
 		await detail.waitFor({ state: "hidden" });
+
+		// Nemodální popover sdílí tutéž topmost Escape frontu s modaly. Paleta
+		// otevřená nad uloženými pohledy se zavře sama; druhý Escape zavře popover
+		// a vrátí fokus na jeho spouštěč.
+		const savedViewsTrigger = page.getByRole("button", { name: /^Pohledy/ });
+		await savedViewsTrigger.click();
+		const savedViewsPopover = page.getByRole("dialog", { name: "Uložené pohledy" });
+		await savedViewsPopover.waitFor({ state: "visible" });
+		await page.keyboard.press("Control+K");
+		await palette.waitFor({ state: "visible" });
+		await page.keyboard.press("Escape");
+		await palette.waitFor({ state: "hidden" });
+		await savedViewsPopover.waitFor({ state: "visible" });
+		await page.keyboard.press("Escape");
+		await savedViewsPopover.waitFor({ state: "hidden" });
+		await eventually(
+			"popover_focus_restore",
+			() => savedViewsTrigger.evaluate((node) => node === document.activeElement),
+			Boolean,
+			2_000,
+		);
 
 		const invalidProjectId = crypto.randomUUID();
 		await page.evaluate(
@@ -734,6 +814,11 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 			retryResolved: true,
 			addDialogA11y: true,
 			taskDetailA11y: true,
+			overlayFocusTrap: true,
+			nestedOverlayEscape: true,
+			overlayFocusRestore: true,
+			popoverNestedEscape: true,
+			popoverFocusRestore: true,
 			twoFactorEnrollment: true,
 			twoFactorRecoveryRotation: true,
 			meetingPlanTranscriptCommit: true,

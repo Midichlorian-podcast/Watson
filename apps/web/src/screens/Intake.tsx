@@ -5,7 +5,7 @@ import { Icon } from "@watson/ui";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
 import { showToast } from "../lib/toast";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace } from "../lib/workspace";
 
 type FieldType = "text" | "textarea" | "number" | "date" | "select" | "checkbox";
@@ -75,16 +75,6 @@ function errorCode(response: Response, fallback: string) {
     .catch(() => fallback);
 }
 
-function useEscape(onClose: () => void) {
-  useEffect(() => {
-    const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", close);
-    return () => document.removeEventListener("keydown", close);
-  }, [onClose]);
-}
-
 function ModalFrame({
   title,
   onClose,
@@ -95,11 +85,11 @@ function ModalFrame({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const trapRef = useFocusTrap<HTMLDivElement>(true);
-  useEscape(onClose);
+  const trapRef = useOverlayLayer<HTMLDivElement>(true, onClose);
   return (
     <div
-      className="fixed inset-0 z-[70] grid place-items-end bg-black/45 p-0 sm:place-items-center sm:p-5"
+      className="fixed inset-0 grid place-items-end bg-black/45 p-0 sm:place-items-center sm:p-5"
+      style={{ zIndex: "var(--w-layer-modal)" }}
       data-esc-layer
     >
       <div

@@ -125,7 +125,7 @@ import {
 } from "../lib/timeZone";
 import { showToast } from "../lib/toast";
 import { deleteTaskWithUndo } from "../lib/undo";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { WHY_NOW_MAX_LENGTH, type WhyNowSignal, whyNowSignals } from "../lib/whyNow";
 import { useOpenMailThread } from "../mail/state";
 
@@ -453,14 +453,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const [histOpen, setHistOpen] = useState(false);
 	const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
 
-	// Esc zavře detail (jen když nad ním není vyšší vrstva); ↑/↓ (j/k) přepíná úkoly.
+	// ↑/↓ (j/k) přepíná úkoly. Escape zpracovává sdílená overlay vrstva.
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") {
-				if (document.querySelector("[data-esc-layer]")) return;
-				onClose();
-				return;
-			}
 			const el = document.activeElement as HTMLElement | null;
 			const typing =
 				!!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
@@ -481,12 +476,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-	}, [onClose, navIds, id, open]);
+	}, [navIds, id, open]);
 
 	const { data: rows } = usePsQuery<TaskRow>("SELECT * FROM tasks WHERE id = ? LIMIT 1", [realId]);
 	const task = rows?.[0];
 	// Přístupnost: uzamkni fokus do modalu, dokud je otevřený; vrať fokus po zavření.
-	const trapRef = useFocusTrap<HTMLDivElement>(!!task);
+	const trapRef = useOverlayLayer<HTMLDivElement>(!!task, onClose);
 	// R6 — vlastní barva úkolu (per-user overlay; syncuje se jen moje barva).
 	const { data: colorRows } = usePsQuery<{ id: string; color: string | null }>(
 		"SELECT id, color FROM task_user_colors WHERE task_id = ? LIMIT 1",
@@ -1345,12 +1340,15 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 				type="button"
 				aria-label={t("common.cancel")}
 				onClick={onClose}
-				className="fixed inset-0 z-[70]"
-				style={{ background: "rgba(10,14,20,.42)" }}
+				className="fixed inset-0"
+				style={{ background: "rgba(10,14,20,.42)", zIndex: "var(--w-layer-modal)" }}
 			/>
 			<div
-				className="pointer-events-none fixed inset-0 z-[71] flex items-start justify-center"
-				style={{ paddingTop: "6vh" }}
+				className="pointer-events-none fixed inset-0 flex items-start justify-center"
+				style={{
+					paddingTop: "6vh",
+					zIndex: "calc(var(--w-layer-modal) + 1)",
+				}}
 			>
 				<div
 					ref={trapRef}

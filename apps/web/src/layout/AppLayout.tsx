@@ -1,9 +1,7 @@
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { BulkBar } from "../components/BulkBar";
 import { SyncGate } from "../components/Loading";
-import { ProjectDetailPanel } from "../components/ProjectDetailPanel";
-import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { TrustStateBanner, TrustStateProvider } from "../components/TrustState";
 import { AddTaskProvider } from "../lib/addTask";
 import { BulkSelectProvider } from "../lib/bulkSelect";
@@ -24,6 +22,17 @@ import { useWorkspace, useWorkspaces, WorkspaceProvider } from "../lib/workspace
 import { Header } from "./Header";
 import { MobileTabBar } from "./MobileTabBar";
 import { Sidebar } from "./Sidebar";
+
+// Těžké detailní overlaye se stáhnou až při prvním použití. Shell a Můj den tak
+// neplatí cenu editorů komentářů, milníků a příloh při každém startu aplikace.
+const TaskDetailPanel = lazy(() =>
+	import("../components/TaskDetailPanel").then((module) => ({ default: module.TaskDetailPanel })),
+);
+const ProjectDetailPanel = lazy(() =>
+	import("../components/ProjectDetailPanel").then((module) => ({
+		default: module.ProjectDetailPanel,
+	})),
+);
 
 /** Deep-link smí přepnout jen na prostor, který server skutečně vrátil přihlášenému uživateli. */
 function WorkspaceDeepLinkSync() {
@@ -119,9 +128,11 @@ export function AppLayout() {
 																	</main>
 																</div>
 																{isMobile && <MobileTabBar />}
-																	<ActionToast />
-																<TaskDetailPanel />
-																<ProjectDetailPanel />
+																<ActionToast />
+																<Suspense fallback={null}>
+																	<TaskDetailPanel />
+																	<ProjectDetailPanel />
+																</Suspense>
 																<BulkBar />
 															</div>
 														</ContextMenuProvider>

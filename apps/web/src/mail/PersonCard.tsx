@@ -7,6 +7,7 @@
  * vrstva, přístupy se reálně nemění (matice v AdminScreen má vlastní cache).
  */
 import { useEffect, useState } from "react";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { showToast } from "../lib/toast";
 import { MB, P } from "./data";
 import { useMail } from "./state";
@@ -45,20 +46,11 @@ export function PersonCard({
 }) {
 	const m = useMail();
 	const [offStage, setOffStage] = useState(false);
+	const overlayRef = useOverlayLayer<HTMLDivElement>(pid !== null, onClose);
 
 	// nová osoba = karta začíná bez rozbaleného offboardingu
 	// biome-ignore lint/correctness/useExhaustiveDependencies: reset vázaný na změnu pid
 	useEffect(() => setOffStage(false), [pid]);
-
-	// Esc zavírá (prototyp globální Escape ř. 2746)
-	useEffect(() => {
-		if (pid === null) return;
-		const h = (e: globalThis.KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [pid, onClose]);
 
 	const person = pid ? P[pid] : undefined;
 	if (!pid || !person) return null;
@@ -84,7 +76,7 @@ export function PersonCard({
 			style={{
 				position: "fixed",
 				inset: 0,
-				zIndex: 79,
+				zIndex: "var(--w-layer-nested)",
 				animation: "wFade .12s ease",
 			}}
 		>
@@ -95,6 +87,7 @@ export function PersonCard({
 				style={{ position: "absolute", inset: 0, border: 0, background: "rgba(23,40,63,.32)" }}
 			/>
 			<div
+				ref={overlayRef}
 				role="dialog"
 				aria-modal="true"
 				aria-label="Karta osoby"
@@ -104,7 +97,7 @@ export function PersonCard({
 					top: "50%",
 					left: "50%",
 					transform: "translate(-50%,-50%)",
-					zIndex: 80,
+					zIndex: "calc(var(--w-layer-nested) + 1)",
 					width: "min(420px, 94vw)",
 					maxHeight: "88vh",
 					overflow: "auto",
@@ -132,13 +125,14 @@ export function PersonCard({
 							{person.role}
 						</div>
 					</div>
-					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+					<button type="button"
 						onClick={onClose}
+						aria-label="Zavřít kartu osoby"
 						title="Zavřít (Esc)"
-						style={{ fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
+						style={{ width: 44, height: 44, border: 0, background: "transparent", fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
 					>
 						×
-					</span>
+					</button>
 				</div>
 
 				{/* schránky s přístupem (prototyp ř. 1915–1922) */}

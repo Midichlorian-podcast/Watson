@@ -21,7 +21,7 @@ import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { NOT_MEETING, startMinOf, toggleTask, todayISO } from "../lib/tasks";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { showToast } from "../lib/toast";
 import { useTheme } from "../layout/useTheme";
 import { MB, P, SLA, TH } from "../mail/data";
@@ -72,19 +72,7 @@ export function PeekPanel({
 	const detailOpen = !!openId;
 	// a11y: fokus se po otevření přesune do dialogu a zůstane uvězněný uvnitř
 	// (Tab necyklí po skryté stránce pod scrimem); po zavření se vrátí zpět.
-	const trapRef = useFocusTrap<HTMLElement>(!!target && !detailOpen);
-
-	useEffect(() => {
-		if (!target || detailOpen) return;
-		const h = (e: globalThis.KeyboardEvent) => {
-			// Peek sám nese data-esc-layer — vyloučíme se z dotazu, jinak by se
-			// nikdy nezavřel; vyšší vrstvy (modal/⌘K/tahák) mají přednost.
-			if (e.key === "Escape" && !document.querySelector("[data-esc-layer]:not([data-peek-layer])"))
-				onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [target, detailOpen, onClose]);
+	const trapRef = useOverlayLayer<HTMLElement>(!!target && !detailOpen, onClose);
 
 	if (!target) return null;
 

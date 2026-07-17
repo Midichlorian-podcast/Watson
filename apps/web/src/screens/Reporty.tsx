@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CopyLinkButton } from "../components/CopyLinkButton";
 import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
@@ -14,7 +14,7 @@ import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { NOT_MEETING } from "../lib/tasks";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = {
@@ -589,15 +589,7 @@ function MemberDetail({
 	const { t } = useTranslation();
 	const qc = useQueryClient();
 	const tdy = todayISO();
-	const trapRef = useFocusTrap<HTMLElement>(true);
-	// Esc zavře panel — konzistentně se sourozeneckými overlaye (NotifCenter/TaskDetailPanel/PeekPanel).
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [onClose]);
+	const trapRef = useOverlayLayer<HTMLElement>(true, onClose);
 
 	// Optimistický highlight role, dokud PATCH nedoběhne — jinak není žádná okamžitá odezva.
 	const [pendingRole, setPendingRole] = useState<string | null>(null);
@@ -637,7 +629,7 @@ function MemberDetail({
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.34)", zIndex: 40 }}
+				style={{ background: "rgba(10,14,20,.34)", zIndex: "var(--w-layer-drawer)" }}
 			/>
 			<aside
 				ref={trapRef}
@@ -646,7 +638,7 @@ function MemberDetail({
 					width: 440,
 					maxWidth: "94vw",
 					boxShadow: "var(--w-shadow)",
-					zIndex: 41,
+					zIndex: "calc(var(--w-layer-drawer) + 1)",
 				}}
 			>
 				<div

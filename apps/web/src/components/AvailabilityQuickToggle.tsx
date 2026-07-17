@@ -6,6 +6,7 @@ import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { dateInTimeZone, zonedDateTimeToIso } from "../lib/timeZone";
 import { showToast } from "../lib/toast";
+import { usePopoverLayer } from "../lib/usePopoverLayer";
 import { useWorkspace } from "../lib/workspace";
 
 type StatusKind = "manual_snooze" | "focus" | "unavailable" | "absence" | "holiday" | "quiet_hours";
@@ -36,6 +37,7 @@ export function AvailabilityQuickToggle({ isMobile }: { isMobile: boolean }) {
 	const [busy, setBusy] = useState(false);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const triggerRef = useRef<HTMLButtonElement>(null);
+	const popoverRef = usePopoverLayer<HTMLDivElement>(open, () => setOpen(false), triggerRef);
 	const userId = session?.user?.id;
 	const query = useQuery({
 		queryKey: ["availability", activeWs],
@@ -61,17 +63,9 @@ export function AvailabilityQuickToggle({ isMobile }: { isMobile: boolean }) {
 		const onPointer = (event: MouseEvent) => {
 			if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
 		};
-		const onKey = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				setOpen(false);
-				triggerRef.current?.focus();
-			}
-		};
 		document.addEventListener("mousedown", onPointer);
-		document.addEventListener("keydown", onKey);
 		return () => {
 			document.removeEventListener("mousedown", onPointer);
-			document.removeEventListener("keydown", onKey);
 		};
 	}, [open]);
 
@@ -143,13 +137,14 @@ export function AvailabilityQuickToggle({ isMobile }: { isMobile: boolean }) {
 			</button>
 			{open && (
 				<div
+					ref={popoverRef}
 					role="dialog"
 					aria-label={t("availability.quickTitle")}
 					style={{
 						position: "absolute",
 						top: isMobile ? 48 : 39,
 						right: 0,
-						zIndex: 80,
+						zIndex: "var(--w-layer-popover)",
 						width: "min(310px, calc(100vw - 24px))",
 						padding: 12,
 						border: "1px solid var(--w-line)",

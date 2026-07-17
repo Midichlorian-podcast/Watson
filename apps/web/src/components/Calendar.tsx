@@ -34,8 +34,8 @@ import {
 } from "../lib/timeZone";
 import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
-import { useFocusTrap } from "../lib/useFocusTrap";
 import { useIsMobile } from "../lib/useIsMobile";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useUserColors } from "../lib/userColors";
 import { useWorkspace } from "../lib/workspace";
 import { CalendarMonth } from "./CalendarMonth";
@@ -270,19 +270,14 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	const [emergencyBusy, setEmergencyBusy] = useState(false);
 	const emergencyBusyRef = useRef(false);
 	const emergencyInputRef = useRef<HTMLTextAreaElement>(null);
-	const emergencyDialogRef = useFocusTrap<HTMLDivElement>(Boolean(pendingEmergencyMove));
+	const emergencyDialogRef = useOverlayLayer<HTMLDivElement>(Boolean(pendingEmergencyMove), () => {
+		if (!emergencyBusyRef.current) setPendingEmergencyMove(null);
+	});
 	const isMobile = useIsMobile();
 	useEffect(() => {
 		if (!pendingEmergencyMove) return;
 		setEmergencyReason("");
 		setTimeout(() => emergencyInputRef.current?.focus(), 0);
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape" && !emergencyBusyRef.current) setPendingEmergencyMove(null);
-		};
-		window.addEventListener("keydown", onKeyDown);
-		return () => {
-			window.removeEventListener("keydown", onKeyDown);
-		};
 	}, [pendingEmergencyMove]);
 	// Kotevní datum (calCur) — týden je „rolující" od kotvy bez snapu (prototyp weekDates, ř. 2658);
 	// při startu v týdnu kotvíme na pondělí (ekvivalent calToday, ř. 2661).
@@ -911,7 +906,8 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 			</div>
 			{pendingEmergencyMove && (
 				<div
-					className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4"
+					className="fixed inset-0 grid place-items-center bg-black/40 p-4"
+					style={{ zIndex: "var(--w-layer-critical)" }}
 				>
 					<div
 						ref={emergencyDialogRef}

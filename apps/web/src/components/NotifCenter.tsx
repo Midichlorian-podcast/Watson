@@ -12,14 +12,14 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { useFocusTrap } from "../lib/focusTrap";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { P, SLA } from "../mail/data";
 import { useMail } from "../mail/state";
 import { useSession } from "../lib/auth-client";
 import { useTaskDetail } from "../lib/taskDetail";
 import { NOT_MEETING, startMinOf, todayISO } from "../lib/tasks";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { storageGet, storageSet } from "../lib/storage";
 import { PeekPanel, type PeekTarget } from "./PeekPanel";
 
@@ -266,19 +266,6 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 	// mail položky se odbavují NA MÍSTĚ přes mail peek (plný workspace)
 	const [peek, setPeek] = useState<PeekTarget | null>(null);
 
-	useEffect(() => {
-		if (!open || peek || openId) return;
-		const h = (e: globalThis.KeyboardEvent) => {
-			if (e.key !== "Escape") return;
-			// Vyšší vrstva (⌘K paleta / tahák) má vlastní data-esc-layer a musí se
-			// zavřít dřív — jinak by jeden Esc sundal i notifikace pod ní.
-			if (document.querySelector("[data-esc-layer]:not([data-notif-layer])")) return;
-			onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [open, peek, openId, onClose]);
-
 	/** Klik na TITULEK = rychlá karta na místě (detail úkolu / mail peek). */
 	const quickAct = useCallback(
 		(n: NotifItem) => {
@@ -349,8 +336,7 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 	);
 
 	// P1-08: past na fokus + návrat fokusu na zvonek — hooks PŘED early returnem
-	const panelRef = useRef<HTMLDivElement | null>(null);
-	useFocusTrap(open, panelRef);
+	const panelRef = useOverlayLayer<HTMLDivElement>(open, onClose);
 
 	if (!open) return null;
 
@@ -369,7 +355,13 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 				data-focus-trap-companion
 				data-esc-layer={escLayer}
 				data-notif-layer={escLayer}
-				style={{ position: "fixed", inset: 0, zIndex: 64, border: 0, background: "transparent" }}
+				style={{
+					position: "fixed",
+					inset: 0,
+					zIndex: "var(--w-layer-floating)",
+					border: 0,
+					background: "transparent",
+				}}
 			/>
 			<div
 				ref={panelRef}
@@ -383,7 +375,7 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 					position: "fixed",
 					top: 54,
 					right: 12,
-					zIndex: 65,
+					zIndex: "calc(var(--w-layer-floating) + 1)",
 					width: "min(380px, 94vw)",
 					maxHeight: "min(560px, 78vh)",
 					display: "flex",

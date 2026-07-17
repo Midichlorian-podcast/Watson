@@ -6,8 +6,9 @@
  * (audit L-19: osobní vlákno smí jen do osobních projektů), Poznámka.
  * Vytvoření jde přes m.bridge.onCreateTask — payload už tato pole podporuje.
  */
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import { showToast } from "../lib/toast";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import type { MailThread } from "./data";
 import { useMail } from "./state";
 
@@ -56,22 +57,13 @@ export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }
 	);
 	const [projId, setProjId] = useState<string | null>(null);
 	const [comment, setComment] = useState("");
+	const dialogRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	// Projekty VÝHRADNĚ z mostu do aplikace; osobní vlákno → jen osobní projekty (L-19)
 	const projects = useMemo(() => {
 		const all = m.bridge.projects ?? [];
 		return t.personal ? all.filter((p) => p.personal) : all;
 	}, [m.bridge.projects, t.personal]);
-
-	// Esc zavírá JEN modal (vzor NewMessage) — bez data-esc-layer by globální Esc
-	// v MailScreen zavřel i vlákno/výběr pod ním (audit S10)
-	useEffect(() => {
-		const h = (ev: globalThis.KeyboardEvent) => {
-			if (ev.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [onClose]);
 
 	const create = () => {
 		const name = title.trim() || t.subj;
@@ -102,17 +94,22 @@ export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }
 
 	return (
 		<>
-			<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+			<button type="button" aria-label="Zavřít vytvoření úkolu"
 				onClick={onClose}
 				style={{
 					position: "fixed",
 					inset: 0,
-					zIndex: 79,
+					zIndex: "var(--w-layer-nested)",
+					border: 0,
 					background: "rgba(23,40,63,.32)",
 					animation: "wFade .12s ease",
 				}}
 			/>
 			<div
+				ref={dialogRef}
+				role="dialog"
+				aria-modal="true"
+				aria-label="Udělat z mailu úkol"
 				data-esc-layer
 				data-screen-label="Email → úkol"
 				style={{
@@ -120,7 +117,7 @@ export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }
 					top: "50%",
 					left: "50%",
 					transform: "translate(-50%,-50%)",
-					zIndex: 80,
+					zIndex: "calc(var(--w-layer-nested) + 1)",
 					width: "min(460px, 94vw)",
 					maxHeight: "88vh",
 					overflow: "auto",
@@ -144,12 +141,12 @@ export function TaskModal({ t, onClose }: { t: MailThread; onClose: () => void }
 					>
 						Udělat z mailu úkol
 					</span>
-					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+					<button type="button" aria-label="Zavřít"
 						onClick={onClose}
-						style={{ fontSize: 16, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
+						style={{ width: 44, height: 44, border: 0, background: "transparent", fontSize: 18, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
 					>
 						×
-					</span>
+					</button>
 				</div>
 				<div
 					style={{

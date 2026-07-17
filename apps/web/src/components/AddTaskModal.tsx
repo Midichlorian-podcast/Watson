@@ -34,7 +34,7 @@ import { parseQuick } from "../lib/quickadd";
 import { todayISO } from "../lib/tasks";
 import { deviceTimeZone, zonedDateTimeToIso } from "../lib/timeZone";
 import { showToast } from "../lib/toast";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace } from "../lib/workspace";
 
 /**
@@ -360,30 +360,19 @@ export function AddTaskModal({
 	const patch = (obj: Partial<Draft>) => setDraft((d) => ({ ...d, ...obj }));
 
 	const taRef = useRef<HTMLTextAreaElement>(null);
-	const trapRef = useFocusTrap<HTMLDivElement>(true);
+	const trapRef = useOverlayLayer<HTMLDivElement>(true, () => {
+		// První Escape zavře otevřený field popover; rozepsaný úkol zůstane.
+		if (draft.pop !== "") {
+			setDraft((d) => ({ ...d, pop: "" }));
+			return;
+		}
+		onClose();
+	});
 	// In-flight zámek — dvojklik/dvojí Enter jinak projde guardem a vytvoří dva úkoly.
 	const submitting = useRef(false);
 	useEffect(() => {
 		taRef.current?.focus();
 	}, []);
-	// Esc: zavřít popover/našeptávač, pak modal — jen když nad modalem není vyšší vrstva
-	// (tahák/⌘K nesou [data-esc-layer]; Esc kaskáda zavírá po jedné, prototyp ř. 2213).
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key !== "Escape") return;
-			if (document.querySelector("[data-esc-layer]:not([data-add-layer])")) return;
-			// Esc kaskáda: nejdřív zavři otevřený field popover, teprve pak celý modal —
-			// jinak by první Esc s otevřeným popoverem zahodil celý rozepsaný draft.
-			if (draft.pop !== "") {
-				setDraft((d) => ({ ...d, pop: "" }));
-				return;
-			}
-			onClose();
-		};
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose, draft.pop]);
-
 	const parseCtx = useMemo(
 		() => ({
 			today,
@@ -907,10 +896,11 @@ export function AddTaskModal({
 		<div
 			data-esc-layer
 			data-add-layer
-			className="fixed inset-0 z-[75] flex justify-center"
+			className="fixed inset-0 flex justify-center"
 			style={{
 				alignItems: "flex-start",
 				paddingTop: "12vh",
+				zIndex: "var(--w-layer-nested)",
 			}}
 		>
 			<button

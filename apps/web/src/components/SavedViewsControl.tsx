@@ -12,6 +12,7 @@ import {
 } from "../lib/savedViews";
 import { getDensity, setDensity } from "../lib/tweaks";
 import { showToast } from "../lib/toast";
+import { usePopoverLayer } from "../lib/usePopoverLayer";
 import { useViewMode } from "../lib/viewMode";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 import type { ToolbarState } from "./TasksToolbar";
@@ -36,6 +37,8 @@ export function SavedViewsControl({
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
+	const triggerRef = useRef<HTMLButtonElement>(null);
+	const popoverRef = usePopoverLayer<HTMLDivElement>(open, () => setOpen(false), triggerRef);
 	const activeWorkspace = workspaces?.find((workspace) => workspace.id === activeWs);
 	const canManageTeam = activeWorkspace?.capabilities?.manageGoals === true;
 
@@ -55,17 +58,6 @@ export function SavedViewsControl({
 		document.addEventListener("mousedown", close);
 		return () => document.removeEventListener("mousedown", close);
 	}, []);
-	useEffect(() => {
-		if (!open) return;
-		const close = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				event.stopPropagation();
-				setOpen(false);
-			}
-		};
-		document.addEventListener("keydown", close, true);
-		return () => document.removeEventListener("keydown", close, true);
-	}, [open]);
 	useEffect(() => {
 		void activeWs;
 		setActiveId(null);
@@ -187,6 +179,7 @@ export function SavedViewsControl({
 	return (
 		<div ref={rootRef} className="relative">
 			<button
+				ref={triggerRef}
 				type="button"
 				onClick={() => setOpen((value) => !value)}
 				className="font-display font-semibold hover:border-brass"
@@ -199,11 +192,15 @@ export function SavedViewsControl({
 			</button>
 			{open && (
 				<div
+					ref={popoverRef}
+					role="dialog"
+					aria-label={t("savedViews.title")}
 					data-esc-layer
 					data-saved-views
-					className="absolute left-0 z-[32] rounded-xl border border-line bg-card"
+					className="absolute left-0 rounded-xl border border-line bg-card"
 					style={{
 						top: 38,
+						zIndex: "var(--w-layer-popover)",
 						width: "min(340px, calc(100vw - 32px))",
 						padding: 10,
 						boxShadow: "var(--w-shadow)",

@@ -61,7 +61,7 @@ function inertOutside(container: HTMLElement): HTMLElement[] {
  * P1-08 — základ dialog primitive: past na fokus + návrat fokusu.
  * Při aktivaci přesune fokus dovnitř kontejneru, Tab/Shift+Tab cyklí uvnitř
  * (pozadí je pro klávesnici nedosažitelné) a po zavření vrátí fokus na
- * prvek, který overlay otevřel. Escape řeší volající (vrstvy data-esc-layer).
+ * prvek, který overlay otevřel. Escape sjednocuje dismissableLayer.
  */
 export function useFocusTrap(active: boolean, ref: RefObject<HTMLElement | null>) {
 	useEffect(() => {

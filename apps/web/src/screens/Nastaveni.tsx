@@ -27,6 +27,7 @@ import { initials } from "../lib/format";
 import { shutdownPowerSync } from "../lib/powersync/db";
 import { storageGet, storageSet } from "../lib/storage";
 import { showToast } from "../lib/toast";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import {
 	type Accent,
 	type Density,
@@ -1502,6 +1503,7 @@ function InviteModal({
 	const [email, setEmail] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string | null>(null);
+	const modalRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 	const submit = async () => {
 		const mail = email.trim();
 		if (!mail || busy) return;
@@ -1527,13 +1529,6 @@ function InviteModal({
 			setBusy(false);
 		}
 	};
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
 	const fieldLabel: CSSProperties = {
 		fontFamily: "var(--w-font-display)",
 		fontWeight: 700,
@@ -1551,14 +1546,19 @@ function InviteModal({
 				aria-label={t("settings.inviteCancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.42)", zIndex: 50 }}
+				style={{ background: "rgba(10,14,20,.42)", zIndex: "var(--w-layer-modal)" }}
 			/>
 			<div
 				data-esc-layer
 				className="pointer-events-none fixed inset-0 flex items-start justify-center"
-				style={{ zIndex: 51, paddingTop: "14vh" }}
+				style={{ zIndex: "calc(var(--w-layer-modal) + 1)", paddingTop: "14vh" }}
 			>
 				<div
+					ref={modalRef}
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("settings.inviteTitle2")}
+					data-esc-layer
 					className="pointer-events-auto rounded-2xl border border-line bg-card"
 					style={{ width: 440, maxWidth: "94vw", boxShadow: "var(--w-shadow)" }}
 				>

@@ -23,6 +23,7 @@ import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { NOT_MEETING } from "../lib/tasks";
 import { showToast } from "../lib/toast";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string; image: string | null };
@@ -517,6 +518,7 @@ function GoalModal({
 	const [due, setDue] = useState("");
 	const [periodic, setPeriodic] = useState("none");
 	const [tpl, setTpl] = useState<string | null>(null);
+	const modalRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	/** Předvyplnění ze šablony (prototyp pickGoalTemplate, ř. 2344). */
 	const pickTemplate = (tp: (typeof GOAL_TEMPLATES)[number]) => {
@@ -532,14 +534,7 @@ function GoalModal({
 		if (!personal) setScope(tp.scope === "personal" ? "person" : tp.scope);
 	};
 
-	// Esc zavře builder; vlastník se dosadí, jakmile dorazí členové prostoru.
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
+	// Vlastník se dosadí, jakmile dorazí členové prostoru.
 	useEffect(() => {
 		if (!ownerId && members[0]) setOwnerId(members[0].id);
 	}, [members, ownerId]);
@@ -608,13 +603,18 @@ function GoalModal({
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.42)", zIndex: 50 }}
+				style={{ background: "rgba(10,14,20,.42)", zIndex: "var(--w-layer-modal)" }}
 			/>
 			<div
 				className="pointer-events-none fixed inset-0 flex items-start justify-center"
-				style={{ zIndex: 51, paddingTop: "9vh" }}
+				style={{ zIndex: "calc(var(--w-layer-modal) + 1)", paddingTop: "9vh" }}
 			>
 				<div
+					ref={modalRef}
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("goals.newGoal")}
+					data-esc-layer
 					className="pointer-events-auto max-h-[84vh] overflow-auto rounded-2xl border border-line bg-card"
 					style={{
 						width: 560,
@@ -961,6 +961,7 @@ function GoalDetail({
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
+	const panelRef = useOverlayLayer<HTMLElement>(true, onClose);
 	const taskDetail = useTaskDetail();
 	const { g, pr, st, elapsed, links } = data;
 	const [msText, setMsText] = useState("");
@@ -1051,11 +1052,20 @@ function GoalDetail({
 				type="button"
 				aria-label={t("common.cancel")}
 				onClick={onClose}
-				className="fixed inset-0 z-30 bg-navy/20"
+				className="fixed inset-0 bg-navy/20"
+				style={{ zIndex: "var(--w-layer-drawer)" }}
 			/>
 			<aside
-				className="fixed top-0 right-0 z-40 flex h-full w-full max-w-md flex-col overflow-y-auto bg-card"
-				style={{ boxShadow: "var(--w-shadow)" }}
+				ref={panelRef}
+				role="dialog"
+				aria-modal="true"
+				aria-label={g.name ?? t("goals.title")}
+				data-esc-layer
+				className="fixed top-0 right-0 flex h-full w-full max-w-md flex-col overflow-y-auto bg-card"
+				style={{
+					boxShadow: "var(--w-shadow)",
+					zIndex: "calc(var(--w-layer-drawer) + 1)",
+				}}
 			>
 				{/* Hlavička se scope labelem (prototyp ř. 1294–1297) */}
 				<div

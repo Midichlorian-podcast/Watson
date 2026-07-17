@@ -409,9 +409,15 @@ Pořadí: trust-state primitive → overlay primitive → Nastavení routes → 
    odmítnutou změnu, 390px reflow a axe v Chromium i WebKitu. Vizuální audit navíc
    odstranil duplicitní rejected toast, opravil kontrast akce, umístil toast nad
    mobilní navigaci a rozdělil mobilní header do stabilních dvou řádků.
-2. **Overlay primitive — další aktivní krok.** Před změnou inventarizovat všechny
-   dialogy, drawers, popovery, menu, focus trap, scroll lock a vrstvy; neslučovat
-   doménovou logiku do prezentačního wrapperu.
+2. **Overlay primitive — dokončeno 2026-07-17.** Modaly a drawery používají jediný
+   focus trap, inert pozadí, referenčně počítaný scroll lock, návrat fokusu a
+   topmost Escape. Nemodální popovery a kontextová menu sdílejí stejný pořadník,
+   ale stránku správně neinertují. Sémantická z-index stupnice nahradila náhodná
+   globální čísla; statický kontrakt zakazuje návrat starého focus trapu i druhý
+   body scroll lock. Těžké detaily úkolu a projektu jsou lazy-loaded.
+3. **Nastavení routes — další aktivní krok.** Zachovat jedno Nastavení a současné
+   funkční formuláře, rozdělit je do adresovatelných sekcí Profil, Tým,
+   Zabezpečení, Data a zálohy, Integrace, Notifikace a Vzhled bez ztráty stavu.
 
 Acceptance: vizuální regression snapshots, keyboard/axe gate, žádná změna doménové logiky bez testu.
 
@@ -546,7 +552,7 @@ Poslední ověření 2026-07-16:
 - Celý `scripts/ci-api-integration.sh` po opravě korektního ukončení intake verifieru
   proběhl až po produkční 2FA restart a skončil úspěšně.
 - PowerSync po restartu: nový replication stream aktivní, sync-config bez chyby.
-- `pnpm build`: největší JS 345 KiB gzip, precache 5,152 KiB; oba rozpočty splněny;
+- `pnpm build`: největší JS 325 KiB gzip, precache 5,153 KiB; oba rozpočty splněny;
   vlastní pole, ankety, projektové milníky, intake, importní průvodce, Úkoly a Nadcházející jsou oddělené
   lazy-loaded chunky.
 - Celý `pnpm gate` po runtime opravách znovu prošel: typecheck 6/6, lint bez warnings,
@@ -587,6 +593,17 @@ Poslední ověření 2026-07-16:
   mobilní lišty a stabilní dvouřádkový header bez ztraceného názvu. Sanitizované
   výsledky jsou v `docs/release-evidence/trust-state-e2e-2026-07-17.json` a
   `docs/release-evidence/trust-state-runtime-a11y-2026-07-17.json`.
+- F2 overlay primitive sjednotil modaly, drawery i nemodální popovery do jednoho
+  topmost Escape pořadníku. Dialogy sdílejí focus trap, inert, referenčně počítaný
+  scroll lock a návrat fokusu; popovery okolí neinertují a u explicitního triggeru
+  vracejí fokus deterministicky i při rychlém zanoření. Release E2E v Chromium i
+  WebKitu ověřuje Task Detail → command palette i Pohledy → command palette,
+  12krokové cyklení fokusu, postupné Escape zavírání a návrat otvírači. Cílený
+  runtime matrix osmi dotčených rout má 64/64 průchodů, 0 axe, 0 overflow a 0
+  runtime chyb. Vizuální kontrola zanořeného desktopového stavu je bez ořezu a
+  nechtěného překrytí. Artifacty jsou v
+  `docs/release-evidence/overlay-e2e-2026-07-17.json` a
+  `docs/release-evidence/overlay-runtime-a11y-2026-07-17.json`.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
   44 px, offline zápisem a následným autoritativním uploadem. Jediný zachycený

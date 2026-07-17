@@ -1,7 +1,7 @@
 import { useTranslation } from "@watson/i18n";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import type { BulkPreview, BulkSkipReason } from "../lib/bulkCommands";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 
 const reasonKey: Record<BulkSkipReason, string> = {
 	already_applied: "bulk.previewSkipAlreadyApplied",
@@ -24,16 +24,11 @@ export function BulkPreviewDialog({
 	running: boolean;
 	onCancel: () => void;
 	onConfirm: () => void;
-}) {
+	}) {
 	const { t } = useTranslation();
-	const trapRef = useFocusTrap<HTMLDivElement>(true);
-	useEffect(() => {
-		const onKey = (event: KeyboardEvent) => {
-			if (event.key === "Escape" && !running) onCancel();
-		};
-		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [onCancel, running]);
+	const trapRef = useOverlayLayer<HTMLDivElement>(true, () => {
+		if (!running) onCancel();
+	});
 	const groupedSkips = useMemo(() => {
 		const counts = new Map<BulkSkipReason, number>();
 		for (const item of preview.skipped) counts.set(item.reason, (counts.get(item.reason) ?? 0) + 1);
@@ -41,7 +36,11 @@ export function BulkPreviewDialog({
 	}, [preview.skipped]);
 
 	return (
-		<div className="fixed inset-0 z-[85] grid place-items-center p-2.5" data-esc-layer>
+		<div
+			className="fixed inset-0 grid place-items-center p-2.5"
+			style={{ zIndex: "var(--w-layer-nested)" }}
+			data-esc-layer
+		>
 			<button
 				type="button"
 				aria-label={t("common.cancel")}

@@ -14,6 +14,7 @@ import {
 	trackRecentEntity,
 } from "../lib/recentItems";
 import { useViewMode } from "../lib/viewMode";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { searchMailThreads } from "../mail/search";
 import { useMail } from "../mail/state";
@@ -65,6 +66,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 	const [q, setQ] = useState("");
 	const [idx, setIdx] = useState(0);
 	const [recent, setRecent] = useState<RecentEntity[]>([]);
+	const overlayRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	useEffect(() => {
 		let active = true;
@@ -301,9 +303,6 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 		} else if (e.key === "Enter") {
 			e.preventDefault();
 			items[activeIdx]?.run();
-		} else if (e.key === "Escape") {
-			e.preventDefault();
-			onClose();
 		}
 	};
 
@@ -314,14 +313,15 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.5)", zIndex: 72 }}
+				style={{ background: "rgba(10,14,20,.5)", zIndex: "var(--w-layer-nested)" }}
 			/>
 			<div
 				data-esc-layer
 				className="pointer-events-none fixed inset-0 flex items-start justify-center"
-				style={{ zIndex: 73, paddingTop: "11vh" }}
+				style={{ zIndex: "calc(var(--w-layer-nested) + 1)", paddingTop: "11vh" }}
 			>
 				<div
+					ref={overlayRef}
 					role="dialog"
 					aria-modal="true"
 					aria-label={t("palette.placeholder")}

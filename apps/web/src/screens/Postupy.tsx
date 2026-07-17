@@ -24,6 +24,7 @@ import { useTaskDetail } from "../lib/taskDetail";
 import { NOT_MEETING, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { storageGet } from "../lib/storage";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
@@ -583,6 +584,7 @@ function FlowDetail({
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
+	const panelRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 	const { open: openTask, openId } = useTaskDetail();
 	const { ch, chSteps, total, done, now } = data;
 	const [pendingRewind, setPendingRewind] = useState<string | null>(null);
@@ -615,10 +617,6 @@ function FlowDetail({
 			// Esc ani Enter nesmí propadnout sem, jinak Enter dokončí krok / Esc zavře postup
 			// pod otevřeným detailem úkolu (vzor sourozeneckých overlayů).
 			if (openId || document.querySelector("[data-esc-layer]:not([data-flow-layer])")) return;
-			if (e.key === "Escape") {
-				onClose();
-				return;
-			}
 			// Enter dokončí aktivní krok (prototyp ř. 2227).
 			const el = document.activeElement as HTMLElement | null;
 			const typing =
@@ -630,7 +628,7 @@ function FlowDetail({
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-	}, [onClose, now, openId, completeStep]);
+	}, [now, openId, completeStep]);
 
 	/** Uložit jako šablonu (prototyp saveFlowAsTemplate, ř. 2495) — per-user do localStorage. */
 	const STATE_LABEL: Record<string, string> = {
@@ -669,9 +667,13 @@ function FlowDetail({
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.34)", zIndex: 42 }}
+				style={{ background: "rgba(10,14,20,.34)", zIndex: "var(--w-layer-drawer)" }}
 			/>
 			<div
+				ref={panelRef}
+				role="dialog"
+				aria-modal="true"
+				aria-label={ch.name ?? t("flows.title")}
 				data-esc-layer={escLayer}
 				data-flow-layer={escLayer}
 				className="fixed top-0 right-0 bottom-0 flex flex-col border-line border-l bg-card"
@@ -679,7 +681,7 @@ function FlowDetail({
 					width: 470,
 					maxWidth: "94vw",
 					boxShadow: "var(--w-shadow)",
-					zIndex: 43,
+					zIndex: "calc(var(--w-layer-drawer) + 1)",
 				}}
 			>
 				{/* hlavička */}
@@ -1024,6 +1026,7 @@ function FlowModal({
 	onCreated: (chainId: string) => void;
 }) {
 	const { t } = useTranslation();
+	const modalRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 	const [name, setName] = useState("");
 	const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
 	const [anchor, setAnchor] = useState(addDays(todayISO(), 7));
@@ -1043,14 +1046,6 @@ function FlowModal({
 	>([]);
 	const [members, setMembers] = useState<Member[]>([]);
 	const allTemplates = useMemo(() => [...savedTemplates(), ...TEMPLATES], []);
-
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
 
 	// R5 — po změně projektu vyčistit přiřazení kroků: staré who[] míří na členy předchozího
 	// projektu, kteří v novém nejsou (a v UI zmizí, takže je nelze odškrtnout) → insert by
@@ -1178,13 +1173,18 @@ function FlowModal({
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.42)", zIndex: 50 }}
+				style={{ background: "rgba(10,14,20,.42)", zIndex: "var(--w-layer-modal)" }}
 			/>
 			<div
 				className="pointer-events-none fixed inset-0 flex items-start justify-center"
-				style={{ zIndex: 51, paddingTop: "7vh" }}
+				style={{ zIndex: "calc(var(--w-layer-modal) + 1)", paddingTop: "7vh" }}
 			>
 				<div
+					ref={modalRef}
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("flows.modalTitle")}
+					data-esc-layer
 					className="pointer-events-auto max-h-[86vh] overflow-auto rounded-2xl border border-line bg-card"
 					style={{ width: 680, maxWidth: "95vw", boxShadow: "var(--w-shadow)" }}
 				>

@@ -11,6 +11,7 @@ import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjectDetail } from "../lib/projectDetail";
 import { showToast } from "../lib/toast";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { CopyLinkButton } from "./CopyLinkButton";
 
 type Member = {
@@ -63,17 +64,7 @@ export function ProjectDetailPanel() {
 function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
-	// Esc zavře panel (prototyp: Esc zavírá selectedProject) — ale ne když je nad
-	// panelem otevřená vyšší vrstva (modal/paleta/tahák s data-esc-layer).
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key !== "Escape") return;
-			if (document.querySelector("[data-esc-layer]")) return;
-			onClose();
-		};
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
+	const panelRef = useOverlayLayer<HTMLElement>(true, onClose);
 	const { data: rows } = usePsQuery<ProjectRow>("SELECT * FROM projects WHERE id = ? LIMIT 1", [
 		id,
 	]);
@@ -275,12 +266,23 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 				type="button"
 				aria-label={t("common.cancel")}
 				onClick={onClose}
-				className="fixed inset-0 z-30 bg-navy/20"
+				className="fixed inset-0 bg-navy/20"
+				style={{ zIndex: "var(--w-layer-drawer)" }}
 			/>
 			{/* panel 420px, jen 1px levá linka (prototyp ř. 1223 — bez barevného okraje) */}
 			<aside
-				className="fixed top-0 right-0 z-40 flex h-full flex-col border-line border-l bg-card"
-				style={{ width: 420, maxWidth: "94vw", boxShadow: "var(--w-shadow)" }}
+				ref={panelRef}
+				role="dialog"
+				aria-modal="true"
+				aria-label={t("projects.detailTitle")}
+				data-esc-layer
+				className="fixed top-0 right-0 flex h-full flex-col border-line border-l bg-card"
+				style={{
+					width: 420,
+					maxWidth: "94vw",
+					boxShadow: "var(--w-shadow)",
+					zIndex: "calc(var(--w-layer-drawer) + 1)",
+				}}
 			>
 				<div className="flex items-center gap-2 border-line border-b px-4 py-3">
 					<span className="h-2.5 w-2.5 rounded-full" style={{ background: dot }} />

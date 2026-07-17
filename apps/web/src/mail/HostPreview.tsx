@@ -3,27 +3,23 @@
  * Celoobrazovkový overlay „co uvidí host/cizí": žádný název vlákna, žádná
  * schránka, žádné „požádej o přístup" — obsah bez oprávnění v UI neexistuje.
  */
-import { useEffect } from "react";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 
 export function HostPreview({ onClose }: { onClose: () => void }) {
-	// Esc zavírá JEN náhled (vzor NewMessage) — bez data-esc-layer by globální
-	// Esc v MailScreen sáhl i na vlákno pod overlayem (audit S10)
-	useEffect(() => {
-		const h = (ev: globalThis.KeyboardEvent) => {
-			if (ev.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [onClose]);
+	const dialogRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	return (
 		<div
+			ref={dialogRef}
+			role="dialog"
+			aria-modal="true"
+			aria-label="Deep link bez přístupu"
 			data-esc-layer
 			data-screen-label="Deep link bez přístupu"
 			style={{
 				position: "fixed",
 				inset: 0,
-				zIndex: 81,
+				zIndex: "var(--w-layer-nested)",
 				background: "#17283f",
 				display: "flex",
 				alignItems: "center",
@@ -79,7 +75,7 @@ export function HostPreview({ onClose }: { onClose: () => void }) {
 					Žádný název vlákna, žádná schránka, žádné „požádej o přístup" — obsah, na který nemáš
 					oprávnění, v UI neexistuje.
 				</div>
-				<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+				<button type="button"
 					onClick={onClose}
 					data-ghost
 					style={{
@@ -93,7 +89,7 @@ export function HostPreview({ onClose }: { onClose: () => void }) {
 					}}
 				>
 					Zavřít náhled
-				</span>
+				</button>
 				<div
 					style={{
 						fontFamily: "var(--w-font-mono)",

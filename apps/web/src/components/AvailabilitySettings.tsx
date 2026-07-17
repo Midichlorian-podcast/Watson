@@ -10,7 +10,7 @@ import {
 	zonedDateTimeToIso,
 } from "../lib/timeZone";
 import { showToast } from "../lib/toast";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 
 type Interval = { startMinute: number; endMinute: number };
 type WorkingHours = { enabled: boolean; days: Array<{ day: number; intervals: Interval[] }> };
@@ -161,7 +161,10 @@ export function AvailabilitySettings({ workspaceId }: { workspaceId: string | un
 	const [busy, setBusy] = useState(false);
 	const [blockOpen, setBlockOpen] = useState(false);
 	const [blockDraft, setBlockDraft] = useState<BlockDraft | null>(null);
-	const blockDialogRef = useFocusTrap<HTMLDivElement>(blockOpen);
+	const blockDialogRef = useOverlayLayer<HTMLDivElement>(blockOpen, () => {
+		setBlockOpen(false);
+		setBlockDraft(null);
+	});
 
 	useEffect(() => {
 		if (!mine || dirty) return;
@@ -171,21 +174,6 @@ export function AvailabilitySettings({ workspaceId }: { workspaceId: string | un
 			quietHours: clone(mine.profile.quietHours),
 		});
 	}, [dirty, mine]);
-	useEffect(() => {
-		if (!blockOpen) return;
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				setBlockOpen(false);
-				setBlockDraft(null);
-			}
-		};
-		document.addEventListener("keydown", onKeyDown);
-		return () => {
-			document.removeEventListener("keydown", onKeyDown);
-		};
-	}, [blockOpen]);
-
 	const ownBlocks = useMemo(
 		() =>
 			(query.data?.blocks ?? [])
@@ -694,7 +682,7 @@ export function AvailabilitySettings({ workspaceId }: { workspaceId: string | un
 			</div>
 
 			{blockOpen && blockDraft && (
-				<div style={{ position: "fixed", inset: 0, zIndex: 70, background: "rgba(8,18,32,.48)", display: "grid", placeItems: "center", padding: 16 }}>
+				<div style={{ position: "fixed", inset: 0, zIndex: "var(--w-layer-modal)", background: "rgba(8,18,32,.48)", display: "grid", placeItems: "center", padding: 16 }}>
 						<button
 							type="button"
 							data-focus-trap-companion
