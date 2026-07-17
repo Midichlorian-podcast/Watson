@@ -383,7 +383,9 @@ export const TABLES: Record<string, TableDef> = {
 			done: "bool",
 			skipped: "bool",
 		},
-		hasUpdatedAt: false,
+		// Plánovací override sloupce mění výhradně atomický recurrence command.
+		// Offline sync dál bezpečně zapisuje jen done/skipped a obnovuje updated_at.
+		hasUpdatedAt: true,
 		projectVia: { kind: "task", col: "task_id" },
 	},
 	// R6 — per-uživatelská barva úkolu (overlay nad tasks; syncuje se jen vlastní barva).

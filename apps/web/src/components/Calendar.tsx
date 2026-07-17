@@ -11,10 +11,15 @@ import {
 } from "react";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
-import { expandOccurrences, occId, parseOccId, parseRecurrenceRule } from "../lib/occurrences";
+import {
+	materializeRecurringTasks,
+	type OccurrenceOverrideRow,
+} from "../lib/occurrenceProjection";
+import { parseOccId } from "../lib/occurrences";
 import type { AvailabilityBlockRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
+import type { RecurrencePreviewInput } from "../lib/recurrenceCommands";
 import { useRowMeta } from "../lib/rowMeta";
 import { storageGet, storageSet } from "../lib/storage";
 import {
@@ -28,7 +33,6 @@ import {
 	dateInTimeZone,
 	deviceTimeZone,
 	minutesInTimeZone,
-	nextValidZonedDateTimeToIso,
 	wallTimeFromInstant,
 	zonedDateTimeToIso,
 } from "../lib/timeZone";
@@ -39,6 +43,7 @@ import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useUserColors } from "../lib/userColors";
 import { useWorkspace } from "../lib/workspace";
 import { CalendarMonth } from "./CalendarMonth";
+import { RecurrenceMoveDialog } from "./RecurrenceMoveDialog";
 
 type Mode = "day" | "week" | "month";
 type WeekView = "cols" | "grid";
@@ -227,6 +232,11 @@ interface PendingEmergencyMove {
 	conflicts: TaskAvailabilityConflict[];
 }
 
+interface PendingRecurrenceMove {
+	taskId: string;
+	input: RecurrencePreviewInput;
+}
+
 /**
  * Kalendář 1:1 dle prototypu: Den / Týden (Sloupce|Mřížka) / Měsíc, projekce opakování,
  * vícedenní pruhy, pás CELÝ DEN, drag move/create/resize, lanes + „+N", now-line se štítkem,
@@ -266,6 +276,8 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	const [planningOn, setPlanningOn] = useState(() => storageGet(PLANNING_LS) === "1");
 	const [gearOpen, setGearOpen] = useState(false);
 	const [pendingEmergencyMove, setPendingEmergencyMove] = useState<PendingEmergencyMove | null>(null);
+	const [pendingRecurrenceMove, setPendingRecurrenceMove] =
+		useState<PendingRecurrenceMove | null>(null);
 	const [emergencyReason, setEmergencyReason] = useState("");
 	const [emergencyBusy, setEmergencyBusy] = useState(false);
 	const emergencyBusyRef = useRef(false);
@@ -370,23 +382,11 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	}, [mode, cur, calendarLanguage]);
 
 	// Per-výskyt výjimky (R4): skipped výskyty se nekreslí, done se propíše.
-	const { data: ovr } = usePsQuery<{
-		task_id: string | null;
-		occ_date: string | null;
-		done: number | null;
-		skipped: number | null;
-	}>("SELECT task_id, occ_date, done, skipped FROM task_occurrence_overrides");
-	const ovrMap = useMemo(() => {
-		const m = new Map<string, { done: boolean; skipped: boolean }>();
-		for (const o of ovr ?? []) {
-			if (o.task_id && o.occ_date)
-				m.set(`${o.task_id}@${o.occ_date}`, {
-					done: !!o.done,
-					skipped: !!o.skipped,
-				});
-		}
-		return m;
-	}, [ovr]);
+	const { data: ovr } = usePsQuery<OccurrenceOverrideRow>(
+		`SELECT id, task_id, occ_date, done, skipped, override_due_date,
+		        override_start_date, override_start_timezone, override_duration_min, updated_at
+		 FROM task_occurrence_overrides`,
+	);
 
 	/** Úkoly viditelného rozsahu + virtuální výskyty opakování (port calTasks, ř. 2633). */
 	const calTasks = useMemo(() => {
@@ -399,49 +399,8 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 			fromI = isoOf(days[0] ?? new Date());
 			toI = isoOf(days[days.length - 1] ?? new Date());
 		}
-		const out: TaskRow[] = [...tasks];
-		for (const tk of tasks) {
-			const rule = parseRecurrenceRule(tk.recurrence_rule);
-			const base = tIso(tk);
-			if (!rule || !base || tk.completed_at) continue;
-			for (const od of expandOccurrences({
-				baseISO: base,
-				kind: rule.kind,
-				weekday: rule.weekday,
-				nth: rule.nth,
-				day: rule.day,
-				parity: rule.parity,
-				fromISO: fromI,
-				toISO: toI,
-				cap: 62,
-				until: rule.until,
-				count: rule.count,
-				doneCount: rule.doneCount,
-			})) {
-				if (od === base) continue;
-				const vid = occId(tk.id, od);
-				const ex = ovrMap.get(vid);
-				if (ex?.skipped) continue;
-				out.push({
-					...tk,
-					id: vid,
-					due_date: od,
-					start_date:
-						tk.start_date && tk.start_timezone
-							? nextValidZonedDateTimeToIso(
-									od,
-									wallTimeFromInstant(tk.start_date, tk.start_timezone) ?? "00:00:00",
-									tk.start_timezone,
-								)
-							: tk.start_date
-								? `${od}T${tk.start_date.slice(11)}`
-								: null,
-					completed_at: ex?.done ? new Date().toISOString() : null,
-				});
-			}
-		}
-		return out;
-	}, [tasks, mode, days, monthBase, ovrMap]);
+		return materializeRecurringTasks(tasks, ovr ?? [], fromI, toI, 62);
+	}, [tasks, mode, days, monthBase, ovr]);
 
 	// ── zkratky ←/→ / d / 1-3 (guard na otevřený detail — prototyp ř. 2228) ────
 	const { openId } = useTaskDetail();
@@ -511,22 +470,47 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	};
 
 	const moveTask = async (id: string, iso: string, min: number | null, allDay = false) => {
-		if (id.includes("@")) {
-			showToast(t("calendar.recurringDragUnsupported"));
-			return;
-		}
-		const tk = tasks.find((x) => x.id === id);
-		if (!tk) return;
+		const occurrence = parseOccId(id);
+		const taskId = occurrence?.taskId ?? id;
+		const baseTask = tasks.find((task) => task.id === taskId);
+		const tk = calTasks.find((task) => task.id === id) ?? baseTask;
+		if (!tk || !baseTask) return;
 		let start: string | null = null;
 		const zone = tk.start_timezone ?? userTimeZone;
+		let requestedTime: string | null = null;
 		if (!allDay) {
-			if (min != null) start = zonedDateTimeToIso(iso, `${fmtMin(min)}:00`, zone);
+			if (min != null) requestedTime = fmtMin(min);
 			else if (startMin(tk) != null && tk.start_date) {
 				const wallTime = tk.start_timezone
 					? wallTimeFromInstant(tk.start_date, tk.start_timezone)
 					: tk.start_date.slice(11);
-				start = wallTime ? zonedDateTimeToIso(iso, wallTime, zone) : null;
+				requestedTime = wallTime?.slice(0, 5) ?? null;
 			}
+			start = requestedTime ? zonedDateTimeToIso(iso, requestedTime, zone) : null;
+		}
+		if (baseTask.recurrence_rule) {
+			const occurrenceDate = occurrence?.iso ?? tIso(baseTask);
+			if (!occurrenceDate) {
+				showToast(t("calendar.recurringDragUnsupported"));
+				return;
+			}
+			setPendingRecurrenceMove({
+				taskId,
+				input: {
+					occurrenceDate,
+					scope: "this_occurrence",
+					schedule: {
+						date: iso,
+						time: allDay ? null : requestedTime,
+						timeZone: allDay || !requestedTime ? null : zone,
+						durationMin: allDay || !requestedTime ? null : tk.duration_min,
+					},
+					dstPolicy: "next_valid",
+				},
+			});
+			return;
+		}
+		if (!allDay) {
 			if ((min != null || tk.start_date) && !start) {
 				showToast(t("addmodal.invalidLocalTime"));
 				return;
@@ -534,7 +518,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 		}
 		const nextZone = start ? zone : null;
 		const move: CalendarMovePlan = {
-			taskId: id,
+			taskId,
 			dueDate: iso,
 			startsAt: start,
 			startTimezone: nextZone,
@@ -904,6 +888,13 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 					<PlanningPanel tasks={tasks} todayIso={todayIso} projColor={projColor} onOpen={open} />
 				)}
 			</div>
+			{pendingRecurrenceMove && (
+				<RecurrenceMoveDialog
+					taskId={pendingRecurrenceMove.taskId}
+					input={pendingRecurrenceMove.input}
+					onClose={() => setPendingRecurrenceMove(null)}
+				/>
+			)}
 			{pendingEmergencyMove && (
 				<div
 					className="fixed inset-0 grid place-items-center bg-black/40 p-4"
@@ -1182,7 +1173,7 @@ function WeekColumns({
 								return (
 									<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										key={tk.id}
-										draggable={!isVirtual(tk)}
+										draggable
 										onDragStart={(e) => e.dataTransfer.setData("text/plain", tk.id)}
 										onClick={() => onOpen(tk)}
 										title={`${tk.name ?? ""} · ${sm != null ? `${fmtMin(sm)}–${fmtMin(endMin(tk))}` : t("calendar.allDay")}`}
@@ -1352,7 +1343,6 @@ function TimeGrid({
 
 	// ── blok: move/resize (port calBlockDown/_calMove/_calUp) ──
 	const blockDown = (tk: TaskRow, mode2: BlockDrag["mode"]) => (e: ReactPointerEvent) => {
-		if (isVirtual(tk)) return;
 		e.preventDefault();
 		e.stopPropagation();
 		const s0 = startMin(tk) ?? 0;
@@ -1535,7 +1525,6 @@ function TimeGrid({
 
 	// ── celodenní chip: pointer-drag → do mřížky = časový úkol, nad pásem = přesun dne ──
 	const allDayChipDown = (tk: TaskRow) => (e: ReactPointerEvent) => {
-		if (isVirtual(tk)) return;
 		e.preventDefault();
 		e.stopPropagation();
 		const x0 = e.clientX;
@@ -1926,7 +1915,7 @@ function TimeGrid({
 										e.preventDefault();
 										const id = e.dataTransfer.getData("text/plain");
 										// drop do pásu = celodenní, čas se maže (prototyp dropToAllDay, ř. 2706)
-										if (id && !id.includes("@")) void onMove(id, iso, null, true);
+										if (id) void onMove(id, iso, null, true);
 									}}
 								>
 									{list.map((tk) => {

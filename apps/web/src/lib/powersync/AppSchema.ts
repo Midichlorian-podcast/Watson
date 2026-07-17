@@ -397,7 +397,7 @@ const comment_decisions = new Table(
 	}),
 );
 
-/** R4 — per-výskyt výjimky opakování (done/skip jednoho výskytu). */
+/** R4 — per-výskyt výjimky opakování (done/skip i auditovaný přesun jednoho výskytu). */
 const task_occurrence_overrides = new Table(
 	{
 		task_id: column.text,
@@ -405,9 +405,22 @@ const task_occurrence_overrides = new Table(
 		occ_date: column.text,
 		done: column.integer,
 		skipped: column.integer,
+		override_due_date: column.text,
+		override_start_date: column.text,
+		override_start_timezone: column.text,
+		override_duration_min: column.integer,
+		updated_by: column.text,
+		version: column.integer,
 		created_at: column.text,
+		updated_at: column.text,
 	},
-	tracked({ indexes: { by_task: ["task_id"], by_project: ["project_id"] } }),
+	tracked({
+		indexes: {
+			by_task: ["task_id"],
+			by_project: ["project_id"],
+			by_target_date: ["override_due_date"],
+		},
+	}),
 );
 
 /** R6 — per-uživatelská barva úkolu (syncuje se jen vlastní barva). */

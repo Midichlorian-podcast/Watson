@@ -22,6 +22,10 @@ import { useFlowSteps } from "../lib/flowSteps";
 import { inboxProjectIds, isInboxTask, pickInboxId } from "../lib/inbox";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
+import {
+	materializeRecurringTasks,
+	type OccurrenceOverrideRow,
+} from "../lib/occurrenceProjection";
 import { expandOccurrences, parseRecurrenceRule } from "../lib/occurrences";
 import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
@@ -73,6 +77,12 @@ export function DnesTab() {
 			? "SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date, created_at DESC"
 			: "SELECT * FROM tasks WHERE completed_at IS NULL ORDER BY priority, due_date IS NULL, due_date, created_at DESC",
 	);
+	const { data: occurrenceOverrides, isLoading: occurrenceOverridesLoading } =
+		usePsQuery<OccurrenceOverrideRow>(
+			`SELECT id, task_id, occ_date, done, skipped, override_due_date,
+			        override_start_date, override_start_timezone, override_duration_min, updated_at
+			 FROM task_occurrence_overrides`,
+		);
 	const [wsFilter, setWsFilter] = useState<string | null>(null);
 	const { q: searchQ } = useListSearch();
 	const flowSteps = useFlowSteps();
@@ -125,7 +135,23 @@ export function DnesTab() {
 		for (const x of awake) {
 			const rule = parseRecurrenceRule(x.recurrence_rule);
 			const d = dayOf(x);
-			if (rule && d && d < tdy && !x.completed_at) {
+			if (rule && d && !x.completed_at) {
+				const materialized = materializeRecurringTasks(
+					[x],
+					occurrenceOverrides ?? [],
+					tdy,
+					tdy,
+					2,
+				);
+				const todayOccurrences = materialized.filter((row) => dayOf(row) === tdy);
+				if (d >= tdy) {
+					projected.push(...materialized);
+					continue;
+				}
+				if (todayOccurrences.length > 0) {
+					projected.push(...todayOccurrences);
+					continue;
+				}
 				const [next] = expandOccurrences({
 					baseISO: d,
 					kind: rule.kind,
@@ -140,14 +166,9 @@ export function DnesTab() {
 					count: rule.count,
 					doneCount: rule.doneCount,
 				});
-				if (next === tdy) {
-					projected.push({
-						...x,
-						due_date: x.due_date && x.due_date.length > 10 ? tdy + x.due_date.slice(10) : tdy,
-					});
-				} else if (!next) {
-					projected.push(x);
-				}
+				// Přesunutý dnešní výskyt už zpracoval materializer výše. Pokud řada nemá
+				// žádný další výskyt, ponecháme poslední base jako zpožděný; jinak se dnešku netýká.
+				if (!next) projected.push(materialized.find((row) => row.id === x.id) ?? x);
 				continue;
 			}
 			projected.push(x);
@@ -166,7 +187,17 @@ export function DnesTab() {
 				return d === tdy || (!!x.completed_at && d !== null && d < tdy);
 			}),
 		};
-	}, [tasks, tb, tbCtx, flowSteps, wsFilter, projMap, projects, searchQ]);
+	}, [
+		tasks,
+		occurrenceOverrides,
+		tb,
+		tbCtx,
+		flowSteps,
+		wsFilter,
+		projMap,
+		projects,
+		searchQ,
+	]);
 
 	// Pořadí pro ↑/↓ v detailu (prototyp _navIds) + kbsel navigace.
 	const flatList = useMemo(() => [...g.overdue, ...g.today], [g.overdue, g.today]);
@@ -275,7 +306,14 @@ export function DnesTab() {
 			</li>
 		);
 	};
-	if (projectsLoading || tasksLoading || assignmentsLoading || stepsLoading) return <DataLoading />;
+	if (
+		projectsLoading ||
+		tasksLoading ||
+		occurrenceOverridesLoading ||
+		assignmentsLoading ||
+		stepsLoading
+	)
+		return <DataLoading />;
 
 	return (
 		<>

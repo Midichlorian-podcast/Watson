@@ -23,6 +23,7 @@ import {
 	aiSuggestionStatusEnum,
 	calendarProviderEnum,
 	ownerScopeEnum,
+	recurrenceEditScopeEnum,
 } from "./enums";
 import { tasks } from "./task";
 import { projects, workspaces } from "./workspace";
@@ -211,6 +212,47 @@ export const taskUndoBatches = pgTable(
 	(t) => [
 		uniqueIndex("task_undo_batches_actor_operation_uq").on(t.createdBy, t.operationId),
 		index("task_undo_batches_expiry_idx").on(t.expiresAt),
+	],
+);
+
+/**
+ * Krátkodobá, serverová kompenzace úpravy opakované řady. Náhled, provedení i undo
+ * pracují nad verzovaným snapshotem; klient nikdy neskládá více neatomických zápisů.
+ */
+export const taskRecurrenceEditBatches = pgTable(
+	"task_recurrence_edit_batches",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		taskId: uuid("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		occurrenceDate: varchar("occurrence_date", { length: 10 }).notNull(),
+		scope: recurrenceEditScopeEnum("scope").notNull(),
+		createdBy: uuid("created_by")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		operationId: varchar("operation_id", { length: 128 }).notNull(),
+		requestHash: varchar("request_hash", { length: 64 }).notNull(),
+		before: jsonb("before").$type<Record<string, unknown>>().notNull(),
+		after: jsonb("after").$type<Record<string, unknown>>().notNull(),
+		undoneAt: timestamp("undone_at", { withTimezone: true }),
+		expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		check(
+			"task_recurrence_edit_batches_occurrence_date_format",
+			sql`${t.occurrenceDate} ~ '^\\d{4}-\\d{2}-\\d{2}$'`,
+		),
+		uniqueIndex("task_recurrence_edit_batches_actor_operation_uq").on(
+			t.createdBy,
+			t.operationId,
+		),
+		index("task_recurrence_edit_batches_task_idx").on(t.taskId, t.occurrenceDate),
+		index("task_recurrence_edit_batches_expiry_idx").on(t.expiresAt),
 	],
 );
 

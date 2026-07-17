@@ -44,6 +44,8 @@
 		"verify:imports": "tsx verify-imports.ts",
 		"verify:availability": "tsx verify-availability.ts",
 		"verify:bookings": "tsx verify-bookings.ts",
+		"verify:recurrence": "tsx verify-recurrence.ts",
+		"verify:recurrence-ui": "tsx verify-recurrence-ui.ts",
 		"verify:runtime-a11y": "tsx verify-runtime-a11y.ts",
     "verify:release-e2e": "tsx verify-release-e2e.ts"
 	},

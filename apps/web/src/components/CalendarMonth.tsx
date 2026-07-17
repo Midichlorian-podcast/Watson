@@ -6,8 +6,7 @@ import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
-import { startMinOf } from "../lib/tasks";
-import { toggleTask } from "../lib/tasks";
+import { startMinOf, toggleTask } from "../lib/tasks";
 // sdílené helpery rozsahu úkolu (tIso/tIsoEnd/addDaysISO) — kruhový import je bezpečný,
 // používají se až za renderu
 import {
@@ -172,6 +171,7 @@ export function CalendarMonth({
 					return (
 						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							key={iso}
+							data-calendar-date={iso}
 							onClick={(e) => {
 								if ((e.target as HTMLElement).closest("[data-mchip]")) return;
 								openAdd({ date: iso });
@@ -180,7 +180,7 @@ export function CalendarMonth({
 							onDrop={(e) => {
 								e.preventDefault();
 								const id = e.dataTransfer.getData("text/plain");
-								if (id && !id.includes("@")) onDropDay?.(id, iso, null);
+								if (id) onDropDay?.(id, iso, null);
 							}}
 							className="flex cursor-pointer flex-col gap-[3px] overflow-hidden rounded-[10px] border p-1.5"
 							style={{
@@ -243,7 +243,8 @@ export function CalendarMonth({
 									<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										key={tk.id}
 										data-mchip
-										draggable={!tk.id.includes("@")}
+										data-calendar-task-id={tk.id}
+										draggable
 										onDragStart={(e) => e.dataTransfer.setData("text/plain", tk.id)}
 										onClick={(e) => {
 											e.stopPropagation();

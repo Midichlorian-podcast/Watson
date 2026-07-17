@@ -8,12 +8,12 @@ import {
 import { expandOccurrences, parseOccId, recurrenceKind } from "./occurrences";
 import type { TaskRow } from "./powersync/AppSchema";
 import { powerSync } from "./powersync/db";
-import { showToast } from "./toast";
 import {
 	minutesInTimeZone,
 	nextValidZonedDateTimeToIso,
 	wallTimeFromInstant,
 } from "./timeZone";
+import { showToast } from "./toast";
 import { pushUndo } from "./undo";
 
 const dependencyAcknowledgements = new Map<string, number>();
@@ -109,6 +109,15 @@ export async function setOccurrenceOverride(
 	iso: string,
 	patch: { done?: boolean; skipped?: boolean },
 ) {
+	const nextState = (done: boolean, skipped: boolean) => {
+		const next = {
+			done: patch.done ?? done,
+			skipped: patch.skipped ?? skipped,
+		};
+		if (patch.done === true) next.skipped = false;
+		if (patch.skipped === true) next.done = false;
+		return { done: next.done ? 1 : 0, skipped: next.skipped ? 1 : 0 };
+	};
 	const rows = await powerSync.getAll<{
 		id: string;
 		done: number | null;
@@ -120,10 +129,7 @@ export async function setOccurrenceOverride(
 	const ex = rows[0];
 	if (ex) {
 		const prev = { done: ex.done ? 1 : 0, skipped: ex.skipped ? 1 : 0 };
-		const next = {
-			done: (patch.done ?? !!ex.done) ? 1 : 0,
-			skipped: (patch.skipped ?? !!ex.skipped) ? 1 : 0,
-		};
+		const next = nextState(!!ex.done, !!ex.skipped);
 		const apply = async (v: { done: number; skipped: number }) => {
 			await powerSync.execute(
 				"UPDATE task_occurrence_overrides SET done = ?, skipped = ? WHERE id = ?",
@@ -134,27 +140,34 @@ export async function setOccurrenceOverride(
 		pushUndo({ undo: () => apply(prev), redo: () => apply(next) });
 	} else {
 		const nid = crypto.randomUUID();
-		const insert = async () => {
+		const next = nextState(false, false);
+		const apply = async (state: { done: number; skipped: number }) => {
+			const current = await powerSync.getAll<{ id: string }>(
+				"SELECT id FROM task_occurrence_overrides WHERE task_id = ? AND occ_date = ? LIMIT 1",
+				[taskId, iso],
+			);
+			if (current[0]) {
+				await powerSync.execute(
+					"UPDATE task_occurrence_overrides SET done = ?, skipped = ? WHERE id = ?",
+					[state.done, state.skipped, current[0].id],
+				);
+				return;
+			}
 			await powerSync.execute(
 				`INSERT INTO task_occurrence_overrides (id, task_id, project_id, occ_date, done, skipped, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				[
-					nid,
-					taskId,
-					projectId,
-					iso,
-					patch.done ? 1 : 0,
-					patch.skipped ? 1 : 0,
-					new Date().toISOString(),
-				],
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				[nid, taskId, projectId, iso, state.done, state.skipped, new Date().toISOString()],
 			);
 		};
-		await insert();
+		await apply(next);
 		pushUndo({
 			undo: async () => {
-				await powerSync.execute("DELETE FROM task_occurrence_overrides WHERE id = ?", [nid]);
+				await apply({ done: 0, skipped: 0 });
+				// Prázdný řádek záměrně nemažeme: mezi serverovým recurrence commandem a
+				// downsyncem ještě lokálně nemusí být vidět jeho plánovací sloupce. DELETE
+				// by pak mohl přes CAS projít a smazat novější přesun. Dvě nuly jsou bezpečný no-op.
 			},
-			redo: insert,
+			redo: () => apply(next),
 		});
 	}
 }

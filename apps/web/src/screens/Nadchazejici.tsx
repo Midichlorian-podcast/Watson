@@ -18,12 +18,14 @@ import { useAddTask } from "../lib/addTask";
 import { useFlowSteps } from "../lib/flowSteps";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
-import { expandOccurrences, occId, parseRecurrenceRule } from "../lib/occurrences";
+import {
+	materializeRecurringTasks,
+	type OccurrenceOverrideRow,
+} from "../lib/occurrenceProjection";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { dayOf, todayISO } from "../lib/tasks";
-import { nextValidZonedDateTimeToIso, wallTimeFromInstant } from "../lib/timeZone";
 import { useViewMode } from "../lib/viewMode";
 
 const HORIZON_DAYS = 16;
@@ -87,23 +89,11 @@ export function Nadchazejici() {
 	const { setNavIds } = useTaskDetail();
 	const { q: searchQ } = useListSearch();
 	// Per-výskyt výjimky (R4) — skip/done jednotlivých výskytů.
-	const { data: ovr, isLoading: overridesLoading } = usePsQuery<{
-		task_id: string | null;
-		occ_date: string | null;
-		done: number | null;
-		skipped: number | null;
-	}>("SELECT task_id, occ_date, done, skipped FROM task_occurrence_overrides");
-	const ovrMap = useMemo(() => {
-		const m = new Map<string, { done: boolean; skipped: boolean }>();
-		for (const o of ovr ?? []) {
-			if (o.task_id && o.occ_date)
-				m.set(`${o.task_id}@${o.occ_date}`, {
-					done: !!o.done,
-					skipped: !!o.skipped,
-				});
-		}
-		return m;
-	}, [ovr]);
+	const { data: ovr, isLoading: overridesLoading } = usePsQuery<OccurrenceOverrideRow>(
+		`SELECT id, task_id, occ_date, done, skipped, override_due_date,
+		        override_start_date, override_start_timezone, override_duration_min, updated_at
+		 FROM task_occurrence_overrides`,
+	);
 
 	const tbCtx = useToolbarCtx();
 	const tasks = useMemo(() => {
@@ -129,59 +119,13 @@ export function Nadchazejici() {
 		const horizon = iso(Date.now() + HORIZON_DAYS * DAY);
 		const byBucket = new Map<Bucket, TaskRow[]>();
 
-		for (const tk of tasks) {
+		for (const tk of materializeRecurringTasks(tasks, ovr ?? [], tdy, horizon, 40)) {
 			const d = dayOf(tk);
 			if (!d) continue;
 			const b = dayBucket(d, tdy);
 			const arr = byBucket.get(b);
 			if (arr) arr.push(tk);
 			else byBucket.set(b, [tk]);
-			// Projekce výskytů opakování jako plnohodnotné klikací řádky (kromě base dne);
-			// per-výskyt výjimky: skipped se nezobrazí, done se propíše (README ř. 64);
-			// konec řady until/count a repeatShowAll se respektují (prototyp _recOccur).
-			const rule = parseRecurrenceRule(tk.recurrence_rule);
-			if (rule) {
-				for (const od of expandOccurrences({
-					baseISO: d,
-					kind: rule.kind,
-					weekday: rule.weekday,
-					nth: rule.nth,
-					day: rule.day,
-					parity: rule.parity,
-					fromISO: tdy,
-					toISO: horizon,
-					cap: 40,
-					until: rule.until,
-					count: rule.count,
-					doneCount: rule.doneCount,
-					showAll: rule.showAll,
-				})) {
-					if (od === d) continue;
-					const vid = occId(tk.id, od);
-					const ex = ovrMap.get(vid);
-					if (ex?.skipped) continue;
-					const virt: TaskRow = {
-						...tk,
-						id: vid,
-						due_date: od,
-						start_date:
-							tk.start_date && tk.start_timezone
-								? nextValidZonedDateTimeToIso(
-										od,
-										wallTimeFromInstant(tk.start_date, tk.start_timezone) ?? "00:00:00",
-										tk.start_timezone,
-									)
-								: tk.start_date
-									? `${od}T${tk.start_date.slice(11)}`
-									: null,
-						completed_at: ex?.done ? new Date().toISOString() : null,
-					};
-					const ob = dayBucket(od, tdy);
-					const oArr = byBucket.get(ob) ?? [];
-					oArr.push(virt);
-					byBucket.set(ob, oArr);
-				}
-			}
 		}
 
 		const tdyLabel = `${t("nav.today")} · ${wdLong(tdy)}`;
@@ -199,7 +143,7 @@ export function Nadchazejici() {
 			label: labels[b],
 			list: byBucket.get(b) ?? [],
 		})).filter((g) => g.list.length > 0);
-	}, [tasks, ovrMap, t]);
+	}, [tasks, ovr, t]);
 
 	// Pořadí pro ↑/↓ v detailu (prototyp _navIds) + kbsel navigace.
 	const flatList = useMemo(() => view2.flatMap((g) => g.list), [view2]);

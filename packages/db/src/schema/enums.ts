@@ -23,6 +23,7 @@ import {
 	PROJECT_STATUSES,
 	PROJECT_VISIBILITY,
 	RECURRENCE_BASIS,
+	RECURRENCE_EDIT_SCOPES,
 	REMINDER_TYPES,
 	STATUS_SCOPES,
 	WORKSPACE_ROLES,
@@ -59,6 +60,10 @@ export const assignmentModeEnum = pgEnum(
 export const recurrenceBasisEnum = pgEnum(
 	"recurrence_basis",
 	tuple(RECURRENCE_BASIS),
+);
+export const recurrenceEditScopeEnum = pgEnum(
+	"recurrence_edit_scope",
+	tuple(RECURRENCE_EDIT_SCOPES),
 );
 export const reminderTypeEnum = pgEnum("reminder_type", tuple(REMINDER_TYPES));
 export const notificationChannelEnum = pgEnum(

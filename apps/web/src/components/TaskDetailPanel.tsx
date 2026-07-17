@@ -21,6 +21,11 @@ import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
 import { focusOnMount } from "../lib/focusOnMount";
 import { initials } from "../lib/format";
+import {
+	type OccurrenceOverrideRow,
+	projectOccurrence,
+	recurrenceBaseDate,
+} from "../lib/occurrenceProjection";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
 import type { AttachmentRow, TaskRow } from "../lib/powersync/AppSchema";
 import { rescheduleDate } from "../lib/reschedule";
@@ -628,15 +633,19 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		"SELECT s.name, s.is_done, s.position FROM statuses s JOIN tasks tk ON tk.status_id = s.id WHERE tk.id = ? LIMIT 1",
 		[realId],
 	);
-	const { data: occRows } = usePsQuery<{
-		id: string;
-		done: number | null;
-		skipped: number | null;
-	}>(
-		"SELECT id, done, skipped FROM task_occurrence_overrides WHERE task_id = ? AND occ_date = ? LIMIT 1",
-		[realId, occ?.iso ?? ""],
+	const occurrenceIdentityDate =
+		occ?.iso ?? (task?.recurrence_rule ? recurrenceBaseDate(task) : null);
+	const { data: occRows } = usePsQuery<OccurrenceOverrideRow>(
+		`SELECT id, task_id, occ_date, done, skipped, override_due_date,
+		        override_start_date, override_start_timezone, override_duration_min, updated_at
+		 FROM task_occurrence_overrides WHERE task_id = ? AND occ_date = ? LIMIT 1`,
+		[realId, occurrenceIdentityDate ?? ""],
 	);
-	const occOverride = occ ? occRows?.[0] : undefined;
+	const occOverride = occurrenceIdentityDate ? occRows?.[0] : undefined;
+	const presentedTask =
+		task && occurrenceIdentityDate
+			? projectOccurrence(task, occurrenceIdentityDate, occOverride, Boolean(occ))
+			: task;
 
 	/** Popisek offsetu připomínky (10 min / 1 h / 1 den). */
 	const fmtOffset = (min: number) =>
@@ -927,8 +936,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const status = statusRows?.[0];
 	// „Po termínu": u výskytu z ISO výskytu (prototyp makeOcc ř. 2652), jinak z base due_date
 	const overdue = occ
-		? !done && occ.iso.slice(0, 10) < todayISO()
-		: !done && !!task.due_date && task.due_date.slice(0, 10) < todayISO();
+		? !done && !!presentedTask?.due_date && presentedTask.due_date.slice(0, 10) < todayISO()
+		: !done && !!presentedTask?.due_date && presentedTask.due_date.slice(0, 10) < todayISO();
 
 	const toggleDone = async () => {
 		if (occ) {
@@ -1161,7 +1170,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			? t("detail.hintAll")
 			: t("detail.hintAny");
 
-	const due = rowDue(task, t);
+	const due = rowDue(presentedTask ?? task, t);
 	const subtaskProgress = taskProgress(subs ?? []);
 	const incomingDependencyIds = new Set(
 		(incomingDependencies ?? []).map((dependency) => dependency.task_id),
@@ -1541,9 +1550,15 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										↻ {t("detail.occSeries")}
 									</span>
 									<span className="font-mono" style={{ fontSize: 12, color: "var(--w-ink-2)" }}>
-										{occLabel(occ.iso)}
-									</span>
-								</div>
+									{due?.label ?? occLabel(occ.iso)}
+								</span>
+							</div>
+							{occOverride?.override_due_date &&
+								occOverride.override_due_date.slice(0, 10) !== occ.iso && (
+									<div className="mt-1 font-mono text-ink-3 text-xs">
+										{t("detail.occMovedFrom", { date: occLabel(occ.iso) })}
+									</div>
+								)}
 								<div
 									className="font-body text-ink-3"
 									style={{ fontSize: 12, marginTop: 5, lineHeight: 1.5 }}
@@ -1597,7 +1612,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										color: (occ ? overdue : due.overdue) ? "var(--w-overdue)" : "var(--w-ink-2)",
 									}}
 								>
-									{occ ? occLabel(occ.iso) : due.label}
+									{due.label}
 								</button>
 							)}
 							{status?.name && (status.position ?? 0) > 0 && (

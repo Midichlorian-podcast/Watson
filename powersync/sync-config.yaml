@@ -54,7 +54,9 @@ bucket_definitions:
       - SELECT id, comment_id, task_id, project_id, user_id, emoji, created_at
         FROM comment_reactions
         WHERE project_id = bucket.project_id
-      - SELECT id, task_id, project_id, occ_date, done, skipped, created_at
+      - SELECT id, task_id, project_id, occ_date, done, skipped,
+               override_due_date, override_start_date, override_start_timezone,
+               override_duration_min, updated_by, version, created_at, updated_at
         FROM task_occurrence_overrides
         WHERE project_id = bucket.project_id
       - SELECT id, project_id, blocking_task_id, blocked_task_id, created_by, created_at

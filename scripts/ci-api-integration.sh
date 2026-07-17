@@ -82,6 +82,7 @@ TASK_ACCEPTANCES_API="$API_URL" pnpm --filter @watson/api verify:task-acceptance
 IMPORTS_API="$API_URL" pnpm --filter @watson/api verify:imports
 AVAILABILITY_API="$API_URL" pnpm --filter @watson/api verify:availability
 BOOKING_API="$API_URL" pnpm --filter @watson/api verify:bookings
+RECURRENCE_API="$API_URL" pnpm --filter @watson/api verify:recurrence
 RBAC_API="$API_URL" pnpm --filter @watson/api verify:meet-acl
 MEETING_API="$API_URL" pnpm --filter @watson/api verify:meeting-commands
 AI_POLICY_API="$API_URL" pnpm --filter @watson/api verify:ai-policy
