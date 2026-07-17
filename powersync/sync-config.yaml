@@ -59,6 +59,11 @@ bucket_definitions:
                override_duration_min, updated_by, version, created_at, updated_at
         FROM task_occurrence_overrides
         WHERE project_id = bucket.project_id
+      # Konečné prefixy oddělené volbou „tento a další“; read-only command model.
+      - SELECT id, task_id, project_id, anchor_date, end_date, recurrence_rule,
+               start_date, start_timezone, duration_min, created_by, version, created_at, updated_at
+        FROM task_recurrence_prefixes
+        WHERE project_id = bucket.project_id
       - SELECT id, project_id, blocking_task_id, blocked_task_id, created_by, created_at
         FROM task_dependencies
         WHERE project_id = bucket.project_id

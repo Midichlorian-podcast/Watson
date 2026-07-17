@@ -3,7 +3,7 @@ import {
 	type OccurrenceOverrideRow,
 	recurrenceBaseDate,
 } from "./occurrenceProjection";
-import type { TaskRow } from "./powersync/AppSchema";
+import type { TaskRecurrencePrefixRow, TaskRow } from "./powersync/AppSchema";
 
 let failed = 0;
 const check = (label: string, condition: boolean, detail?: unknown) => {
@@ -111,7 +111,68 @@ check(
 	recurrenceBaseDate(startOnlyTask) === "2026-07-01" &&
 		materializeRecurringTasks([startOnlyTask], [], "2026-07-02", "2026-07-02").some(
 			(row) => row.id === `${task.id}@2026-07-02`,
-		),
+	),
+);
+
+const splitTask = {
+	...task,
+	due_date: "2026-07-10",
+	start_date: "2026-07-10T11:00:00.000Z",
+	duration_min: 45,
+} as TaskRow;
+const prefix = {
+	id: "44444444-4444-4444-8444-444444444444",
+	task_id: task.id,
+	project_id: task.project_id,
+	anchor_date: "2026-07-01",
+	end_date: "2026-07-03",
+	recurrence_rule: task.recurrence_rule,
+	start_date: task.start_date,
+	start_timezone: task.start_timezone,
+	duration_min: task.duration_min,
+	created_by: null,
+	version: 1,
+	created_at: "2026-07-01T00:00:00.000Z",
+	updated_at: "2026-07-01T00:00:00.000Z",
+} as TaskRecurrencePrefixRow;
+projected = materializeRecurringTasks(
+	[splitTask],
+	[],
+	"2026-07-01",
+	"2026-07-11",
+	80,
+	[prefix],
+);
+check(
+	"tento a další zachová konečný prefix bez klonování aktivního tasku",
+	["2026-07-01", "2026-07-02", "2026-07-03"].every((date) =>
+		projected.some((row) => row.id === `${task.id}@${date}` && row.due_date === date),
+	) &&
+		projected.some((row) => row.id === task.id && row.due_date === "2026-07-10"),
+	projected.map((row) => ({ id: row.id, due: row.due_date })),
+);
+
+const prefixDone: OccurrenceOverrideRow = {
+	...moved,
+	occ_date: "2026-07-02",
+	override_due_date: null,
+	override_start_date: null,
+	override_start_timezone: null,
+	override_duration_min: null,
+	done: 1,
+};
+projected = materializeRecurringTasks(
+	[splitTask],
+	[prefixDone],
+	"2026-07-01",
+	"2026-07-11",
+	80,
+	[prefix],
+);
+check(
+	"dokončení odděleného prefixu zůstává per-occurrence",
+	Boolean(projected.find((row) => row.id === `${task.id}@2026-07-02`)?.completed_at) &&
+		!projected.find((row) => row.id === task.id)?.completed_at,
 );
 
 if (failed) throw new Error(`${failed} occurrence projection checks failed`);

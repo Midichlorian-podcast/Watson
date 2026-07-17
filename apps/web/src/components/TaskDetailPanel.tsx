@@ -23,11 +23,17 @@ import { focusOnMount } from "../lib/focusOnMount";
 import { initials } from "../lib/format";
 import {
 	type OccurrenceOverrideRow,
+	prefixContainsOccurrence,
 	projectOccurrence,
+	projectPrefixOccurrence,
 	recurrenceBaseDate,
 } from "../lib/occurrenceProjection";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
-import type { AttachmentRow, TaskRow } from "../lib/powersync/AppSchema";
+import type {
+	AttachmentRow,
+	TaskRecurrencePrefixRow,
+	TaskRow,
+} from "../lib/powersync/AppSchema";
 import { rescheduleDate } from "../lib/reschedule";
 import { CommentComposer } from "./CommentComposer";
 
@@ -642,9 +648,21 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		[realId, occurrenceIdentityDate ?? ""],
 	);
 	const occOverride = occurrenceIdentityDate ? occRows?.[0] : undefined;
+	const { data: prefixRows } = usePsQuery<TaskRecurrencePrefixRow>(
+		`SELECT id, task_id, project_id, anchor_date, end_date, recurrence_rule,
+		        start_date, start_timezone, duration_min, created_by, version, created_at, updated_at
+		 FROM task_recurrence_prefixes WHERE task_id = ? ORDER BY anchor_date`,
+		[realId],
+	);
+	const occurrencePrefix =
+		occurrenceIdentityDate && occ
+			? prefixRows?.find((prefix) => prefixContainsOccurrence(prefix, occurrenceIdentityDate))
+			: undefined;
 	const presentedTask =
 		task && occurrenceIdentityDate
-			? projectOccurrence(task, occurrenceIdentityDate, occOverride, Boolean(occ))
+			? occurrencePrefix
+				? projectPrefixOccurrence(task, occurrencePrefix, occurrenceIdentityDate, occOverride)
+				: projectOccurrence(task, occurrenceIdentityDate, occOverride, Boolean(occ))
 			: task;
 
 	/** Popisek offsetu připomínky (10 min / 1 h / 1 den). */

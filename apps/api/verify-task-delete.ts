@@ -19,6 +19,7 @@ import {
 	projects,
 	sql,
 	taskActivity,
+	taskRecurrencePrefixes,
 	tasks,
 	users,
 	workspaces,
@@ -121,6 +122,7 @@ async function main(): Promise<void> {
 	const activityId = crypto.randomUUID();
 	const linkId = crypto.randomUUID();
 	const attachmentId = crypto.randomUUID();
+	const recurrencePrefixId = crypto.randomUUID();
 	const attachmentBytes = new TextEncoder().encode("undo must restore this attachment");
 	await db.transaction(async (tx) => {
 		await tx.insert(tasks).values([
@@ -137,6 +139,9 @@ async function main(): Promise<void> {
 				projectId: project.id,
 				parentId: hubId,
 				name: "Preparation child",
+				dueDate: new Date("2026-07-10T00:00:00.000Z"),
+				recurrence: "Denně",
+				recurrenceRule: JSON.stringify({ kind: "daily", showAll: true }),
 				createdBy: owner.id,
 			},
 			{
@@ -222,6 +227,15 @@ async function main(): Promise<void> {
 		uploadedBy: owner.id,
 	});
 	await db.insert(attachmentBlobs).values({ attachmentId, data: attachmentBytes });
+	await db.insert(taskRecurrencePrefixes).values({
+		id: recurrencePrefixId,
+		taskId: childId,
+		projectId: project.id,
+		anchorDate: new Date("2026-07-01T00:00:00.000Z"),
+		endDate: new Date("2026-07-09T00:00:00.000Z"),
+		recurrenceRule: JSON.stringify({ kind: "daily", showAll: true }),
+		createdBy: owner.id,
+	});
 
 	try {
 		const ownerCookie = await login(owner.email);
@@ -270,11 +284,26 @@ async function main(): Promise<void> {
 				(await db.select().from(attachmentBlobs).where(eq(attachmentBlobs.attachmentId, attachmentId)))
 					.length === 0 &&
 				(await db.select().from(taskActivity).where(eq(taskActivity.id, activityId))).length === 0 &&
+				(
+					await db
+						.select()
+						.from(taskRecurrencePrefixes)
+						.where(eq(taskRecurrencePrefixes.id, recurrencePrefixId))
+				).length === 0 &&
 				(await db.select().from(entityLinks).where(eq(entityLinks.id, linkId))).length === 0,
 		);
 		check(
 			"samostatný akční bod přežil bez dangling meeting reference",
 			(await db.select().from(tasks).where(eq(tasks.id, actionId)))[0]?.meetingId === null,
+		);
+		check(
+			"delete kaskádou odstranil historický segment řady",
+			(
+				await db
+					.select()
+					.from(taskRecurrencePrefixes)
+					.where(eq(taskRecurrencePrefixes.id, recurrencePrefixId))
+			).length === 0,
 		);
 
 		response = await command(ownerCookie, "/api/tasks/delete", {
@@ -312,8 +341,27 @@ async function main(): Promise<void> {
 						?.data,
 				) === "undo must restore this attachment" &&
 				(await db.select().from(taskActivity).where(eq(taskActivity.id, activityId))).length === 1 &&
+				(
+					await db
+						.select()
+						.from(taskRecurrencePrefixes)
+						.where(eq(taskRecurrencePrefixes.id, recurrencePrefixId))
+				).length === 1 &&
 				(await db.select().from(entityLinks).where(eq(entityLinks.id, linkId))).length === 1 &&
 				(await db.select().from(tasks).where(eq(tasks.id, actionId)))[0]?.meetingId === meetingId,
+		);
+		const restoredPrefix = (
+			await db
+				.select()
+				.from(taskRecurrencePrefixes)
+				.where(eq(taskRecurrencePrefixes.id, recurrencePrefixId))
+		)[0];
+		check(
+			"undo obnovil přesný historický segment opakované řady",
+			restoredPrefix?.taskId === childId &&
+				restoredPrefix.anchorDate.toISOString().slice(0, 10) === "2026-07-01" &&
+				restoredPrefix.endDate.toISOString().slice(0, 10) === "2026-07-09",
+			restoredPrefix,
 		);
 		response = await command(ownerCookie, "/api/tasks/restore", { batchId: deleted.batchId });
 		const restoreReplay = (await response.json().catch(() => ({}))) as { replay?: boolean };

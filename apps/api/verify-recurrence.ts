@@ -10,6 +10,7 @@ import {
 	projects,
 	sql,
 	taskOccurrenceOverrides,
+	taskRecurrencePrefixes,
 	tasks,
 	users,
 	workspaces,
@@ -82,9 +83,10 @@ const recurrenceInput = (
 	timeZone: string | null,
 	durationMin: number | null,
 	dstPolicy: "reject" | "next_valid" = "reject",
+	scope: "this_occurrence" | "this_and_future" | "all" = "this_occurrence",
 ) => ({
 	occurrenceDate,
-	scope: "this_occurrence",
+	scope,
 	schedule: { date, time, timeZone, durationMin },
 	dstPolicy,
 });
@@ -146,7 +148,7 @@ async function main() {
 		{ projectId: restrictedProject.id, userId: manager.id, role: "manager" },
 	]);
 	const rule = JSON.stringify({ kind: "daily", endKind: "never", showAll: true });
-	const [task, restrictedTask] = await db
+	const [task, restrictedTask, futureTask, allTask] = await db
 		.insert(tasks)
 		.values([
 			{
@@ -166,9 +168,32 @@ async function main() {
 				recurrenceRule: rule,
 				createdBy: manager.id,
 			},
+			{
+				projectId: project.id,
+				name: "Future split recurrence",
+				dueDate: new Date("2026-07-01T00:00:00.000Z"),
+				recurrenceRule: rule,
+				createdBy: manager.id,
+			},
+			{
+				projectId: project.id,
+				name: "Whole weekly recurrence",
+				dueDate: new Date("2026-07-06T00:00:00.000Z"),
+				startDate: new Date("2026-07-06T07:00:00.000Z"),
+				startTimezone: "Europe/Prague",
+				durationMin: 60,
+				recurrenceRule: JSON.stringify({
+					kind: "weekly",
+					weekday: 1,
+					endKind: "until",
+					until: "2026-08-31",
+					showAll: true,
+				}),
+				createdBy: manager.id,
+			},
 		])
 		.returning({ id: tasks.id });
-	if (!task || !restrictedTask) throw new Error("tasks missing");
+	if (!task || !restrictedTask || !futureTask || !allTask) throw new Error("tasks missing");
 	await db.insert(assignments).values({
 		taskId: task.id,
 		projectId: project.id,
@@ -215,6 +240,78 @@ async function main() {
 	}
 	check("DB odmítne denormalizovaný project z jiného projektu", invariantCode === "23503", invariantCode);
 
+	invariantCode = undefined;
+	try {
+		await db.insert(taskRecurrencePrefixes).values({
+			taskId: futureTask.id,
+			projectId: project.id,
+			anchorDate: new Date("2026-07-03T00:00:00.000Z"),
+			endDate: new Date("2026-07-02T00:00:00.000Z"),
+			recurrenceRule: rule,
+			createdBy: manager.id,
+		});
+	} catch (error) {
+		invariantCode = sqlState(error);
+	}
+	check("DB odmítne obrácený rozsah prefixu", invariantCode === "23514", invariantCode);
+
+	invariantCode = undefined;
+	try {
+		await db.insert(taskRecurrencePrefixes).values({
+			taskId: futureTask.id,
+			projectId: project.id,
+			anchorDate: new Date("2026-07-01T00:00:00.000Z"),
+			endDate: new Date("2026-07-02T00:00:00.000Z"),
+			recurrenceRule: JSON.stringify({ kind: "unknown" }),
+			createdBy: manager.id,
+		});
+	} catch (error) {
+		invariantCode = sqlState(error);
+	}
+	check("DB odmítne neznámý druh prefixové řady", invariantCode === "23514", invariantCode);
+
+	invariantCode = undefined;
+	try {
+		await db.insert(taskRecurrencePrefixes).values({
+			taskId: futureTask.id,
+			projectId: project.id,
+			anchorDate: new Date("2026-07-01T00:00:00.000Z"),
+			endDate: new Date("2026-07-02T00:00:00.000Z"),
+			recurrenceRule: rule,
+			startDate: new Date("2026-07-01T08:00:00.000Z"),
+			createdBy: manager.id,
+		});
+	} catch (error) {
+		invariantCode = sqlState(error);
+	}
+	check("DB odmítne prefixový čas bez IANA zóny", invariantCode === "23514", invariantCode);
+
+	const invariantPrefixId = crypto.randomUUID();
+	await db.insert(taskRecurrencePrefixes).values({
+		id: invariantPrefixId,
+		taskId: futureTask.id,
+		projectId: project.id,
+		anchorDate: new Date("2026-06-01T00:00:00.000Z"),
+		endDate: new Date("2026-06-03T00:00:00.000Z"),
+		recurrenceRule: rule,
+		createdBy: manager.id,
+	});
+	invariantCode = undefined;
+	try {
+		await db.insert(taskRecurrencePrefixes).values({
+			taskId: futureTask.id,
+			projectId: project.id,
+			anchorDate: new Date("2026-06-03T00:00:00.000Z"),
+			endDate: new Date("2026-06-05T00:00:00.000Z"),
+			recurrenceRule: rule,
+			createdBy: manager.id,
+		});
+	} catch (error) {
+		invariantCode = sqlState(error);
+	}
+	check("DB odmítne překrývající se prefixy stejné řady", invariantCode === "23P01", invariantCode);
+	await db.delete(taskRecurrencePrefixes).where(eq(taskRecurrencePrefixes.id, invariantPrefixId));
+
 	try {
 		const managerCookie = await login(manager.email);
 		const workspaceManagerCookie = await login(workspaceManager.email);
@@ -233,16 +330,6 @@ async function main() {
 			recurrenceInput("2026-03-28", "2026-04-02", null, null, null),
 		);
 		check("restricted projekt se vedení mimo projekt neprozradí", response.status === 404, response);
-
-		response = await post(managerCookie, `${path}/preview`, {
-			...recurrenceInput("2026-03-28", "2026-04-02", null, null, null),
-			scope: "this_and_future",
-		});
-		check(
-			"dosud nezapojený scope failuje explicitně, ne částečnou změnou",
-			response.status === 422 && response.body.error === "recurrence_scope_not_available_yet",
-			response,
-		);
 
 		response = await post(
 			managerCookie,
@@ -415,6 +502,252 @@ async function main() {
 		);
 		response = await post(managerCookie, `${path}/undo`, { batchId: allDayBatchId });
 		check("undo celodenní výjimku bezpečně odstraní", response.status === 200, response);
+
+		const futurePath = `/api/tasks/${futureTask.id}/recurrence`;
+		const futureInput = recurrenceInput(
+			"2026-07-04",
+			"2026-07-10",
+			null,
+			null,
+			null,
+			"reject",
+			"this_and_future",
+		);
+		response = await post(managerCookie, `${futurePath}/preview`, futureInput);
+		const futureImpact = response.body.seriesImpact as Record<string, unknown> | undefined;
+		check(
+			"tento a další ukáže přesný oddělený prefix a novou kotvu",
+			response.status === 200 &&
+				response.body.canExecute === true &&
+				futureImpact?.preservedPrefixOccurrences === 3 &&
+				futureImpact?.nextSeriesAnchor === "2026-07-10",
+			response,
+		);
+		const futurePreviewHash = String(response.body.previewHash);
+		const futureOperationId = crypto.randomUUID();
+		response = await post(managerCookie, `${futurePath}/execute`, {
+			...futureInput,
+			previewHash: futurePreviewHash,
+			operationId: futureOperationId,
+		});
+		check("tento a další se uloží atomicky", response.status === 201, response);
+		const futureBatchId = String(response.body.batchId);
+		const storedFutureTask = (
+			await db.select().from(tasks).where(eq(tasks.id, futureTask.id))
+		)[0];
+		const storedPrefixes = await db
+			.select()
+			.from(taskRecurrencePrefixes)
+			.where(eq(taskRecurrencePrefixes.taskId, futureTask.id));
+		check(
+			"aktivní task zůstane jeden a prefix přesně končí před rozdělením",
+			storedFutureTask?.dueDate?.toISOString().slice(0, 10) === "2026-07-10" &&
+				storedPrefixes.length === 1 &&
+				storedPrefixes[0]?.anchorDate.toISOString().slice(0, 10) === "2026-07-01" &&
+				storedPrefixes[0]?.endDate.toISOString().slice(0, 10) === "2026-07-03",
+			{ storedFutureTask, storedPrefixes },
+		);
+		response = await post(managerCookie, `${futurePath}/execute`, {
+			...futureInput,
+			previewHash: futurePreviewHash,
+			operationId: futureOperationId,
+		});
+		check(
+			"retry rozdělení řady nevytvoří druhý prefix",
+			response.status === 200 &&
+				response.body.replayed === true &&
+				(
+					await db
+						.select()
+						.from(taskRecurrencePrefixes)
+						.where(eq(taskRecurrencePrefixes.taskId, futureTask.id))
+				).length === 1,
+			response,
+		);
+		const historicalOccurrenceInput = recurrenceInput(
+			"2026-07-02",
+			"2026-07-12",
+			null,
+			null,
+			null,
+		);
+		response = await post(
+			managerCookie,
+			`${futurePath}/preview`,
+			historicalOccurrenceInput,
+		);
+		check(
+			"výskyt v uzavřeném prefixu lze dál samostatně naplánovat",
+			response.status === 200 &&
+				response.body.canExecute === true &&
+				(response.body.current as Record<string, unknown> | undefined)?.date === "2026-07-02",
+			response,
+		);
+		const historicalPreviewHash = String(response.body.previewHash);
+		response = await post(managerCookie, `${futurePath}/preview`, {
+			...historicalOccurrenceInput,
+			scope: "this_and_future",
+		});
+		check(
+			"uzavřený prefix nelze omylem vydávat za aktivní budoucí řadu",
+			response.status === 200 &&
+				response.body.canExecute === false &&
+				(response.body.conflicts as Array<{ code: string }> | undefined)?.some(
+					(conflict) => conflict.code === "historical_segment_scope_unsupported",
+				) === true,
+			response,
+		);
+		response = await post(managerCookie, `${futurePath}/execute`, {
+			...historicalOccurrenceInput,
+			previewHash: historicalPreviewHash,
+			operationId: crypto.randomUUID(),
+		});
+		check("samostatný přesun historického výskytu se uloží", response.status === 201, response);
+		const historicalBatchId = String(response.body.batchId);
+		response = await post(managerCookie, `${futurePath}/undo`, { batchId: futureBatchId });
+		check(
+			"undo rozdělení nepřepíše pozdější změnu historického výskytu",
+			response.status === 409 && response.body.error === "undo_state_changed",
+			response,
+		);
+		response = await post(managerCookie, `${futurePath}/undo`, {
+			batchId: historicalBatchId,
+		});
+		check(
+			"pozdější změnu historického výskytu lze nejdřív samostatně vrátit",
+			response.status === 200,
+			response,
+		);
+		response = await post(managerCookie, `${futurePath}/undo`, { batchId: futureBatchId });
+		const restoredFutureTask = (
+			await db.select().from(tasks).where(eq(tasks.id, futureTask.id))
+		)[0];
+		check(
+			"undo rozdělení vrátí původní řadu a odstraní jen vytvořený prefix",
+			response.status === 200 &&
+				restoredFutureTask?.dueDate?.toISOString().slice(0, 10) === "2026-07-01" &&
+				(
+					await db
+						.select()
+						.from(taskRecurrencePrefixes)
+						.where(eq(taskRecurrencePrefixes.taskId, futureTask.id))
+				).length === 0,
+			{ response, restoredFutureTask },
+		);
+		const overlappingPrefixId = crypto.randomUUID();
+		await db.insert(taskRecurrencePrefixes).values({
+			id: overlappingPrefixId,
+			taskId: futureTask.id,
+			projectId: project.id,
+			anchorDate: new Date("2026-07-01T00:00:00.000Z"),
+			endDate: new Date("2026-07-02T00:00:00.000Z"),
+			recurrenceRule: rule,
+			createdBy: manager.id,
+		});
+		response = await post(managerCookie, `${futurePath}/preview`, futureInput);
+		check(
+			"překryv historického segmentu zastaví další dělení fail-closed",
+			response.status === 200 &&
+				response.body.canExecute === false &&
+				(response.body.conflicts as Array<{ code: string }> | undefined)?.some(
+					(conflict) => conflict.code === "series_history_overlap",
+				) === true,
+			response,
+		);
+		await db
+			.delete(taskRecurrencePrefixes)
+			.where(eq(taskRecurrencePrefixes.id, overlappingPrefixId));
+
+		await db.insert(taskOccurrenceOverrides).values({
+			taskId: futureTask.id,
+			projectId: project.id,
+			occDate: "2026-07-05",
+			done: true,
+		});
+		response = await post(managerCookie, `${futurePath}/preview`, futureInput);
+		check(
+			"budoucí výjimka blokuje strukturální změnu místo tiché ztráty",
+			response.status === 200 &&
+				response.body.canExecute === false &&
+				(response.body.conflicts as Array<{ code: string }> | undefined)?.some(
+					(conflict) => conflict.code === "series_has_future_exceptions",
+				) === true,
+			response,
+		);
+		await db
+			.delete(taskOccurrenceOverrides)
+			.where(eq(taskOccurrenceOverrides.taskId, futureTask.id));
+
+		const allPath = `/api/tasks/${allTask.id}/recurrence`;
+		const allInput = recurrenceInput(
+			"2026-07-20",
+			"2026-07-22",
+			"14:00",
+			"Europe/Prague",
+			90,
+			"reject",
+			"all",
+		);
+		response = await post(managerCookie, `${allPath}/preview`, allInput);
+		const allImpact = response.body.seriesImpact as Record<string, unknown> | undefined;
+		check(
+			"celá řada ukáže posunutou základní kotvu",
+			response.status === 200 &&
+				response.body.canExecute === true &&
+				allImpact?.nextSeriesAnchor === "2026-07-08",
+			response,
+		);
+		const allPreviewHash = String(response.body.previewHash);
+		response = await post(managerCookie, `${allPath}/execute`, {
+			...allInput,
+			previewHash: allPreviewHash,
+			operationId: crypto.randomUUID(),
+		});
+		check("celá řada se uloží atomicky bez prefixu", response.status === 201, response);
+		const allBatchId = String(response.body.batchId);
+		const storedAllTask = (await db.select().from(tasks).where(eq(tasks.id, allTask.id)))[0];
+		const storedAllRule = storedAllTask?.recurrenceRule
+			? (JSON.parse(storedAllTask.recurrenceRule) as Record<string, unknown>)
+			: null;
+		check(
+			"celá řada přepočte datum, wall time, weekday i until",
+			storedAllTask?.dueDate?.toISOString().slice(0, 10) === "2026-07-08" &&
+				storedAllTask.startDate?.toISOString() === "2026-07-08T12:00:00.000Z" &&
+				storedAllTask.durationMin === 90 &&
+				storedAllRule?.weekday === 3 &&
+				storedAllRule.until === "2026-09-02" &&
+				(
+					await db
+						.select()
+						.from(taskRecurrencePrefixes)
+						.where(eq(taskRecurrencePrefixes.taskId, allTask.id))
+				).length === 0,
+			{ storedAllTask, storedAllRule },
+		);
+		response = await post(managerCookie, `${allPath}/undo`, { batchId: allBatchId });
+		const restoredAllTask = (await db.select().from(tasks).where(eq(tasks.id, allTask.id)))[0];
+		check(
+			"undo celé řady obnoví přesný původní plán",
+			response.status === 200 &&
+				restoredAllTask?.dueDate?.toISOString().slice(0, 10) === "2026-07-06" &&
+				restoredAllTask.startDate?.toISOString() === "2026-07-06T07:00:00.000Z" &&
+				restoredAllTask.durationMin === 60,
+			{ response, restoredAllTask },
+		);
+		const seriesAuditRows = (await db.execute(sql`
+			SELECT action FROM audit_events
+			WHERE workspace_id = ${workspace.id}
+			  AND entity = 'tasks'
+			  AND entity_id IN (${futureTask.id}, ${allTask.id})
+			  AND action IN ('recurrence_series_rescheduled', 'recurrence_series_reschedule_undone')
+		`)) as unknown as { action: string }[];
+		check(
+			"strukturální změny i undo obou řad mají autoritativní audit",
+			seriesAuditRows.filter((row) => row.action === "recurrence_series_rescheduled").length === 2 &&
+				seriesAuditRows.filter((row) => row.action === "recurrence_series_reschedule_undone")
+					.length === 2,
+			seriesAuditRows,
+		);
 
 		const staleInput = recurrenceInput("2026-03-30", "2026-04-04", null, null, null);
 		response = await post(managerCookie, `${path}/preview`, staleInput);

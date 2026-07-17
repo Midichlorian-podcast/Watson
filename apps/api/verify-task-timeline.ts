@@ -29,6 +29,7 @@ type TimelineEvent = {
 	kind: string;
 	actorName: string | null;
 	changedFields: string[];
+	changes?: { field: string; oldValue?: string | null; newValue?: string | null }[];
 	commentId?: string;
 	excerpt?: string;
 };
@@ -116,6 +117,16 @@ async function main() {
 		{ entity: "tasks", action: "put", diff: { name: "Timeline task", description: "SECRET_DESCRIPTION" } },
 		{ entity: "tasks", action: "patch", diff: { description: "SECRET_DESCRIPTION_2" }, before: { description: "old secret" } },
 		{ entity: "tasks", action: "patch", diff: { due_date: "2026-08-01" }, before: { due_date: "2026-07-30" } },
+		{
+			entity: "tasks",
+			action: "recurrence_series_rescheduled",
+			diff: {
+				current: { date: "2026-08-01" },
+				proposed: { date: "2026-08-04" },
+				scope: "all",
+			},
+			before: { task: { dueDate: "2026-08-01" } },
+		},
 		{ entity: "tasks", action: "patch", diff: { name: "New public name" }, before: { name: "Timeline task" } },
 		{ entity: "comments", action: "put", diff: { task_id: task.id, body: "Schválili jsme variantu A." } },
 		{ entity: "comment_decisions", action: "put", diff: { task_id: task.id, comment_id: crypto.randomUUID() } },
@@ -191,9 +202,24 @@ async function main() {
 		const second = (await response.json()) as TimelinePage;
 		const all = [...first.events, ...second.events];
 		check("druhá stránka se nepřekrývá", !first.events.some((event) => second.events.some((next) => next.id === event.id)));
-		check("autoritativní audit + jediná unikátní legacy událost", all.length === 13, all.map((event) => event.id));
+		check("autoritativní audit + jediná unikátní legacy událost", all.length === 14, all.map((event) => event.id));
 		check("odpověď obsahuje rozhodnutí i komentář", all.some((event) => event.kind === "decision_marked") && all.some((event) => event.kind === "comment_added"));
-		check("shodný legacy termín je deduplikovaný", all.filter((event) => event.kind === "task_rescheduled").length === 2, all.filter((event) => event.kind === "task_rescheduled"));
+		check("shodný legacy termín je deduplikovaný", all.filter((event) => event.kind === "task_rescheduled").length === 3, all.filter((event) => event.kind === "task_rescheduled"));
+		check(
+			"strukturální přesun řady má v časové ose lidský plánovací diff",
+			all.some(
+				(event) =>
+					event.kind === "task_rescheduled" &&
+					event.changedFields.includes("schedule") &&
+					event.changes?.some(
+						(change) =>
+							change.field === "schedule" &&
+							change.oldValue === "2026-08-01" &&
+							change.newValue === "2026-08-04",
+					) === true,
+			),
+			all,
+		);
 		check("odlišná legacy změna ze stejného okamžiku zůstala", all.some((event) => event.source === "legacy" && event.changedFields.includes("priority")));
 		check("jméno aktéra doplnil server", all.every((event) => event.actorName === "Timeline member"), all.map((event) => event.actorName));
 		const serialized = JSON.stringify(all);

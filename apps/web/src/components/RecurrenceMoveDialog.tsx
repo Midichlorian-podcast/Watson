@@ -1,5 +1,5 @@
 import { useTranslation } from "@watson/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	executeRecurrenceMove,
 	previewRecurrenceMove,
@@ -37,10 +37,12 @@ export function RecurrenceMoveDialog({
 }) {
 	const { t } = useTranslation();
 	const [preview, setPreview] = useState<RecurrencePreview | null>(null);
+	const [scope, setScope] = useState<RecurrencePreviewInput["scope"]>(input.scope);
 	const [loading, setLoading] = useState(true);
 	const [running, setRunning] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const runningRef = useRef(false);
+	const scopedInput = useMemo(() => ({ ...input, scope }), [input, scope]);
 	const dialogRef = useOverlayLayer<HTMLDivElement>(true, () => {
 		if (!runningRef.current) onClose();
 	});
@@ -49,7 +51,7 @@ export function RecurrenceMoveDialog({
 		let active = true;
 		setLoading(true);
 		setError(null);
-		void previewRecurrenceMove(taskId, input)
+		void previewRecurrenceMove(taskId, scopedInput)
 			.then((next) => {
 				if (active) setPreview(next);
 			})
@@ -67,7 +69,7 @@ export function RecurrenceMoveDialog({
 		return () => {
 			active = false;
 		};
-	}, [taskId, input]);
+	}, [taskId, scopedInput]);
 
 	const confirm = async () => {
 		if (!preview?.canExecute || runningRef.current) return;
@@ -75,7 +77,7 @@ export function RecurrenceMoveDialog({
 		setRunning(true);
 		setError(null);
 		try {
-			const result = await executeRecurrenceMove(taskId, input, preview.previewHash);
+			const result = await executeRecurrenceMove(taskId, scopedInput, preview.previewHash);
 			onClose();
 			showToast(t("calendar.recurrenceMoved"), {
 				label: t("calendar.recurrenceUndo"),
@@ -90,7 +92,7 @@ export function RecurrenceMoveDialog({
 			setError(code);
 			if (code === "preview_stale") {
 				try {
-					setPreview(await previewRecurrenceMove(taskId, input));
+					setPreview(await previewRecurrenceMove(taskId, scopedInput));
 				} catch {
 					// Ponecháme konkrétní stale chybu; uživatel může dialog bezpečně zavřít.
 				}
@@ -108,6 +110,11 @@ export function RecurrenceMoveDialog({
 			availability_warning: t("calendar.recurrenceWarningAvailability"),
 			dst_time_adjusted: t("calendar.recurrenceWarningDst"),
 			no_schedule_change: t("calendar.recurrenceNoChange"),
+			earlier_occurrences_preserved: t("calendar.recurrenceWarningPrefixPreserved"),
+			previous_series_segments_preserved: t("calendar.recurrenceWarningPreviousSegments"),
+			series_availability_first_occurrence_only: t(
+				"calendar.recurrenceWarningSeriesAvailability",
+			),
 		};
 		return known[code] ?? code;
 	};
@@ -142,9 +149,6 @@ export function RecurrenceMoveDialog({
 				className="relative max-h-[calc(100dvh-24px)] w-full max-w-[520px] overflow-auto rounded-2xl border border-line bg-card shadow-2xl"
 			>
 				<header className="border-line border-b px-5 py-4">
-					<div className="mb-2 inline-flex min-h-7 items-center rounded-full bg-brass-soft px-3 font-display font-bold text-brass-text text-xs">
-						{t("calendar.recurrenceScopeThis")}
-					</div>
 					<h2 id="recurrence-move-title" className="font-display font-extrabold text-ink text-lg">
 						{t("calendar.recurrenceMoveTitle")}
 					</h2>
@@ -152,6 +156,47 @@ export function RecurrenceMoveDialog({
 				</header>
 
 				<div className="space-y-3 px-5 py-4">
+					<fieldset disabled={running} className="space-y-2">
+						<legend className="font-display font-bold text-ink-3 text-xs uppercase tracking-wide">
+							{t("calendar.recurrenceScopeLegend")}
+						</legend>
+						<div className="grid gap-2 sm:grid-cols-3">
+							{(
+								[
+									["this_occurrence", t("calendar.recurrenceScopeThis")],
+									["this_and_future", t("calendar.recurrenceScopeFuture")],
+									["all", t("calendar.recurrenceScopeAll")],
+								] as const
+							).map(([value, label]) => (
+								<label
+									key={value}
+									className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm"
+									style={{
+										borderColor: scope === value ? "var(--w-brass)" : "var(--w-line)",
+										background: scope === value ? "var(--w-brass-soft)" : "var(--w-card)",
+									}}
+								>
+									<input
+										type="radio"
+										name="recurrence-scope"
+										value={value}
+										checked={scope === value}
+										onChange={() => setScope(value)}
+									/>
+									<span className="font-display font-semibold text-ink">{label}</span>
+								</label>
+							))}
+						</div>
+						<p className="text-ink-3 text-sm">
+							{t(
+								scope === "this_occurrence"
+									? "calendar.recurrenceScopeThisDesc"
+									: scope === "this_and_future"
+										? "calendar.recurrenceScopeFutureDesc"
+										: "calendar.recurrenceScopeAllDesc",
+							)}
+						</p>
+					</fieldset>
 					{loading && (
 						<div role="status" className="rounded-xl bg-panel-2 px-4 py-4 text-ink-2 text-sm">
 							{t("calendar.recurrenceChecking")}
@@ -172,6 +217,17 @@ export function RecurrenceMoveDialog({
 									value={scheduleLabel(preview.proposed, t("calendar.allDay"))}
 								/>
 							</div>
+							{preview.seriesImpact && (
+								<div className="rounded-xl border border-line bg-panel-2 px-3 py-2.5 text-ink-2 text-sm">
+									{preview.seriesImpact.preservedPrefixOccurrences > 0
+										? t("calendar.recurrenceImpactPrefix", {
+												count: preview.seriesImpact.preservedPrefixOccurrences,
+											})
+										: t("calendar.recurrenceImpactSeries", {
+												date: preview.seriesImpact.nextSeriesAnchor ?? "",
+											})}
+								</div>
+							)}
 							{preview.warnings.map((warning) => (
 								<Notice key={warning} tone="warning">
 									{warningLabel(warning)}
@@ -181,7 +237,15 @@ export function RecurrenceMoveDialog({
 								<Notice key={conflict.code} tone="danger">
 									{conflict.code === "availability_conflict"
 										? t("calendar.recurrenceConflictAvailability")
-										: t("calendar.recurrenceErrorConflict")}
+										: conflict.code === "series_has_future_exceptions"
+											? t("calendar.recurrenceConflictFutureExceptions")
+							: conflict.code === "deadline_before_series_anchor"
+								? t("calendar.recurrenceConflictDeadline")
+								: conflict.code === "series_history_overlap"
+									? t("calendar.recurrenceConflictHistoryOverlap")
+									: conflict.code === "historical_segment_scope_unsupported"
+										? t("calendar.recurrenceConflictHistoricalScope")
+								: t("calendar.recurrenceErrorConflict")}
 								</Notice>
 							))}
 							{preview.availability.conflicts.length > 0 && (

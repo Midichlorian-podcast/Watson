@@ -223,6 +223,121 @@ export interface ParsedRecurrence {
 	showAll: boolean;
 }
 
+/** Posun kalendářního data bez závislosti na lokální zóně procesu. */
+export function shiftCalendarDate(iso: string, days: number): string {
+	const date = parseISO(iso);
+	date.setUTCDate(date.getUTCDate() + days);
+	return toISO(date);
+}
+
+export function calendarDayDistance(fromISO: string, toISOValue: string): number {
+	return Math.round((parseISO(toISOValue).getTime() - parseISO(fromISO).getTime()) / 86_400_000);
+}
+
+/** N-tý skutečný výskyt (0 = kotva); měsíční díry se do indexu nepočítají. */
+export function recurrenceDateAtIndex(
+	baseISO: string,
+	rule: ParsedRecurrence,
+	index: number,
+): string | null {
+	if (!Number.isInteger(index) || index < 0) return null;
+	const anchor = seriesAnchor(parseISO(baseISO), rule.kind, rule.weekday, rule.parity);
+	if (rule.kind !== "monthly-day" && rule.kind !== "monthly-nth") {
+		const value = occurrenceAt(anchor, rule.kind, index, rule);
+		return value ? toISO(value) : null;
+	}
+	let found = 0;
+	for (let k = 0; k < 20_000; k++) {
+		const value = occurrenceAt(anchor, rule.kind, k, rule);
+		if (!value) continue;
+		if (found === index) return toISO(value);
+		found++;
+	}
+	return null;
+}
+
+/** Index platného výskytu v řadě; datum mimo řadu vrací null. */
+export function recurrenceIndexOfDate(
+	baseISO: string,
+	rule: ParsedRecurrence,
+	dateISO: string,
+): number | null {
+	const anchor = seriesAnchor(parseISO(baseISO), rule.kind, rule.weekday, rule.parity);
+	const target = parseISO(dateISO);
+	if (Number.isNaN(target.getTime()) || target < anchor) return null;
+	const dayDiff = Math.round((target.getTime() - anchor.getTime()) / 86_400_000);
+	if (rule.kind === "daily") return dayDiff;
+	if (rule.kind === "weekly") return dayDiff % 7 === 0 ? dayDiff / 7 : null;
+	if (rule.kind === "biweekly") return dayDiff % 14 === 0 ? dayDiff / 14 : null;
+
+	let found = 0;
+	for (let k = 0; k < 20_000; k++) {
+		const value = occurrenceAt(anchor, rule.kind, k, rule);
+		if (!value) continue;
+		if (value.getTime() === target.getTime()) return found;
+		if (value > target) return null;
+		found++;
+	}
+	return null;
+}
+
+export function previousRecurrenceDate(
+	baseISO: string,
+	rule: ParsedRecurrence,
+	dateISO: string,
+): string | null {
+	const index = recurrenceIndexOfDate(baseISO, rule, dateISO);
+	return index !== null && index > 0 ? recurrenceDateAtIndex(baseISO, rule, index - 1) : null;
+}
+
+/**
+ * Přenastaví kalendářní tvar řady podle cílového dne. Zachová neznámá kompatibilní
+ * metadata, ale volitelně posune konec a přepočte počet zbylých aktivních výskytů.
+ */
+export function transformRecurrenceRule(
+	ruleText: string,
+	targetDate: string,
+	options: { shiftUntilDays?: number; remainingCount?: number } = {},
+): string | null {
+	const parsed = parseRecurrenceRule(ruleText);
+	if (!parsed) return null;
+	let raw: Record<string, unknown>;
+	try {
+		raw = JSON.parse(ruleText) as Record<string, unknown>;
+	} catch {
+		return null;
+	}
+	const target = parseISO(targetDate);
+	if (Number.isNaN(target.getTime()) || toISO(target) !== targetDate) return null;
+	if (parsed.kind === "weekly" || parsed.kind === "biweekly" || parsed.kind === "monthly-nth") {
+		raw.weekday = target.getUTCDay();
+	}
+	if (parsed.kind === "biweekly") {
+		raw.parity = isoWeek(target) % 2 === 0 ? "even" : "odd";
+	}
+	if (parsed.kind === "monthly-day") raw.day = target.getUTCDate();
+	if (parsed.kind === "monthly-nth") {
+		raw.nth =
+			target.getUTCDate() + 7 > daysInMonth(target.getUTCFullYear(), target.getUTCMonth())
+				? -1
+				: Math.ceil(target.getUTCDate() / 7);
+	}
+	if (
+		raw.endKind === "until" &&
+		typeof raw.until === "string" &&
+		options.shiftUntilDays
+	) {
+		raw.until = shiftCalendarDate(raw.until.slice(0, 10), options.shiftUntilDays);
+	}
+	if (options.remainingCount !== undefined) {
+		if (!Number.isInteger(options.remainingCount) || options.remainingCount < 1) return null;
+		raw.endKind = "count";
+		raw.count = options.remainingCount;
+		raw.doneCount = 0;
+	}
+	return JSON.stringify(raw);
+}
+
 /** Celé pravidlo opakování vč. strukturovaných polí, konce (endKind/until/count) a showAll. */
 export function parseRecurrenceRule(rule: string | null | undefined): ParsedRecurrence | null {
 	if (!rule) return null;

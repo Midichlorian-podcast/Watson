@@ -99,11 +99,35 @@ async function main() {
 		`)) as { workspace_id: string }[]
 	)[0];
 	if (!workspace) throw new Error("demo workspace missing");
+	const project = (
+		(await db.execute(sql`
+			SELECT id FROM projects WHERE workspace_id = ${workspace.workspace_id} ORDER BY created_at LIMIT 1
+		`)) as { id: string }[]
+	)[0];
+	if (!project) throw new Error("demo project missing");
 
 	const contactId = crypto.randomUUID();
+	const recurrenceTaskId = crypto.randomUUID();
+	const recurrencePrefixId = crypto.randomUUID();
 	await db.execute(sql`
 		INSERT INTO contacts (id, workspace_id, name, email, created_by)
 		VALUES (${contactId}, ${workspace.workspace_id}, 'Restore drill contact', 'restore-drill@example.test', ${user.id})
+	`);
+	await db.execute(sql`
+		INSERT INTO tasks (
+			id, project_id, name, due_date, recurrence, recurrence_rule, created_by
+		) VALUES (
+			${recurrenceTaskId}, ${project.id}, 'Restore drill recurrence', DATE '2026-07-10',
+			'Denně', '{"kind":"daily","showAll":true}', ${user.id}
+		)
+	`);
+	await db.execute(sql`
+		INSERT INTO task_recurrence_prefixes (
+			id, task_id, project_id, anchor_date, end_date, recurrence_rule, created_by
+		) VALUES (
+			${recurrencePrefixId}, ${recurrenceTaskId}, ${project.id}, DATE '2026-07-01', DATE '2026-07-09',
+			'{"kind":"daily","showAll":true}', ${user.id}
+		)
 	`);
 	try {
 		const response = await fetch(`${API}/api/export`, {
@@ -131,6 +155,12 @@ async function main() {
 			)[0]?.n,
 		);
 		check("tasks count sedí s ACL scope", backup.manifest.counts.tasks === directTasks);
+		check(
+			"konečný segment opakované řady je v exportu",
+			backup.tables.task_recurrence_prefixes?.some(
+				(row) => row.id === recurrencePrefixId && row.task_id === recurrenceTaskId,
+			) === true,
+		);
 
 		let meetingPrivacyOk = true;
 		for (const meeting of backup.tables.meetings ?? []) {
@@ -147,9 +177,15 @@ async function main() {
 		check("meeting obsah je nenulový jen pro tvůrce/účastníka", meetingPrivacyOk);
 
 		await db.execute(sql`DELETE FROM contacts WHERE id = ${contactId}`);
+		await db.execute(sql`DELETE FROM task_recurrence_prefixes WHERE id = ${recurrencePrefixId}`);
 		let result = await restore(cookie, backup, "dry-run");
 		check("dry-run projde", result.response.status === 200, result.body);
 		check("dry-run plánuje obnovit smazaný kontakt", result.body.report?.inserted?.contacts === 1, result.body);
+		check(
+			"dry-run plánuje obnovit historii opakované řady",
+			result.body.report?.inserted?.task_recurrence_prefixes === 1,
+			result.body,
+		);
 		const afterDryRun = Number(
 			((await db.execute(sql`SELECT count(*)::int AS n FROM contacts WHERE id = ${contactId}`)) as { n: number }[])[0]?.n,
 		);
@@ -158,13 +194,32 @@ async function main() {
 		result = await restore(cookie, backup, "apply");
 		check("apply restore projde", result.response.status === 200, result.body);
 		check("apply vloží smazaný kontakt", result.body.report?.inserted?.contacts === 1, result.body);
+		check(
+			"apply obnoví historii opakované řady",
+			result.body.report?.inserted?.task_recurrence_prefixes === 1,
+			result.body,
+		);
 		const afterApply = Number(
 			((await db.execute(sql`SELECT count(*)::int AS n FROM contacts WHERE id = ${contactId}`)) as { n: number }[])[0]?.n,
 		);
 		check("kontakt po restore existuje", afterApply === 1);
+		const prefixAfterApply = Number(
+			(
+				(await db.execute(sql`
+					SELECT count(*)::int AS n FROM task_recurrence_prefixes WHERE id = ${recurrencePrefixId}
+				`)) as { n: number }[]
+			)[0]?.n,
+		);
+		check("segment řady po restore existuje", prefixAfterApply === 1);
 
 		result = await restore(cookie, backup, "apply");
 		check("opakovaný apply je bezpečný/idempotentní", result.response.status === 200 && result.body.report?.inserted?.contacts === 0, result.body);
+		check(
+			"opakovaný apply neduplikuje segment řady",
+			result.response.status === 200 &&
+				result.body.report?.inserted?.task_recurrence_prefixes === 0,
+			result.body,
+		);
 
 		result = await restore(cookie, backup, "dry-run", "fail");
 		check("conflictMode=fail odmítne existující ID", result.response.status === 409, result.body);
@@ -202,6 +257,7 @@ async function main() {
 		check("novější schema je odmítnuto", result.response.status === 400 && result.body.code === "backup_schema_newer_than_server", result.body);
 	} finally {
 		await db.execute(sql`DELETE FROM contacts WHERE id = ${contactId}`);
+		await db.execute(sql`DELETE FROM tasks WHERE id = ${recurrenceTaskId}`);
 	}
 
 	if (failed) {

@@ -28,9 +28,15 @@ type Fixture = {
 	userId: string;
 	workspaceId: string;
 	projectId: string;
-	taskId: string;
+	taskIds: {
+		occurrence: string;
+		future: string;
+		all: string;
+	};
 	email: string;
 	password: string;
+	baseDate: string;
+	shiftedBaseDate: string;
 	sourceDate: string;
 	targetDate: string;
 };
@@ -47,10 +53,15 @@ async function provision(browserName: string): Promise<Fixture> {
 	const sourceDate = dateIso(year, month, sourceDay);
 	const targetDate = dateIso(year, month, sourceDay + 2);
 	const baseDate = dateIso(year, month, 1);
+	const shiftedBaseDate = dateIso(year, month, 3);
 	const userId = crypto.randomUUID();
 	const workspaceId = crypto.randomUUID();
 	const projectId = crypto.randomUUID();
-	const taskId = crypto.randomUUID();
+	const taskIds = {
+		occurrence: crypto.randomUUID(),
+		future: crypto.randomUUID(),
+		all: crypto.randomUUID(),
+	};
 	const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 	const email = `recurrence-ui-${browserName}-${suffix}@watson.test`;
 	const password = `Watson-${crypto.randomUUID()}-A1!`;
@@ -81,26 +92,30 @@ async function provision(browserName: string): Promise<Fixture> {
 			ownerId: userId,
 		});
 		await tx.insert(projectMembers).values({ projectId, userId, role: "manager" });
-		await tx.insert(tasks).values({
-			id: taskId,
-			projectId,
-			name: `Opakovaný audit ${browserName}`,
-			dueDate: new Date(`${baseDate}T00:00:00.000Z`),
-			startDate: new Date(`${baseDate}T07:00:00.000Z`),
-			startTimezone: "Europe/Prague",
-			durationMin: 60,
-			recurrence: "Denně",
-			recurrenceRule: JSON.stringify({ kind: "daily", showAll: true }),
-			createdBy: userId,
-		});
+		await tx.insert(tasks).values(
+			Object.entries(taskIds).map(([scope, id]) => ({
+				id,
+				projectId,
+				name: `Opakovaný audit ${scope} ${browserName}`,
+				dueDate: new Date(`${baseDate}T00:00:00.000Z`),
+				startDate: new Date(`${baseDate}T07:00:00.000Z`),
+				startTimezone: "Europe/Prague",
+				durationMin: 60,
+				recurrence: "Denně",
+				recurrenceRule: JSON.stringify({ kind: "daily", showAll: true }),
+				createdBy: userId,
+			})),
+		);
 	});
 	return {
 		userId,
 		workspaceId,
 		projectId,
-		taskId,
+		taskIds,
 		email,
 		password,
+		baseDate,
+		shiftedBaseDate,
 		sourceDate,
 		targetDate,
 	};
@@ -127,6 +142,73 @@ async function overrideState(taskId: string) {
 		override_start_date: Date | null;
 	}>;
 	return rows[0] ?? null;
+}
+
+async function seriesState(taskId: string) {
+	const rows = (await db.execute(sql`
+		SELECT
+			t.due_date::date::text AS due_date,
+			t.start_date,
+			t.recurrence_rule,
+			count(p.id)::int AS prefix_count
+		FROM tasks t
+		LEFT JOIN task_recurrence_prefixes p ON p.task_id = t.id
+		WHERE t.id = ${taskId}::uuid
+		GROUP BY t.id
+	`)) as Array<{
+		due_date: string;
+		start_date: Date | null;
+		recurrence_rule: string;
+		prefix_count: number;
+	}>;
+	return rows[0] ?? null;
+}
+
+async function dragOccurrence(page: Page, taskId: string, sourceDate: string, targetDate: string) {
+	const occurrenceId = `${taskId}@${sourceDate}`;
+	const source = page.locator(`[data-calendar-task-id="${occurrenceId}"]`);
+	const target = page.locator(`[data-calendar-date="${targetDate}"]`);
+	await source.waitFor({ state: "visible", timeout: 30_000 });
+	await target.waitFor({ state: "visible" });
+	await page.evaluate(
+		({ sourceId, targetDate }) => {
+			const sourceNode = document.querySelector<HTMLElement>(
+				`[data-calendar-task-id="${sourceId}"]`,
+			);
+			const targetNode = document.querySelector<HTMLElement>(
+				`[data-calendar-date="${targetDate}"]`,
+			);
+			if (!sourceNode || !targetNode) throw new Error("recurrence_drag_nodes_missing");
+			const transfer = new DataTransfer();
+			transfer.setData("text/plain", sourceId);
+			sourceNode.dispatchEvent(
+				new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: transfer }),
+			);
+			targetNode.dispatchEvent(
+				new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: transfer }),
+			);
+			targetNode.dispatchEvent(
+				new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }),
+			);
+		},
+		{ sourceId: occurrenceId, targetDate },
+	);
+	return occurrenceId;
+}
+
+async function waitForTaskOnDate(page: Page, taskId: string, date: string) {
+	await eventually(
+		() =>
+			page
+				.locator(`[data-calendar-task-id="${taskId}"]`)
+				.evaluate(
+					(node, targetDate) =>
+						node.closest<HTMLElement>("[data-calendar-date]")?.dataset.calendarDate === targetDate,
+					date,
+				)
+				.catch(() => false),
+		(value) => value,
+	);
 }
 
 async function assertAxeClean(page: Page, label: string) {
@@ -169,37 +251,17 @@ async function run(browserName: "chromium" | "webkit") {
 		await page.goto(`${WEB}/nadchazejici`, { waitUntil: "domcontentloaded" });
 		await page.getByRole("button", { name: "Kalendář", exact: true }).click();
 		await page.getByRole("button", { name: "Měsíc", exact: true }).click();
-		const occurrenceId = `${fixture.taskId}@${fixture.sourceDate}`;
-		const source = page.locator(`[data-calendar-task-id="${occurrenceId}"]`);
-		const target = page.locator(`[data-calendar-date="${fixture.targetDate}"]`);
-		await source.waitFor({ state: "visible", timeout: 30_000 });
-		await target.waitFor({ state: "visible" });
-		await page.evaluate(
-			({ sourceId, targetDate }) => {
-				const sourceNode = document.querySelector<HTMLElement>(
-					`[data-calendar-task-id="${sourceId}"]`,
-				);
-				const targetNode = document.querySelector<HTMLElement>(
-					`[data-calendar-date="${targetDate}"]`,
-				);
-				if (!sourceNode || !targetNode) throw new Error("recurrence_drag_nodes_missing");
-				const transfer = new DataTransfer();
-				transfer.setData("text/plain", sourceId);
-				sourceNode.dispatchEvent(
-					new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: transfer }),
-				);
-				targetNode.dispatchEvent(
-					new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: transfer }),
-				);
-				targetNode.dispatchEvent(
-					new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }),
-				);
-			},
-			{ sourceId: occurrenceId, targetDate: fixture.targetDate },
+		const occurrenceId = await dragOccurrence(
+			page,
+			fixture.taskIds.occurrence,
+			fixture.sourceDate,
+			fixture.targetDate,
 		);
 		const dialog = page.getByRole("dialog", { name: "Přesunout opakovaný výskyt?" });
 		await dialog.waitFor({ state: "visible" });
-		await dialog.getByText("Jen tento výskyt", { exact: true }).waitFor();
+		for (const label of ["Jen tento výskyt", "Tento a další", "Celá aktivní řada"]) {
+			await dialog.getByRole("radio", { name: label, exact: true }).waitFor();
+		}
 		await dialog.getByText("Před změnou", { exact: true }).waitFor();
 		await dialog.getByText("Po změně", { exact: true }).waitFor();
 		await assertAxeClean(page, `${browserName}_desktop`);
@@ -220,13 +282,12 @@ async function run(browserName: "chromium" | "webkit") {
 				fullPage: true,
 			});
 		}
-		await dialog.getByRole("button", { name: "Přesunout výskyt", exact: true }).click();
+		await dialog.getByRole("button", { name: "Použít přesun", exact: true }).click();
 		await dialog.waitFor({ state: "hidden" });
 		await eventually(
-			() => overrideState(fixture.taskId),
+			() => overrideState(fixture.taskIds.occurrence),
 			(value) =>
-				value?.occ_date === fixture.sourceDate &&
-				value.override_due_date === fixture.targetDate,
+				value?.occ_date === fixture.sourceDate && value.override_due_date === fixture.targetDate,
 		);
 		await eventually(
 			() =>
@@ -245,13 +306,71 @@ async function run(browserName: "chromium" | "webkit") {
 		await undo.waitFor({ state: "visible" });
 		await undo.click();
 		await eventually(
-			() => overrideState(fixture.taskId),
+			() => overrideState(fixture.taskIds.occurrence),
 			(value) => value === null,
 		);
+
+		await page.setViewportSize({ width: 1280, height: 900 });
+		await dragOccurrence(page, fixture.taskIds.future, fixture.sourceDate, fixture.targetDate);
+		await dialog.waitFor({ state: "visible" });
+		await dialog.getByRole("radio", { name: "Tento a další", exact: true }).check();
+		await dialog.getByText(/Watson zachová \d+ dřívějších výskytů/).waitFor();
+		await dialog
+			.getByText(
+				"Dřívější výskyty zůstanou jako konečná část stejného úkolu; nic se neztratí ani nezkopíruje.",
+			)
+			.waitFor();
+		await page.setViewportSize({ width: 390, height: 844 });
+		await assertAxeClean(page, `${browserName}_future_mobile`);
+		if (SCREENSHOT_DIR) {
+			await page.screenshot({
+				path: `${SCREENSHOT_DIR}/${browserName}-recurrence-future-dialog-390.png`,
+				fullPage: true,
+			});
+		}
+		await dialog.getByRole("button", { name: "Použít přesun", exact: true }).click();
+		await dialog.waitFor({ state: "hidden" });
+		await eventually(
+			() => seriesState(fixture.taskIds.future),
+			(value) => value?.due_date === fixture.targetDate && value.prefix_count === 1,
+		);
+		await waitForTaskOnDate(page, fixture.taskIds.future, fixture.targetDate);
+		await waitForTaskOnDate(
+			page,
+			`${fixture.taskIds.future}@${fixture.baseDate}`,
+			fixture.baseDate,
+		);
+		await page.getByRole("button", { name: "Vrátit", exact: true }).click();
+		await eventually(
+			() => seriesState(fixture.taskIds.future),
+			(value) => value?.due_date === fixture.baseDate && value.prefix_count === 0,
+		);
+		await waitForTaskOnDate(page, fixture.taskIds.future, fixture.baseDate);
+
+		await page.setViewportSize({ width: 1280, height: 900 });
+		await dragOccurrence(page, fixture.taskIds.all, fixture.sourceDate, fixture.targetDate);
+		await dialog.waitFor({ state: "visible" });
+		await dialog.getByRole("radio", { name: "Celá aktivní řada", exact: true }).check();
+		await dialog
+			.getByText(`Nová kotva aktivní řady: ${fixture.shiftedBaseDate}.`, { exact: true })
+			.waitFor();
+		await dialog.getByRole("button", { name: "Použít přesun", exact: true }).click();
+		await dialog.waitFor({ state: "hidden" });
+		await eventually(
+			() => seriesState(fixture.taskIds.all),
+			(value) => value?.due_date === fixture.shiftedBaseDate && value.prefix_count === 0,
+		);
+		await waitForTaskOnDate(page, fixture.taskIds.all, fixture.shiftedBaseDate);
+		await page.getByRole("button", { name: "Vrátit", exact: true }).click();
+		await eventually(
+			() => seriesState(fixture.taskIds.all),
+			(value) => value?.due_date === fixture.baseDate && value.prefix_count === 0,
+		);
+		await waitForTaskOnDate(page, fixture.taskIds.all, fixture.baseDate);
 		if (runtimeErrors.length > 0) {
 			throw new Error(`recurrence_ui_runtime:${runtimeErrors.join(" | ")}`);
 		}
-		console.log(`  ✓ ${browserName}: dialog, mobile reflow, a11y, server save a undo`);
+		console.log(`  ✓ ${browserName}: tři rozsahy, mobile reflow, a11y, downsync a bezpečné undo`);
 	} finally {
 		await browser?.close();
 		await db.delete(workspaces).where(eq(workspaces.id, fixture.workspaceId));

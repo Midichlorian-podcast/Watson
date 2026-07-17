@@ -20,6 +20,11 @@ export type RecurrencePreview = {
 	task: { id: string; name: string };
 	current: RecurrenceSchedule & { startsAt: string | null };
 	proposed: RecurrenceSchedule & { startsAt: string | null; dstAdjusted: boolean };
+	seriesImpact: {
+		affectedFrom: string;
+		preservedPrefixOccurrences: number;
+		nextSeriesAnchor: string | null;
+	} | null;
 	conflicts: Array<{ code: string; detail?: unknown }>;
 	warnings: string[];
 	availability: {

@@ -66,6 +66,7 @@ export const RESTORE_TABLE_ORDER = [
 	"checklist_items",
 	"labels",
 	"task_labels",
+	"task_recurrence_prefixes",
 	"task_occurrence_overrides",
 	"task_user_colors",
 	"reminders",
@@ -187,6 +188,8 @@ const EXPORT_QUERIES: Record<
 	labels: (ws) => sql`SELECT * FROM labels WHERE workspace_id = ANY(${uuids(ws)})`,
 	task_labels: (ws) =>
 		sql`SELECT tl.* FROM task_labels tl JOIN tasks t ON t.id = tl.task_id JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+	task_recurrence_prefixes: (ws) =>
+		sql`SELECT prefix.* FROM task_recurrence_prefixes prefix JOIN projects p ON p.id = prefix.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	task_occurrence_overrides: (ws) =>
 		sql`SELECT o.* FROM task_occurrence_overrides o JOIN tasks t ON t.id = o.task_id JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	task_user_colors: (_ws, userId) =>

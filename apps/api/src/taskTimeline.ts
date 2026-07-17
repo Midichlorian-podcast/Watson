@@ -225,6 +225,28 @@ export function mapAuditTimelineEvent(
 	};
 
 	if (row.entity === "tasks") {
+		if (
+			row.action === "recurrence_series_rescheduled" ||
+			row.action === "recurrence_series_reschedule_undone"
+		) {
+			const isUndo = row.action.endsWith("_undone");
+			const current = recordOf(diff.current);
+			const proposed = recordOf(diff.proposed);
+			const restored = recordOf(diff.restored);
+			const priorTask = recordOf(before.task);
+			return {
+				...base,
+				kind: "task_rescheduled",
+				changedFields: ["schedule"],
+				changes: [
+					{
+						field: "schedule",
+						oldValue: isUndo ? stringOf(priorTask.dueDate) : stringOf(current.date),
+						newValue: isUndo ? stringOf(restored.dueDate) : stringOf(proposed.date),
+					},
+				],
+			};
+		}
 		const { fields, changes } = taskChanges(diff, before);
 		let kind: TimelineKind = "task_updated";
 		if (row.action === "import_create") kind = "task_imported";

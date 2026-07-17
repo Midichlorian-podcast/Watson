@@ -27,7 +27,11 @@ import {
 	type OccurrenceOverrideRow,
 } from "../lib/occurrenceProjection";
 import { expandOccurrences, parseRecurrenceRule } from "../lib/occurrences";
-import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
+import type {
+	ProjectRow,
+	TaskRecurrencePrefixRow,
+	TaskRow,
+} from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
@@ -82,6 +86,12 @@ export function DnesTab() {
 			`SELECT id, task_id, occ_date, done, skipped, override_due_date,
 			        override_start_date, override_start_timezone, override_duration_min, updated_at
 			 FROM task_occurrence_overrides`,
+		);
+	const { data: recurrencePrefixes, isLoading: recurrencePrefixesLoading } =
+		usePsQuery<TaskRecurrencePrefixRow>(
+			`SELECT id, task_id, project_id, anchor_date, end_date, recurrence_rule,
+			        start_date, start_timezone, duration_min, created_by, version, created_at, updated_at
+			 FROM task_recurrence_prefixes`,
 		);
 	const [wsFilter, setWsFilter] = useState<string | null>(null);
 	const { q: searchQ } = useListSearch();
@@ -142,6 +152,7 @@ export function DnesTab() {
 					tdy,
 					tdy,
 					2,
+					recurrencePrefixes ?? [],
 				);
 				const todayOccurrences = materialized.filter((row) => dayOf(row) === tdy);
 				if (d >= tdy) {
@@ -190,6 +201,7 @@ export function DnesTab() {
 	}, [
 		tasks,
 		occurrenceOverrides,
+		recurrencePrefixes,
 		tb,
 		tbCtx,
 		flowSteps,
@@ -310,6 +322,7 @@ export function DnesTab() {
 		projectsLoading ||
 		tasksLoading ||
 		occurrenceOverridesLoading ||
+		recurrencePrefixesLoading ||
 		assignmentsLoading ||
 		stepsLoading
 	)

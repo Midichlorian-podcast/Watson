@@ -16,7 +16,11 @@ import {
 	type OccurrenceOverrideRow,
 } from "../lib/occurrenceProjection";
 import { parseOccId } from "../lib/occurrences";
-import type { AvailabilityBlockRow, TaskRow } from "../lib/powersync/AppSchema";
+import type {
+	AvailabilityBlockRow,
+	TaskRecurrencePrefixRow,
+	TaskRow,
+} from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import type { RecurrencePreviewInput } from "../lib/recurrenceCommands";
@@ -387,6 +391,11 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 		        override_start_date, override_start_timezone, override_duration_min, updated_at
 		 FROM task_occurrence_overrides`,
 	);
+	const { data: recurrencePrefixes } = usePsQuery<TaskRecurrencePrefixRow>(
+		`SELECT id, task_id, project_id, anchor_date, end_date, recurrence_rule,
+		        start_date, start_timezone, duration_min, created_by, version, created_at, updated_at
+		 FROM task_recurrence_prefixes`,
+	);
 
 	/** Úkoly viditelného rozsahu + virtuální výskyty opakování (port calTasks, ř. 2633). */
 	const calTasks = useMemo(() => {
@@ -399,8 +408,8 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 			fromI = isoOf(days[0] ?? new Date());
 			toI = isoOf(days[days.length - 1] ?? new Date());
 		}
-		return materializeRecurringTasks(tasks, ovr ?? [], fromI, toI, 62);
-	}, [tasks, mode, days, monthBase, ovr]);
+		return materializeRecurringTasks(tasks, ovr ?? [], fromI, toI, 62, recurrencePrefixes ?? []);
+	}, [tasks, mode, days, monthBase, ovr, recurrencePrefixes]);
 
 	// ── zkratky ←/→ / d / 1-3 (guard na otevřený detail — prototyp ř. 2228) ────
 	const { openId } = useTaskDetail();

@@ -423,6 +423,28 @@ const task_occurrence_overrides = new Table(
 	}),
 );
 
+/** Historické/pending prefixy řady; vytváří je pouze atomický recurrence command. */
+const task_recurrence_prefixes = new Table(
+	{
+		task_id: column.text,
+		project_id: column.text,
+		anchor_date: column.text,
+		end_date: column.text,
+		recurrence_rule: column.text,
+		start_date: column.text,
+		start_timezone: column.text,
+		duration_min: column.integer,
+		created_by: column.text,
+		version: column.integer,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: { by_task_range: ["task_id", "anchor_date", "end_date"], by_project: ["project_id"] },
+		trackPrevious: true,
+	},
+);
+
 /** R6 — per-uživatelská barva úkolu (syncuje se jen vlastní barva). */
 const task_user_colors = new Table(
 	{
@@ -730,6 +752,7 @@ export const AppSchema = new Schema({
 	mentions,
 	comment_reactions,
 	task_occurrence_overrides,
+	task_recurrence_prefixes,
 	task_user_colors,
 	local_rejected_ops,
 	local_private_state,
@@ -773,6 +796,7 @@ export type MentionRow = Database["mentions"];
 export type CommentReactionRow = Database["comment_reactions"];
 export type ReminderRow = Database["reminders"];
 export type TaskUserColorRow = Database["task_user_colors"];
+export type TaskRecurrencePrefixRow = Database["task_recurrence_prefixes"];
 export type TaskActivityRow = Database["task_activity"];
 export type ChainRow = Database["chains"];
 export type ChainStepRow = Database["chain_steps"];

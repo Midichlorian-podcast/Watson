@@ -265,6 +265,63 @@ export const taskOccurrenceOverrides = pgTable(
 	],
 );
 
+/**
+ * Konečný prefix původní řady odložený při volbě „tento a další“.
+ * Aktivní task se může okamžitě přepnout na novou řadu, zatímco dřívější výskyty
+ * zůstávají kompaktně dohledatelné bez klonování tasku, komentářů nebo příloh.
+ */
+export const taskRecurrencePrefixes = pgTable(
+	"task_recurrence_prefixes",
+	{
+		id: pk(),
+		taskId: uuid("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		anchorDate: date("anchor_date", { mode: "date" }).notNull(),
+		endDate: date("end_date", { mode: "date" }).notNull(),
+		recurrenceRule: text("recurrence_rule").notNull(),
+		startDate: timestamp("start_date", { withTimezone: true }),
+		startTimezone: varchar("start_timezone", { length: 64 }),
+		durationMin: integer("duration_min"),
+		createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+		version: integer("version").notNull().default(1),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check("task_recurrence_prefixes_range", sql`${t.anchorDate} <= ${t.endDate}`),
+		check(
+			"task_recurrence_prefixes_rule_object",
+			sql`jsonb_typeof(${t.recurrenceRule}::jsonb) = 'object'
+				and ${t.recurrenceRule}::jsonb ->> 'kind' in
+				('daily', 'weekly', 'biweekly', 'monthly', 'yearly', 'monthly-nth', 'monthly-day')`,
+		),
+		check(
+			"task_recurrence_prefixes_start_timezone_pair",
+			sql`(${t.startDate} is null) = (${t.startTimezone} is null)`,
+		),
+		check(
+			"task_recurrence_prefixes_timezone_format",
+			sql`${t.startTimezone} is null or ${t.startTimezone} ~ '^(UTC|[A-Za-z_]+(/[A-Za-z0-9_+.-]+)+)$'`,
+		),
+		check(
+			"task_recurrence_prefixes_duration_positive",
+			sql`${t.durationMin} is null or ${t.durationMin} between 1 and 10080`,
+		),
+		check("task_recurrence_prefixes_version_positive", sql`${t.version} > 0`),
+		index("task_recurrence_prefixes_task_range_idx").on(t.taskId, t.anchorDate, t.endDate),
+		index("task_recurrence_prefixes_project_idx").on(t.projectId),
+		foreignKey({
+			name: "task_recurrence_prefixes_task_same_project_fk",
+			columns: [t.taskId, t.projectId],
+			foreignColumns: [tasks.id, tasks.projectId],
+		}).onDelete("cascade"),
+	],
+);
+
 /** R1 — lehká položka (bez přiřazení/termínu), nezaměňovat s úkolem. */
 export const checklistItems = pgTable("checklist_items", {
 	id: pk(),
@@ -320,6 +377,7 @@ export type NewTask = typeof tasks.$inferInsert;
 export type Assignment = typeof assignments.$inferSelect;
 export type TaskUserColor = typeof taskUserColors.$inferSelect;
 export type TaskOccurrenceOverride = typeof taskOccurrenceOverrides.$inferSelect;
+export type TaskRecurrencePrefix = typeof taskRecurrencePrefixes.$inferSelect;
 export type ChecklistItem = typeof checklistItems.$inferSelect;
 export type Label = typeof labels.$inferSelect;
 export type TaskLabel = typeof taskLabels.$inferSelect;

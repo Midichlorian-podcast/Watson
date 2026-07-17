@@ -676,6 +676,7 @@ importRoutes.post("/api/imports/:id/rollback", async (c) => {
 						(SELECT count(*) FROM task_dependencies WHERE blocking_task_id IN (SELECT task_id FROM imported_ids) OR blocked_task_id IN (SELECT task_id FROM imported_ids)) +
 						(SELECT count(*) FROM task_custom_field_values WHERE task_id IN (SELECT task_id FROM imported_ids)) +
 						(SELECT count(*) FROM task_polls WHERE task_id IN (SELECT task_id FROM imported_ids)) +
+						(SELECT count(*) FROM task_recurrence_prefixes WHERE task_id IN (SELECT task_id FROM imported_ids)) +
 						(SELECT count(*) FROM task_occurrence_overrides WHERE task_id IN (SELECT task_id FROM imported_ids)) +
 						(SELECT count(*) FROM task_user_colors WHERE task_id IN (SELECT task_id FROM imported_ids)) +
 						(SELECT count(*) FROM calendar_links WHERE task_id IN (SELECT task_id FROM imported_ids)) +

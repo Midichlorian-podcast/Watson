@@ -22,7 +22,7 @@ import {
 	materializeRecurringTasks,
 	type OccurrenceOverrideRow,
 } from "../lib/occurrenceProjection";
-import type { TaskRow } from "../lib/powersync/AppSchema";
+import type { TaskRecurrencePrefixRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { dayOf, todayISO } from "../lib/tasks";
@@ -94,6 +94,12 @@ export function Nadchazejici() {
 		        override_start_date, override_start_timezone, override_duration_min, updated_at
 		 FROM task_occurrence_overrides`,
 	);
+	const { data: recurrencePrefixes, isLoading: recurrencePrefixesLoading } =
+		usePsQuery<TaskRecurrencePrefixRow>(
+			`SELECT id, task_id, project_id, anchor_date, end_date, recurrence_rule,
+			        start_date, start_timezone, duration_min, created_by, version, created_at, updated_at
+			 FROM task_recurrence_prefixes`,
+		);
 
 	const tbCtx = useToolbarCtx();
 	const tasks = useMemo(() => {
@@ -119,7 +125,14 @@ export function Nadchazejici() {
 		const horizon = iso(Date.now() + HORIZON_DAYS * DAY);
 		const byBucket = new Map<Bucket, TaskRow[]>();
 
-		for (const tk of materializeRecurringTasks(tasks, ovr ?? [], tdy, horizon, 40)) {
+		for (const tk of materializeRecurringTasks(
+			tasks,
+			ovr ?? [],
+			tdy,
+			horizon,
+			40,
+			recurrencePrefixes ?? [],
+		)) {
 			const d = dayOf(tk);
 			if (!d) continue;
 			const b = dayBucket(d, tdy);
@@ -143,7 +156,7 @@ export function Nadchazejici() {
 			label: labels[b],
 			list: byBucket.get(b) ?? [],
 		})).filter((g) => g.list.length > 0);
-	}, [tasks, ovr, t]);
+	}, [tasks, ovr, recurrencePrefixes, t]);
 
 	// Pořadí pro ↑/↓ v detailu (prototyp _navIds) + kbsel navigace.
 	const flatList = useMemo(() => view2.flatMap((g) => g.list), [view2]);
@@ -153,7 +166,14 @@ export function Nadchazejici() {
 	const kbSel = useKbNav(flatList, view === "list");
 
 	const empty = view2.length === 0;
-	if (projectsLoading || tasksLoading || calendarLoading || overridesLoading) return <DataLoading />;
+	if (
+		projectsLoading ||
+		tasksLoading ||
+		calendarLoading ||
+		overridesLoading ||
+		recurrencePrefixesLoading
+	)
+		return <DataLoading />;
 
 	if (view === "calendar") {
 		return (

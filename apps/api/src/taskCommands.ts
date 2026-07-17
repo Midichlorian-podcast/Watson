@@ -206,6 +206,7 @@ taskCommandRoutes.post("/api/tasks/delete", async (c) => {
 						SELECT id FROM attachments WHERE task_id IN (SELECT id FROM task_ids)
 					)
 				),
+				'recurrencePrefixes', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_recurrence_prefixes x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'occurrences', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_occurrence_overrides x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'colors', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM task_user_colors x WHERE x.task_id IN (SELECT id FROM task_ids)),
 				'chainSteps', (SELECT COALESCE(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM chain_steps x WHERE x.task_id IN (SELECT id FROM task_ids)),
@@ -377,6 +378,7 @@ taskCommandRoutes.post("/api/tasks/restore", async (c) => {
 			WHERE item.id = restored.id AND item.task_id IS NULL
 		`);
 		await tx.execute(sql`INSERT INTO import_attachments SELECT * FROM jsonb_populate_recordset(null::import_attachments, COALESCE(${snapshot}->'importAttachments', '[]'::jsonb)) ON CONFLICT DO NOTHING`);
+		await tx.execute(sql`INSERT INTO task_recurrence_prefixes SELECT * FROM jsonb_populate_recordset(null::task_recurrence_prefixes, COALESCE(${snapshot}->'recurrencePrefixes', '[]'::jsonb)) ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO task_occurrence_overrides SELECT * FROM jsonb_populate_recordset(null::task_occurrence_overrides, ${snapshot}->'occurrences') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO task_user_colors SELECT * FROM jsonb_populate_recordset(null::task_user_colors, ${snapshot}->'colors') ON CONFLICT DO NOTHING`);
 		await tx.execute(sql`INSERT INTO chain_steps SELECT * FROM jsonb_populate_recordset(null::chain_steps, ${snapshot}->'chainSteps') ON CONFLICT DO NOTHING`);

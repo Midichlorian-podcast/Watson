@@ -1,6 +1,6 @@
 # Watson — závazný re-audit a implementační plán pro Claude Code
 
-> Stav dokumentu: 2026-07-17 po stabilizaci a průběžných produktových dávkách do migrace 0060.
+> Stav dokumentu: 2026-07-17 po stabilizaci a průběžných produktových dávkách do migrace 0064.
 >
 > CLAUDE CODE: přečti celý soubor před první změnou. Toto je jediný aktuální řídicí dokument. Staré audity, handoffy a plány ve `files/` jsou historické podklady. Pokud odporují tomuto souboru nebo současnému schématu, nemají autoritu.
 
@@ -123,8 +123,9 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
 ### 2.1 Funkční jádro
 
 - Offline-first úkoly, podúkoly do tří úrovní, priority, termíny, deadline, odhady,
-  vícedennost, opakování, statusy a per-user barvy. Jeden konkrétní výskyt opakování
-  lze bezpečně přesunout s preview, DST politikou, kontrolou dostupnosti a serverovým undo.
+  vícedennost, opakování, statusy a per-user barvy. Opakování lze bezpečně přesunout
+  v rozsahu „jen tento“, „tento a další“ i „celá aktivní řada“ s preview, DST politikou,
+  kontrolou dostupnosti, zachováním dřívější historie a serverovým undo.
 - Rychlé přidání přirozenou češtinou: datum, čas, délka, recurrence, projekt a lidé; parser má corpus 321/321.
 - Seznam, board, den/týden/měsíc kalendář, drag/resize, Dnes, Nadcházející, Oblíbené a Inbox.
 - Projekty, projektové role, členové, cíle, seznamy/checklisty, postupy/řetězy, komentáře a audit aktivity.
@@ -150,8 +151,6 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
 - AI meeting extraction bez klíče je dostupná pouze v non-production ukázkovém režimu a musí být označena `mock`. Produkce bez klíče vrací 503.
 - LuckyOS canned data lze zapnout pouze mimo produkci. Produkce bez base URL vrací 503.
 - E-mail reminders nejsou implementované; write path odmítá `channel=email` 422.
-- Rozsahy recurrence „tento a další“ a „celá řada“ zatím nejsou implementované.
-  Server je explicitně odmítá; UI proto nabízí pouze dokončený rozsah „jen tento“.
 
 ### 2.3 Technická architektura
 
@@ -468,16 +467,22 @@ Stav dávky:
    kopii technického detailu a vědomý discard. Citlivá pole se nikdy nevypisují.
    Chromium i WebKit dokazují offline create, kontrolu fronty při 390 px, reconnect,
    odmítnutí, retry/discard, axe, reflow a autoritativní serverový výsledek.
-3. **Recurrence exception editor / „jen tento“ — dokončeno 2026-07-17.** Migrace 0060
-   rozšířila per-occurrence override o cílové datum, skutečný instant, IANA zónu,
-   délku a verzi; dokončení/přeskočení zůstává samostatný kompatibilní stav. Preview,
-   execute a undo jsou serverové commandy s fail-closed ACL, advisory lockem,
-   idempotency, stale-preview kontrolou, auditní událostí a 15minutovým undo batch ID.
-   Klient používá jeden materializer v Kalendáři, Dnes, Nadcházející i detailu a umí
-   promítnout také výskyt přesunutý do okna z původního data mimo okno. Chromium a
-   WebKit ověřily drag → dialog → server save → PowerSync projekci → undo, mobilní
-   reflow, focus trap a axe. Zbytkový scope lock: `this_and_future` a `all` server
-   odmítá 422; budou následovat jako samostatná vertikála bez klonování tasků.
+3. **Recurrence exception editor / všechny tři rozsahy — dokončeno 2026-07-17.**
+   Migrace 0060 rozšířila per-occurrence override o cílové datum, skutečný instant,
+   IANA zónu, délku a verzi; dokončení/přeskočení zůstává samostatný kompatibilní stav.
+   Migrace 0061–0064 přidaly konečné prefixy původní řady pro „tento a další“, striktní
+   allowlist pravidel, nullable autora se `SET NULL` a DB zákaz překryvu segmentů.
+   Aktivní task se neklonuje:
+   komentáře, přílohy a dependency zůstávají na jediném ID a dřívější výskyty se
+   promítají jako auditovatelná část stejného úkolu; samostatně je lze dál přesunout.
+   Strukturální undo fail-closed odmítne přepsat jejich pozdější změny. Rozsah „celá aktivní řada“ posune
+   kotvu i pravidlo; existující oddělenou historii nemění. Strukturální změna se
+   fail-closed zastaví, pokud by přepsala budoucí výjimky nebo překročila deadline.
+   Preview, execute a undo jsou serverové commandy s ACL, advisory lockem, idempotency,
+   stale-preview kontrolou, CAS, auditem a 15minutovým undo batch ID. Klient používá
+   jeden materializer v Kalendáři, Dnes, Nadcházející i detailu. Chromium a WebKit
+   ověřily všechny tři rozsahy přes drag → dialog → server save → PowerSync projekci
+   → undo, mobilní reflow, focus trap a axe. Export/restore segmenty skutečně obnoví.
 
 ### F4 — integration center (2–4 týdny)
 
@@ -526,7 +531,7 @@ Poslední ověření 2026-07-17:
 
 - `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 107 TSX.
 - `pnpm typecheck`: 6/6 balíčků.
-- `pnpm test`: recurrence 14/14 + 7 projekčních regresí, Quick Add, timezone, recent items, proč-teď, deep linky,
+- `pnpm test`: recurrence 14/14 + 9 projekčních regresí + 6 transformací řady, Quick Add, timezone, recent items, proč-teď, deep linky,
   uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
   Waiting Room, projektové milníky, zmínky, importní CSV parser, Mail claims, chain gate, sync recovery
   a backup crypto.
@@ -606,6 +611,14 @@ Poslední ověření 2026-07-17:
   Recurrence API prošlo 21 živými kontrolami včetně DB invariantů, restricted ACL, DST mezery,
   Focus blokace, idempotentního replay, operation-ID reuse, stale preview a undo,
   které nesmaže později přidané dokončení výskytu.
+- Migrace 0061–0064: aplikovány; „tento a další“ ukládá konečný prefix původní řady
+  se same-project FK, validním rozsahem, pravidlem, IANA časem a kladnou verzí. Prefix
+  je v PowerSync pouze pro čtení, obecný write registry ho nepřijímá, export/restore
+  ho obnoví, `created_by SET NULL` neblokuje správu účtů a exclusion constraint
+  nedovolí překryv segmentů ani při souběhu či restore. Recurrence API prošlo 41
+  živými kontrolami včetně přesného count/until transformu, zachování jediného tasku,
+  idempotence, blokace existujících budoucích výjimek, downsyncu a CAS undo obou
+  strukturálních rozsahů.
 - `pnpm build`: největší JS 342 KiB gzip, precache 5,192 KiB; oba rozpočty splněny;
   vlastní pole, ankety, projektové milníky, intake, importní průvodce, Úkoly a Nadcházející jsou oddělené
   lazy-loaded chunky.
@@ -691,14 +704,17 @@ Poslední ověření 2026-07-17:
   rejected diff, discard a retry s receiptem; oba stavy jsou axe-clean, bez overflow
   a po vizuální opravě používají lidské názvy polí i konzistentní offline copy.
   Důkaz je v `docs/release-evidence/outbox-e2e-2026-07-17.json`.
-- F3 recurrence „jen tento“ sjednotila dříve oddělenou projekci Dnes/Nadcházející/
-  Kalendáře a opravila i start-only sérii přes půlnoc: identita se odvozuje z lokálního
-  data v uložené IANA zóně, nikoli z UTC řezu. Živý API verifier má 21/21 kontrol a
-  reprodukovatelný browser verifier prošel v Chromium i WebKitu: dialogový diff,
-  390px reflow, focus trap, axe, autoritativní DB zápis, PowerSync downsync do cílové
-  buňky a undo. Statický kontrakt hlídá command-only schedule sloupce a zakazuje návrat
-  původního tichého `@occurrence` no-opu. Roll-forward je další migrace/model segmentů;
-  rollback kódu zachová nové nullable sloupce bez poškození starého `done/skipped` toku.
+- F3 recurrence sjednotila dříve oddělenou projekci Dnes/Nadcházející/Kalendáře a
+  opravila i start-only sérii přes půlnoc: identita se odvozuje z lokálního data v
+  uložené IANA zóně, nikoli z UTC řezu. Živý API verifier má 41/41 kontrol a
+  reprodukovatelný browser verifier prošel v Chromium i WebKitu pro „jen tento“,
+  „tento a další“ i „celá aktivní řada“: dialogový diff a dopad, 390px reflow, focus
+  trap, axe, autoritativní DB zápis, prefix historie, PowerSync downsync a CAS undo.
+  Statický kontrakt hlídá command-only schedule/prefix data a zakazuje návrat původního
+  tichého `@occurrence` no-opu. Podepsaný export/restore navíc skutečně obnovil smazaný
+  segment a opakovaný apply ho neduplikuje. Task delete/undo prefix zahrnuje do stejného
+  atomického snapshotu, import rollback ho považuje za pozdější práci a časová osa
+  strukturální přesun zobrazuje jako plánovací diff.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
   44 px, offline zápisem a následným autoritativním uploadem. Jediný zachycený

@@ -17,6 +17,7 @@ import {
 	sections,
 	sql,
 	statuses,
+	taskRecurrencePrefixes,
 	tasks,
 	users,
 	workspaces,
@@ -347,6 +348,28 @@ async function main() {
 			result,
 		);
 		await db.delete(comments).where(and(eq(comments.taskId, rootMap.taskId), eq(comments.authorId, editor.id)));
+		const postImportPrefixId = crypto.randomUUID();
+		await db.insert(taskRecurrencePrefixes).values({
+			id: postImportPrefixId,
+			taskId: rootMap.taskId,
+			projectId: project.id,
+			anchorDate: new Date("2026-08-01T00:00:00.000Z"),
+			endDate: new Date("2026-08-10T00:00:00.000Z"),
+			recurrenceRule: JSON.stringify({ kind: "daily", showAll: true }),
+			createdBy: editor.id,
+		});
+		result = await request(editorCookie, `/api/imports/${importId}/rollback`, "POST", {
+			confirmSourceName: command.sourceName,
+			expectedUpdatedAt: batch.updatedAt.toISOString(),
+		});
+		check(
+			"rollback nesmaže později oddělenou historii opakované řady",
+			result.status === 409 && asBody<{ error?: string }>(result).error === "import_rollback_conflict",
+			result,
+		);
+		await db
+			.delete(taskRecurrencePrefixes)
+			.where(eq(taskRecurrencePrefixes.id, postImportPrefixId));
 
 		result = await request(ownerCookie, `/api/imports/${importId}/rollback`, "POST", {
 			confirmSourceName: command.sourceName,
