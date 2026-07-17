@@ -429,8 +429,13 @@ Pořadí: trust-state primitive → overlay primitive → Nastavení routes → 
    prostory, focus trapem a návratem fokusu; aktivní cíle jsou oznámené a 320px popisky
    se neořezávají. Statický kontrakt brání návratu duplicitní lišty a browser audit
    pokrývá 320/360/390 px v Chromium i WebKitu.
-5. **Definice KPI — další aktivní krok.** Každá metrika musí uvádět scope,
-   období, timezone, vyloučená data a freshness přímo v rozhraní.
+5. **Definice KPI — dokončeno 2026-07-17.** Reporty i Velín u každé hlavní metriky
+   přímo zobrazují rozsah, období, IANA časovou zónu, vyloučená data, čerstvost a
+   přesný výpočet; zásadní omezení nejsou schovaná v tooltipu. PowerSync čísla
+   používají potvrzený checkpoint, zatímco Mail otevřeně přiznává lokální demo bez
+   provider synchronizace. Urgentní Mail KPI se počítá z celého aktivního inboxu,
+   ne jen z top-8 náhledu; týmové unread KPI vylučuje osobní, uzavřená, spamová,
+   archivovaná, smazaná, odložená a ztlumená vlákna bez rozbití osobního badge.
 
 Acceptance: vizuální regression snapshots, keyboard/axe gate, žádná změna doménové logiky bez testu.
 
@@ -633,6 +638,14 @@ Poslední ověření 2026-07-16:
   překrytí lišty, Escape + návrat fokusu, 0 overflow a 0 runtime chyb. Matice Domov/
   Mail má současně 0 axe WCAG A/AA nálezů. Důkaz je v
   `docs/release-evidence/mobile-runtime-a11y-2026-07-17.json`.
+- F2 transparentní KPI nahradily nezdokumentovaná čísla v Reportech a Velínu
+  společnou kartou s viditelným rozsahem, obdobím, IANA zónou, výlukami, čerstvostí
+  a vzorcem. Audit současně našel a opravil dvě Mail agregace: urgentní počet už
+  není omezen top-8 náhledem a unread týmový počet nevstřebává spam ani uzavřená
+  vlákna; osobní badge zůstal oddělený. Statický kontrakt, unit scope test a
+  Chromium/WebKit ověřily 3 Report KPI + 5 Velín KPI při 390/1440 px, disclosure
+  Mail demo zdroje, 0 axe WCAG A/AA nálezů, 0 overflow a 0 runtime chyb. Důkaz je v
+  `docs/release-evidence/kpi-runtime-a11y-2026-07-17.json`.
 - Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
   horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
   44 px, offline zápisem a následným autoritativním uploadem. Jediný zachycený

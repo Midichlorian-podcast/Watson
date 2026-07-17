@@ -5,6 +5,7 @@ import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { useMemo, useState } from "react";
 import { CopyLinkButton } from "../components/CopyLinkButton";
+import { KpiCard } from "../components/KpiCard";
 import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
@@ -14,6 +15,7 @@ import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { NOT_MEETING } from "../lib/tasks";
+import { deviceTimeZone } from "../lib/timeZone";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
@@ -134,6 +136,18 @@ export function Reporty() {
 	// Závislost na dnešku, aby graf po přechodu týdne (kiosk/otevřený tab) nezůstal na minulém týdnu.
 	const reportDay = todayISO();
 	const days = useMemo(() => weekDays(reportDay), [reportDay]);
+	const metricTimeZone = useMemo(deviceTimeZone, []);
+	const metricDate = useMemo(() => {
+		const formatter = new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" });
+		return {
+			from: formatter.format(new Date(`${days[0]}T12:00:00`)),
+			to: formatter.format(new Date(`${days[6]}T12:00:00`)),
+			today: formatter.format(new Date(`${reportDay}T12:00:00`)),
+		};
+	}, [days, reportDay, i18n.language]);
+	const metricScope = t("metrics.scopeWorkspace", { workspace: ws?.name ?? "—" });
+	const weekPeriod = t("reports.weekPeriod", metricDate);
+	const currentPeriod = t("metrics.currentState", { date: metricDate.today });
 	const overview = useMemo(() => {
 		const tdy = todayISO();
 		const perDay = days.map(
@@ -299,18 +313,46 @@ export function Reporty() {
 			) : tab === "prehled" ? (
 				<>
 					{/* KPI */}
-					<div className="mb-4 flex gap-3.5">
-						<Kpi
+					<div
+						className="mb-4 grid gap-3.5"
+						style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))" }}
+					>
+						<KpiCard
 							value={String(overview.weekDone)}
 							label={t("reports.kpiWeek")}
 							color="var(--w-ink)"
+							definition={{
+								scope: metricScope,
+								period: weekPeriod,
+								timeZone: metricTimeZone,
+								exclusions: t("reports.excludeWeek"),
+								formula: t("reports.formulaWeek"),
+							}}
 						/>
-						<Kpi
+						<KpiCard
 							value={String(overview.overdue)}
 							label={t("reports.kpiOverdue")}
 							color="var(--w-overdue)"
+							definition={{
+								scope: metricScope,
+								period: currentPeriod,
+								timeZone: metricTimeZone,
+								exclusions: t("reports.excludeOverdue"),
+								formula: t("reports.formulaOverdue"),
+							}}
 						/>
-						<Kpi value={overview.avg} label={t("reports.kpiAvg")} color="var(--w-brass-text)" />
+						<KpiCard
+							value={overview.avg}
+							label={t("reports.kpiAvg")}
+							color="var(--w-brass-text)"
+							definition={{
+								scope: metricScope,
+								period: weekPeriod,
+								timeZone: metricTimeZone,
+								exclusions: t("reports.excludeWeek"),
+								formula: t("reports.formulaAvg"),
+							}}
+						/>
 					</div>
 
 					<div className="grid grid-cols-2 gap-4">
@@ -538,19 +580,6 @@ export function Reporty() {
 					onClose={() => setSearch(tab === "lide" ? { tab: "lide" } : {})}
 				/>
 			)}
-		</div>
-	);
-}
-
-function Kpi({ value, label, color }: { value: string; label: string; color: string }) {
-	return (
-		<div className="flex-1 rounded-[13px] border border-line bg-card" style={{ padding: 16 }}>
-			<div className="font-mono" style={{ fontSize: 28, color }}>
-				{value}
-			</div>
-			<div className="mt-0.5 font-body text-ink-3" style={{ fontSize: 12.5 }}>
-				{label}
-			</div>
 		</div>
 	);
 }

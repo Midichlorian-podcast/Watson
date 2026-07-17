@@ -34,6 +34,7 @@ import {
 	STL,
 	TH,
 } from "./data";
+import { belongsToActiveTeamInbox, countsAsUnread, isUrgentMailFlag } from "./digest";
 
 /** Per-thread overrides (prototyp `ov` + eff, ř. 3449–3465). */
 export interface ThreadOv {
@@ -489,7 +490,20 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 		let pers = 0;
 		for (const t of TH) {
 			const e = eff(t);
-			if (e.muted || t.sentF || t.draftF || e.arch || e.trash || e.snoozed) continue;
+			if (
+				!countsAsUnread({
+					personal: !!t.personal,
+					sent: !!t.sentF,
+					draft: !!t.draftF,
+					archived: e.arch,
+					trashed: e.trash,
+					spam: e.spam,
+					snoozed: !!e.snoozed,
+					muted: e.muted,
+					closed: e.closed,
+				})
+			)
+				continue;
 			if (!unreadFor(t)) continue;
 			if (t.personal) {
 				pers++;
@@ -1249,6 +1263,8 @@ export interface MailDigestItem {
 export interface MailDigest {
 	items: MailDigestItem[];
 	unread: number;
+	/** Celý aktivní týmový inbox; nesmí se odvozovat jen z top-8 náhledu. */
+	urgent: number;
 }
 
 const FLAG_ORD: Record<string, number> = { p1: 0, p2: 1, p3: 2, p4: 3 };
@@ -1263,13 +1279,25 @@ export function useMailDigest(): MailDigest | null {
 	const v = useContext(Ctx);
 	return useMemo(() => {
 		if (!v) return null;
-		const rows = v.threads
-			.filter((t) => {
-				if (t.personal || t.sentF || t.draftF) return false;
-				const e = v.eff(t);
-				if (e.arch || e.trash || e.spam || e.snoozed || e.muted) return false;
-				return (v.ovOf(t.id).grp ?? t.grp) === "inbox" && !e.closed;
-			})
+		const inbox = v.threads.filter((t) => {
+			const e = v.eff(t);
+			return belongsToActiveTeamInbox(
+				{
+					personal: !!t.personal,
+					sent: !!t.sentF,
+					draft: !!t.draftF,
+					archived: e.arch,
+					trashed: e.trash,
+					spam: e.spam,
+					snoozed: !!e.snoozed,
+					muted: e.muted,
+					closed: e.closed,
+				},
+				v.ovOf(t.id).grp ?? t.grp,
+			);
+		});
+		const urgent = inbox.filter((thread) => isUrgentMailFlag(v.eff(thread).flag)).length;
+		const rows = inbox
 			.sort((a, b) => {
 				const ea = v.eff(a);
 				const eb = v.eff(b);
@@ -1292,7 +1320,7 @@ export function useMailDigest(): MailDigest | null {
 				flag: v.eff(t).flag,
 				hasTask: (v.taskLinks[t.id] ?? []).length > 0,
 			}));
-		return { items: rows, unread: v.unreadStats().total };
+		return { items: rows, unread: v.unreadStats().total, urgent };
 	}, [v]);
 }
 

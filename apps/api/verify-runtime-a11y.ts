@@ -39,6 +39,7 @@ const ROUTES = [
 	"/seznamy",
 	"/cile",
 	"/reporty",
+	"/velin",
 	"/postupy",
 	"/nastaveni",
 ] as const;
@@ -532,6 +533,88 @@ async function mobileNavigationAudit(page: Page, events: RuntimeEvent[], browser
 	return results;
 }
 
+async function kpiDefinitionsAudit(page: Page, events: RuntimeEvent[], browserName: BrowserName) {
+	const results: {
+		route: "/reporty" | "/velin";
+		width: 390 | 1440;
+		cards: number;
+		completeDefinitions: boolean;
+		mailDemoDisclosed: boolean;
+		overflow: boolean;
+		violations: Violation[];
+		events: RuntimeEvent[];
+	}[] = [];
+
+	await activateTheme(page, "light");
+	for (const width of [390, 1440] as const) {
+		await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+		for (const route of ["/reporty", "/velin"] as const) {
+			const expectedCards = route === "/reporty" ? 3 : 5;
+			const eventStart = events.length;
+			await navigate(page, route);
+			await page.waitForFunction(
+				(count) => document.querySelectorAll("[data-kpi-card]").length === count,
+				expectedCards,
+				{ timeout: 15_000 },
+			);
+			const cards = page.locator("[data-kpi-card]");
+			const definitions = await cards.evaluateAll((nodes) =>
+				nodes.map((node) => {
+					const terms = [...node.querySelectorAll("[data-kpi-definition] dt")];
+					const descriptions = [...node.querySelectorAll("[data-kpi-definition] dd")];
+					const formula = node.querySelector("[data-kpi-formula]");
+					const rect = node.getBoundingClientRect();
+					return {
+						terms: terms.length,
+						descriptions: descriptions.length,
+						hasEmptyValue: descriptions.some((item) => !(item.textContent ?? "").trim()),
+						formula: Boolean((formula?.textContent ?? "").trim()),
+						visible: rect.width > 0 && rect.height > 0,
+					};
+				}),
+			);
+			const completeDefinitions = definitions.every(
+				(definition) =>
+					definition.terms === 5 &&
+					definition.descriptions === 5 &&
+					!definition.hasEmptyValue &&
+					definition.formula &&
+					definition.visible,
+			);
+			const mailDemoDisclosed =
+				route === "/reporty" ||
+				(await cards.filter({ hasText: /Lokální demo snapshot|Local demo snapshot/ }).count()) === 2;
+			const audit = await axeAudit(page);
+			if (SCREENSHOT_DIR && width === 390) {
+				await mkdir(SCREENSHOT_DIR, { recursive: true });
+				await page.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-390-${route.slice(1)}-kpi.png`, fullPage: true });
+			}
+			results.push({
+				route,
+				width,
+				cards: await cards.count(),
+				completeDefinitions,
+				mailDemoDisclosed,
+				overflow: audit.overflow,
+				violations: audit.violations,
+				events: events.slice(eventStart),
+			});
+		}
+	}
+	if (
+		results.some(
+			(result) =>
+				result.cards !== (result.route === "/reporty" ? 3 : 5) ||
+				!result.completeDefinitions ||
+				!result.mailDemoDisclosed ||
+				result.overflow ||
+				result.violations.length > 0 ||
+				result.events.length > 0,
+		)
+	) throw new Error(`runtime_kpi_definitions_failed_${JSON.stringify(results)}`);
+	return results;
+}
+
 async function auditBrowser(
 	browserName: BrowserName,
 	launcher: typeof chromium | typeof webkit,
@@ -576,7 +659,8 @@ async function auditBrowser(
 		const reflow = await reflowAudit(page);
 		const settings = await settingsSectionsAudit(page, events);
 		const mobile = await mobileNavigationAudit(page, events, browserName);
-		return { browser: browserName, matrix, keyboard, reflow, settings, mobile };
+		const kpiDefinitions = await kpiDefinitionsAudit(page, events, browserName);
+		return { browser: browserName, matrix, keyboard, reflow, settings, mobile, kpiDefinitions };
 	} finally {
 		await context?.close().catch(() => undefined);
 		await browser?.close().catch(() => undefined);
@@ -623,6 +707,7 @@ async function main() {
 		reflow: audits.map((audit) => ({ browser: audit.browser, results: audit.reflow })),
 		settings: audits.map((audit) => ({ browser: audit.browser, ...audit.settings })),
 		mobile: audits.map((audit) => ({ browser: audit.browser, results: audit.mobile })),
+		kpiDefinitions: audits.map((audit) => ({ browser: audit.browser, results: audit.kpiDefinitions })),
 		failureCounts: Object.fromEntries(Object.entries(failures).map(([key, value]) => [key, value.length])),
 		failures,
 	};
