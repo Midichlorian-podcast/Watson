@@ -8,6 +8,7 @@ const cases = [
 	["list", "/seznamy?seznam=id-1"],
 	["flow", "/postupy?postup=id-1"],
 	["meeting", "/meets?meet=id-1"],
+	["decision", "/meets?decision=id-1"],
 	["goal", "/cile?cil=id-1"],
 	["mail", "/mail?vlakno=id-1"],
 	["person", "/reporty?tab=lide&clen=id-1"],

@@ -4,6 +4,7 @@ export type DeepLinkEntity =
 	| "list"
 	| "flow"
 	| "meeting"
+	| "decision"
 	| "goal"
 	| "mail"
 	| "person";
@@ -17,6 +18,7 @@ const DEEP_LINKS: Record<
 	list: { path: "/seznamy", key: "seznam" },
 	flow: { path: "/postupy", key: "postup" },
 	meeting: { path: "/meets", key: "meet" },
+	decision: { path: "/meets", key: "decision" },
 	goal: { path: "/cile", key: "cil" },
 	mail: { path: "/mail", key: "vlakno" },
 	person: { path: "/reporty", key: "clen", fixed: { tab: "lide" } },

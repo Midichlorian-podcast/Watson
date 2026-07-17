@@ -4,6 +4,7 @@ import { useTranslation } from "@watson/i18n";
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
 import { KpiCard } from "../components/KpiCard";
 import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
+import { RadarPanel } from "../components/RadarPanel";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
@@ -437,6 +438,15 @@ export function Velin() {
 					);
 				})}
 			</div>
+
+			<RadarPanel
+				workspaceId={firm}
+				onOpenTask={open}
+				onOpenDecision={(id, workspaceId) => {
+					setActiveWs(workspaceId);
+					void navigate({ to: "/meets", search: { decision: id, prostor: workspaceId } });
+				}}
+			/>
 
 			{/* KPI mají vlastní viditelný datový kontrakt; zásadní omezení nejsou schovaná v tooltipu. */}
 			<div

@@ -153,6 +153,9 @@ export function Mitingy() {
 	const navigate = useNavigate();
 	const search = useSearch({ from: "/meets" });
 	useEffect(() => {
+		if (search.decision) setMode("decisions");
+	}, [search.decision]);
+	useEffect(() => {
 		if (search.meet) trackRecentEntity("meeting", search.meet);
 	}, [search.meet]);
 	const openBoard = (meetingId: string, focus?: "zapis") =>
@@ -489,10 +492,16 @@ export function Mitingy() {
 		return (
 			<DecisionLog
 				workspaceId={activeWs}
+				focusId={search.decision}
 				projects={projects}
 				editableProjects={editableProjects}
 				members={members}
-				onBack={() => setMode("list")}
+				onBack={() => {
+					setMode("list");
+					if (search.decision) {
+						void navigate({ to: "/meets", search: { prostor: activeWs } });
+					}
+				}}
 				onOpenTask={openTask}
 				onOpenMeeting={(id) => openBoard(id)}
 			/>

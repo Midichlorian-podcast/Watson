@@ -67,6 +67,7 @@ const reviewSchema = z
 	);
 const listSchema = z.object({
 	workspaceId: uuid,
+	id: uuid.optional(),
 	projectId: uuid.optional(),
 	status: z.enum(["active", "superseded", "withdrawn"]).optional(),
 	source: z.enum(["manual", "comment", "meeting"]).optional(),
@@ -199,6 +200,7 @@ decisionRoutes.get("/api/decisions", async (c) => {
 		eq(decisions.workspaceId, query.data.workspaceId),
 		eq(projectMembers.userId, session.user.id),
 	];
+	if (query.data.id) filters.push(eq(decisions.id, query.data.id));
 	if (query.data.projectId) filters.push(eq(decisions.projectId, query.data.projectId));
 	if (query.data.status) filters.push(eq(decisions.status, query.data.status));
 	if (query.data.source) filters.push(eq(decisions.sourceType, query.data.source));

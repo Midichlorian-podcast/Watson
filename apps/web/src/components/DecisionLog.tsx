@@ -1,6 +1,6 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useDeferredValue, useMemo, useRef, useState } from "react";
+import { type FormEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL } from "../lib/api";
 import type { DecisionRow, ProjectRow } from "../lib/powersync/AppSchema";
 import { showToast } from "../lib/toast";
@@ -477,6 +477,7 @@ export function DecisionLog({
 	onBack,
 	onOpenTask,
 	onOpenMeeting,
+	focusId,
 }: {
 	workspaceId: string;
 	projects: ProjectRow[];
@@ -485,22 +486,27 @@ export function DecisionLog({
 	onBack: () => void;
 	onOpenTask: (id: string) => void;
 	onOpenMeeting: (id: string) => void;
+	focusId?: string;
 }) {
 	const queryClient = useQueryClient();
 	const [q, setQ] = useState("");
 	const deferredQ = useDeferredValue(q.trim());
 	const [projectId, setProjectId] = useState("");
-	const [status, setStatus] = useState<"" | Status>("active");
+	const [status, setStatus] = useState<"" | Status>(() => (focusId ? "" : "active"));
 	const [source, setSource] = useState<"" | Source>("");
 	const [dialog, setDialog] = useState<{ mode: DialogMode; target: PublicDecision | null } | null>(
 		null,
 	);
+	useEffect(() => {
+		if (focusId) setStatus("");
+	}, [focusId]);
 
 	const query = useInfiniteQuery({
-		queryKey: ["decisions", workspaceId, projectId, status, source, deferredQ],
+		queryKey: ["decisions", workspaceId, focusId, projectId, status, source, deferredQ],
 		initialPageParam: "" as string,
 		queryFn: async ({ pageParam }) => {
 			const params = new URLSearchParams({ workspaceId, limit: "50" });
+			if (focusId) params.set("id", focusId);
 			if (projectId) params.set("projectId", projectId);
 			if (status) params.set("status", status);
 			if (source) params.set("source", source);
@@ -572,6 +578,7 @@ export function DecisionLog({
 				};
 			})
 			.filter((row) => !projectId || row.projectId === projectId)
+			.filter((row) => !focusId || row.id === focusId)
 			.filter((row) => !status || row.status === status)
 			.filter((row) => !source || row.sourceType === source)
 			.filter(
@@ -589,6 +596,7 @@ export function DecisionLog({
 		localRows,
 		members,
 		projectId,
+		focusId,
 		status,
 		source,
 		deferredQ,
@@ -597,6 +605,14 @@ export function DecisionLog({
 	const remoteRows = query.data?.pages.flatMap((page) => page.decisions) ?? [];
 	const rows = query.isError && remoteRows.length === 0 ? localFallback : remoteRows;
 	const loading = query.isPending && localLoading;
+	const scrolledFocus = useRef<string | null>(null);
+	useEffect(() => {
+		if (!focusId || loading || scrolledFocus.current === focusId) return;
+		const target = document.getElementById(`decision-${focusId}`);
+		if (!target) return;
+		target.scrollIntoView({ block: "center", behavior: "smooth" });
+		scrolledFocus.current = focusId;
+	}, [focusId, loading]);
 	const today = new Date().toISOString().slice(0, 10);
 	const dueReviews = rows.filter(
 		(row) => row.status === "active" && row.reviewAt && row.reviewAt.slice(0, 10) <= today,
@@ -726,7 +742,8 @@ export function DecisionLog({
 					return (
 						<article
 							key={row.id}
-							className="rounded-2xl border border-line bg-card px-4 py-4 shadow-sm sm:px-5"
+							id={`decision-${row.id}`}
+							className={`rounded-2xl border bg-card px-4 py-4 shadow-sm sm:px-5 ${focusId === row.id ? "border-brass ring-2 ring-brass/20" : "border-line"}`}
 						>
 							<div className="flex flex-wrap items-center gap-2 font-body text-[11px] text-ink-3">
 								<span

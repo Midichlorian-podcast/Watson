@@ -63,8 +63,9 @@ const mitingyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/meets",
 	// ?meet= otevře board porady (deep-link); ?focus=zapis skočí na vkládání zápisu.
-	validateSearch: (s: Record<string, unknown>): { meet?: string; focus?: "zapis"; prostor?: string } => ({
+	validateSearch: (s: Record<string, unknown>): { meet?: string; decision?: string; focus?: "zapis"; prostor?: string } => ({
 		meet: typeof s.meet === "string" ? s.meet : undefined,
+		decision: typeof s.decision === "string" ? s.decision : undefined,
 		focus: s.focus === "zapis" ? "zapis" : undefined,
 		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
 	}),

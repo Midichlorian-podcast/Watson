@@ -54,6 +54,7 @@ import { pollRoutes } from "./polls";
 import { powersyncRoutes } from "./powersync";
 import { projectMilestoneRoutes } from "./projectMilestones";
 import { pushRoutes, startReminderWorker } from "./push";
+import { radarRoutes } from "./radar";
 import { rateLimit } from "./rateLimit";
 import { recurrenceCommandRoutes } from "./recurrenceCommands";
 import { savedViewRoutes } from "./savedViews";
@@ -268,6 +269,10 @@ app.use(
 	rateLimit({ name: "meetings", windowMs: 60_000, max: 60, scope: "session-or-ip" }),
 );
 app.use(
+	"/api/radar/*",
+	rateLimit({ name: "radar", windowMs: 60_000, max: 60, scope: "session-or-ip" }),
+);
+app.use(
 	"/api/watson/*",
 	rateLimit({ name: "watson-ai", windowMs: 60_000, max: 20, scope: "session-or-ip" }),
 );
@@ -427,6 +432,7 @@ app.route("/", taskBulkCommandRoutes);
 app.route("/", taskAcceptanceRoutes);
 app.route("/", chainCommandRoutes);
 app.route("/", decisionRoutes);
+app.route("/", radarRoutes);
 app.route("/", meetingsRoutes);
 app.route("/", watsonRoutes);
 app.route("/", exportRoutes);
