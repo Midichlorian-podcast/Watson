@@ -610,8 +610,8 @@ Informativní oznámení úkol nevytvářejí. API důkaz pokrývá session, no-
 bezpečné relativní odkazy, provider kontrakt, task lineage a retry bez duplicity. Chromium
 i WebKit ověřily gating, dashboard, sync, 390px reflow, mobilní 44px akci a axe WCAG A/AA;
 ruční vizuální audit následně přeskládal mobilní hlavičku. Provozní hranice jsou v
-`docs/employee-hub-runbook.md`. Dokumenty/podpisy, absence a onboarding/offboarding
-jsou další samostatné F7 vertikály a tento core je nepředstírá.
+`docs/employee-hub-runbook.md`. Dokumenty/podpisy navazují samostatnou dokončenou
+F7 vertikálou; absence a onboarding/offboarding zůstávají dalšími dávkami.
 
 LuckyOS v1 integrační základ dokončen 2026-07-17: starý e-mailový broker zůstává
 výslovným `legacy` režimem a žádný deploy ho automaticky nepřepne. V1 vydává přesný
@@ -638,6 +638,24 @@ nerozvětvuje původní osobní projekt Zaměstnanec. Citlivé query mají `no-s
 krátký memory-only cache a žádný browser/offline draft. API důkaz pokrývá
 redakci, replay/konflikt, budoucí datum, submit, sync a revoke; Chromium i WebKit
 ověřily všechny tři formuláře, potvrzení, 390px reflow a axe WCAG A/AA.
+
+LuckyOS v1 dokumenty + výdaje + elektronický podpis dokončeny 2026-07-17:
+Watson je session-bound person-scoped facade a žádný HR soubor, účtenku, podpis
+ani finální PDF neukládá do DB, PowerSyncu nebo browser storage. Server ověří
+magic bytes a příponu, drží 25MB limit, spočítá SHA-256 a přes immutable upload
+intent předá binární obsah do LuckyOS, které vlastní malware scan, storage,
+retention i atomický finalize. Upload a doménový command mají oddělené user-bound
+idempotency klíče a celý tok lze bezpečně zopakovat po ztracené odpovědi.
+Publikované dokumenty se streamují s minimálním scope, response stropem, bez
+redirectu a `no-store`. Výdaj má serverový CZK přepočet a může odkazovat jen na
+vlastní aktivní trenérský projekt. Podpis je připnutý na verzi smlouvy a vyžaduje
+identity challenge, PNG/JPEG podpis, výslovný souhlas i druhé potvrzení; finální
+PDF a neměnný audit vytváří LuckyOS. Náhled se nabídne pouze pro publikované PDF
+se stejným názvem i verzí smlouvy; chybějící obsah se poctivě přizná a metadata se
+nevydávají za přečtenou smlouvu. API důkaz pokrývá redakci provider metadata,
+upload/replay, výdaj, challenge, podpis a revoke; Chromium i WebKit pokrývají
+retry, dokument, výdaj, podpis, 390px reflow a axe WCAG A/AA. Další F7 dávka je
+absence a dovolená, poté onboarding/offboarding a znalostní/SOP povrch.
 
 ## 10. Detailní acceptance checklist pro budoucí funkce
 

@@ -104,12 +104,46 @@ V1 work items se před existujícím reconciliation mapují na stabilní Watson 
 se rozšíří současný osobní projekt Zaměstnanec bez výměny nebo duplikace původního
 mechanismu.
 
+## Dokumenty, výdaje a elektronický podpis
+
+Tato v1 vertikála je pouze person-scoped facade nad autoritativními LuckyOS
+agregáty. Watson neukládá soubor, účtenku, obrázek podpisu, finální PDF ani Drive
+ID do vlastní databáze, PowerSyncu nebo browser storage.
+
+- Dokument a účtenka mohou mít nejvýše 25 MB. Watson ověří příponu i magic bytes,
+  normalizuje název a spočítá SHA-256. Potom si od LuckyOS vyžádá immutable upload
+  intent, odešle přesný binární obsah a teprve po potvrzení spustí atomický finalize.
+- LuckyOS znovu ověřuje MIME, velikost a hash, provádí malware scan a ukládá soubor
+  do svého úložiště. Chyba skenu nebo storage nesmí ve Watsonu vypadat jako úspěch.
+- Upload intent i následný doménový command mají oddělený user-bound idempotency
+  key. Po timeoutu lze zopakovat celý browser command; již spotřebovaný upload ani
+  vytvořený dokument či výdaj se nesmí zdvojit.
+- Výdaje posílají originální částku, měnu a kurz; Watson odvodí CZK částku na
+  serveru. Stav schválení, účetnictví a proplacení zůstává výhradně v LuckyOS.
+- Publikovaný dokument se čte online přes Watson facade s minimálním
+  `documents:read` scope, zákazem redirectu, 25MB response stropem a `no-store`.
+  LuckyOS ověřuje osobu a auditní stopu každého otevření nebo stažení.
+- Podpis vyžaduje přesnou verzi smlouvy, celé jméno, datum narození, volitelné
+  poslední čtyři číslice účtu, PNG/JPEG podpis, explicitní souhlas a druhé potvrzení.
+  LuckyOS challenge ověří, atomicky vytvoří finální PDF a neměnný audit. Watson
+  vrací jen veřejný stav smlouvy a nikdy podpisový obrázek nebo storage metadata.
+- Watson nabídne náhled jen tehdy, když LuckyOS vrátí publikované PDF se stejným
+  názvem souboru i verzí smlouvy. Samotná metadata z přehledu smluv nejsou důkazem
+  přečtení dokumentu; při chybějícím PDF UI zobrazí výslovné varování a uživatel
+  musí smlouvu před podpisem otevřít přímo v LuckyOS.
+
+Při incidentu `file_scan_unavailable`, `file_storage_unavailable` nebo
+`contract_finalization_failed` se výsledek považuje za neúspěšný. Uživatel smí
+bezpečně zopakovat stejný command se zachovaným operation ID; nové operation ID
+se použije až po vědomé změně obsahu.
+
 ## Automatické důkazy
 
 ```bash
 node scripts/verify-employee-hub-contract.mjs
 node scripts/verify-luckyos-v1-contract.mjs
 node scripts/verify-employee-self-service-contract.mjs
+node scripts/verify-employee-files-contract.mjs
 EMPLOYEE_HUB_API=http://127.0.0.1:8790 pnpm --filter @watson/api verify:employee-hub
 pnpm --filter @watson/api verify:luckyos-v1
 EMPLOYEE_SELF_SERVICE_API=http://127.0.0.1:8790 pnpm --filter @watson/api verify:employee-self-service
@@ -118,12 +152,13 @@ bash scripts/ci-api-integration.sh
 pnpm gate
 ```
 
-API verifier musí běžet proti lokálnímu LuckyOS stubu z integrační sady. Browser verifier pokrývá Chromium i WebKit, desktop, 390 px, navigační gating, dashboard, profil, docházku, malá čísla, explicitní submit a axe WCAG A/AA.
+API verifier musí běžet proti lokálnímu LuckyOS stubu z integrační sady. Browser verifier pokrývá Chromium i WebKit, desktop, 390 px, navigační gating, dashboard, profil, docházku, malá čísla, dokumentový retry, výdaj, podpisovou challenge, explicitní souhlas a axe WCAG A/AA.
 
 ## Scope této dávky
 
-Tato dávka zpřístupňuje profilové změnové žádosti, docházku a malá čísla. Starší
+Tato dávka zpřístupňuje profilové změnové žádosti, docházku, malá čísla,
+dokumenty, výdaje a elektronický podpis. Starší
 broker routy zůstávají zachované kvůli kompatibilitě a výchozí protocol zůstává
-`legacy`; nasazení samotného kódu proto nikoho nepřepne. Dokumenty, výdaje,
-elektronický podpis, upload limity, malware/retention pravidla a lifecycle
-absence patří do následujících samostatně auditovaných F7 vertikál.
+`legacy`; nasazení samotného kódu proto nikoho nepřepne. Retention a malware
+politiku vlastní LuckyOS. Lifecycle absence, onboarding/offboarding a znalostní
+vrstva patří do následujících samostatně auditovaných F7 vertikál.

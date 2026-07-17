@@ -78,6 +78,29 @@ async function request(
 	};
 }
 
+async function multipartRequest(
+	cookie: string,
+	path: string,
+	fields: Record<string, string>,
+	file: File,
+) {
+	const form = new FormData();
+	for (const [key, value] of Object.entries(fields)) form.set(key, value);
+	form.set("file", file, file.name);
+	const response = await fetch(`${API}${path}`, {
+		method: "POST",
+		headers: { Origin: "http://localhost:5173", Cookie: cookie },
+		body: form,
+	});
+	const text = await response.text();
+	return {
+		status: response.status,
+		text,
+		body: JSON.parse(text || "{}") as Record<string, unknown>,
+		cacheControl: response.headers.get("cache-control") ?? "",
+	};
+}
+
 async function provisionIdentity(userId: string, providerPersonId: string) {
 	const eventId = randomUUID();
 	const payload = {
@@ -305,6 +328,252 @@ async function main() {
 				(smallSave.body.entity as Record<string, unknown> | undefined)?.status === "submitted" &&
 				!smallSave.text.includes("must-not-leak"),
 			{ invalidMinutes, smallSave },
+		);
+
+		const documents = await request(cookie, "/api/employee/self-service/documents");
+		const ownDocuments = documents.body.documents as Array<Record<string, unknown>> | undefined;
+		const publishedDocuments = documents.body.publishedDocuments as
+			| Array<Record<string, unknown>>
+			| undefined;
+		check(
+			"dokumenty slučují vlastní review stav a publikované soubory bez storage identifikátorů",
+			documents.status === 200 &&
+				ownDocuments?.[0]?.reviewStatus === "pending" &&
+				publishedDocuments?.[0]?.title === "Výplatnice červen 2026" &&
+				!documents.text.includes("storage_file_id") &&
+				!documents.text.includes("sha256") &&
+				!documents.text.includes("fileSha256") &&
+				!documents.text.includes("must-not-leak"),
+			documents.body,
+		);
+		const publishedContent = await fetch(
+			`${API}/api/employee/self-service/published-documents/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/content`,
+			{ headers: { Origin: "http://localhost:5173", Cookie: cookie } },
+		);
+		const publishedBytes = Buffer.from(await publishedContent.arrayBuffer());
+		check(
+			"publikovaný dokument se streamuje přes person-scoped facade a nesmí se cachovat",
+			publishedContent.status === 200 &&
+				publishedContent.headers.get("content-type") === "application/pdf" &&
+				publishedContent.headers.get("cache-control")?.includes("no-store") === true &&
+				publishedBytes.subarray(0, 4).toString("ascii") === "%PDF",
+			{
+				status: publishedContent.status,
+				headers: Object.fromEntries(publishedContent.headers),
+			},
+		);
+
+		const invalidFile = await multipartRequest(
+			cookie,
+			"/api/employee/self-service/documents",
+			{ operationId: randomUUID(), type: "other" },
+			new File([Buffer.from([0, 1, 2, 3])], "payload.exe", {
+				type: "application/octet-stream",
+			}),
+		);
+		check(
+			"nepodporovaný obsah je odmítnut před upload intentem",
+			invalidFile.status === 415 && invalidFile.body.error === "employee_file_type_not_allowed",
+			invalidFile,
+		);
+		const mismatchedFile = await multipartRequest(
+			cookie,
+			"/api/employee/self-service/documents",
+			{ operationId: randomUUID(), type: "other" },
+			new File([Buffer.from("%PDF-1.4\n%%EOF\n", "utf8")], "falesny-obrazek.png", {
+				type: "image/png",
+			}),
+		);
+		check(
+			"přípona, deklarovaný typ a magic bytes se nesmí rozcházet",
+			mismatchedFile.status === 415 &&
+				mismatchedFile.body.error === "employee_file_type_not_allowed",
+			mismatchedFile,
+		);
+		const pdf = new File(
+			[Buffer.from("%PDF-1.4\nWatson employee document\n%%EOF\n", "utf8")],
+			"potvrzeni.pdf",
+			{ type: "application/pdf", lastModified: 1_752_739_200_000 },
+		);
+		const documentOperation = randomUUID();
+		const documentFields = {
+			operationId: documentOperation,
+			type: "bank_account_confirmation",
+			note: "Potvrzení účtu",
+			validFrom: "2026-07-01",
+			validUntil: "2026-12-31",
+		};
+		const documentUpload = await multipartRequest(
+			cookie,
+			"/api/employee/self-service/documents",
+			documentFields,
+			pdf,
+		);
+		const documentReplay = await multipartRequest(
+			cookie,
+			"/api/employee/self-service/documents",
+			documentFields,
+			pdf,
+		);
+		check(
+			"dokument používá hashovaný intent, ověřené bytes, atomický finalize a stabilní retry",
+			documentUpload.status === 201 &&
+				documentReplay.status === 201 &&
+				documentReplay.body.replayed === true &&
+				(documentUpload.body.document as Record<string, unknown> | undefined)?.reviewStatus ===
+					"pending" &&
+				!documentUpload.text.includes("storage_file_id") &&
+				!documentUpload.text.includes("must-not-leak"),
+			{ documentUpload, documentReplay },
+		);
+
+		const expenses = await request(cookie, "/api/employee/self-service/expenses");
+		const claims = expenses.body.claims as Array<Record<string, unknown>> | undefined;
+		const trainerProjects = expenses.body.trainerProjects as
+			| Array<Record<string, unknown>>
+			| undefined;
+		check(
+			"výdaje vracejí bezpečný stav i vlastní trenérské projekty bez receipt storage detailů",
+			expenses.status === 200 &&
+				claims?.[0]?.status === "submitted" &&
+				trainerProjects?.[0]?.name === "Letní soustředění" &&
+				!expenses.text.includes("owner_trainer_ids") &&
+				!expenses.text.includes("storage_file_id") &&
+				!expenses.text.includes("sha256") &&
+				!expenses.text.includes("must-not-leak"),
+			expenses.body,
+		);
+		const expenseOperation = randomUUID();
+		const expenseFields = {
+			operationId: expenseOperation,
+			title: "Jízdenka Brno",
+			amount: "240",
+			currency: "CZK",
+			date: "2026-07-16",
+			paymentSource: "personal_card",
+			category: "transport",
+			reimbursementSource: "accounting",
+		};
+		const expenseUpload = await multipartRequest(
+			cookie,
+			"/api/employee/self-service/expenses",
+			expenseFields,
+			pdf,
+		);
+		const expenseReplay = await multipartRequest(
+			cookie,
+			"/api/employee/self-service/expenses",
+			expenseFields,
+			pdf,
+		);
+		check(
+			"účtenka a claim mají oddělený účel, serverový CZK přepočet a idempotentní finalize",
+			expenseUpload.status === 201 &&
+				expenseReplay.body.replayed === true &&
+				(expenseUpload.body.claim as Record<string, unknown> | undefined)?.amountCzk === 240 &&
+				!expenseUpload.text.includes("must-not-leak"),
+			{ expenseUpload, expenseReplay },
+		);
+
+		const contracts = await request(cookie, "/api/employee/self-service/contracts");
+		const contractRows = contracts.body.contracts as Array<Record<string, unknown>> | undefined;
+		check(
+			"smlouvy zveřejní jen bezpečnou verzi a odvodí signable stav",
+			contracts.status === 200 &&
+				contractRows?.[0]?.version === 4 &&
+				contractRows?.[0]?.canSign === true &&
+				!contracts.text.includes("employer_private_note") &&
+				!contracts.text.includes("finalPdfSha256") &&
+				!contracts.text.includes("must-not-leak"),
+			contracts.body,
+		);
+		const signature = `data:image/png;base64,${"A".repeat(96)}`;
+		const missingConsent = await request(cookie, "/api/employee/self-service/contracts/sign", {
+			method: "POST",
+			body: {
+				operationId: randomUUID(),
+				contractId: "contract-ci",
+				expectedVersion: 4,
+				fullName: "CI Employee v1",
+				birthDate: "1990-01-02",
+				bankAccountSuffix: "6789",
+				signatureDataUrl: signature,
+			},
+		});
+		check(
+			"podpisový command bez explicitního souhlasu skončí před providerem",
+			missingConsent.status === 422 && missingConsent.body.error === "invalid_contract_signature",
+			missingConsent,
+		);
+		const invalidBankSuffix = await request(cookie, "/api/employee/self-service/contracts/sign", {
+			method: "POST",
+			body: {
+				operationId: randomUUID(),
+				contractId: "contract-ci",
+				expectedVersion: 4,
+				consent: true,
+				fullName: "CI Employee v1",
+				birthDate: "1990-01-02",
+				bankAccountSuffix: "789",
+				signatureDataUrl: signature,
+			},
+		});
+		check(
+			"bankovní challenge přijme jen přesně čtyři číslice nebo žádnou hodnotu",
+			invalidBankSuffix.status === 422 &&
+				invalidBankSuffix.body.error === "invalid_contract_signature",
+			invalidBankSuffix,
+		);
+		const invalidSignature = await request(cookie, "/api/employee/self-service/contracts/sign", {
+			method: "POST",
+			body: {
+				operationId: randomUUID(),
+				contractId: "contract-ci",
+				expectedVersion: 4,
+				consent: true,
+				fullName: "Nesprávné jméno",
+				birthDate: "1990-01-02",
+				bankAccountSuffix: "6789",
+				signatureDataUrl: signature,
+			},
+		});
+		check(
+			"chybná podpisová challenge vrací pouze bezpečný kód",
+			invalidSignature.status === 400 &&
+				invalidSignature.body.error === "signature_challenge_failed" &&
+				!invalidSignature.text.includes("must-not-leak"),
+			invalidSignature,
+		);
+		const contractOperation = randomUUID();
+		const signBody = {
+			operationId: contractOperation,
+			contractId: "contract-ci",
+			expectedVersion: 4,
+			consent: true,
+			fullName: "CI Employee v1",
+			birthDate: "1990-01-02",
+			bankAccountSuffix: "6789",
+			signatureDataUrl: signature,
+		};
+		const signed = await request(cookie, "/api/employee/self-service/contracts/sign", {
+			method: "POST",
+			body: signBody,
+		});
+		const signedReplay = await request(cookie, "/api/employee/self-service/contracts/sign", {
+			method: "POST",
+			body: signBody,
+		});
+		check(
+			"podpis je verzovaný, potvrzený LuckyOS a retry nevrací podpisový obrázek ani storage metadata",
+			signed.status === 200 &&
+				signedReplay.body.replayed === true &&
+				(signed.body.contract as Record<string, unknown> | undefined)?.signedDate ===
+					"2026-07-17" &&
+				!signed.text.includes("signature_image_data_url") &&
+				!signed.text.includes("storage_file_id") &&
+				!signed.text.includes("finalPdfSha256") &&
+				!signed.text.includes("must-not-leak"),
+			{ signed, signedReplay },
 		);
 
 		const sync = await request(cookie, "/api/employee/sync", { method: "POST", body: {} });

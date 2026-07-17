@@ -1,13 +1,20 @@
 /** Uzavřený CI provider: ověří přítomnost bridge JWT a vrací minimální LuckyOS kontrakt. */
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 
 const port = Number(process.env.LUCKYOS_STUB_PORT ?? 8791);
 const v1Receipts = new Map();
+const v1Responses = new Map();
+const v1Uploads = new Map();
 
-async function requestBody(request) {
+async function requestBytes(request) {
 	const chunks = [];
 	for await (const chunk of request) chunks.push(Buffer.from(chunk));
-	return Buffer.concat(chunks).toString("utf8");
+	return Buffer.concat(chunks);
+}
+
+async function requestBody(request) {
+	return (await requestBytes(request)).toString("utf8");
 }
 
 function tokenPayload(header) {
@@ -38,6 +45,53 @@ const server = createServer(async (request, response) => {
 		payload?.sub === payload?.watson_user_id &&
 		payload?.email === undefined &&
 		payload?.person_id === undefined;
+	if (isV1 && request.url?.startsWith("/api/integrations/watson/v1/uploads/")) {
+		const scopes = new Set(payload.scope.split(/\s+/));
+		const match = new URL(request.url, "http://luckyos.test").pathname.match(
+			/^\/api\/integrations\/watson\/v1\/uploads\/([a-f0-9-]+)\/content$/,
+		);
+		if (request.method !== "PUT" || !match || !scopes.has("files:write")) {
+			response.statusCode = 403;
+			response.end(JSON.stringify({ error: { code: "insufficient_scope" } }));
+			return;
+		}
+		const upload = v1Uploads.get(match[1]);
+		if (!upload) {
+			response.statusCode = 404;
+			response.end(JSON.stringify({ error: { code: "domain_target_not_found" } }));
+			return;
+		}
+		const bytes = await requestBytes(request);
+		const sha256 = createHash("sha256").update(bytes).digest("hex");
+		if (bytes.length !== upload.size_bytes || sha256 !== upload.sha256) {
+			response.statusCode = 409;
+			response.end(JSON.stringify({ error: { code: "file_upload_mismatch" } }));
+			return;
+		}
+		upload.status = upload.status === "consumed" ? "consumed" : "uploaded";
+		response.end(
+			JSON.stringify({
+				upload,
+				request_id: crypto.randomUUID(),
+				correlation_id: request.headers["x-correlation-id"],
+			}),
+		);
+		return;
+	}
+	if (isV1 && request.url?.startsWith("/api/integrations/watson/v1/published-documents/")) {
+		const scopes = new Set(payload.scope.split(/\s+/));
+		if (request.method !== "GET" || !scopes.has("documents:read")) {
+			response.statusCode = 403;
+			response.end(JSON.stringify({ error: { code: "insufficient_scope" } }));
+			return;
+		}
+		const bytes = Buffer.from("%PDF-1.4\n% Watson LuckyOS verification\n%%EOF\n", "utf8");
+		response.setHeader("content-type", "application/pdf");
+		response.setHeader("content-length", String(bytes.length));
+		response.end(bytes);
+		return;
+	}
+
 	if (isV1 && request.url?.startsWith("/api/integrations/watson/v1/employees/")) {
 		if (!request.headers["x-correlation-id"]) {
 			response.statusCode = 400;
@@ -61,6 +115,11 @@ const server = createServer(async (request, response) => {
 			attendance: "attendance:read",
 			"small-numbers": "small-numbers:read",
 			"work-items": "work-items:read",
+			documents: "documents:read",
+			"published-documents": "documents:read",
+			"expense-claims": "expenses:read",
+			"trainer-projects": "trainer-projects:read",
+			contracts: "contracts:read",
 		}[resource];
 		if (request.method === "GET" && (!readScope || !scopes.has(readScope))) {
 			response.statusCode = 403;
@@ -196,6 +255,333 @@ const server = createServer(async (request, response) => {
 			}));
 			return;
 		}
+		if (request.method === "GET" && remainder === "documents") {
+			response.end(
+				JSON.stringify({
+					documents: [
+						{
+							id: "document-ci",
+							type: "tax_declaration",
+							file_name: "prohlaseni.pdf",
+							file_type: "application/pdf",
+							file_size_bytes: 1234,
+							file_sha256: "a".repeat(64),
+							note: null,
+							review_status: "pending",
+							review_note: null,
+							valid_from: "2026-01-01",
+							valid_until: "2026-12-31",
+							created_at: "2026-07-01T08:00:00.000Z",
+							updated_at: "2026-07-01T08:00:00.000Z",
+							storage_file_id: "must-not-leak",
+						},
+					],
+					next_cursor: null,
+				}),
+			);
+			return;
+		}
+		if (request.method === "GET" && remainder === "published-documents") {
+			response.end(
+				JSON.stringify({
+					resource: "published-documents",
+					data: {
+						documents: [
+							{
+								id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+								document_type: "payslip",
+								period_year: 2026,
+								period_month: 6,
+								title: "Výplatnice červen 2026",
+								version: 1,
+								file_name: "vyplatnice.pdf",
+								mime_type: "application/pdf",
+								size_bytes: 1234,
+								sha256: "b".repeat(64),
+								published_at: "2026-07-10T08:00:00.000Z",
+								withdrawn_at: null,
+								updated_at: "2026-07-10T08:00:00.000Z",
+								storage_file_id: "must-not-leak",
+							},
+						],
+					},
+				}),
+			);
+			return;
+		}
+		if (request.method === "GET" && remainder === "expense-claims") {
+			response.end(
+				JSON.stringify({
+					claims: [
+						{
+							id: "expense-ci",
+							title: "Jízdenka",
+							amount: 120,
+							currency: "CZK",
+							amount_czk: 120,
+							exchange_rate: null,
+							date: "2026-07-15",
+							payment_source: "personal_card",
+							category: "transport",
+							note: null,
+							reimbursement_source: "accounting",
+							trainer_project_id: null,
+							status: "submitted",
+							reviewer_note: null,
+							reimbursed_at: null,
+							receipt: {
+								file_name: "jizdenka.pdf",
+								mime_type: "application/pdf",
+								sha256: "c".repeat(64),
+								storage_file_id: "must-not-leak",
+							},
+							created_at: "2026-07-15T08:00:00.000Z",
+							updated_at: "2026-07-15T08:00:00.000Z",
+						},
+					],
+					next_cursor: null,
+				}),
+			);
+			return;
+		}
+		if (request.method === "GET" && remainder === "trainer-projects") {
+			response.end(
+				JSON.stringify({
+					resource: "trainer-projects",
+					data: {
+						projects: [
+							{
+								id: "trainer-project-ci",
+								name: "Letní soustředění",
+								status: "active",
+								review_status: "approved",
+								owner_trainer_ids: [providerPersonId],
+							},
+						],
+					},
+				}),
+			);
+			return;
+		}
+		if (request.method === "GET" && remainder === "contracts") {
+			response.end(
+				JSON.stringify({
+					resource: "contracts",
+					data: {
+						contracts: [
+							{
+								id: "contract-ci",
+								version: 4,
+								type: "dpp",
+								title: "DPP červenec–prosinec 2026",
+								valid_from: "2026-07-01",
+								valid_until: "2026-12-31",
+								status: "draft",
+								workflow_status: "sent_to_employee",
+								signed_date: null,
+								file_name: "dpp.pdf",
+								final_pdf_sha256: null,
+								locked_at: null,
+								created_at: "2026-07-01T08:00:00.000Z",
+								updated_at: "2026-07-15T08:00:00.000Z",
+								employer_private_note: "must-not-leak",
+							},
+						],
+					},
+				}),
+			);
+			return;
+		}
+		if (request.method === "POST" && remainder === "upload-intents") {
+			const key = request.headers["idempotency-key"];
+			const raw = await requestBody(request);
+			if (!scopes.has("files:write") || typeof key !== "string") {
+				response.statusCode = 403;
+				response.end(JSON.stringify({ error: { code: "insufficient_scope" } }));
+				return;
+			}
+			const previous = v1Receipts.get(key);
+			if (previous && previous !== raw) {
+				response.statusCode = 409;
+				response.end(JSON.stringify({ error: { code: "idempotency_conflict" } }));
+				return;
+			}
+			if (previous) {
+				response.statusCode = 201;
+				response.setHeader("idempotency-replayed", "true");
+				response.end(JSON.stringify(v1Responses.get(key)));
+				return;
+			}
+			const body = JSON.parse(raw);
+			const id = crypto.randomUUID();
+			const upload = {
+				id,
+				purpose: body.purpose,
+				work_item_id: null,
+				file_name: body.file_name,
+				mime_type: body.mime_type,
+				size_bytes: body.file_size_bytes,
+				sha256: body.file_sha256,
+				status: "created",
+				expires_at: "2026-07-18T08:00:00.000Z",
+			};
+			v1Uploads.set(id, upload);
+			const result = {
+				upload,
+				upload_url: `/api/integrations/watson/v1/uploads/${id}/content`,
+				idempotency_replayed: false,
+				request_id: crypto.randomUUID(),
+				correlation_id: request.headers["x-correlation-id"],
+			};
+			v1Receipts.set(key, raw);
+			v1Responses.set(key, result);
+			response.statusCode = 201;
+			response.end(JSON.stringify(result));
+			return;
+		}
+		if (
+			request.method === "POST" &&
+			(remainder === "documents" || remainder === "expense-claims")
+		) {
+			const key = request.headers["idempotency-key"];
+			const raw = await requestBody(request);
+			const requiredScope = remainder === "documents" ? "documents:write" : "expenses:write";
+			if (!scopes.has(requiredScope) || typeof key !== "string") {
+				response.statusCode = 403;
+				response.end(JSON.stringify({ error: { code: "insufficient_scope" } }));
+				return;
+			}
+			const previous = v1Receipts.get(key);
+			if (previous && previous !== raw) {
+				response.statusCode = 409;
+				response.end(JSON.stringify({ error: { code: "idempotency_conflict" } }));
+				return;
+			}
+			if (previous) {
+				response.statusCode = 201;
+				response.setHeader("idempotency-replayed", "true");
+				response.end(JSON.stringify({ ...v1Responses.get(key), idempotency_replayed: true }));
+				return;
+			}
+			const body = JSON.parse(raw);
+			const upload = v1Uploads.get(body.upload_id);
+			if (!upload || upload.status !== "uploaded") {
+				response.statusCode = 409;
+				response.end(JSON.stringify({ error: { code: "file_upload_mismatch" } }));
+				return;
+			}
+			upload.status = "consumed";
+			const entity =
+				remainder === "documents"
+					? {
+							id: body.id,
+							type: body.type,
+							file_name: upload.file_name,
+							file_type: upload.mime_type,
+							file_size_bytes: upload.size_bytes,
+							file_sha256: upload.sha256,
+							note: body.note,
+							review_status: "pending",
+							review_note: null,
+							valid_from: body.valid_from,
+							valid_until: body.valid_until,
+							created_at: "2026-07-17T08:00:00.000Z",
+							updated_at: "2026-07-17T08:00:00.000Z",
+							storage_file_id: "must-not-leak",
+						}
+					: {
+							id: body.id,
+							title: body.title,
+							amount: body.amount,
+							currency: body.currency,
+							amount_czk: body.amount_czk,
+							exchange_rate: body.exchange_rate,
+							date: body.date,
+							payment_source: body.payment_source,
+							category: body.category,
+							note: body.note,
+							reimbursement_source: body.reimbursement_source,
+							trainer_project_id: body.trainer_project_id,
+							status: "submitted",
+							reviewer_note: null,
+							reimbursed_at: null,
+							receipt: {
+								file_name: upload.file_name,
+								mime_type: upload.mime_type,
+								sha256: upload.sha256,
+								storage_file_id: "must-not-leak",
+							},
+							created_at: "2026-07-17T08:00:00.000Z",
+							updated_at: "2026-07-17T08:00:00.000Z",
+						};
+			const result =
+				remainder === "documents"
+					? { document: entity, idempotency_replayed: false }
+					: { claim: entity, idempotency_replayed: false };
+			v1Receipts.set(key, raw);
+			v1Responses.set(key, result);
+			response.statusCode = 201;
+			response.end(JSON.stringify(result));
+			return;
+		}
+		if (request.method === "POST" && /^contracts\/[^/]+\/sign$/.test(remainder)) {
+			const key = request.headers["idempotency-key"];
+			const raw = await requestBody(request);
+			if (!scopes.has("contracts:write") || typeof key !== "string") {
+				response.statusCode = 403;
+				response.end(JSON.stringify({ error: { code: "insufficient_scope" } }));
+				return;
+			}
+			const previous = v1Receipts.get(key);
+			if (previous && previous !== raw) {
+				response.statusCode = 409;
+				response.end(JSON.stringify({ error: { code: "idempotency_conflict" } }));
+				return;
+			}
+			if (previous) {
+				response.end(JSON.stringify({ ...v1Responses.get(key), idempotency_replayed: true }));
+				return;
+			}
+			const body = JSON.parse(raw);
+			if (
+				body.full_name !== "CI Employee v1" ||
+				body.birth_date !== "1990-01-02" ||
+				body.bank_account_suffix !== "6789"
+			) {
+				response.statusCode = 400;
+				response.end(JSON.stringify({ error: { code: "signature_challenge_failed" } }));
+				return;
+			}
+			const result = {
+				contract: {
+					id: "contract-ci",
+					version: 5,
+					type: "dpp",
+					title: "DPP červenec–prosinec 2026",
+					valid_from: "2026-07-01",
+					valid_until: "2026-12-31",
+					status: "active",
+					workflow_status: "active",
+					signed_date: "2026-07-17",
+					file_name: "dpp-final.pdf",
+					final_pdf_sha256: "d".repeat(64),
+					locked_at: "2026-07-17T08:00:00.000Z",
+					created_at: "2026-07-01T08:00:00.000Z",
+					updated_at: "2026-07-17T08:00:00.000Z",
+				},
+				signature: {
+					signature_image_data_url: "must-not-leak",
+					verification_method: "must-not-leak",
+				},
+				document: { storage_file_id: "must-not-leak" },
+				idempotency_replayed: false,
+			};
+			v1Receipts.set(key, raw);
+			v1Responses.set(key, result);
+			response.end(JSON.stringify(result));
+			return;
+		}
+
 		if (request.method === "POST" && remainder.endsWith("/commands")) {
 			const writeScope = resource === "profile-change-requests"
 				? "profile:write"

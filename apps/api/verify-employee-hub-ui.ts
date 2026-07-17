@@ -113,6 +113,13 @@ async function assertNoOverflow(page: Page, label: string) {
   if (overflow) throw new Error(`employee_hub_ui_overflow_${label}`);
 }
 
+function multipartField(body: Buffer, field: string) {
+  const value = body
+    .toString("utf8")
+    .match(new RegExp(`name="${field}"\\r\\n\\r\\n([^\\r\\n]+)`))?.[1];
+  return value ?? null;
+}
+
 async function run(browserName: "chromium" | "webkit") {
   const fixture = await provision(browserName);
   let browser: Browser | undefined;
@@ -128,10 +135,17 @@ async function run(browserName: "chromium" | "webkit") {
     const profileCommands: Array<Record<string, unknown>> = [];
     const attendanceCommands: Array<Record<string, unknown>> = [];
     const smallNumberCommands: Array<Record<string, unknown>> = [];
+    const documentCommands: Buffer[] = [];
+    const expenseCommands: Buffer[] = [];
+    const contractCommands: Array<Record<string, unknown>> = [];
     page.on("pageerror", (error) => runtimeErrors.push(error.message));
     page.on("console", (message) => {
       if (message.type() === "error") runtimeErrors.push(message.text());
     });
+    const ignoreIntentional502 = () => {
+      const index = runtimeErrors.findIndex((message) => message.includes("status of 502"));
+      if (index >= 0) runtimeErrors.splice(index, 1);
+    };
     await page.route(/\/api\/employee\/status(?:\?|$)/, async (route) => {
       await route.fulfill({
         status: 200,
@@ -250,6 +264,89 @@ async function run(browserName: "chromium" | "webkit") {
         }),
       });
     });
+    await page.route(/\/api\/employee\/self-service\/documents(?:\?|$)/, async (route) => {
+      if (route.request().method() === "POST") {
+        documentCommands.push(route.request().postDataBuffer() ?? Buffer.alloc(0));
+        if (documentCommands.length === 1) {
+          await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "luckyos_unavailable" }) });
+          return;
+        }
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ document: { id: "document-upload-ui" }, replayed: false }) });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Cache-Control": "private, no-store" },
+        body: JSON.stringify({
+          documents: [{
+            id: "document-ui", type: "bank_account_confirmation", fileName: "potvrzeni.pdf",
+            fileType: "application/pdf", fileSizeBytes: 1234, fileSha256: "a".repeat(64),
+            note: null, reviewStatus: "pending", reviewNote: null, validFrom: "2026-07-01",
+            validUntil: null, createdAt: "2026-07-16T08:00:00.000Z", updatedAt: "2026-07-16T08:00:00.000Z",
+          }],
+          publishedDocuments: [{
+            id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", documentType: "payslip",
+            periodYear: 2026, periodMonth: 6, title: "Výplatní páska červen", version: 1,
+            fileName: "vyplatni-paska.pdf", mimeType: "application/pdf", sizeBytes: 4321,
+            sha256: "b".repeat(64), publishedAt: "2026-07-15T08:00:00.000Z", updatedAt: "2026-07-15T08:00:00.000Z",
+          }, {
+            id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", documentType: "contract",
+            periodYear: 2026, periodMonth: null, title: "Dohoda o provedení práce", version: 4,
+            fileName: "dpp.pdf", mimeType: "application/pdf", sizeBytes: 8765,
+            publishedAt: "2026-07-16T08:00:00.000Z", updatedAt: "2026-07-16T08:00:00.000Z",
+          }],
+          fetchedAt: "2026-07-17T10:30:00.000Z",
+        }),
+      });
+    });
+    await page.route(/\/api\/employee\/self-service\/expenses(?:\?|$)/, async (route) => {
+      if (route.request().method() === "POST") {
+        expenseCommands.push(route.request().postDataBuffer() ?? Buffer.alloc(0));
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ claim: { id: "expense-upload-ui" }, replayed: false }) });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Cache-Control": "private, no-store" },
+        body: JSON.stringify({
+          claims: [{
+            id: "expense-ui", title: "Jízdenka Brno", amount: 240, currency: "CZK", amountCzk: 240,
+            exchangeRate: null, date: "2026-07-16", paymentSource: "personal_card", category: "transport",
+            note: null, reimbursementSource: "accounting", status: "submitted", reviewerNote: null,
+            reimbursedAt: null, receipt: { fileName: "jizdenka.pdf", mimeType: "application/pdf", sha256: "c".repeat(64) },
+            createdAt: "2026-07-16T08:00:00.000Z", updatedAt: "2026-07-16T08:00:00.000Z",
+          }],
+          trainerProjects: [{ id: "trainer-project-ui", name: "Letní soustředění", status: "active", reviewStatus: "approved" }],
+          fetchedAt: "2026-07-17T10:30:00.000Z",
+        }),
+      });
+    });
+    await page.route(/\/api\/employee\/self-service\/contracts\/sign(?:\?|$)/, async (route) => {
+      contractCommands.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
+      if (contractCommands.length === 1) {
+        await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "contract_finalization_failed" }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ contract: { id: "contract-ui", workflowStatus: "signed" }, replayed: false }) });
+    });
+    await page.route(/\/api\/employee\/self-service\/contracts(?:\?|$)/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "Cache-Control": "private, no-store" },
+        body: JSON.stringify({
+          contracts: [{
+            id: "contract-ui", version: 4, type: "dpp", title: "Dohoda o provedení práce",
+            validFrom: "2026-07-01", validUntil: "2026-12-31", status: "draft",
+            workflowStatus: "sent_to_employee", signedDate: null, fileName: "dpp.pdf",
+            finalPdfSha256: null, lockedAt: null, canSign: true, updatedAt: "2026-07-16T08:00:00.000Z",
+          }],
+          fetchedAt: "2026-07-17T10:30:00.000Z",
+        }),
+      });
+    });
 
     await page.goto(WEB, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await page.getByLabel("E-mail", { exact: true }).fill(fixture.email);
@@ -273,10 +370,7 @@ async function run(browserName: "chromium" | "webkit") {
     await page.getByLabel("Telefon", { exact: true }).fill("+420 777 333 444");
     await page.getByRole("button", { name: "Odeslat žádost o změnu", exact: true }).click();
     await page.getByText("Uložení se nepodařilo.", { exact: false }).waitFor();
-    const intentionalProviderFailure = runtimeErrors.findIndex((message) =>
-      message.includes("status of 502"),
-    );
-    if (intentionalProviderFailure >= 0) runtimeErrors.splice(intentionalProviderFailure, 1);
+    ignoreIntentional502();
     await page.getByRole("button", { name: "Odeslat žádost o změnu", exact: true }).click();
     await page.getByText("Žádost o změnu byla bezpečně odeslána.", { exact: true }).waitFor();
     if (
@@ -303,6 +397,75 @@ async function run(browserName: "chromium" | "webkit") {
     if (smallNumberCommands.length !== 1 || smallNumberCommands[0]?.hoursMinutes !== 150) {
       throw new Error(`employee_hub_ui_small_number_command:${JSON.stringify(smallNumberCommands)}`);
     }
+
+    await page.getByRole("heading", { name: "Dokumenty a oficiální soubory", exact: true }).waitFor();
+    await page.getByText("Výplatní páska červen", { exact: true }).waitFor();
+    const pdf = {
+      name: "potvrzeni.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4\nWatson employee UI\n%%EOF\n", "utf8"),
+    };
+    const documentsPanel = page.locator("#dokumenty");
+    await documentsPanel.getByLabel("Soubor", { exact: true }).setInputFiles(pdf);
+    await documentsPanel.locator("select").first().selectOption("bank_account_confirmation");
+    await documentsPanel.getByLabel("Poznámka (volitelně)", { exact: true }).fill("Potvrzení účtu");
+    await documentsPanel.getByRole("button", { name: "Nahrát ke kontrole", exact: true }).click();
+    await page.getByText("Akci se nepodařilo potvrdit.", { exact: false }).waitFor();
+    ignoreIntentional502();
+    await documentsPanel.getByRole("button", { name: "Nahrát ke kontrole", exact: true }).click();
+    await page.getByText("Dokument byl bezpečně předán do LuckyOS ke kontrole.", { exact: true }).waitFor();
+    if (
+      documentCommands.length !== 2 ||
+      multipartField(documentCommands[0] ?? Buffer.alloc(0), "operationId") !==
+        multipartField(documentCommands[1] ?? Buffer.alloc(0), "operationId") ||
+      multipartField(documentCommands[0] ?? Buffer.alloc(0), "type") !== "bank_account_confirmation"
+    ) throw new Error(`employee_hub_ui_document_retry:${documentCommands.map((body) => body.length).join(",")}`);
+
+    await page.getByRole("heading", { name: "Výdaje a účtenky", exact: true }).waitFor();
+    const expensesPanel = page.locator("#vydaje");
+    await expensesPanel.getByLabel("Co bylo zaplaceno", { exact: true }).fill("Jízdenka Brno");
+    await expensesPanel.getByLabel("Datum výdaje", { exact: true }).fill("2026-07-16");
+    await expensesPanel.getByLabel("Částka", { exact: true }).fill("240");
+    await expensesPanel.locator("select").nth(3).selectOption("trainer_fund");
+    await expensesPanel.locator("select").nth(4).selectOption("trainer-project-ui");
+    await expensesPanel.getByLabel("Účtenka nebo doklad", { exact: true }).setInputFiles(pdf);
+    await expensesPanel.getByRole("button", { name: "Odeslat výdaj ke kontrole", exact: true }).click();
+    await page.getByText("Výdaj a doklad byly bezpečně odeslány do LuckyOS.", { exact: true }).waitFor();
+    if (
+      expenseCommands.length !== 1 ||
+      multipartField(expenseCommands[0] ?? Buffer.alloc(0), "title") !== "Jízdenka Brno" ||
+      multipartField(expenseCommands[0] ?? Buffer.alloc(0), "trainerProjectId") !== "trainer-project-ui"
+    ) throw new Error(`employee_hub_ui_expense_command:${expenseCommands[0]?.toString("utf8")}`);
+
+    await page.getByRole("heading", { name: "Smlouvy a elektronický podpis", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Zkontrolovat a podepsat", exact: true }).click();
+    await page.getByRole("link", { name: "Otevřít PDF smlouvy", exact: true }).waitFor();
+    await page.getByLabel("Celé jméno", { exact: true }).fill("Eva Testovací");
+    await page.getByLabel("Datum narození", { exact: true }).fill("1990-01-02");
+    await page.getByLabel("Poslední 4 číslice čísla účtu", { exact: true }).fill("0100");
+    await page.getByLabel("Nahrát PNG/JPG podpis", { exact: true }).setInputFiles({
+      name: "podpis.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YKx7QAAAABJRU5ErkJggg==", "base64"),
+    });
+    await page.getByRole("checkbox").check();
+    if (SCREENSHOT_DIR) {
+      await mkdir(SCREENSHOT_DIR, { recursive: true });
+      await page.locator("#smlouvy").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-contract-sign-desktop.png` });
+    }
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Elektronicky podepsat", exact: true }).click();
+    await page.getByText("Finální dokument se nepodařilo bezpečně vytvořit", { exact: false }).waitFor();
+    ignoreIntentional502();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Elektronicky podepsat", exact: true }).click();
+    await page.getByText("Smlouva byla podepsána a finální dokument vznikl v LuckyOS.", { exact: true }).waitFor();
+    if (
+      contractCommands.length !== 2 || contractCommands[0]?.operationId !== contractCommands[1]?.operationId ||
+      contractCommands[0]?.expectedVersion !== 4 || contractCommands[0]?.consent !== true ||
+      contractCommands[0]?.bankAccountSuffix !== "0100" ||
+      !String(contractCommands[0]?.signatureDataUrl).startsWith("data:image/png;base64,")
+    ) throw new Error(`employee_hub_ui_contract_retry:${JSON.stringify(contractCommands)}`);
     await assertNoOverflow(page, `${browserName}_desktop`);
     await assertAxeClean(page, `${browserName}_desktop`);
     await page.getByRole("button", { name: "Přenést akce do úkolů", exact: true }).click();
@@ -322,6 +485,9 @@ async function run(browserName: "chromium" | "webkit") {
       await page.locator("#mala-cisla").screenshot({
         path: `${SCREENSHOT_DIR}/${browserName}-employee-small-numbers-desktop.png`,
       });
+      await page.locator("#dokumenty").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-documents-desktop.png` });
+      await page.locator("#vydaje").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-expenses-desktop.png` });
+      await page.locator("#smlouvy").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-contracts-desktop.png` });
     }
 
     await page.goto(`${WEB}/prehled`, { waitUntil: "domcontentloaded", timeout: 30_000 });
@@ -341,6 +507,10 @@ async function run(browserName: "chromium" | "webkit") {
     if (!profileLinkBox || profileLinkBox.height < 44) {
       throw new Error(`employee_hub_ui_mobile_self_service_target:${JSON.stringify(profileLinkBox)}`);
     }
+    const documentsLinkBox = await page.getByRole("link", { name: "Dokumenty", exact: true }).boundingBox();
+    if (!documentsLinkBox || documentsLinkBox.height < 44) {
+      throw new Error(`employee_hub_ui_mobile_documents_target:${JSON.stringify(documentsLinkBox)}`);
+    }
     await assertNoOverflow(page, `${browserName}_mobile`);
     await assertAxeClean(page, `${browserName}_mobile`);
     if (SCREENSHOT_DIR) {
@@ -351,6 +521,7 @@ async function run(browserName: "chromium" | "webkit") {
       await page.locator("#dochazka").screenshot({
         path: `${SCREENSHOT_DIR}/${browserName}-employee-attendance-mobile.png`,
       });
+      await page.locator("#dokumenty").screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-employee-documents-mobile.png` });
     }
 
     await page.goto(`${WEB}/prehled`, { waitUntil: "domcontentloaded", timeout: 30_000 });

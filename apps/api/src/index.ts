@@ -39,6 +39,7 @@ import { chainCommandRoutes } from "./chainCommands";
 import { customFieldRoutes } from "./customFields";
 import { decisionRoutes } from "./decisions";
 import { employeeRoutes } from "./employee";
+import { EMPLOYEE_FILE_MAX_BYTES, employeeFileRoutes } from "./employeeFiles";
 import { employeeSelfServiceRoutes } from "./employeeSelfService";
 import { env, googleEnabled, pushEnabled } from "./env";
 import { exportRoutes } from "./export";
@@ -239,12 +240,22 @@ const attachmentBodyLimit = bodyLimit({
 	maxSize: ATTACHMENT_MAX_BYTES + 1024 * 1024,
 	onError: (c) => c.json({ error: "attachment_too_large", maxBytes: ATTACHMENT_MAX_BYTES }, 413),
 });
+const employeeFileBodyLimit = bodyLimit({
+	// LuckyOS file commands use multipart only as a transient Watson proxy. The
+	// authoritative file is stored and scanned by LuckyOS, never by Watson.
+	maxSize: EMPLOYEE_FILE_MAX_BYTES + 1024 * 1024,
+	onError: (c) => c.json({ error: "employee_file_too_large", maxBytes: EMPLOYEE_FILE_MAX_BYTES }, 413),
+});
 app.use("/*", (c, next) =>
 	c.req.path === "/api/restore"
 		? restoreBodyLimit(c, next)
 		: c.req.path === "/api/attachments/stage"
 			? attachmentBodyLimit(c, next)
-			: standardBodyLimit(c, next),
+			: c.req.method === "POST" &&
+					(c.req.path === "/api/employee/self-service/documents" ||
+						c.req.path === "/api/employee/self-service/expenses")
+				? employeeFileBodyLimit(c, next)
+				: standardBodyLimit(c, next),
 );
 
 app.use(
@@ -475,6 +486,7 @@ app.route("/", mailOutboundRoutes);
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);
 app.route("/", employeeSelfServiceRoutes);
+app.route("/", employeeFileRoutes);
 
 /** Web Push — VAPID klíč, (od)hlášení odběru, test. */
 app.route("/", pushRoutes);

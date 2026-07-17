@@ -25,6 +25,7 @@ import { issueLuckyOsV1Token } from "./powersync";
 
 const EVENT_MAX_BYTES = 64 * 1024;
 const PROVIDER_JSON_MAX_BYTES = 2 * 1024 * 1024;
+const PROVIDER_FILE_MAX_BYTES = 25 * 1024 * 1024;
 const WEBHOOK_CLOCK_SKEW_MS = 5 * 60_000;
 
 const correlationIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/);
@@ -361,6 +362,11 @@ export type LuckyOsV1Result = {
 	errorCode?: string;
 };
 
+export type LuckyOsV1FileResult = LuckyOsV1Result & {
+	bytes?: Uint8Array;
+	mimeType?: "application/pdf" | "application/octet-stream";
+};
+
 /** Resolve the active provider binding without exposing it to the client. */
 export async function activeLuckyOsV1Binding(userId: string) {
 	const db = getDb();
@@ -389,6 +395,83 @@ export async function activeLuckyOsV1Binding(userId: string) {
 	)[0]?.revokedAt;
 	if (locallyRevoked) return null;
 	return row?.status === "active" ? row : null;
+}
+
+async function boundedResponseBytes(response: Response, maxBytes: number) {
+	const reader = response.body?.getReader();
+	if (!reader) return new Uint8Array();
+	const chunks: Uint8Array[] = [];
+	let total = 0;
+	while (true) {
+		const item = await reader.read();
+		if (item.done) break;
+		total += item.value.byteLength;
+		if (total > maxBytes) {
+			await reader.cancel();
+			throw new Error("provider_response_too_large");
+		}
+		chunks.push(item.value);
+	}
+	const bytes = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return bytes;
+}
+
+async function readProviderJson(
+	response: Response,
+	correlationId: string,
+): Promise<LuckyOsV1Result> {
+	const advertisedSize = Number(response.headers.get("content-length") ?? "0");
+	if (Number.isFinite(advertisedSize) && advertisedSize > PROVIDER_JSON_MAX_BYTES) {
+		await response.body?.cancel();
+		return {
+			ok: false,
+			status: 502,
+			data: null,
+			correlationId,
+			errorCode: "luckyos_response_too_large",
+		};
+	}
+	let bytes: Uint8Array;
+	try {
+		bytes = await boundedResponseBytes(response, PROVIDER_JSON_MAX_BYTES);
+	} catch {
+		return {
+			ok: false,
+			status: 502,
+			data: null,
+			correlationId,
+			errorCode: "luckyos_response_too_large",
+		};
+	}
+	let data: unknown = null;
+	try {
+		data = bytes.byteLength ? JSON.parse(Buffer.from(bytes).toString("utf8")) : null;
+	} catch {
+		return {
+			ok: false,
+			status: 502,
+			data: null,
+			correlationId,
+			errorCode: "luckyos_invalid_response",
+		};
+	}
+	return { ok: response.ok, status: response.status, data, correlationId };
+}
+
+async function v1FileAuthorization(userId: string, scopes: readonly string[]) {
+	const binding = await activeLuckyOsV1Binding(userId);
+	if (!binding || binding.organizationId !== env.luckyOs.organizationId) return null;
+	const token = await issueLuckyOsV1Token({
+		organizationId: binding.organizationId,
+		watsonUserId: userId,
+		scopes,
+	});
+	return { token };
 }
 
 /**
@@ -477,30 +560,149 @@ export async function luckyOsV1EmployeeFetch(args: {
 			errorCode: timeout ? "luckyos_timeout" : "luckyos_unavailable",
 		};
 	}
-	const advertisedSize = Number(response.headers.get("content-length") ?? "0");
-	if (Number.isFinite(advertisedSize) && advertisedSize > PROVIDER_JSON_MAX_BYTES) {
+	return readProviderJson(response, correlationId);
+}
+
+/** Upload verified bytes to an already-created, identity-bound LuckyOS intent. */
+export async function luckyOsV1EmployeeUpload(args: {
+	userId: string;
+	uploadId: string;
+	bytes: Uint8Array;
+	correlationId?: string;
+}): Promise<LuckyOsV1Result> {
+	const correlationId = args.correlationId ?? `watson-${crypto.randomUUID()}`;
+	if (!correlationIdSchema.safeParse(correlationId).success) {
+		throw new Error("invalid_luckyos_v1_correlation_id");
+	}
+	if (!z.string().uuid().safeParse(args.uploadId).success || args.bytes.byteLength < 1) {
+		throw new Error("invalid_luckyos_v1_upload");
+	}
+	if (args.bytes.byteLength > PROVIDER_FILE_MAX_BYTES) {
+		return { ok: false, status: 413, data: null, correlationId, errorCode: "payload_too_large" };
+	}
+	const baseUrl = env.luckyOs.baseUrl;
+	if (env.luckyOs.protocol !== "v1" || !baseUrl || !env.luckyOs.organizationId) {
 		return {
 			ok: false,
-			status: 502,
+			status: 503,
 			data: null,
 			correlationId,
-			errorCode: "luckyos_response_too_large",
+			errorCode: "luckyos_v1_not_configured",
 		};
 	}
-	const bytes = await response.arrayBuffer();
-	if (bytes.byteLength > PROVIDER_JSON_MAX_BYTES) {
+	const authorization = await v1FileAuthorization(args.userId, ["files:write"]);
+	if (!authorization) {
 		return {
 			ok: false,
-			status: 502,
+			status: 403,
 			data: null,
 			correlationId,
-			errorCode: "luckyos_response_too_large",
+			errorCode: "luckyos_identity_not_linked",
 		};
 	}
-	let data: unknown = null;
+	let response: Response;
 	try {
-		data = bytes.byteLength ? JSON.parse(Buffer.from(bytes).toString("utf8")) : null;
-	} catch {
+		response = await fetch(
+			new URL(`/api/integrations/watson/v1/uploads/${args.uploadId}/content`, baseUrl),
+			{
+				method: "PUT",
+				redirect: "error",
+				signal: AbortSignal.timeout(60_000),
+				headers: {
+					accept: "application/json",
+					authorization: `Bearer ${authorization.token}`,
+					"content-type": "application/octet-stream",
+					"content-length": String(args.bytes.byteLength),
+					"x-correlation-id": correlationId,
+				},
+				body: Buffer.from(args.bytes),
+			},
+		);
+	} catch (error) {
+		const timeout = error instanceof Error && /timeout/i.test(`${error.name} ${error.message}`);
+		return {
+			ok: false,
+			status: timeout ? 504 : 502,
+			data: null,
+			correlationId,
+			errorCode: timeout ? "luckyos_timeout" : "luckyos_unavailable",
+		};
+	}
+	return readProviderJson(response, correlationId);
+}
+
+/** Download an authorized official document without exposing storage credentials. */
+export async function luckyOsV1PublishedDocument(args: {
+	userId: string;
+	documentId: string;
+	disposition: "inline" | "attachment";
+	correlationId?: string;
+}): Promise<LuckyOsV1FileResult> {
+	const correlationId = args.correlationId ?? `watson-${crypto.randomUUID()}`;
+	if (!correlationIdSchema.safeParse(correlationId).success) {
+		throw new Error("invalid_luckyos_v1_correlation_id");
+	}
+	if (!z.string().uuid().safeParse(args.documentId).success) {
+		throw new Error("invalid_luckyos_v1_document");
+	}
+	const baseUrl = env.luckyOs.baseUrl;
+	if (env.luckyOs.protocol !== "v1" || !baseUrl || !env.luckyOs.organizationId) {
+		return {
+			ok: false,
+			status: 503,
+			data: null,
+			correlationId,
+			errorCode: "luckyos_v1_not_configured",
+		};
+	}
+	const authorization = await v1FileAuthorization(args.userId, ["documents:read"]);
+	if (!authorization) {
+		return {
+			ok: false,
+			status: 403,
+			data: null,
+			correlationId,
+			errorCode: "luckyos_identity_not_linked",
+		};
+	}
+	let response: Response;
+	try {
+		const path = `/api/integrations/watson/v1/published-documents/${args.documentId}/content?disposition=${args.disposition}`;
+		response = await fetch(new URL(path, baseUrl), {
+			method: "GET",
+			redirect: "error",
+			signal: AbortSignal.timeout(30_000),
+			headers: {
+				accept: "application/pdf, application/octet-stream",
+				authorization: `Bearer ${authorization.token}`,
+				"x-correlation-id": correlationId,
+			},
+		});
+	} catch (error) {
+		const timeout = error instanceof Error && /timeout/i.test(`${error.name} ${error.message}`);
+		return {
+			ok: false,
+			status: timeout ? 504 : 502,
+			data: null,
+			correlationId,
+			errorCode: timeout ? "luckyos_timeout" : "luckyos_unavailable",
+		};
+	}
+	if (!response.ok) return readProviderJson(response, correlationId);
+	const advertisedSize = Number(response.headers.get("content-length") ?? "0");
+	if (Number.isFinite(advertisedSize) && advertisedSize > PROVIDER_FILE_MAX_BYTES) {
+		await response.body?.cancel();
+		return {
+			ok: false,
+			status: 502,
+			data: null,
+			correlationId,
+			errorCode: "luckyos_response_too_large",
+		};
+	}
+	const mimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim();
+	if (mimeType !== "application/pdf" && mimeType !== "application/octet-stream") {
+		await response.body?.cancel();
 		return {
 			ok: false,
 			status: 502,
@@ -509,5 +711,25 @@ export async function luckyOsV1EmployeeFetch(args: {
 			errorCode: "luckyos_invalid_response",
 		};
 	}
-	return { ok: response.ok, status: response.status, data, correlationId };
+	try {
+		const bytes = await boundedResponseBytes(response, PROVIDER_FILE_MAX_BYTES);
+		if (bytes.byteLength < 1) {
+			return {
+				ok: false,
+				status: 502,
+				data: null,
+				correlationId,
+				errorCode: "luckyos_invalid_response",
+			};
+		}
+		return { ok: true, status: 200, data: null, correlationId, bytes, mimeType };
+	} catch {
+		return {
+			ok: false,
+			status: 502,
+			data: null,
+			correlationId,
+			errorCode: "luckyos_response_too_large",
+		};
+	}
 }

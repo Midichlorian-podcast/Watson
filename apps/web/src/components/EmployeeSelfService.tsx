@@ -12,6 +12,7 @@ import {
   useEmployeeSmallNumbers,
 } from "../lib/employeeSelfService";
 import { showToast } from "../lib/toast";
+import { EmployeeFiles } from "./EmployeeFiles";
 
 const card = "rounded-2xl border border-line bg-card";
 const input =
@@ -687,6 +688,9 @@ export function EmployeeSelfService() {
     ["profil", "prirazeni", "profile"],
     ["dochazka", "termin", "attendance"],
     ["mala-cisla", "trvani", "smallNumbers"],
+    ["dokumenty", "priloha", "documents"],
+    ["vydaje", "reporty", "expenses"],
+    ["smlouvy", "hotovo", "contracts"],
   ] as const;
   return (
     <div className="mt-6">
@@ -708,6 +712,7 @@ export function EmployeeSelfService() {
         <ProfilePanel />
         <AttendancePanel />
         <SmallNumbersPanel />
+        <EmployeeFiles />
       </div>
     </div>
   );
