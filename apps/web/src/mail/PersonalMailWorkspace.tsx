@@ -1,5 +1,12 @@
 import { useNavigate } from "@tanstack/react-router";
-import type { PersonalMailModel, PersonalMessageSummary } from "./usePersonalMail";
+import { useState } from "react";
+import { PersonalMailTaskDialog } from "./PersonalMailTaskDialog";
+import { useMail } from "./state";
+import type {
+	PersonalMailExecution,
+	PersonalMailModel,
+	PersonalMessageSummary,
+} from "./usePersonalMail";
 
 const syncLabels: Record<string, string> = {
 	pending: "Čeká na synchronizaci",
@@ -16,6 +23,8 @@ const errorLabels: Record<string, string> = {
 	mail_messages_unavailable: "Zprávy se nepodařilo načíst.",
 	mail_messages_partial: "Jeden z účtů teď neodpověděl. Ostatní zprávy zůstávají dostupné.",
 	mail_message_unavailable: "Detail zprávy se nepodařilo načíst.",
+	mail_execution_unavailable: "Úkol se nepodařilo bezpečně navázat.",
+	mail_execution_conflict: "Vazba se mezitím změnila. Stav jsme obnovili.",
 	mail_account_inactive: "Účet není aktivní. Obnov Google souhlas v Nastavení.",
 	mail_account_not_found: "Účet už není dostupný.",
 };
@@ -41,11 +50,13 @@ function MessageRow({
 	message,
 	accountLabel,
 	selected,
+	execution,
 	onOpen,
 }: {
 	message: PersonalMessageSummary;
 	accountLabel: string;
 	selected: boolean;
+	execution: PersonalMailExecution | null;
 	onOpen: () => void;
 }) {
 	const unread = message.labelIds.includes("UNREAD");
@@ -105,6 +116,11 @@ function MessageRow({
 				</span>
 				<span style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center", flexWrap: "wrap" }}>
 					<span style={{ fontSize: 9.5, color: "var(--ink-3)", border: "1px solid var(--line)", borderRadius: 999, padding: "2px 6px" }}>{accountLabel}</span>
+					{execution && (
+						<span style={{ fontSize: 9.5, color: execution.taskExists ? "var(--success-ink)" : "var(--danger-ink)", border: "1px solid currentColor", borderRadius: 999, padding: "2px 6px" }}>
+							{execution.taskExists ? (execution.completedAt ? "✓ Úkol hotový" : `Úkol P${execution.priority ?? "?"}`) : "Úkol smazán"}
+						</span>
+					)}
 					{message.attachmentCount > 0 && <span style={{ fontSize: 9.5, color: "var(--ink-3)" }}>📎 {message.attachmentCount}</span>}
 					{message.contentTruncated && <span style={{ fontSize: 9.5, color: "var(--danger-ink)" }}>zkráceno bezpečnostním limitem</span>}
 				</span>
@@ -121,9 +137,20 @@ export function PersonalMailWorkspace({
 	onOpenDrawer: () => void;
 }) {
 	const navigate = useNavigate();
+	const mail = useMail();
+	const [taskDialogMessage, setTaskDialogMessage] = useState<PersonalMessageSummary | null>(null);
 	const accountById = new Map(model.accounts.map((account) => [account.id, account]));
 	const selectedKey = model.selected ? `${model.selected.accountId}:${model.selected.messageId}` : null;
 	const selectedAccount = model.detail ? accountById.get(model.detail.accountId) : null;
+	const selectedMessage = model.selected
+		? model.messages.find(
+				(message) =>
+					message.accountId === model.selected?.accountId &&
+					message.id === model.selected.messageId,
+			) ?? (model.detail as PersonalMessageSummary | null)
+		: null;
+	const selectedExecution = selectedMessage ? model.executionFor(selectedMessage) : null;
+	const openTask = (taskId: string) => mail.bridge.onNav?.(`task:${taskId}`);
 	const aggregateStatus = model.accounts.some((account) =>
 		account.status === "reauth_required" || model.runtime[account.id]?.sync?.status === "reauth_required",
 	) ? "reauth_required" : model.accounts.some((account) => {
@@ -143,7 +170,7 @@ export function PersonalMailWorkspace({
 					<p style={{ margin: "8px 0 16px", fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-3)" }}>
 						Watson zprávy synchronizuje šifrovaně. Heslo nevidí a obsah zpřístupní jen vlastníkovi účtu.
 					</p>
-					<button type="button" onClick={() => void navigate({ to: "/nastaveni", search: { sekce: "integrace" } })} style={{ minHeight: 44, border: 0, borderRadius: 10, padding: "0 16px", background: "var(--accent)", color: "white", fontWeight: 700, cursor: "pointer" }}>
+					<button type="button" onClick={() => void navigate({ to: "/nastaveni", search: { sekce: "integrace" } })} style={{ minHeight: 44, border: 0, borderRadius: 10, padding: "0 16px", background: "var(--ink)", color: "var(--panel)", fontWeight: 700, cursor: "pointer" }}>
 						Přejít k připojení účtu
 					</button>
 				</div>
@@ -201,6 +228,7 @@ export function PersonalMailWorkspace({
 							message={message}
 							accountLabel={accountById.get(message.accountId)?.emailAddress ?? "Osobní účet"}
 							selected={selectedKey === `${message.accountId}:${message.id}`}
+							execution={model.executionFor(message)}
 							onOpen={() => void model.openMessage(message)}
 						/>
 					))}
@@ -238,6 +266,29 @@ export function PersonalMailWorkspace({
 						<div style={{ marginTop: 18, borderTop: "1px solid var(--line)", paddingTop: 18, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: 13.5, lineHeight: 1.65, color: "var(--ink-2)" }}>
 							{model.detail.textBody || "Tato zpráva nemá bezpečně zobrazitelnou textovou část. HTML Watson úmyslně nevykresluje."}
 						</div>
+						{selectedMessage && (
+							<section aria-label="Propojení mailu a úkolu" style={{ marginTop: 22, border: "1px solid var(--line)", borderRadius: 12, padding: 13, background: "var(--panel-2)" }}>
+								<div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+									<div style={{ flex: 1, minWidth: 200 }}>
+										<strong style={{ display: "block", fontSize: 12, color: "var(--ink)" }}>Execution Inbox</strong>
+										<div style={{ marginTop: 3, fontSize: 10.5, lineHeight: 1.45, color: selectedExecution && !selectedExecution.taskExists ? "var(--danger-ink)" : "var(--ink-3)" }}>
+											{!selectedExecution
+												? "Vytvoř skutečný osobní úkol s dohledatelným odkazem na tuto zprávu."
+												: selectedExecution.taskExists
+													? `${selectedExecution.completedAt ? "Hotovo" : `P${selectedExecution.priority ?? "?"}`} · ${selectedExecution.taskName ?? "Navázaný úkol"}`
+													: "Navázaný úkol byl smazán. Provenance zůstala zachovaná."}
+										</div>
+									</div>
+									{selectedExecution?.taskExists ? (
+										<button type="button" onClick={() => openTask(selectedExecution.taskId)} style={{ minHeight: 44, border: "1px solid var(--brass)", borderRadius: 9, background: "var(--brass-soft)", color: "var(--brass-text)", padding: "0 13px", fontWeight: 700, cursor: "pointer" }}>Otevřít úkol</button>
+									) : (
+										<button type="button" onClick={() => setTaskDialogMessage(selectedMessage)} style={{ minHeight: 44, border: 0, borderRadius: 9, background: "var(--ink)", color: "var(--panel)", padding: "0 13px", fontWeight: 700, cursor: "pointer" }}>
+											{selectedExecution ? "Vytvořit náhradní úkol" : "Vytvořit úkol"}
+										</button>
+									)}
+								</div>
+							</section>
+						)}
 						{model.detail.attachments.length > 0 && (
 							<section aria-labelledby="personal-mail-attachments" style={{ marginTop: 22 }}>
 								<h2 id="personal-mail-attachments" style={{ fontSize: 12, color: "var(--ink-2)" }}>Přílohy ({model.detail.attachments.length})</h2>
@@ -250,6 +301,17 @@ export function PersonalMailWorkspace({
 					</div>
 				)}
 			</article>
+			{taskDialogMessage && (
+				<PersonalMailTaskDialog
+					message={taskDialogMessage}
+					existing={model.executionFor(taskDialogMessage)}
+					projects={model.projects[taskDialogMessage.accountId] ?? []}
+					creating={model.creatingTask}
+					onClose={() => setTaskDialogMessage(null)}
+					onCreate={model.createExecutionTask}
+					onOpenTask={openTask}
+				/>
+			)}
 		</section>
 	);
 }

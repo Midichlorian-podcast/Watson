@@ -50,6 +50,7 @@
 		"verify:mail-content-vault": "tsx verify-mail-content-vault.ts",
 		"verify:mail-google": "tsx verify-mail-google-oauth.ts",
 		"verify:mail-sync": "tsx verify-mail-sync.ts",
+		"verify:mail-execution": "tsx verify-mail-execution.ts",
 		"verify:personal-mail-ui": "tsx verify-personal-mail-ui.ts",
 		"verify:integrations-ui": "tsx verify-integrations-ui.ts",
 		"verify:recurrence": "tsx verify-recurrence.ts",

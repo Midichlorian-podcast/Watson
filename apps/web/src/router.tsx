@@ -50,11 +50,13 @@ const mailRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/mail",
 	component: Mail,
-	validateSearch: (s: Record<string, unknown>): { vlakno?: string; prostor?: string; mailConnection?: "success" | "error"; code?: string } => ({
+	validateSearch: (s: Record<string, unknown>): { vlakno?: string; prostor?: string; mailConnection?: "success" | "error"; code?: string; mailAccount?: string; mailMessage?: string } => ({
 		vlakno: typeof s.vlakno === "string" ? s.vlakno : undefined,
 		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
 		mailConnection: s.mailConnection === "success" || s.mailConnection === "error" ? s.mailConnection : undefined,
 		code: typeof s.code === "string" ? s.code : undefined,
+		mailAccount: typeof s.mailAccount === "string" ? s.mailAccount : undefined,
+		mailMessage: typeof s.mailMessage === "string" ? s.mailMessage : undefined,
 	}),
 });
 const mitingyRoute = createRoute({

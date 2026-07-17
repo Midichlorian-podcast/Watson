@@ -43,6 +43,7 @@ export function MailScreen() {
 	const search = useSearch({ from: "/mail" });
 	const { theme } = useTheme();
 	const deepLinkedThread = useRef<string | null>(null);
+	const deepLinkedPersonal = useRef<string | null>(null);
 	const handledConnection = useRef<string | null>(null);
 	useEffect(() => {
 		if (!search.mailConnection) return;
@@ -71,6 +72,25 @@ export function MailScreen() {
 		cleaned.searchParams.delete("code");
 		window.history.replaceState(window.history.state, "", cleaned);
 	}, [search.mailConnection, search.code]);
+	useEffect(() => {
+		if (!search.mailAccount || !search.mailMessage) return;
+		const key = `${search.mailAccount}:${search.mailMessage}`;
+		if (
+			deepLinkedPersonal.current === key ||
+			!personalMail.accounts.some((account) => account.id === search.mailAccount)
+		) return;
+		deepLinkedPersonal.current = key;
+		m.setScr("mail");
+		m.setFolder("osobni");
+		void personalMail.openMessageById(search.mailAccount, search.mailMessage);
+	}, [
+		search.mailAccount,
+		search.mailMessage,
+		personalMail.accounts,
+		personalMail.openMessageById,
+		m.setScr,
+		m.setFolder,
+	]);
 	useEffect(() => {
 		const id = search.vlakno;
 		if (!id || deepLinkedThread.current === id || !m.threads.some((thread) => thread.id === id))

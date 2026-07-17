@@ -319,3 +319,65 @@ export const mailMessages = pgTable(
 		index("mail_messages_account_thread_idx").on(t.accountId, t.providerThreadId),
 	],
 );
+
+/**
+ * M2 Execution Inbox — trvalá provenance „osobní zpráva → úkol“.
+ *
+ * Provider/message/task ID jsou záměrně snapshotované opaque reference bez FK na
+ * zprávu či úkol: vazba tak nezmizí při provider delete/revoke ani při dočasném
+ * task delete + undo. Autoritativní trigger při vzniku ověří, že všechny reference
+ * skutečně patří stejnému osobnímu workspace a vlastníkovi.
+ */
+export const mailTaskLinks = pgTable(
+	"mail_task_links",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		accountId: uuid("account_id")
+			.notNull()
+			.references(() => mailAccounts.id, { onDelete: "cascade" }),
+		ownerUserId: uuid("owner_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		/** Interní UUID zprávy pro kanonický deep link; obsah zprávy zde nikdy není. */
+		sourceMessageId: uuid("source_message_id").notNull(),
+		providerMessageId: varchar("provider_message_id", { length: 128 }).notNull(),
+		/** Historické UUID úkolu/projektu; existence se při čtení vyhodnocuje živě. */
+		sourceTaskId: uuid("source_task_id").notNull(),
+		sourceProjectId: uuid("source_project_id").notNull(),
+		operationId: varchar("operation_id", { length: 128 }).notNull(),
+		requestHash: varchar("request_hash", { length: 64 }).notNull(),
+		/** Nahrazený link zůstává v auditu; aktivní je právě ten bez retired_at. */
+		retiredAt: timestamp("retired_at", { withTimezone: true }),
+		retiredReason: varchar("retired_reason", { length: 32 }),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check(
+			"mail_task_links_provider_message_id_valid",
+			sql`${t.providerMessageId} ~ '^[A-Za-z0-9_-]{1,128}$'`,
+		),
+		check(
+			"mail_task_links_request_hash_valid",
+			sql`${t.requestHash} ~ '^[0-9a-f]{64}$'`,
+		),
+		check(
+			"mail_task_links_retired_consistent",
+			sql`(${t.retiredAt} IS NULL) = (${t.retiredReason} IS NULL)`,
+		),
+		check(
+			"mail_task_links_retired_reason_valid",
+			sql`${t.retiredReason} IS NULL OR ${t.retiredReason} in ('task_missing', 'replaced')`,
+		),
+		uniqueIndex("mail_task_links_owner_operation_uq").on(t.ownerUserId, t.operationId),
+		uniqueIndex("mail_task_links_active_message_uq")
+			.on(t.accountId, t.providerMessageId)
+			.where(sql`${t.retiredAt} IS NULL`),
+		uniqueIndex("mail_task_links_source_task_uq").on(t.sourceTaskId),
+		index("mail_task_links_owner_account_idx").on(t.ownerUserId, t.accountId, t.createdAt),
+		index("mail_task_links_workspace_idx").on(t.workspaceId, t.createdAt),
+	],
+);

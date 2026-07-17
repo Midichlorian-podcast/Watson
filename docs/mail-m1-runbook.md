@@ -7,6 +7,9 @@ lifecycle, šifrovaný inbound sync, owner-only read API a osobní read-only inb
 Odesílání, poštovní akce, IMAP/SMTP a týmové schránky zůstávají mimo tento runbook a
 musí být označené jako demo.
 
+Execution Inbox M2 v tomto programu zahrnuje osobní „zpráva → úkol“ a kanonický odkaz
+zpět. Týmové přiřazování pošty zůstává až v M3.
+
 ## Povinná konfigurace
 
 - `MAIL_VAULT_KEYS_JSON`: verzovaný keyring s 32B base64url klíči a jedním `currentKid`.
@@ -38,6 +41,28 @@ Google OAuth verifikaci a podle způsobu ukládání také požadované bezpečn
    každou minutu obnoví serverový read model a neukládá obsah do `localStorage` ani jiné
    nešifrované offline cache. Přílohy se v této etapě nestahují; detail ukazuje jen jejich
    dešifrovaná metadata.
+
+## Execution Inbox M2
+
+- Vytvoření úkolu je explicitní formulář. Uživatel před potvrzením vidí a může upravit
+  název, popis, prioritu, termín a osobní projekt. Celé tělo a přílohy se nikdy nekopírují
+  automaticky.
+- Cílem smí být jen aktivní projekt stejného osobního workspace jako mailbox. Osobní
+  zprávu nelze ani vlastníkem přenést do týmového projektu.
+- Jeden command atomicky vytvoří task, assignment vlastníka, `mail_task_links` provenance
+  a audit. Retry používá operation ID + hash; odlišný payload ani souběžný druhý úkol pro
+  stejnou zprávu neprojdou.
+- Provenance ukládá jen workspace/owner/account, opaque provider message ID a UUID zprávy,
+  úkolu a projektu. Předmět, adresy, snippet, tělo ani popis v ní nejsou.
+- Smazání úkolu provenance nemaže. UI přizná chybějící task; náhrada musí být výslovná,
+  původní link se označí `retired` a audit zůstane.
+- Task nese `personal:<accountId>:<messageId>`. Otevření chipu „Z mailu“ vede na owner-only
+  detail zprávy i tehdy, když zpráva neleží na první stránce inboxu.
+- Autoritativní workspace export zachová samotný úkol, ale osobní mailový locator a label
+  rediguje. Účty a synchronizovaný obsah nejsou součástí přenositelného restore, takže po
+  obnově nevzniká nefunkční ani potenciálně citlivý odkaz.
+- DB trigger při insertu nezávisle ověřuje osobní workspace, vlastníka, účet, existující
+  zprávu, provider ID, task a projekt. Zdrojové reference jsou po vzniku neměnné.
 
 ## Stavy a reakce
 
@@ -86,5 +111,8 @@ Odstranění starého klíče před bodem 3 je destruktivní a záměrně fail-c
 S lokálním Google stubem, API a webem spusť `pnpm --filter @watson/api
 verify:personal-mail-ui`. Verifier vytvoří izolovaného uživatele a dokáže v Chromiu i
 WebKitu skutečný OAuth callback, encrypted sync, počty, lazy detail, zákaz demo akcí,
-bezpečný chybový stav, mobilní list/detail reflow, nulový horizontální overflow a axe
-WCAG A/AA. Testovací screenshoty lze zapnout přes `PERSONAL_MAIL_UI_SCREENSHOT_DIR`.
+Execution dialog a reálný task command, přímý mail deep link, bezpečný chybový stav,
+mobilní list/detail reflow, nulový horizontální overflow a axe WCAG A/AA. Samostatný
+`pnpm --filter @watson/api verify:mail-execution` ověřuje DB/API izolaci, idempotenci,
+delete/replace lifecycle a redigovaný audit. Testovací screenshoty lze zapnout přes
+`PERSONAL_MAIL_UI_SCREENSHOT_DIR`.

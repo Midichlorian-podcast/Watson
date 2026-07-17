@@ -6,8 +6,12 @@ import {
 	eq,
 	getDb,
 	mailAccounts,
+	mailTaskLinks,
 	mailSyncStates,
 	memberships,
+	projectMembers,
+	projects,
+	tasks,
 	users,
 	workspaces,
 } from "@watson/db";
@@ -27,6 +31,7 @@ const db = getDb();
 async function provision(browserName: string) {
 	const userId = crypto.randomUUID();
 	const workspaceId = crypto.randomUUID();
+	const projectId = crypto.randomUUID();
 	const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 	const email = `personal-mail-ui-${browserName}-${suffix}@watson.test`;
 	const password = `Watson-${crypto.randomUUID()}-A1!`;
@@ -51,8 +56,15 @@ async function provision(browserName: string) {
 			isPersonal: true,
 		});
 		await tx.insert(memberships).values({ workspaceId, userId, role: "admin" });
+		await tx.insert(projects).values({
+			id: projectId,
+			workspaceId,
+			name: "Osobní schránka",
+			ownerId: userId,
+		});
+		await tx.insert(projectMembers).values({ projectId, userId, role: "manager" });
 	});
-	return { userId, workspaceId, email, password };
+	return { userId, workspaceId, projectId, email, password };
 }
 
 async function resetMailbox(email: string) {
@@ -174,6 +186,39 @@ async function run(browserName: "chromium" | "webkit") {
 		await assertNoOverflow(page, `${browserName}_desktop`);
 		await assertAxeClean(page, `${browserName}_desktop`);
 
+		await workspace.getByRole("button", { name: "Vytvořit úkol", exact: true }).click();
+		const taskDialog = page.getByRole("dialog", { name: "Udělat z mailu úkol", exact: true });
+		await taskDialog.getByText("Celé tělo ani přílohy se nepřenášejí automaticky.", { exact: false }).waitFor();
+		await taskDialog.getByRole("button", { name: "P2", exact: true }).click();
+		await assertAxeClean(page, `${browserName}_execution_dialog`);
+		if (SCREENSHOT_DIR) {
+			await mkdir(SCREENSHOT_DIR, { recursive: true });
+			await taskDialog.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-execution-dialog.png` });
+		}
+		await taskDialog.getByRole("button", { name: "Vytvořit úkol", exact: true }).click();
+		await taskDialog.waitFor({ state: "hidden" });
+		await workspace.getByText("P2 · Synchronizovaná zpráva 3", { exact: true }).waitFor();
+		const linkedTask = (
+			await db
+				.select()
+				.from(tasks)
+				.where(eq(tasks.projectId, fixture.projectId))
+				.limit(1)
+		)[0];
+		if (!linkedTask?.mailTh?.startsWith(`personal:${account.id}:`)) {
+			throw new Error(`personal_mail_ui_execution_task_missing:${JSON.stringify(linkedTask)}`);
+		}
+		const link = (
+			await db
+				.select()
+				.from(mailTaskLinks)
+				.where(eq(mailTaskLinks.sourceTaskId, linkedTask.id))
+				.limit(1)
+		)[0];
+		if (!link || link.ownerUserId !== fixture.userId) {
+			throw new Error(`personal_mail_ui_execution_link_missing:${JSON.stringify(link)}`);
+		}
+
 		expectedDetailFailure = true;
 		await page.route(/\/api\/mail\/accounts\/[^/]+\/messages\/[^/?]+$/, async (route) => {
 			await route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"mail_message_unavailable"}' });
@@ -183,6 +228,11 @@ async function run(browserName: "chromium" | "webkit") {
 		await page.unroute(/\/api\/mail\/accounts\/[^/]+\/messages\/[^/?]+$/);
 		await workspace.getByText("Synchronizovaná zpráva 3", { exact: true }).click();
 		await workspace.getByText("Text zprávy 3. Token sem nikdy nepatří.", { exact: true }).waitFor();
+		await page.goto(
+			`${WEB}/mail?mailAccount=${encodeURIComponent(account.id)}&mailMessage=${encodeURIComponent(link.sourceMessageId)}`,
+			{ waitUntil: "domcontentloaded" },
+		);
+		await page.locator("[data-personal-mail]").getByText("Text zprávy 3. Token sem nikdy nepatří.", { exact: true }).waitFor();
 
 		await page.setViewportSize({ width: 390, height: 844 });
 		await assertNoOverflow(page, `${browserName}_mobile_detail`);

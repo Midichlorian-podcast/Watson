@@ -145,7 +145,9 @@ Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny
 - Osobní Gmail account lifecycle M1: oddělený serverový OAuth klient, PKCE, jednorázový
   user-bound state, šifrovaný refresh credential, owner-only list a provider-first revoke.
   Full + Gmail history sync běží přes distribuovaný lease, obsah zpráv je v odděleném
-  AES-GCM envelope a owner-only API nikdy nevrací surové HTML. Send akce ještě skutečné nejsou.
+  AES-GCM envelope a owner-only API nikdy nevrací surové HTML. Osobní Execution Inbox M2
+  umí z konkrétní zprávy atomicky vytvořit osobní úkol a trvale drží obousměrnou provenance.
+  Send akce ještě skutečné nejsou.
 - LuckyOS broker s odděleným bridge keyringem, tenant dedup a transakční reconciliation; reálný provider je externí prerequisite.
 - Export/restore s ACL scope, checksumem, HMAC, schema verzí, dry-run, conflict módem a lokálním AES-GCM obalem.
 - PWA/offline shell, šifrovaná per-user PowerSync SQLite a Centrum problémů pro odmítnuté zápisy.
@@ -558,6 +560,17 @@ dešifruje až po otevření zprávy; nic z obsahu neukládá do nešifrovaného
 Chromium i WebKit dokazují celý OAuth → sync → list → detail tok, řízené selhání,
 390px reflow a axe bez A/AA nálezů. Týmové seed UI a send jsou stále demo, proto se
 banner změnil jen na „částečně demo“ a nesmí se odstranit.
+
+Execution Inbox M2 doplněn 2026-07-17: owner může z reálné osobní zprávy přes explicitní
+preview založit skutečný úkol pouze v aktivním projektu stejného osobního workspace.
+Příkaz je transakční a idempotentní: task, osobní assignment, opaque mail provenance a
+redigovaný audit vzniknou společně; celý mail, přílohy ani obsah odpovědi se nekopírují
+automaticky. Vazba je vidět v seznamu i detailu zprávy, ukazuje živé dokončení a task
+nese kanonický deep link zpět na konkrétní owner-only mail. Smazání tasku nesmaže původ;
+náhradní task vyžaduje výslovnou akci a starý link se pouze označí jako retired. DB trigger
+odmítá cross-owner, cross-account i cross-workspace reference i mimo API. API verifier a
+Chromium/WebKit browser flow pokrývají tenant izolaci, replay/konflikty, delete/replace,
+dialog, lazy detail, přímý deep link, mobilní reflow a axe. Týmová varianta zůstává až M3.
 
 ### F6 — Radar/automation/AI (4–8 týdnů)
 

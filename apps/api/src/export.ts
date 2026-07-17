@@ -142,7 +142,22 @@ const EXPORT_QUERIES: Record<
 	project_milestones: (ws) =>
 		sql`SELECT m.* FROM project_milestones m JOIN projects p ON p.id = m.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
 	tasks: (ws) =>
-		sql`SELECT t.* FROM tasks t JOIN projects p ON p.id = t.project_id WHERE p.workspace_id = ANY(${uuids(ws)})`,
+		// Osobní mailové schránky a zprávy nejsou součástí přenositelného backupu.
+		// Redigujeme proto i jejich interní locator z tasku, aby restore nevytvořil
+		// mrtvý deep link ani nepřenášel potenciálně citlivý legacy label.
+		sql`
+			SELECT (jsonb_populate_record(
+				NULL::tasks,
+				to_jsonb(t) || CASE
+					WHEN t.mail_th LIKE 'personal:%'
+					THEN jsonb_build_object('mail_th', NULL, 'mail_label', NULL)
+					ELSE '{}'::jsonb
+				END
+			)).*
+			FROM tasks t
+			JOIN projects p ON p.id = t.project_id
+			WHERE p.workspace_id = ANY(${uuids(ws)})
+		`,
 	availability_task_overrides: (ws) =>
 		sql`SELECT o.* FROM availability_task_overrides o WHERE o.workspace_id = ANY(${uuids(ws)})`,
 	import_items: (ws) =>
@@ -308,6 +323,7 @@ exportRoutes.get("/api/export", async (c) => {
 			meetingContent: "only creator or participant; other meeting rows are restored with redacted content",
 			attachmentFiles: "server-stored attachment files and their metadata require a separate binary backup and are excluded",
 			authAndSecrets: "accounts, sessions, tokens, push subscriptions and calendar credentials excluded",
+			personalMail: "mail accounts, synchronized content and personal message source links are excluded; restored tasks do not retain mail deep links",
 		},
 	};
 	const manifest = {

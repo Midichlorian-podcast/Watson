@@ -1718,9 +1718,18 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								<button
 									type="button"
 									onClick={() => {
-										openMailThread?.(task.mail_th ?? "");
+										const source = task.mail_th ?? "";
+										const personal = /^personal:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(source);
 										onClose();
-										void navigate({ to: "/mail" });
+										if (personal?.[1] && personal[2]) {
+											void navigate({
+												to: "/mail",
+												search: { mailAccount: personal[1], mailMessage: personal[2] },
+											});
+										} else {
+											openMailThread?.(source);
+											void navigate({ to: "/mail", search: {} });
+										}
 									}}
 									className="cursor-pointer font-display font-semibold hover:brightness-105"
 									style={{

@@ -115,10 +115,11 @@ async function main() {
 	`);
 	await db.execute(sql`
 		INSERT INTO tasks (
-			id, project_id, name, due_date, recurrence, recurrence_rule, created_by
+			id, project_id, name, due_date, recurrence, recurrence_rule, mail_th, mail_label, created_by
 		) VALUES (
 			${recurrenceTaskId}, ${project.id}, 'Restore drill recurrence', DATE '2026-07-10',
-			'Denně', '{"kind":"daily","showAll":true}', ${user.id}
+			'Denně', '{"kind":"daily","showAll":true}',
+			${`personal:${crypto.randomUUID()}:${crypto.randomUUID()}`}, 'Citlivý mailový locator', ${user.id}
 		)
 	`);
 	await db.execute(sql`
@@ -141,7 +142,7 @@ async function main() {
 			.digest("hex");
 		check("checksum sedí na přesný obsah", recomputed === backup.manifest.checksum);
 		check("manifest je version 2 a HMAC podepsaný", backup.manifest.version === 2 && /^[a-f0-9]{64}$/.test(backup.manifest.signature));
-		check("manifest transparentně uvádí privacy/storage výluky", Object.keys(backup.manifest.limitations ?? {}).length === 3);
+		check("manifest transparentně uvádí privacy/storage výluky", Object.keys(backup.manifest.limitations ?? {}).length === 4);
 
 		const directTasks = Number(
 			(
@@ -160,6 +161,15 @@ async function main() {
 			backup.tables.task_recurrence_prefixes?.some(
 				(row) => row.id === recurrencePrefixId && row.task_id === recurrenceTaskId,
 			) === true,
+		);
+		const exportedRecurrenceTask = backup.tables.tasks?.find((row) => row.id === recurrenceTaskId);
+		check(
+			"osobní mailový locator je redigovaný a úkol zůstává přenositelný",
+			exportedRecurrenceTask?.name === "Restore drill recurrence" &&
+				exportedRecurrenceTask.mail_th === null &&
+				exportedRecurrenceTask.mail_label === null &&
+				backup.manifest.limitations.personalMail?.includes("source links") === true,
+			exportedRecurrenceTask,
 		);
 
 		let meetingPrivacyOk = true;

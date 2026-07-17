@@ -505,6 +505,13 @@
       "when": 1784266708329,
       "tag": "0071_cute_beyonder",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1784269823489,
+      "tag": "0072_smart_cammi",
+      "breakpoints": true
     }
   ]
 }

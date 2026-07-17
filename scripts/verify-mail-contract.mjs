@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
-const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailScreen, demoBanner, env, preflight, foundationMigration, oauthMigration, syncMigration, generationMigration] =
+const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecution, exportRoutes, personalWorkspace, mailScreen, demoBanner, env, preflight, foundationMigration, oauthMigration, syncMigration, generationMigration, executionMigration] =
   await Promise.all([
     read("packages/db/src/schema/mail.ts"),
     read("apps/api/src/mailVault.ts"),
@@ -10,6 +10,9 @@ const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailScree
     read("apps/api/src/powersync.ts"),
     read("apps/api/src/mailAccounts.ts"),
     read("apps/api/src/mailSync.ts"),
+    read("apps/api/src/mailExecution.ts"),
+    read("apps/api/src/export.ts"),
+    read("apps/web/src/mail/PersonalMailWorkspace.tsx"),
     read("apps/web/src/mail/MailScreen.tsx"),
     read("apps/web/src/mail/DemoBanner.tsx"),
     read("apps/api/src/env.ts"),
@@ -18,12 +21,14 @@ const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailScree
     read("packages/db/drizzle/0069_bouncy_betty_brant.sql"),
     read("packages/db/drizzle/0070_mysterious_jackpot.sql"),
     read("packages/db/drizzle/0071_cute_beyonder.sql"),
+    read("packages/db/drizzle/0072_smart_cammi.sql"),
   ]);
 
 assert.match(schema, /mailAccounts = pgTable/);
 assert.match(schema, /mailAccountCredentials = pgTable/);
 assert.match(schema, /mailSyncStates = pgTable/);
 assert.match(schema, /mailMessages = pgTable/);
+assert.match(schema, /mailTaskLinks = pgTable/);
 assert.doesNotMatch(schema, /accessToken|refreshToken|password/i);
 assert.match(vault, /aes-256-gcm/);
 assert.match(vault, /setAAD\(aad\(context\)\)/);
@@ -36,6 +41,7 @@ assert.doesNotMatch(powersync, /mail_account_credentials/);
 assert.doesNotMatch(powersync, /mail_accounts/);
 assert.doesNotMatch(powersync, /mail_messages/);
 assert.doesNotMatch(powersync, /mail_sync_states/);
+assert.doesNotMatch(powersync, /mail_task_links/);
 assert.match(mailAccounts, /https:\/\/www\.googleapis\.com\/auth\/gmail\.modify/);
 assert.match(mailAccounts, /code_challenge_method:\s*"S256"/);
 assert.match(mailAccounts, /stateHash:\s*sha256\(state\)/);
@@ -50,6 +56,16 @@ assert.match(mailSync, /fullSyncGeneration/);
 assert.match(mailSync, /ownerAccount\(accountId\.data, session\.user\.id\)/);
 assert.match(mailSync, /hasHtml: content\.htmlBody\.length > 0/);
 assert.doesNotMatch(mailSync, /htmlBody: content\.htmlBody/);
+assert.match(mailExecution, /eq\(mailAccounts\.ownerUserId, session\.user\.id\)/);
+assert.match(mailExecution, /mail_execution_personal_project_required/);
+assert.match(mailExecution, /insert\(tasks\)/);
+assert.match(mailExecution, /insert\(assignments\)/);
+assert.match(mailExecution, /insert\(mailTaskLinks\)/);
+assert.match(mailExecution, /action: active \? "replace_from_mail" : "create_from_mail"/);
+assert.match(exportRoutes, /WHEN t\.mail_th LIKE 'personal:%'/);
+assert.match(exportRoutes, /restored tasks do not retain mail deep links/);
+assert.match(personalWorkspace, /Execution Inbox/);
+assert.match(personalWorkspace, /model\.createExecutionTask/);
 assert.match(mailScreen, /<MailDemoBanner/);
 assert.match(demoBanner, /data-mail-demo-banner/);
 assert.match(env, /MAIL_VAULT_KEYS_JSON/);
@@ -67,5 +83,9 @@ assert.match(syncMigration, /mail_sync_states_partial_cursor/);
 assert.match(syncMigration, /mail_messages_account_id_mail_accounts_id_fk/);
 assert.match(generationMigration, /last_seen_sync_generation/);
 assert.match(generationMigration, /full_sync_generation/);
+assert.match(executionMigration, /mail_task_links_scope_guard/);
+assert.match(executionMigration, /mail_task_link_account_scope_mismatch/);
+assert.match(executionMigration, /mail_task_link_message_scope_mismatch/);
+assert.match(executionMigration, /mail_task_link_task_scope_mismatch/);
 
-console.log("Mail M1 static contract: OAuth, encrypted sync, owner isolation, DB guards, and demo claim verified.");
+console.log("Mail M1/M2 static contract: OAuth, encrypted sync, owner isolation, Execution Inbox, DB guards, and demo claim verified.");
