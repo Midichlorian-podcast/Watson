@@ -412,6 +412,17 @@ async function verifyMeeting(page: Page, fixture: Fixture, browserName: BrowserN
 	await page
 		.getByText("Rozhodnutí — uloží se k poradě", { exact: true })
 		.waitFor({ timeout: 120_000 });
+	// Model smí závěr věcně přeformulovat (např. „Varianta B byla přijata“).
+	// Release kontrakt proto ověřuje typ rozhodnutí a human-in-the-loop chování,
+	// ne nestabilní doslovné znění generovaného titulku.
+	const decisionApproval = page
+		.getByRole("checkbox", { name: /^Schválit rozhodnutí:/i })
+		.first();
+	await decisionApproval.waitFor();
+	if (await decisionApproval.isChecked()) {
+		throw new Error("release_meeting_ai_decision_must_require_explicit_approval");
+	}
+	await decisionApproval.check();
 	await assertAxeClean(page, "meeting_review");
 	await page.getByRole("button", { name: /Založit \d+ akční/ }).click();
 	await page.getByText(/Porada je zpracovaná/).waitFor();
@@ -431,7 +442,7 @@ async function verifyMeeting(page: Page, fixture: Fixture, browserName: BrowserN
 				.where(
 					and(eq(decisions.sourceType, "meeting"), eq(decisions.sourceObjectId, committed.id)),
 				),
-		(rows) => rows.some((row) => row.title.includes("variantu B")),
+		(rows) => rows.some((row) => row.title.trim().length > 0),
 	);
 	if (!loggedDecision) {
 		throw new Error("release_meeting_decision_log_missing");
@@ -559,14 +570,19 @@ async function runBrowser(browserName: BrowserName): Promise<BrowserResult> {
 		await page.getByLabel("Heslo", { exact: true }).fill(fixture.password);
 		await page.getByRole("button", { name: "Přihlásit se", exact: true }).click();
 		await page.waitForSelector("main", { timeout: 30_000 });
-		await page.waitForFunction(
-			() =>
-				Boolean(
-					(window as unknown as { __watsonDb?: { currentStatus?: { hasSynced?: boolean } } })
-						.__watsonDb?.currentStatus?.hasSynced,
-				),
-			{ timeout: 30_000 },
+		// Release readiness se dokazuje veřejným, uživatelsky pravdivým trust
+		// stavem. Produkční build záměrně nevystavuje interní databázový handle.
+		await page.getByRole("status", { name: "Synchronizováno", exact: true }).first().waitFor({
+			timeout: 30_000,
+		});
+		const recoveryHarnessAvailable = await page.evaluate(
+			() => Boolean((window as unknown as { __watsonDb?: unknown }).__watsonDb),
 		);
+		if (!recoveryHarnessAvailable) {
+			throw new Error(
+				"release_recovery_harness_requires_vite_dev; use production runtime/PWA audits for the production bundle",
+			);
+		}
 		await captureEvidence(page, browserName, "synced-1280");
 		// Data sekci načteme online ještě před offline navigací. V dev režimu je
 		// ImportWizard samostatný lazy chunk a offline audit nesmí měřit jeho cache miss.

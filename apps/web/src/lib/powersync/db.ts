@@ -48,10 +48,14 @@ const COSMETIC_KEYS = new Set<string>([
 
 // HMR pojistka: re-exekuce modulu (Vite) nesmí zahodit běžící instanci — jinak
 // by konzumenti po HMR viděli powerSync undefined (pád Sidebar/useStatus).
-const hmr = globalThis as {
+type PowerSyncHmrState = {
 	__watsonPowerSync?: PowerSyncDatabase;
 	__watsonUserHash?: string | null;
 };
+
+// Produkční stránka nesmí vystavovat živý databázový objekt na globalThis.
+// Globální úložiště je potřeba pouze ve Vite dev režimu, kde drží instanci přes HMR.
+const hmr: PowerSyncHmrState = import.meta.env?.DEV === true ? (globalThis as PowerSyncHmrState) : {};
 
 // Živá vazba — nastaví ji initPowerSyncForUser dřív, než se vyrenderuje router.
 export let powerSync: PowerSyncDatabase = hmr.__watsonPowerSync as PowerSyncDatabase;
@@ -221,7 +225,7 @@ export function initPowerSyncForUser(userId: string): Promise<void> {
 					hmr.__watsonUserHash = h;
 					// Dev-only handle pro ladění/verifikaci z konzole (dynamický import ve Vite
 					// vyrábí druhou instanci modulu, takže live-binding z konzole nejde použít).
-					if (import.meta.env.DEV) {
+					if (import.meta.env?.DEV === true) {
 						(window as unknown as { __watsonDb?: PowerSyncDatabase }).__watsonDb = candidate;
 					}
 				},

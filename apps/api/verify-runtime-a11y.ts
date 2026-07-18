@@ -164,17 +164,17 @@ async function navigate(page: Page, route: string) {
 }
 
 async function activateTheme(page: Page, theme: (typeof THEMES)[number]) {
+	const previousViewport = page.viewportSize();
+	// Zdravý trust state žije v desktopovém sidebaru; na mobilu se záměrně
+	// nerenderuje a místo něj se zobrazují jen akční varovné bannery. Readiness
+	// proto ověřujeme ve stabilním veřejném desktopovém povrchu a šířku vrátíme.
+	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.evaluate((nextTheme) => localStorage.setItem("w-theme", nextTheme), theme);
 	await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
 	await page.waitForSelector("main", { timeout: 30_000 });
-	await page.waitForFunction(
-		() =>
-			Boolean(
-				(globalThis as unknown as { __watsonDb?: { currentStatus?: { hasSynced?: boolean } } })
-					.__watsonDb?.currentStatus?.hasSynced,
-			),
-		{ timeout: 30_000 },
-	);
+	await page.getByRole("status", { name: "Synchronizováno", exact: true }).first().waitFor({
+		timeout: 30_000,
+	});
 	await page.waitForFunction(
 		(nextTheme) =>
 			(document.documentElement.getAttribute("data-w-theme") === "dark" ? "dark" : "light") ===
@@ -182,6 +182,7 @@ async function activateTheme(page: Page, theme: (typeof THEMES)[number]) {
 		theme,
 		{ timeout: 5_000 },
 	);
+	if (previousViewport) await page.setViewportSize(previousViewport);
 }
 
 async function axeAudit(page: Page) {
@@ -631,14 +632,9 @@ async function auditBrowser(
 		watchRuntime(page, events);
 		await page.goto(`${WEB}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 		await page.waitForSelector("main", { timeout: 30_000 });
-		await page.waitForFunction(
-			() =>
-				Boolean(
-					(globalThis as unknown as { __watsonDb?: { currentStatus?: { hasSynced?: boolean } } })
-						.__watsonDb?.currentStatus?.hasSynced,
-				),
-			{ timeout: 30_000 },
-		);
+		await page.getByRole("status", { name: "Synchronizováno", exact: true }).first().waitFor({
+			timeout: 30_000,
+		});
 		await page.waitForTimeout(500);
 		if (await page.getByLabel("E-mail").count()) throw new Error("runtime_authentication_failed");
 

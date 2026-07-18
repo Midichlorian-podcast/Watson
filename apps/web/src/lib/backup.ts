@@ -120,6 +120,21 @@ export type ServerBackup = {
 	tables: Record<string, Record<string, unknown>[]>;
 };
 
+/** Server obnovuje současný v3 i bezpečně migrovatelný legacy v2 manifest. */
+const SUPPORTED_SERVER_BACKUP_VERSIONS = new Set([2, 3]);
+
+export function isSupportedServerBackup(value: unknown): value is ServerBackup {
+	if (!value || typeof value !== "object") return false;
+	const backup = value as Partial<ServerBackup>;
+	return (
+		backup.manifest?.format === "watson-export" &&
+		typeof backup.manifest.version === "number" &&
+		SUPPORTED_SERVER_BACKUP_VERSIONS.has(backup.manifest.version) &&
+		!!backup.tables &&
+		typeof backup.tables === "object"
+	);
+}
+
 export type RestoreReport = {
 	mode: "dry-run" | "apply";
 	checksum: string;
@@ -253,10 +268,9 @@ export async function decryptServerBackup(
 export async function downloadBackup(stamp: string, passphrase: string): Promise<BackupResult> {
 	const response = await fetch(`${API_URL}/api/export`, { credentials: "include" });
 	if (!response.ok) throw new Error(`export_${response.status}`);
-	const backup = (await response.json()) as ServerBackup;
-	if (backup.manifest?.format !== "watson-export" || backup.manifest.version !== 2) {
-		throw new Error("unsupported_export");
-	}
+	const value: unknown = await response.json();
+	if (!isSupportedServerBackup(value)) throw new Error("unsupported_export");
+	const backup = value;
 	const safe = stamp.replace(/[:.]/g, "-");
 	const filename = `watson-server-export-${safe}.watson.json`;
 	triggerJsonDownload(await encryptServerBackup(backup, passphrase), filename);
@@ -280,16 +294,8 @@ export async function readRestoreFile(file: File, passphrase: string): Promise<S
 	if (maybeEncrypted.kind === "encrypted-server-export") {
 		value = await decryptServerBackup(maybeEncrypted as EncryptedServerBackup, passphrase);
 	}
-	const backup = value as Partial<ServerBackup>;
-	if (
-		backup.manifest?.format !== "watson-export" ||
-		backup.manifest.version !== 2 ||
-		!backup.tables ||
-		typeof backup.tables !== "object"
-	) {
-		throw new Error("unsupported_restore_file");
-	}
-	return backup as ServerBackup;
+	if (!isSupportedServerBackup(value)) throw new Error("unsupported_restore_file");
+	return value;
 }
 
 export async function restoreBackup(

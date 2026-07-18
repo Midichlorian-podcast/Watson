@@ -70,7 +70,7 @@ export interface MailMsg {
 	cz?: string[];
 }
 
-/** Zpráva v interní diskusi (chatu) u vlákna. */
+/** Kontextový interní komentář připojený k jednomu mailovému vláknu. */
 export interface ChatMsg {
 	who: string;
 	t: string;

@@ -10,9 +10,11 @@ const provider = read("apps/web/src/lib/pwaInstall.tsx");
 const card = read("apps/web/src/components/PwaInstallCard.tsx");
 const main = read("apps/web/src/main.tsx");
 const serviceWorker = read("apps/web/src/sw.ts");
+const powerSyncDb = read("apps/web/src/lib/powersync/db.ts");
 const cs = read("packages/i18n/src/locales/cs.json");
 const en = read("packages/i18n/src/locales/en.json");
 const uiVerifier = read("apps/api/verify-pwa-capture-ui.ts");
+const runtimeVerifier = read("apps/api/verify-runtime-a11y.ts");
 
 function pngSize(path) {
 	const bytes = readFileSync(path);
@@ -58,6 +60,13 @@ const checks = [
 			provider.includes('addEventListener("appinstalled"') &&
 			provider.includes('"available" | "installed" | "unavailable"') &&
 			main.includes("<PwaInstallProvider>"),
+	],
+	[
+		"produkce nevystavuje PowerSync debug handle a release readiness používá veřejný trust state",
+		powerSyncDb.includes("import.meta.env?.DEV === true ? (globalThis as PowerSyncHmrState) : {}") &&
+			powerSyncDb.includes("if (import.meta.env?.DEV === true)") &&
+			!runtimeVerifier.includes("__watsonDb") &&
+			runtimeVerifier.includes('{ name: "Synchronizováno", exact: true }'),
 	],
 	[
 		"offline jádro zůstává precache a navštívené volitelné moduly mají omezenou runtime cache",

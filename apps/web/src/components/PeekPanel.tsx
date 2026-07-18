@@ -11,6 +11,7 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTheme } from "../layout/useTheme";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
@@ -20,14 +21,13 @@ import type { ListItemRow, ListRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
-import { NOT_MEETING, startMinOf, toggleTask, todayISO } from "../lib/tasks";
-import { useOverlayLayer } from "../lib/useOverlayLayer";
+import { NOT_MEETING, startMinOf, todayISO, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
-import { useTheme } from "../layout/useTheme";
-import { MB, P, SLA, TH } from "../mail/data";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { MailDemoBanner } from "../mail/DemoBanner";
+import { MB, P, SLA, TH } from "../mail/data";
 import { RichText } from "../mail/RichText";
-import { SigBlock, sigIdOf, SigPicker } from "../mail/SigPicker";
+import { SigBlock, SigPicker, sigIdOf } from "../mail/SigPicker";
 import { useMail } from "../mail/state";
 import { TaskModal } from "../mail/TaskModal";
 
@@ -426,7 +426,7 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 	const [pend, setPend] = useState<{ markDone: boolean } | null>(null);
 	// plný formulář „Úkol" mail modulu (stejný jako ve vlákně — parita pojmů)
 	const [taskOpen, setTaskOpen] = useState(false);
-	// interní diskuse — vstup (sdílený store m.chatX/sendChat jako vlákno)
+	// Kontextový komentář — zůstává přímo u mailového vlákna, nejde o samostatný chat.
 	const [chatText, setChatText] = useState("");
 	// Volba podpisu odpovědi PRO TENTO MAIL (per-mail override); null = výchozí dle schránky.
 	const [replySigOverride, setReplySigOverride] = useState<string | null>(null);
@@ -760,8 +760,7 @@ function MailPeek({ id, onClose }: { id: string; onClose: () => void }) {
 					</div>
 				</div>
 			))}
-			{/* interní diskuse — PLNÁ (čtení + psaní), stejný store jako vlákno
-			    (feedback: notifikace o zmínce musí vést na viditelný chat) */}
+			{/* Kontextové komentáře — zmínka vede přímo k vláknu, kde komunikace vznikla. */}
 			<SectionLabel>{t("peek.chat")}</SectionLabel>
 			<div
 				style={{

@@ -1,6 +1,7 @@
 import {
 	decryptServerBackup,
 	encryptServerBackup,
+	isSupportedServerBackup,
 	type ServerBackup,
 } from "./backup";
 
@@ -39,5 +40,13 @@ try {
 }
 if (!wrongPasswordRejected) throw new Error("FAIL: chybné heslo nebylo odmítnuto");
 
-console.log("Backup crypto: AES-GCM roundtrip, random salt/IV a wrong-password rejection prošly.");
+if (!isSupportedServerBackup(backup)) throw new Error("FAIL: legacy manifest v2 není podporovaný");
+const current = structuredClone(backup);
+current.manifest.version = 3;
+if (!isSupportedServerBackup(current)) throw new Error("FAIL: současný manifest v3 není podporovaný");
+const future = structuredClone(backup);
+future.manifest.version = 4;
+if (isSupportedServerBackup(future)) throw new Error("FAIL: neznámý budoucí manifest prošel fail-open");
+
+console.log("Backup crypto: AES-GCM roundtrip, v2/v3 kompatibilita a fail-closed budoucí verze prošly.");
 process.exit(0);

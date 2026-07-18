@@ -23,12 +23,16 @@ const VERIFIED_ACCOUNT_CLAIMS: Record<string, RegExp[]> = {
 	"AdminScreen.tsx": [/Pošta přes skutečný OAuth a šifrovaný vault/],
 	"NastaveniScreen.tsx": [/Google účet připojíš přes OAuth; heslo Watson nikdy nevidí a credential ukládá šifrovaně/],
 	"MailSub.tsx": [/zatím nepřipojeno/],
+	"MailboxWizard.tsx": [
+		/Schránka je ověřená\. Šifrovaná synchronizace IMAP a odesílání přes SMTP běží na pozadí/,
+		/Credential i synchronizovaný obsah jsou šifrované a odesílání má desetisekundové Zpět/,
+	],
 	"PersonalMailWorkspace.tsx": [
 		/Watson zprávy synchronizuje šifrovaně\. Heslo nevidí a obsah zpřístupní jen vlastníkovi účtu/,
 		/Skutečný šifrovaný příjem, odesílání, hledání a Watson pohledy/,
 	],
 	"PersonalMailComposer.tsx": [
-		/Skutečné odeslání přes připojený Gmail · obsah je ve frontě šifrovaný/,
+		/Watson bezpečně zachová mailové vlákno.*Skutečné odeslání přes připojený účet.*obsah je ve frontě šifrovaný/,
 	],
 };
 

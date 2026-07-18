@@ -55,7 +55,9 @@ interface Editable extends Proposal {
 /** Uložený revizní stav → editovatelný řádek (tolerantní ke starým datům). */
 const toEditable = (p: Proposal, defaultProject: string): Editable => ({
 	...p,
-	keep: typeof p.keep === "boolean" ? p.keep : kindOf(p) !== "unclear",
+	// AI návrh rozhodnutí vyžaduje výslovné lidské potvrzení. Akční body jsou
+	// předvybrané, protože následný commit je sám o sobě jejich review krok.
+	keep: typeof p.keep === "boolean" ? p.keep : kindOf(p) === "action",
 	projectId: p.projectId ?? defaultProject,
 	assigneeUserIds: p.assigneeUserIds ?? (p.assigneeUserId ? [p.assigneeUserId] : []),
 });
@@ -1078,10 +1080,10 @@ export function MeetBoard({
 													gap: 6,
 												}}
 											>
-												<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-													<input
-														type="checkbox"
-														checked={p.keep}
+											<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+												<input
+													type="checkbox"
+													checked={p.keep}
 														onChange={(e) => upd(i, { keep: e.target.checked })}
 														style={{ accentColor: "var(--w-brass)", flex: "none" }}
 														aria-label="Založit tento akční bod"
@@ -1371,7 +1373,7 @@ export function MeetBoard({
 											className="font-body"
 											style={{ fontSize: 11, color: "var(--w-ink-3)", marginBottom: 5 }}
 										>
-											Odškrtnutá rozhodnutí se neuloží (zůstávají jen v zápisu).
+											AI návrhy jsou výchozí vypnuté. Zaškrtni jen rozhodnutí, která tým skutečně přijal.
 										</div>
 										{idxd
 											.filter(({ p }) => kindOf(p) === "decision")
@@ -1389,9 +1391,10 @@ export function MeetBoard({
 														cursor: "pointer",
 													}}
 												>
-													<input
-														type="checkbox"
-														checked={p.keep}
+												<input
+													type="checkbox"
+													aria-label={`Schválit rozhodnutí: ${p.title}`}
+													checked={p.keep}
 														onChange={(e) => upd(i, { keep: e.target.checked })}
 														style={{ accentColor: "var(--w-brass)", flex: "none" }}
 													/>

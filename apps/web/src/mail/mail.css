@@ -159,17 +159,6 @@
   [data-stripmeta]{ display:none !important; }
   [data-thrmeta]{ flex-wrap:nowrap !important; overflow:hidden; }
 }
-[data-chatrail]{ display:none !important; }
-[data-chattabs]{ display:flex; }
-[data-tpane="chat"]{ display:none !important; }
-[data-ctab="chat"] [data-tpane="chat"]{ display:flex !important; }
-[data-ctab="chat"] [data-tpane="mail"]{ display:none !important; }
-@media (min-width:1440px){
-  [data-chatmode="panel"] [data-chatrail]{ display:flex !important; }
-  [data-chatmode="panel"] [data-chattabs]{ display:none !important; }
-  [data-chatmode="panel"] [data-tpane="chat"]{ display:none !important; }
-  [data-chatmode="panel"] [data-tpane="mail"]{ display:flex !important; }
-}
 [data-listpane]{ width:clamp(300px, 27vw, 392px); flex:none; border-right:1px solid var(--line); container-type:inline-size; position:relative; }
 @container (max-width: 349px){ [data-npslbl]{ display:none !important; } }
 [data-gkdot]{ display:none; }

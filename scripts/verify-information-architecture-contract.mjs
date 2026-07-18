@@ -8,6 +8,7 @@ const mobile = read("apps/web/src/layout/MobileTabBar.tsx");
 const preferences = read("apps/web/src/lib/navigationPreferences.ts");
 const settings = read("apps/web/src/screens/Nastaveni.tsx");
 const overview = read("apps/web/src/screens/Prehled.tsx");
+const mailThread = read("apps/web/src/mail/MailThread.tsx");
 const router = read("apps/web/src/router.tsx");
 const cs = read("packages/i18n/src/locales/cs.json");
 const en = read("packages/i18n/src/locales/en.json");
@@ -86,10 +87,14 @@ const checks = [
 			uiVerifier.includes("page.reload"),
 	],
 	[
-		"scope lock nepřidal interní chat, whiteboard ani databázový builder",
+		"scope lock nepřidal samostatný interní chat, whiteboard ani databázový builder",
 		!overview.includes("chatBuilder") &&
 			!overview.includes("whiteboard") &&
-			!overview.includes("databaseBuilder"),
+			!overview.includes("databaseBuilder") &&
+			!mailThread.includes("data-chattabs") &&
+			!mailThread.includes("data-chatrail") &&
+			!mailThread.includes("Interní chat") &&
+			cs.includes('"chat": "Interní komentáře k vláknu"'),
 	],
 ];
 

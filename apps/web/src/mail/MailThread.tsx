@@ -1,14 +1,13 @@
 /**
  * Mail — panel 3: Thread workspace (prototyp data-threadpane, ř. 785–1380).
  * VRSTVA 4 hlavička (subjekt, urgence P1–P4, stav, přiřazení, per-osoba čtení),
- * SLA lišta (ř. 898–916), záložky Vlákno/Interní chat (ř. 917–930), čtecí
- * sloupec (navázané úkoly, AI shrnutí, zprávy s citacemi/překladem/HTML
- * ostrovem, ř. 931–1051), interní chat záložka + pravý panel (ř. 1052–1146)
+ * SLA lišta (ř. 898–916), čtecí sloupec (navázané úkoly, AI shrnutí, zprávy
+ * s citacemi/překladem/HTML ostrovem, ř. 931–1051)
  * a composer VRSTVA 2 (ř. 1147–1380): RTE editor s toolbariem, Cc/Bcc, šablony,
  * AI draft karta, sdílené koncepty + schvalování, důvěrný režim, Odeslat později,
  * kontrola přílohy, kolizní hlídka a undo lišta (overlaye prototypu ř. 2207–2230).
  */
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { copyDeepLink } from "../lib/deepLink";
 import { keyedValues } from "../lib/keyedValues";
 import { showToast } from "../lib/toast";
@@ -39,21 +38,6 @@ interface UMsg {
 	en?: boolean;
 	cz?: string[];
 }
-
-/** Položka interní diskuse včetně systémových řádků (prototyp thr.chat, ř. 3831–3838). */
-type ChatItem =
-	| { sys: true; text: string }
-	| {
-			sys: false;
-			ini: string;
-			name: string;
-			av: string;
-			t: string;
-			pre: string;
-			m: string;
-			post: string;
-			ai: boolean;
-	  };
 
 /** Odeslání odložené na další render — viz komentář u warn modalu. */
 interface PendSend {
@@ -212,37 +196,6 @@ const ClipSvg = ({ size = 12, style }: { size?: number; style?: CSSProperties })
 	</svg>
 );
 
-const SendSvg = ({ size = 14 }: { size?: number }) => (
-	<svg width={size} height={size} viewBox="0 0 14 14" fill="none" aria-hidden>
-		<path
-			d="M2 7 H11 M7.5 3 L11.5 7 L7.5 11"
-			stroke="currentColor"
-			strokeWidth="1.6"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		/>
-	</svg>
-);
-
-/** „odesílatel nevidí" štítek hlavičky chatu (prototyp ř. 1058, 1099). */
-const ChatLock = () => (
-	<span
-		title="Interní vrstva vlákna — externí odesílatel ji nikdy neuvidí"
-		style={{
-			marginLeft: "auto",
-			display: "inline-flex",
-			alignItems: "center",
-			gap: 5,
-			fontFamily: "var(--w-font-mono)",
-			fontSize: 9.5,
-			color: "var(--ink-3)",
-		}}
-	>
-		<LockSvg size={10} />
-		odesílatel nevidí
-	</span>
-);
-
 export function MailThread() {
 	const m = useMail();
 	const [pop, setPop] = useState<Pop>(null);
@@ -254,7 +207,6 @@ export function MailThread() {
 	const [conf, setConf] = useState(false);
 	const [hostPrev, setHostPrev] = useState(false);
 	const [taskM, setTaskM] = useState(false);
-	const [chatIn, setChatIn] = useState("");
 	const [pend, setPend] = useState<PendSend | null>(null);
 	// Volba podpisu odpovědi PRO TENTO MAIL (per-mail override); null = výchozí dle schránky.
 	const [replySigOverride, setReplySigOverride] = useState<string | null>(null);
@@ -307,7 +259,6 @@ export function MailThread() {
 		setConf(false);
 		setHostPrev(false);
 		setTaskM(false);
-		setChatIn("");
 	}, [tid]);
 
 	/**
@@ -373,8 +324,6 @@ export function MailThread() {
 		return (
 			<div
 				data-threadpane
-				data-chatmode={m.chatOff ? "tab" : "panel"}
-				data-ctab={m.ctab}
 				style={{
 					flex: 1,
 					minWidth: 0,
@@ -489,42 +438,6 @@ export function MailThread() {
 				"Otevře propojený úkol ve Watsonu (entity_links) — po odeslání odpovědi se odškrtne sám.",
 		};
 	})();
-
-	// interní diskuse: systémové řádky + seed chat + moje nové zprávy (ř. 3831–3838)
-	const chatItems: ChatItem[] = [];
-	if (!t.personal) {
-		if ((e.flag === "p1" || e.flag === "p2") && !e.closed)
-			chatItems.push({
-				sys: true,
-				text: `Watson · vlajka ${SLA[e.flag]?.chip ?? ""} → úkol „Odpovědět: ${t.subj}“ pro ${owner ? first(owner.n) : "dispečink"}`,
-			});
-		const add = (c: {
-			who: string;
-			t: string;
-			pre?: string;
-			m?: string;
-			post?: string;
-			ai?: boolean;
-		}) => {
-			const p = P[c.who];
-			chatItems.push({
-				sys: false,
-				ini: p?.ini ?? "",
-				name: p?.n ?? c.who,
-				av: p?.av ?? "",
-				t: c.t,
-				pre: c.pre ?? "",
-				m: c.m ?? "",
-				post: c.post ?? "",
-				ai: !!c.ai,
-			});
-		};
-		for (const c of t.chat) add(c);
-		for (const c of m.chatX[t.id] ?? []) add(c);
-		if (e.sent)
-			chatItems.push({ sys: true, text: "Odpověď odeslána — SLA zastaveno, úkol odškrtnut." });
-	}
-	const nchat = t.chat.length + (m.chatX[t.id] ?? []).length;
 
 	/**
 	 * Sbalování zpráv (audit D2): klíč = stabilní identita zprávy (seed index /
@@ -670,20 +583,6 @@ export function MailThread() {
 		showToast(`Simulace: naplánováno na ${when} — nic se samo neodešle; zrušíš v Dění → Nadcházející.`);
 	};
 
-	const sendChatNow = () => {
-		const txt = chatIn.trim();
-		if (!txt) {
-			showToast("Napiš nejdřív text poznámky.");
-			return;
-		}
-		m.sendChat(t.id, txt);
-		setChatIn("");
-		if (txt.includes("@"))
-			showToast(
-				"Zmíněný kolega dostane upozornění — externí odesílatel tuhle vrstvu nikdy neuvidí.",
-			);
-	};
-
 	// warn modal: attach (marker/dummy) → pend → efekt výš pošle přes checkSend
 	const warn = m.warn;
 	const beginPendSend = (id: string, markDone: boolean, label: string) => {
@@ -692,143 +591,11 @@ export function MailThread() {
 		m.setWarn(null);
 	};
 
-	/* ── renderery interního chatu (záložka ř. 1052–1096, pravý panel ř. 1097–1146) ── */
-	const chatMsgs = (compact: boolean): ReactNode => (
-		<>
-			{chatItems.map((c, i) =>
-				c.sys ? (
-					// biome-ignore lint/suspicious/noArrayIndexKey: statický seed seznam
-					<div key={i} style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0" }}>
-						<span style={{ flex: 1, height: 1, background: "var(--line)" }} />
-						<span
-							style={{
-								fontFamily: "var(--w-font-mono)",
-								fontSize: 9,
-								color: "var(--ink-3)",
-								textAlign: "center",
-								maxWidth: "82%",
-								lineHeight: 1.5,
-							}}
-						>
-							{c.text}
-						</span>
-						<span style={{ flex: 1, height: 1, background: "var(--line)" }} />
-					</div>
-				) : (
-					// biome-ignore lint/suspicious/noArrayIndexKey: statický seed seznam
-					<div key={i} style={{ display: "flex", gap: 8 }}>
-						<span
-							data-av={c.av}
-							style={{ ...avStyle(compact ? 22 : 24, compact ? 8.5 : 9), marginTop: 2 }}
-						>
-							{c.ini}
-						</span>
-						<div
-							data-chatmsg
-							data-ai={c.ai || undefined}
-							style={{ flex: 1, minWidth: 0, padding: compact ? "7px 10px" : "8px 11px" }}
-						>
-							<div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-								<span
-									style={{
-										fontFamily: "var(--w-font-display)",
-										fontWeight: 600,
-										fontSize: compact ? 11.5 : 12,
-										color: "var(--ink)",
-									}}
-								>
-									{c.name}
-								</span>
-								<span
-									style={{ fontFamily: "var(--w-font-mono)", fontSize: 9.5, color: "var(--ink-3)" }}
-								>
-									{c.t}
-								</span>
-							</div>
-							<div
-								style={{
-									fontFamily: "var(--w-font-body)",
-									fontSize: compact ? 12 : 12.5,
-									color: "var(--ink-2)",
-									lineHeight: 1.55,
-									marginTop: 2,
-								}}
-							>
-								{c.pre}
-								{c.m && <span data-mention>{c.m}</span>}
-								{c.post}
-							</div>
-						</div>
-					</div>
-				),
-			)}
-			{chatItems.length === 0 && (
-				<div
-					style={{
-						fontFamily: "var(--w-font-body)",
-						fontSize: 11.5,
-						color: "var(--ink-3)",
-						lineHeight: 1.55,
-						padding: compact ? "4px 2px" : undefined,
-					}}
-				>
-					Zatím ticho. Napiš poznámku nebo zmiň kolegu přes @ — externí lidé tuhle vrstvu nikdy
-					neuvidí.
-				</div>
-			)}
-		</>
-	);
-
-	const chatInput = (compact: boolean): ReactNode => (
-		<div style={{ display: "flex", gap: 7, alignItems: "center" }}>
-			<input
-				value={chatIn}
-				aria-label="Interní komentář k e-mailovému vláknu"
-				onChange={(ev) => setChatIn(ev.target.value)}
-				onKeyDown={(ev) => {
-					if (ev.key === "Enter") sendChatNow();
-				}}
-				placeholder="Napiš interně… @ zmíní kolegu"
-				style={{
-					flex: 1,
-					minWidth: 0,
-					border: "1px solid var(--line)",
-					background: "var(--panel)",
-					borderRadius: 9,
-					padding: compact ? "8px 11px" : "9px 12px",
-					fontFamily: "var(--w-font-body)",
-					fontSize: compact ? 12 : 12.5,
-					color: "var(--ink)",
-					outline: "none",
-				}}
-			/>
-			<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-				onClick={sendChatNow}
-				title="Přidat interní zprávu"
-				style={{
-					width: compact ? 31 : 34,
-					height: compact ? 31 : 34,
-					borderRadius: 9,
-					background: "var(--brass)",
-					color: "#fff",
-					display: "flex",
-					alignItems: "center",
-					justifyContent: "center",
-					cursor: "pointer",
-					flex: "none",
-				}}
-			>
-				<SendSvg size={compact ? 13 : 14} />
-			</span>
-		</div>
-	);
 
 	return (
 		<div
 			data-threadpane
 			data-screen-label="Thread workspace"
-			data-chatmode={m.chatOff ? "tab" : "panel"}
-			data-ctab={m.ctab}
 			style={{
 				flex: 1,
 				minWidth: 0,
@@ -1394,19 +1161,6 @@ export function MailThread() {
 						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => {
 								setPop(null);
-								m.setCtab("chat");
-								setChatIn("@Tereza ");
-								showToast(
-									"Přizvání: napiš interní zprávu — Tereza dostane upozornění, vlákno zůstává tvoje.",
-								);
-							}}
-							data-menuitem
-						>
-							Přizvat do interní diskuse
-						</div>
-						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							onClick={() => {
-								setPop(null);
 								showToast(
 									"Per-thread delegace: externí (např. účetní Věra) uvidí JEN tohle vlákno, s expirací. Žádný sidebar, žádné jiné schránky — „co nevidíš, neexistuje“.",
 								);
@@ -1701,105 +1455,8 @@ export function MailThread() {
 				</div>
 			)}
 
-			{/* ── Záložky Vlákno / Interní chat (prototyp ř. 917–930) ── */}
-			{!t.personal && (
-				<div
-					data-chattabs
-					style={{
-						flex: "none",
-						padding: "8px 18px 0",
-						background: "var(--panel)",
-						borderBottom: "1px solid var(--line)",
-						gap: 8,
-						alignItems: "center",
-					}}
-				>
-					<div
-						style={{
-							display: "inline-flex",
-							background: "var(--panel-2)",
-							border: "1px solid var(--line)",
-							borderRadius: 10,
-							padding: 3,
-							marginBottom: 8,
-						}}
-					>
-						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							onClick={() => m.setCtab("vlakno")}
-							data-tab
-							data-active={m.ctab === "vlakno" || undefined}
-							style={{
-								display: "inline-flex",
-								alignItems: "center",
-								gap: 6,
-								fontFamily: "var(--w-font-display)",
-								fontWeight: 600,
-								fontSize: 12,
-								padding: "5px 14px",
-								borderRadius: 7,
-								cursor: "pointer",
-							}}
-						>
-							Vlákno
-							<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, opacity: 0.65 }}>
-								{msgsAll.length}
-							</span>
-						</span>
-						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							onClick={() => m.setCtab("chat")}
-							data-tab
-							data-active={m.ctab === "chat" || undefined}
-							style={{
-								display: "inline-flex",
-								alignItems: "center",
-								gap: 6,
-								fontFamily: "var(--w-font-display)",
-								fontWeight: 600,
-								fontSize: 12,
-								padding: "5px 14px",
-								borderRadius: 7,
-								cursor: "pointer",
-							}}
-						>
-							<svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden>
-								<path
-									d="M2.5 2.5 H11.5 V9.5 H7 L4.5 12 V9.5 H2.5 Z"
-									stroke="currentColor"
-									strokeWidth="1.3"
-									strokeLinejoin="round"
-								/>
-							</svg>
-							Interní chat
-							<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, opacity: 0.65 }}>
-								{nchat}
-							</span>
-						</span>
-					</div>
-					<span style={{ flex: 1 }} />
-					{m.chatOff && (
-						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-							data-deskonly
-							onClick={() => {
-								m.setChatOff(false);
-								m.setCtab("vlakno");
-							}}
-							title="Vrátit interní chat jako pravý panel"
-							data-rowbtn
-							style={{
-								border: "1px solid var(--line)",
-								background: "var(--panel)",
-								fontFamily: "var(--w-font-mono)",
-								fontSize: 11,
-								marginBottom: 8,
-							}}
-						>
-							«
-						</span>
-					)}
-				</div>
-			)}
 
-			{/* ── VRSTVA 1+3: vlákno + interní chat (prototyp ř. 931–1146) ── */}
+			{/* ── Čtecí vrstva vlákna ── */}
 			<div data-thrbody style={{ flex: 1, minHeight: 140, display: "flex" }}>
 				{/* Čtecí sloupec */}
 				<div
@@ -2563,119 +2220,6 @@ export function MailThread() {
 					</div>
 				</div>
 
-				{/* Interní chat: záložka (mobil/tablet/režim Záložka, prototyp ř. 1052–1096) */}
-				{!t.personal && (
-					<div
-						data-tpane="chat"
-						style={{
-							flex: 1,
-							minWidth: 0,
-							flexDirection: "column",
-							minHeight: 0,
-							background: "var(--panel-2)",
-						}}
-					>
-						<div style={{ flex: 1, overflow: "auto", padding: "14px 18px 6px" }}>
-							<div
-								style={{
-									maxWidth: 640,
-									margin: "0 auto",
-									display: "flex",
-									flexDirection: "column",
-									gap: 9,
-								}}
-							>
-								<div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-									<span
-										style={{
-											fontFamily: "var(--w-font-display)",
-											fontWeight: 700,
-											fontSize: 10.5,
-											letterSpacing: ".05em",
-											textTransform: "uppercase",
-											color: "var(--ink-3)",
-										}}
-									>
-										Interní diskuse
-									</span>
-									<ChatLock />
-								</div>
-								{chatMsgs(false)}
-							</div>
-						</div>
-						<div style={{ flex: "none", padding: "8px 18px 12px" }}>
-							<div style={{ maxWidth: 640, margin: "0 auto" }}>{chatInput(false)}</div>
-						</div>
-					</div>
-				)}
-
-				{/* Interní chat: pravý panel (desktop ≥1440, prototyp ř. 1097–1146) */}
-				{!t.personal && (
-					<div
-						data-chatrail
-						style={{
-							width: 306,
-							flex: "none",
-							borderLeft: "1px solid var(--line)",
-							background: "var(--panel-2)",
-							flexDirection: "column",
-							minHeight: 0,
-						}}
-					>
-						<div
-							style={{
-								flex: "none",
-								display: "flex",
-								alignItems: "center",
-								gap: 7,
-								padding: "12px 14px 8px",
-							}}
-						>
-							<span
-								style={{
-									fontFamily: "var(--w-font-display)",
-									fontWeight: 700,
-									fontSize: 10.5,
-									letterSpacing: ".05em",
-									textTransform: "uppercase",
-									color: "var(--ink-3)",
-								}}
-							>
-								Interní diskuse
-							</span>
-							<span
-								style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--ink-3)" }}
-							>
-								{nchat}
-							</span>
-							<ChatLock />
-							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-								onClick={() => {
-									m.setChatOff(true);
-									m.setCtab("vlakno");
-								}}
-								title="Sbalit chat do záložky — vlákno dostane celou šířku"
-								data-rowbtn
-								style={{ fontFamily: "var(--w-font-mono)", fontSize: 11, flex: "none" }}
-							>
-								»
-							</span>
-						</div>
-						<div
-							style={{
-								flex: 1,
-								overflow: "auto",
-								padding: "2px 14px 6px",
-								display: "flex",
-								flexDirection: "column",
-								gap: 9,
-							}}
-						>
-							{chatMsgs(true)}
-						</div>
-						<div style={{ flex: "none", padding: "8px 14px 12px" }}>{chatInput(true)}</div>
-					</div>
-				)}
 			</div>
 
 			{/* ── Kolizní hlídka (prototyp ř. 923–931 v bloku Kolize) ── */}
@@ -2947,7 +2491,7 @@ export function MailThread() {
 										marginTop: 6,
 									}}
 								>
-									návrh vychází z vlákna a interní diskuse · nikam se neodeslal
+									návrh vychází z dostupného kontextu vlákna · nikam se neodeslal
 								</div>
 							</div>
 						)}

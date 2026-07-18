@@ -2201,10 +2201,10 @@
 		"memberTasks_other": "{{count}} otevřených úkolů",
 		"memberOpen": "Otevřené úkoly",
 		"memberEmpty": "Žádné otevřené přiřazené úkoly.",
-		"chat": "Interní diskuse",
-		"chatPh": "Napsat týmu… (nikdy neodejde ven)",
-		"chatEmpty": "Zatím žádná interní zpráva — tady se domlouvá tým nad vláknem.",
-		"chatSend": "Poslat týmu"
+		"chat": "Interní komentáře k vláknu",
+		"chatPh": "Přidat kontextový komentář…",
+		"chatEmpty": "Zatím žádný komentář. Komunikace zůstává přímo u tohoto vlákna.",
+		"chatSend": "Přidat komentář"
 	},
 	"lists": {
 		"intro": "Opakované checklisty na akce — MČR, show, nábory, soustředění. Šablona → instance k akci, odškrtáváš, po akci reset.",

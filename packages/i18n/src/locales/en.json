@@ -2169,10 +2169,10 @@
 		"memberTasks_other": "{{count}} open tasks",
 		"memberOpen": "Open tasks",
 		"memberEmpty": "No open assigned tasks.",
-		"chat": "Internal discussion",
-		"chatPh": "Message the team… (never leaves the org)",
-		"chatEmpty": "No internal messages yet — the team coordinates here.",
-		"chatSend": "Send to team"
+		"chat": "Internal thread comments",
+		"chatPh": "Add a contextual comment…",
+		"chatEmpty": "No comments yet. Conversation stays attached to this thread.",
+		"chatSend": "Add comment"
 	},
 	"lists": {
 		"intro": "Recurring event checklists — championships, shows, recruiting, camps. Template → instance per event, tick things off, reset after the event.",

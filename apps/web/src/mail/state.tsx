@@ -18,8 +18,8 @@ import {
 	useState,
 } from "react";
 import { migratePrivateJson, writePrivateJson } from "../lib/powersync/privateState";
-import { showToast } from "../lib/toast";
 import { storageGet, storageSet } from "../lib/storage";
+import { showToast } from "../lib/toast";
 import {
 	ADM_SEED,
 	type AdmSeed,
@@ -155,8 +155,6 @@ interface MailCtxValue {
 	sel: string | null;
 	/** Kurzor seznamu (j/k) — jen posun výběru, bez otevření/označení přečteno. */
 	setSel: (id: string | null) => void;
-	ctab: "vlakno" | "chat";
-	setCtab: (v: "vlakno" | "chat") => void;
 	mstep: "list" | "thread";
 	setMstep: (v: "list" | "thread") => void;
 	pinExp: boolean;
@@ -215,11 +213,9 @@ interface MailCtxValue {
 	setWarn: (w: { id: string; markDone: boolean } | null) => void;
 	/** Kolizní pojistka per vlákno — globální bool platil napříč vlákny (audit D6). */
 	collArmed: Record<string, boolean>;
-	// chat
+	// Kontextové interní komentáře k vláknu — nejde o samostatný chatový modul.
 	chatX: Record<string, ChatExtra[]>;
 	sendChat: (id: string, text: string) => void;
-	chatOff: boolean;
-	setChatOff: (v: boolean) => void;
 	// per-osoba čtení
 	perOsoba: boolean;
 	setPerOsoba: (v: boolean) => void;
@@ -272,7 +268,6 @@ const LS = {
 	drafts: "watson-mail.drafts",
 	perOsoba: "watson-mail.perOsoba",
 	mbRead: "watson-mail.mbRead",
-	chatOff: "watson-mail.chatOff",
 	sig: "watson-mail.sig",
 	sigs: "watson-mail.sigs",
 };
@@ -311,7 +306,6 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 		fu: false,
 	});
 	const [sel, setSel] = useState<string | null>("faktura");
-	const [ctab, setCtab] = useState<"vlakno" | "chat">("vlakno");
 	const [mstep, setMstep] = useState<"list" | "thread">("list");
 	const [pinExp, setPinExp] = useState(false);
 	const [rozOn, setRozOn] = useState(false);
@@ -322,7 +316,6 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const [sentX, setSentX] = useState<Record<string, SentMsg[]>>({});
 	const [float, setFloat] = useState<{ id: string; min: boolean } | null>(null);
 	const [chatX, setChatX] = useState<Record<string, ChatExtra[]>>({});
-	const [chatOff, setChatOffRaw] = useState(() => storageGet(LS.chatOff) === "1");
 	const [perOsoba, setPerOsobaRaw] = useState(() => storageGet(LS.perOsoba) !== "false");
 	const [mbRead, setMbReadState] = useState<Record<string, "per" | "shared">>(() =>
 		loadJSON(LS.mbRead, {}),
@@ -532,7 +525,6 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const openThread = useCallback(
 		(id: string) => {
 			setSel(id);
-			setCtab("vlakno");
 			setMstep("thread");
 			setTranslated(false);
 			setOv(id, { read: true });
@@ -955,11 +947,6 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			return next;
 		});
 	}, []);
-	const setChatOff = useCallback((v: boolean) => {
-		setChatOffRaw(v);
-		storageSet(LS.chatOff, v ? "1" : "0");
-	}, []);
-
 	const gkDecide = useCallback<MailCtxValue["gkDecide"]>((id, verdict) => {
 		setGkDone((s) => ({ ...s, [id]: verdict }));
 		const g = GK.find((x) => x.id === id);
@@ -1065,8 +1052,6 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			toggleFilter,
 			sel,
 			setSel,
-			ctab,
-			setCtab,
 			mstep,
 			setMstep,
 			pinExp,
@@ -1115,8 +1100,6 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			collArmed,
 			chatX,
 			sendChat,
-			chatOff,
-			setChatOff,
 			perOsoba,
 			setPerOsoba,
 			mbRead,
@@ -1157,7 +1140,6 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			filters,
 			toggleFilter,
 			sel,
-			ctab,
 			mstep,
 			pinExp,
 			rozOn,
@@ -1199,8 +1181,6 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			collArmed,
 			chatX,
 			sendChat,
-			chatOff,
-			setChatOff,
 			perOsoba,
 			setPerOsoba,
 			mbRead,
