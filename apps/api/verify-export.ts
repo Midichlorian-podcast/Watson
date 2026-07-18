@@ -38,7 +38,8 @@ async function login(email: string): Promise<string> {
 		{ redirect: "manual" },
 	);
 	const setCookies = verified.headers.getSetCookie?.() ?? [];
-	const raw = setCookies.length > 0 ? setCookies.join("; ") : (verified.headers.get("set-cookie") ?? "");
+	const raw =
+		setCookies.length > 0 ? setCookies.join("; ") : (verified.headers.get("set-cookie") ?? "");
 	const cookie = raw
 		.split(/,(?=\s*\w+=)/)
 		.map((value) => value.split(";")[0]?.trim())
@@ -47,7 +48,9 @@ async function login(email: string): Promise<string> {
 	if (!cookie) {
 		const location = verified.headers.get("location");
 		const error = location ? new URL(location, API).searchParams.get("error") : null;
-		throw new Error(`magic-link verify failed: status=${verified.status}, error=${error ?? "none"}`);
+		throw new Error(
+			`magic-link verify failed: status=${verified.status}, error=${error ?? "none"}`,
+		);
 	}
 	return cookie;
 }
@@ -98,36 +101,41 @@ async function restore(
 }
 
 async function main() {
-	const cookie = await login("demo@watson.test");
-	const user = (
-		(await db.execute(sql`SELECT id FROM users WHERE email = 'demo@watson.test'`)) as {
-			id: string;
-		}[]
-	)[0];
-	if (!user) throw new Error("demo user missing");
-	const workspace = (
-		(await db.execute(sql`
-			SELECT m.workspace_id FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
-			WHERE m.user_id = ${user.id} AND (m.role IN ('manager', 'admin') OR w.owner_id = ${user.id})
-			ORDER BY m.created_at LIMIT 1
-		`)) as { workspace_id: string }[]
-	)[0];
-	if (!workspace) throw new Error("demo workspace missing");
-	const project = (
-		(await db.execute(sql`
-			SELECT id FROM projects WHERE workspace_id = ${workspace.workspace_id} ORDER BY created_at LIMIT 1
-		`)) as { id: string }[]
-	)[0];
-	if (!project) throw new Error("demo project missing");
-
+	const stamp = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+	const user = { id: crypto.randomUUID(), email: `export-${stamp}@watson.test` };
+	const workspace = { id: crypto.randomUUID() };
+	const project = { id: crypto.randomUUID() };
 	const contactId = crypto.randomUUID();
 	const recurrenceTaskId = crypto.randomUUID();
 	const recurrencePrefixId = crypto.randomUUID();
-	await db.execute(sql`
-		INSERT INTO contacts (id, workspace_id, name, email, created_by)
-		VALUES (${contactId}, ${workspace.workspace_id}, 'Restore drill contact', 'restore-drill@example.test', ${user.id})
+	try {
+		await db.execute(sql`
+		INSERT INTO users (id, name, email, email_verified)
+		VALUES (${user.id}, 'Export verification', ${user.email}, true)
 	`);
-	await db.execute(sql`
+		await db.execute(sql`
+		INSERT INTO workspaces (id, name, owner_id, is_personal)
+		VALUES (${workspace.id}, ${`Export ${stamp}`}, ${user.id}, false)
+	`);
+		await db.execute(sql`
+		INSERT INTO memberships (user_id, workspace_id, role)
+		VALUES (${user.id}, ${workspace.id}, 'manager')
+	`);
+		await db.execute(sql`
+		INSERT INTO projects (id, workspace_id, name, owner_id)
+		VALUES (${project.id}, ${workspace.id}, ${`Export ${stamp}`}, ${user.id})
+	`);
+		await db.execute(sql`
+		INSERT INTO project_members (project_id, user_id, role)
+		VALUES (${project.id}, ${user.id}, 'manager')
+	`);
+		const cookie = await login(user.email);
+
+		await db.execute(sql`
+		INSERT INTO contacts (id, workspace_id, name, email, created_by)
+		VALUES (${contactId}, ${workspace.id}, 'Restore drill contact', 'restore-drill@example.test', ${user.id})
+	`);
+		await db.execute(sql`
 		INSERT INTO tasks (
 			id, project_id, name, due_date, recurrence, recurrence_rule, mail_th, mail_label, created_by
 		) VALUES (
@@ -136,7 +144,7 @@ async function main() {
 			${`personal:${crypto.randomUUID()}:${crypto.randomUUID()}`}, 'Citlivý mailový locator', ${user.id}
 		)
 	`);
-	await db.execute(sql`
+		await db.execute(sql`
 		INSERT INTO task_recurrence_prefixes (
 			id, task_id, project_id, anchor_date, end_date, recurrence_rule, created_by
 		) VALUES (
@@ -144,7 +152,6 @@ async function main() {
 			'{"kind":"daily","showAll":true}', ${user.id}
 		)
 	`);
-	try {
 		const response = await fetch(`${API}/api/export`, {
 			headers: { Cookie: cookie, Origin: "http://localhost:5173" },
 		});
@@ -336,6 +343,8 @@ async function main() {
 	} finally {
 		await db.execute(sql`DELETE FROM contacts WHERE id = ${contactId}`);
 		await db.execute(sql`DELETE FROM tasks WHERE id = ${recurrenceTaskId}`);
+		await db.execute(sql`DELETE FROM workspaces WHERE id = ${workspace.id}`);
+		await db.execute(sql`DELETE FROM users WHERE id = ${user.id}`);
 	}
 
 	if (failed) {
