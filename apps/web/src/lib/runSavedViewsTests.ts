@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { DEFAULT_TOOLBAR, filterTasks } from "../components/TasksToolbar";
 import {
 	makeSavedTaskViewConfig,
+	makeSavedUpcomingViewConfig,
 	parseSavedTaskViewConfig,
+	parseSavedUpcomingViewConfig,
 	toolbarStateFromSavedView,
 } from "./savedViews";
 
@@ -23,6 +25,16 @@ assert.equal(toolbarStateFromSavedView(config).groupBy, "priority");
 assert.equal(parseSavedTaskViewConfig({ ...config, priorities: [1, 1] }), null);
 assert.equal(parseSavedTaskViewConfig({ ...config, viewMode: "calendar" }), null);
 assert.equal(parseSavedTaskViewConfig("broken-json"), null);
+
+const upcomingConfig = makeSavedUpcomingViewConfig(
+	{ ...DEFAULT_TOOLBAR, people: ["me"], sortBy: "priority" },
+	"calendar",
+	"vyvazene",
+	"00000000-0000-4000-8000-000000000001",
+);
+assert.deepEqual(parseSavedUpcomingViewConfig(JSON.stringify(upcomingConfig)), upcomingConfig);
+assert.equal(parseSavedUpcomingViewConfig({ ...upcomingConfig, workspaceFilter: 42 }), null);
+assert.equal(parseSavedUpcomingViewConfig({ ...upcomingConfig, viewMode: "timeline" }), null);
 
 const dateAt = (days: number) => {
 	const now = new Date();

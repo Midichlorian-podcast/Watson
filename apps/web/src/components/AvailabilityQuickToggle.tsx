@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { dateInTimeZone, zonedDateTimeToIso } from "../lib/timeZone";
@@ -35,6 +36,11 @@ export function AvailabilityQuickToggle({ isMobile }: { isMobile: boolean }) {
 	const { data: session } = useSession();
 	const [open, setOpen] = useState(false);
 	const [busy, setBusy] = useState(false);
+	const [popoverPosition, setPopoverPosition] = useState<{
+		top: number;
+		left: number;
+		width: number;
+	} | null>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const triggerRef = useRef<HTMLButtonElement>(null);
 	const popoverRef = usePopoverLayer<HTMLDivElement>(open, () => setOpen(false), triggerRef);
@@ -60,14 +66,44 @@ export function AvailabilityQuickToggle({ isMobile }: { isMobile: boolean }) {
 
 	useEffect(() => {
 		if (!open) return;
-		const onPointer = (event: MouseEvent) => {
-			if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+		const onPointer = (event: PointerEvent) => {
+			const target = event.target as Node;
+			if (!rootRef.current?.contains(target)) setOpen(false);
 		};
-		document.addEventListener("mousedown", onPointer);
+		document.addEventListener("pointerdown", onPointer);
 		return () => {
-			document.removeEventListener("mousedown", onPointer);
+			document.removeEventListener("pointerdown", onPointer);
 		};
 	}, [open]);
+
+	// Header na desktopu vodorovně scrolluje, takže by absolutně vložený panel ořízl.
+	// Panel proto žije v body a drží se tlačítka pomocí viewportových souřadnic.
+	useLayoutEffect(() => {
+		if (!open) {
+			setPopoverPosition(null);
+			return;
+		}
+		const updatePosition = () => {
+			const trigger = triggerRef.current;
+			if (!trigger) return;
+			const rect = trigger.getBoundingClientRect();
+			const gutter = 12;
+			const width = Math.min(310, window.innerWidth - gutter * 2);
+			setPopoverPosition({
+				top: rect.bottom + (isMobile ? 4 : 5),
+				left: Math.max(gutter, Math.min(rect.right - width, window.innerWidth - width - gutter)),
+				width,
+			});
+		};
+
+		updatePosition();
+		window.addEventListener("resize", updatePosition);
+		window.addEventListener("scroll", updatePosition, true);
+		return () => {
+			window.removeEventListener("resize", updatePosition);
+			window.removeEventListener("scroll", updatePosition, true);
+		};
+	}, [open, isMobile]);
 
 	async function mutate(method: "PUT" | "DELETE", until?: string | null) {
 		if (!activeWs || !mine || busy) return;
@@ -135,17 +171,18 @@ export function AvailabilityQuickToggle({ isMobile }: { isMobile: boolean }) {
 					/>
 				)}
 			</button>
-			{open && (
+			{open && popoverPosition && typeof document !== "undefined" && createPortal(
 				<div
 					ref={popoverRef}
 					role="dialog"
 					aria-label={t("availability.quickTitle")}
+					onPointerDown={(event) => event.stopPropagation()}
 					style={{
-						position: "absolute",
-						top: isMobile ? 48 : 39,
-						right: 0,
+						position: "fixed",
+						top: popoverPosition.top,
+						left: popoverPosition.left,
 						zIndex: "var(--w-layer-popover)",
-						width: "min(310px, calc(100vw - 24px))",
+						width: popoverPosition.width,
 						padding: 12,
 						border: "1px solid var(--w-line)",
 						borderRadius: 12,
@@ -181,7 +218,7 @@ export function AvailabilityQuickToggle({ isMobile }: { isMobile: boolean }) {
 						{t("availability.openSettings")}
 					</button>
 				</div>
-			)}
+			, document.body)}
 		</div>
 	);
 }

@@ -46,13 +46,13 @@ export const filters = pgTable("filters", {
 	createdAt: createdAt(),
 	updatedAt: updatedAt(),
 }, (t) => [
-	check("filters_surface_valid", sql`${t.surface} in ('tasks')`),
+	check("filters_surface_valid", sql`${t.surface} in ('tasks', 'upcoming')`),
 	check("filters_config_object", sql`jsonb_typeof(${t.config}) = 'object'`),
 	check("filters_version_positive", sql`${t.version} > 0`),
 	/** Legacy C5 řádky smějí zůstat; strukturovaný v1 pohled musí mít jednoznačný tenant i autora. */
 	check(
 		"filters_tasks_v1_owner",
-		sql`${t.query} <> 'tasks:v1' OR (${t.workspaceId} IS NOT NULL AND ${t.userId} IS NOT NULL)`,
+		sql`${t.query} NOT IN ('tasks:v1', 'upcoming:v1') OR (${t.workspaceId} IS NOT NULL AND ${t.userId} IS NOT NULL)`,
 	),
 	uniqueIndex("filters_personal_name_uq")
 		.on(t.workspaceId, t.userId, t.surface, sql`lower(${t.name})`)

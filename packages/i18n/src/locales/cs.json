@@ -493,6 +493,13 @@
 		"invalid": "Tento pohled má neplatnou nebo starou konfiguraci",
 		"saveError": "Pohled se nepodařilo uložit"
 	},
+	"navigationPins": {
+		"title": "Moje záložky",
+		"addProject": "Přidat projekt do Mých záložek",
+		"removeProject": "Odebrat projekt z Mých záložek",
+		"addView": "Přidat pohled do Mých záložek",
+		"removeView": "Odebrat pohled z Mých záložek"
+	},
 	"knowledge": {
 		"title": "Znalosti a SOP",
 		"subtitle": "Jedno ověřené místo pro návody, pracovní postupy a zásady. Tým vždy čte poslední publikovanou verzi, zatímco změny bezpečně zůstávají v konceptu.",
@@ -610,7 +617,7 @@
 		"mail": "Mail",
 		"meetings": "Meets",
 		"search": "Hledat",
-		"inbox": "Schránka",
+		"inbox": "Příchozí",
 		"today": "Dnes",
 		"upcoming": "Nadcházející",
 		"upcomingShort": "Plán",
@@ -649,7 +656,7 @@
 		"assistant": "Watson",
 		"collapse": "Sbalit panel",
 		"soon": "Připravujeme",
-		"lockView": "Zamknout toto zobrazení jako výchozí pro všechny sekce",
+		"lockView": "Nastavit toto zobrazení jako výchozí pro tento modul",
 		"defaultView": "Výchozí",
 		"searchInline": "Hledat…",
 		"searchClose": "Zavřít hledání",
@@ -1769,7 +1776,7 @@
 		"actionSearch": "Otevřít úplné vyhledávání"
 	},
 	"inbox": {
-		"heading": "Schránka",
+		"heading": "Příchozí úkoly",
 		"subtitle": "Sem padají rychlé nápady a nezařazené úkoly. Přiřaď projekt a termín — úkol pak poletí dál do Dnes nebo Nadcházejících.",
 		"empty": "Schránka je prázdná",
 		"emptyHint": "Všechno máš zařazené. Nové nápady přidáš tlačítkem + Úkol.",
@@ -2612,6 +2619,7 @@
 	},
 	"tasks": {
 		"tabToday": "Dnes",
+		"tabIncoming": "Příchozí",
 		"tabAll": "Vše",
 		"tabBacklog": "Zásobník"
 	},

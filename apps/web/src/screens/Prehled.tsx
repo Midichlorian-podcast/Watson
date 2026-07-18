@@ -732,13 +732,6 @@ export function Prehled() {
 					</button>
 					<button
 						type="button"
-						onClick={() => void navigate({ to: "/", search: {} })}
-						className="min-h-11 rounded-lg px-3 font-display text-xs font-semibold text-ink-3 hover:text-ink"
-					>
-						{t("nav.myDay")}
-					</button>
-					<button
-						type="button"
 						onClick={() => void navigate({ to: "/prehled", search: { vstup: "tym" } })}
 						aria-pressed={surface === "tym"}
 						className="min-h-11 rounded-lg px-3 font-display text-xs font-semibold"

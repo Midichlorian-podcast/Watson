@@ -51,7 +51,7 @@ export function VseTab() {
 	const { open } = useTaskDetail();
 	const projDetail = useProjectDetail();
 	const { openAdd } = useAddTask();
-	const { view: rawView } = useViewMode();
+	const { view: rawView } = useViewMode("tasks");
 	// Globální „Vše": kalendář není pohled (fallback na seznam). Projekt: všechny 3 pohledy.
 	const view = projektId ? rawView : rawView === "calendar" ? "list" : rawView;
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);

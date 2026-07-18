@@ -67,7 +67,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 	const projects = useProjects();
 	const { activeWs } = useWorkspace();
 	const { data: workspaces } = useWorkspaces();
-	const { setView } = useViewMode();
+	const { setView } = useViewMode("upcoming");
 	const { openAdd, openCapture } = useAddTask();
 	const projectDetail = useProjectDetail();
 	const m = useMail();
@@ -188,7 +188,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 			label,
 			run: go(to),
 		}));
-		// Kalendář = pohled Úkolů (prototyp SCN ř. 2282, jako g+k) — hned za Úkoly.
+		// Kalendář je časový pohled Nadcházejících (stejně jako g+k).
 		screens.splice(6, 0, {
 			key: "s:kalendar",
 			kind: t("palette.kindGoto"),
@@ -196,7 +196,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 			run: () => {
 				onClose();
 				setView("calendar");
-				void navigate({ to: "/ukoly" });
+				void navigate({ to: "/nadchazejici" });
 			},
 		});
 		// Projekt → filtrovaný seznam Úkolů (prototyp openProj, ř. 2295).

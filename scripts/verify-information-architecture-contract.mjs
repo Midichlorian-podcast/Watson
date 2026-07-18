@@ -8,6 +8,7 @@ const mobile = read("apps/web/src/layout/MobileTabBar.tsx");
 const preferences = read("apps/web/src/lib/navigationPreferences.ts");
 const settings = read("apps/web/src/screens/Nastaveni.tsx");
 const overview = read("apps/web/src/screens/Prehled.tsx");
+const taskShell = read("apps/web/src/screens/UkolyShell.tsx");
 const mailThread = read("apps/web/src/mail/MailThread.tsx");
 const router = read("apps/web/src/router.tsx");
 const cs = read("packages/i18n/src/locales/cs.json");
@@ -18,9 +19,14 @@ const core = nav.slice(nav.indexOf("export const CORE_NAV"), nav.indexOf("export
 const tools = nav.slice(nav.indexOf("export const TOOL_NAV"), nav.indexOf("export const MAIN_NAV"));
 const checks = [
 	[
-		"denní jádro a pokročilé nástroje jsou oddělené bez odstranění rout",
+		"jádro drží Přehled, Mail, Úkoly a Nadcházející; pokročilé nástroje jsou oddělené",
 		core.includes('to: "/prehled"') &&
+			core.includes('to: "/mail"') &&
 			core.includes('to: "/ukoly"') &&
+			core.includes('to: "/nadchazejici"') &&
+			!core.includes('to: "/schranka"') &&
+			!core.includes('to: "/projekty"') &&
+			tools.includes('to: "/projekty"') &&
 			tools.includes('to: "/znalosti"') &&
 			tools.includes('to: "/postupy"'),
 	],
@@ -35,11 +41,12 @@ const checks = [
 			settings.includes("setNavigationMode"),
 	],
 	[
-		"sidebar nabízí tři personalizované vstupy a Provoz gateuje rolí vedení",
-		sidebar.includes('t("nav.myDay")') &&
-			sidebar.includes('search={{ vstup: "tym" }}') &&
-			sidebar.includes('search={{ vstup: "provoz" }}') &&
-			sidebar.includes("{leadership && ("),
+		"sidebar má jeden Přehled a jeden modul Úkoly bez duplicitních denních vstupů",
+		!sidebar.includes('t("nav.personalizedEntries")') &&
+			sidebar.includes("{CORE_NAV.map(renderNavItem)}") &&
+			sidebar.includes('path.startsWith("/schranka")') &&
+			taskShell.includes('to="/schranka"') &&
+			taskShell.includes('t("tasks.tabIncoming")'),
 	],
 	[
 		"pokročilé nástroje jsou jeden explicitní krok daleko a aktivní cíl se neschová",
@@ -59,17 +66,21 @@ const checks = [
 			overview.includes("leadershipWorkspaceIds.has(g.wsId)"),
 	],
 	[
-		"Přehled a Dnes zůstávají odlišné a týmový/provozní řez skrývá osobní karty",
+		"Přehled a Dnes zůstávají odlišné a Tým/Provoz jsou řezy uvnitř Přehledu",
 		overview.includes('surface === "overview"') &&
 			overview.includes('surface !== "provoz"') &&
 			overview.includes('surface !== "tym"') &&
-			overview.includes('navigate({ to: "/", search: {} })'),
+			overview.includes('navigate({ to: "/prehled", search: { vstup: "tym" } })') &&
+			!sidebar.includes('search={{ vstup: "tym" }}'),
 	],
 	[
-		"mobil má stejné role-aware vstupy s 44px cíli",
-		mobile.includes('aria-label={t("nav.personalizedEntries")}') &&
-			mobile.includes('min-h-11') &&
-			mobile.includes("{leadership && ("),
+		"mobil má stejné čtyři hlavní moduly, Úkoly zahrnují Příchozí a cíle mají 44px",
+		mobile.includes('{ to: "/prehled", icon: "prehled"') &&
+			mobile.includes('activePrefixes: ["/ukoly", "/schranka"]') &&
+			mobile.includes('{ to: "/mail", icon: "mail"') &&
+			mobile.includes('to: "/nadchazejici"') &&
+			mobile.includes('minHeight: 44') &&
+			!mobile.includes('aria-label={t("nav.personalizedEntries")}'),
 	],
 	[
 		"copy existuje česky i anglicky pro navigaci a vysvětlení povrchů",

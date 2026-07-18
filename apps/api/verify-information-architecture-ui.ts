@@ -1,7 +1,16 @@
 /** F8a browser audit: role-aware entry points, guided navigation and responsive surfaces. */
 import "./src/env";
 import { mkdir } from "node:fs/promises";
-import { accounts, eq, getDb, memberships, users, workspaces } from "@watson/db";
+import {
+	accounts,
+	eq,
+	getDb,
+	memberships,
+	projectMembers,
+	projects,
+	users,
+	workspaces,
+} from "@watson/db";
 import axe from "axe-core";
 import { hashPassword } from "better-auth/crypto";
 import { type Browser, chromium, type Page, webkit } from "playwright";
@@ -17,6 +26,9 @@ type Fixture = {
 	userId: string;
 	ownerId: string;
 	workspaceId: string;
+	personalWorkspaceId: string;
+	projectName: string;
+	personalProjectName: string;
 	email: string;
 	password: string;
 };
@@ -25,7 +37,12 @@ async function provision(browserName: string, role: "admin" | "member"): Promise
 	const userId = crypto.randomUUID();
 	const ownerId = role === "admin" ? userId : crypto.randomUUID();
 	const workspaceId = crypto.randomUUID();
+	const personalWorkspaceId = crypto.randomUUID();
+	const projectId = crypto.randomUUID();
+	const personalProjectId = crypto.randomUUID();
 	const stamp = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+	const projectName = `Projekt ${role} ${browserName}`;
+	const personalProjectName = `Osobní projekt ${role} ${browserName}`;
 	const email = `ia-ui-${browserName}-${role}-${stamp}@watson.test`;
 	const password = `Watson-${crypto.randomUUID()}-A1!`;
 	await db.transaction(async (tx) => {
@@ -56,15 +73,49 @@ async function provision(browserName: string, role: "admin" | "member"): Promise
 			ownerId,
 			isPersonal: false,
 		});
+		await tx.insert(workspaces).values({
+			id: personalWorkspaceId,
+			name: `Osobní ${browserName}`,
+			ownerId: userId,
+			isPersonal: true,
+		});
 		if (ownerId !== userId) {
 			await tx.insert(memberships).values({ workspaceId, userId: ownerId, role: "admin" });
 		}
 		await tx.insert(memberships).values({ workspaceId, userId, role });
+		await tx.insert(memberships).values({
+			workspaceId: personalWorkspaceId,
+			userId,
+			role: "admin",
+		});
+		await tx.insert(projects).values([
+			{ id: projectId, workspaceId, ownerId: userId, name: projectName },
+			{
+				id: personalProjectId,
+				workspaceId: personalWorkspaceId,
+				ownerId: userId,
+				name: personalProjectName,
+			},
+		]);
+		await tx.insert(projectMembers).values([
+			{ projectId, userId, role: role === "admin" ? "manager" : "editor" },
+			{ projectId: personalProjectId, userId, role: "manager" },
+		]);
 	});
-	return { userId, ownerId, workspaceId, email, password };
+	return {
+		userId,
+		ownerId,
+		workspaceId,
+		personalWorkspaceId,
+		projectName,
+		personalProjectName,
+		email,
+		password,
+	};
 }
 
 async function cleanup(fixture: Fixture) {
+	await db.delete(workspaces).where(eq(workspaces.id, fixture.personalWorkspaceId));
 	await db.delete(workspaces).where(eq(workspaces.id, fixture.workspaceId));
 	await db.delete(users).where(eq(users.id, fixture.userId));
 	if (fixture.ownerId !== fixture.userId) {
@@ -101,8 +152,21 @@ async function signIn(page: Page, fixture: Fixture) {
 	await page.goto(WEB, { waitUntil: "domcontentloaded", timeout: 30_000 });
 	await page.getByLabel("E-mail", { exact: true }).fill(fixture.email);
 	await page.getByLabel("Heslo", { exact: true }).fill(fixture.password);
+	const responsePromise = page.waitForResponse(
+		(response) => response.url().includes("/api/auth/sign-in/email"),
+		{ timeout: 30_000 },
+	);
 	await page.getByRole("button", { name: "Přihlásit se", exact: true }).click();
-	await page.waitForSelector("main", { timeout: 30_000 });
+	const response = await responsePromise;
+	if (!response.ok()) {
+		throw new Error(`ia_ui_sign_in_http_${response.status()}:${(await response.text()).slice(0, 500)}`);
+	}
+	try {
+		await page.waitForSelector("main", { timeout: 30_000 });
+	} catch {
+		const body = (await page.locator("body").innerText()).replace(/\s+/g, " ").slice(0, 500);
+		throw new Error(`ia_ui_sign_in_or_boot:${page.url()}:${body}`);
+	}
 }
 
 async function assertAxeClean(page: Page, label: string) {
@@ -158,9 +222,39 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 		const main = page.locator("main");
 		await main.getByRole("button", { name: memberOnly.name, exact: true }).waitFor();
 		const sidebar = page.locator("aside");
-		await sidebar.getByRole("link", { name: "Můj den", exact: true }).waitFor();
-		await sidebar.getByRole("link", { name: "Tým", exact: true }).waitFor();
-		await sidebar.getByRole("link", { name: "Provoz", exact: true }).waitFor();
+		for (const name of ["Přehled", "Mail", "Úkoly", "Nadcházející"]) {
+			await sidebar.getByRole("link", { name: new RegExp(`^${name}`) }).waitFor();
+		}
+		await sidebar
+			.getByRole("button", { name: new RegExp(`^${fixture.personalProjectName}`) })
+			.waitFor();
+		const availabilityButton = page.getByRole("button", {
+			name: "Nerušit a dostupnost",
+			exact: true,
+		});
+		await availabilityButton.waitFor();
+		await availabilityButton.click();
+		const availabilityDialog = page.getByRole("dialog", { name: "Rychlé Nerušit" });
+		await availabilityDialog.waitFor();
+		const availabilityOnTop = await availabilityDialog.evaluate((dialog) => {
+			const rect = dialog.getBoundingClientRect();
+			const centerX = rect.left + rect.width / 2;
+			const centerY = rect.top + Math.min(rect.height / 2, 20);
+			const topmost = document.elementFromPoint(centerX, centerY);
+			return (
+				rect.left >= 0 &&
+				rect.right <= window.innerWidth &&
+				rect.top >= 0 &&
+				rect.bottom <= window.innerHeight &&
+				!!topmost &&
+				dialog.contains(topmost)
+			);
+		});
+		if (!availabilityOnTop) throw new Error(`ia_ui_availability_behind_page_${browserName}`);
+		await page.keyboard.press("Escape");
+		const overviewEntries = main.getByRole("navigation", { name: "Moje vstupy", exact: true });
+		await overviewEntries.getByRole("button", { name: "Tým", exact: true }).waitFor();
+		await overviewEntries.getByRole("button", { name: "Provoz", exact: true }).waitFor();
 		if ((await sidebar.getByRole("link", { name: "Meets", exact: true }).count()) !== 0) {
 			throw new Error(`ia_ui_guided_tools_visible_${browserName}`);
 		}
@@ -173,7 +267,7 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 		await listsLink.first().waitFor();
 		await screenshot(page, browserName, "ia-guided-expanded");
 
-		await sidebar.getByRole("link", { name: "Tým", exact: true }).click();
+		await overviewEntries.getByRole("button", { name: "Tým", exact: true }).click();
 		await page.waitForURL(/\/prehled\?vstup=tym/);
 		await page.getByRole("heading", { name: "Tým", exact: true }).waitFor();
 		await main.getByText("Komunikace pro mě", { exact: true }).waitFor();
@@ -196,6 +290,80 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 		}
 		await assertAxeClean(page, `${browserName}_operations`);
 
+		// Zámeček je per modul, ukládá právě otevřený pohled a nový pohled umí
+		// jedním kliknutím nahradit starý default. Úkoly a Nadcházející se neovlivňují.
+		await page.goto(`${WEB}/ukoly`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+		await page.getByRole("button", { name: "Nástěnka", exact: true }).click();
+		const lock = page.getByRole("button", {
+			name: "Nastavit toto zobrazení jako výchozí pro tento modul",
+			exact: true,
+		});
+		await lock.click();
+		if ((await lock.getAttribute("aria-pressed")) !== "true")
+			throw new Error(`ia_ui_task_default_not_locked_${browserName}`);
+
+		await page.goto(`${WEB}/nadchazejici`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+		const upcomingList = page.getByRole("button", { name: "Seznam", exact: true });
+		if ((await upcomingList.getAttribute("aria-pressed")) !== "true")
+			throw new Error(`ia_ui_view_leaked_tasks_to_upcoming_${browserName}`);
+		await page.getByRole("button", { name: "Kalendář", exact: true }).click();
+		await lock.click();
+
+		await page.goto(`${WEB}/ukoly`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+		const taskBoard = page.getByRole("button", { name: "Nástěnka", exact: true });
+		if ((await taskBoard.getAttribute("aria-pressed")) !== "true")
+			throw new Error(`ia_ui_task_default_not_restored_${browserName}`);
+		await page.getByRole("button", { name: "Seznam", exact: true }).click();
+		if ((await lock.getAttribute("aria-pressed")) !== "false")
+			throw new Error(`ia_ui_lock_claims_unsaved_view_${browserName}`);
+		await lock.click();
+		const storedAfterReplace = await page.evaluate(() => ({
+			tasks: localStorage.getItem("watson.defaultView.v2.tasks"),
+			upcoming: localStorage.getItem("watson.defaultView.v2.upcoming"),
+		}));
+		if (storedAfterReplace.tasks !== "list" || storedAfterReplace.upcoming !== "calendar")
+			throw new Error(`ia_ui_default_replace_or_isolation_${browserName}`);
+		await lock.click();
+		const storedAfterUnlock = await page.evaluate(() => ({
+			tasks: localStorage.getItem("watson.defaultView.v2.tasks"),
+			upcoming: localStorage.getItem("watson.defaultView.v2.upcoming"),
+		}));
+		if (storedAfterUnlock.tasks !== null || storedAfterUnlock.upcoming !== "calendar")
+			throw new Error(`ia_ui_unlock_cross_surface_${browserName}`);
+		await page.reload({ waitUntil: "domcontentloaded" });
+		if ((await page.getByRole("button", { name: "Seznam", exact: true }).getAttribute("aria-pressed")) !== "true")
+			throw new Error(`ia_ui_unlocked_task_reload_${browserName}`);
+		await page.goto(`${WEB}/nadchazejici`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+		if ((await page.getByRole("button", { name: "Kalendář", exact: true }).getAttribute("aria-pressed")) !== "true")
+			throw new Error(`ia_ui_upcoming_default_reload_${browserName}`);
+
+		await page.goto(`${WEB}/projekty`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+		await page
+			.getByRole("button", { name: "Přidat projekt do Mých záložek", exact: true })
+			.click();
+		await sidebar.getByRole("button", { name: fixture.projectName, exact: true }).waitFor();
+
+		await page.goto(`${WEB}/ukoly`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+		const savedViewsButton = page.getByRole("button", { name: "Pohledy", exact: true });
+		try {
+			await savedViewsButton.click({ timeout: 30_000 });
+		} catch {
+			const body = (await page.locator("body").innerText()).replace(/\s+/g, " ").slice(0, 800);
+			throw new Error(`ia_ui_saved_views_button_missing:${page.url()}:${body}`);
+		}
+		const savedViewName = `Moje kontrola ${browserName}`;
+		await page.getByPlaceholder("Název pohledu", { exact: true }).fill(savedViewName);
+		await page.getByRole("button", { name: "Uložit", exact: true }).click();
+		await page.waitForURL(/\/ukoly\?pohled=/);
+		const savedViewsPopover = page.locator("[data-saved-views]");
+		if ((await savedViewsPopover.count()) === 0) await savedViewsButton.click();
+		await savedViewsPopover.getByText(savedViewName, { exact: true }).waitFor();
+		await savedViewsPopover
+			.getByRole("button", { name: "Přidat pohled do Mých záložek", exact: true })
+			.click();
+		await sidebar.getByRole("button", { name: savedViewName, exact: true }).click();
+		await page.waitForURL(/\/ukoly\?pohled=/);
+
 		await page.goto(`${WEB}/nastaveni?sekce=vzhled`, {
 			waitUntil: "domcontentloaded",
 			timeout: 30_000,
@@ -216,7 +384,7 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 		await page.getByRole("button", { name: "Více", exact: true }).click();
 		const sheet = page.getByRole("dialog", { name: "Další sekce" });
 		await sheet.waitFor();
-		for (const name of ["Můj den", "Tým", "Provoz"]) {
+		for (const name of ["Meets", "Projekty", "Nastavení"]) {
 			const box = await sheet.getByRole("link", { name, exact: true }).boundingBox();
 			if (!box || box.height < 44) throw new Error(`ia_ui_mobile_target_${browserName}_${name}`);
 		}
@@ -225,7 +393,7 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 		await screenshot(page, browserName, "ia-operations-390");
 		if (runtimeErrors.length) throw new Error(`ia_ui_runtime:${runtimeErrors.join(" | ")}`);
 		console.log(
-			`  ✓ ${browserName}: guided/advanced nav, team/operations surfaces, persistence, 390 px and axe`,
+			`  ✓ ${browserName}: simplified nav, isolated view defaults, team/operations, 390 px and axe`,
 		);
 	} finally {
 		await context.close();

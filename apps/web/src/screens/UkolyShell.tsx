@@ -6,13 +6,14 @@ import { inboxProjectIds } from "../lib/inbox";
 import { useProjects } from "../lib/projects";
 import { todayISO } from "../lib/tasks";
 import { parseTaskTab, type TaskTab } from "../lib/taskTabs";
+import { Schranka } from "./Schranka";
 import { DnesTab } from "./Today";
 import { VseTab, ZasobnikTab } from "./Ukoly";
 
 /**
- * Sloučený modul „Úkoly" se záložkami Dnes · Vše · Zásobník (jeden URL prostor):
- * - `/` = Dnes (denní závazek), `/ukoly` = Vše (inventář), `/ukoly?tab=zasobnik` = Zásobník.
- * - `?tab=dnes|vse|zasobnik` řídí aktivní záložku; default se liší dle domovské routy.
+ * Sloučený modul „Úkoly" se záložkami Dnes · Příchozí · Vše · Zásobník:
+ * - `/` = Dnes, `/schranka` = Příchozí, `/ukoly` = Vše, `?tab=zasobnik` = Zásobník.
+ * - staré deep-linky zůstávají platné; `?tab=` umí všechny čtyři pohledy.
  * - `?projekt=` (drill-down projektu) = fokusovaný pohled BEZ záložek (má vlastní baner).
  */
 export function UkolyShell({ defaultTab }: { defaultTab: TaskTab }) {
@@ -23,7 +24,15 @@ export function UkolyShell({ defaultTab }: { defaultTab: TaskTab }) {
 	return (
 		<>
 			<TaskViewTabs active={tab} />
-			{tab === "dnes" ? <DnesTab /> : tab === "zasobnik" ? <ZasobnikTab /> : <VseTab />}
+			{tab === "dnes" ? (
+				<DnesTab />
+			) : tab === "prichozi" ? (
+				<Schranka />
+			) : tab === "zasobnik" ? (
+				<ZasobnikTab />
+			) : (
+				<VseTab />
+			)}
 		</>
 	);
 }
@@ -43,7 +52,7 @@ function TaskViewTabs({ active }: { active: TaskTab }) {
 		"SELECT project_id, due_date, parent_id, kind FROM tasks WHERE completed_at IS NULL",
 	);
 
-	const { dnes, zasobnik } = useMemo(() => {
+	const { dnes, prichozi, zasobnik } = useMemo(() => {
 		const inbox = inboxProjectIds(projects);
 		const today = todayISO();
 		// Stejné pravidlo viditelnosti jako obrazovky/Sidebar (podúkoly + bez netriážované Schránky).
@@ -51,6 +60,9 @@ function TaskViewTabs({ active }: { active: TaskTab }) {
 			!r.due_date && !!r.project_id && inbox.has(r.project_id);
 		const visible = (rows ?? []).filter((r) => (!r.parent_id || r.due_date) && !inboxTask(r));
 		return {
+			prichozi: (rows ?? []).filter(
+				(r) => !r.parent_id && !r.due_date && !!r.project_id && inbox.has(r.project_id),
+			).length,
 			dnes: visible.filter((r) => {
 				const dd = r.due_date ? r.due_date.slice(0, 10) : null;
 				if (dd == null) return false;
@@ -92,6 +104,14 @@ function TaskViewTabs({ active }: { active: TaskTab }) {
 			>
 				{t("tasks.tabToday")}
 				{dnes > 0 && badge(dnes)}
+			</Link>
+			<Link
+				to="/schranka"
+				className="font-display font-semibold"
+				style={pill(active === "prichozi")}
+			>
+				{t("tasks.tabIncoming")}
+				{prichozi > 0 && badge(prichozi)}
 			</Link>
 			<Link
 				to="/ukoly"

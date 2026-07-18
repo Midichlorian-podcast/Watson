@@ -25,7 +25,6 @@ const Nastaveni = named(() => import("./screens/Nastaveni"), "Nastaveni");
 const Postupy = named(() => import("./screens/Postupy"), "Postupy");
 const Projekty = named(() => import("./screens/Projekty"), "Projekty");
 const Reporty = named(() => import("./screens/Reporty"), "Reporty");
-const Schranka = named(() => import("./screens/Schranka"), "Schranka");
 const UkolyShell = lazy(() => import("./screens/UkolyShell").then((module) => ({ default: module.UkolyShell })));
 const Oblibene = lazy(() => import("./screens/Oblibene").then((m) => ({ default: m.Oblibene })));
 
@@ -111,10 +110,11 @@ const ukolyRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/ukoly",
 	component: () => <UkolyShell defaultTab="vse" />,
-	validateSearch: (s: Record<string, unknown>): { projekt?: string; ukol?: string; tab?: TaskTab; prostor?: string } => ({
+	validateSearch: (s: Record<string, unknown>): { projekt?: string; ukol?: string; pohled?: string; tab?: TaskTab; prostor?: string } => ({
 		projekt: typeof s.projekt === "string" ? s.projekt : undefined,
 		// deep-link z „Kopírovat odkaz" — otevře detail úkolu
 		ukol: typeof s.ukol === "string" ? s.ukol : undefined,
+		pohled: typeof s.pohled === "string" ? s.pohled : undefined,
 		// aktivní záložka modulu (dnes | vse | zasobnik); default vse na /ukoly
 		tab: parseTaskTab(s.tab),
 		prostor: typeof s.prostor === "string" ? s.prostor : undefined,
@@ -141,11 +141,14 @@ const nadchRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/nadchazejici",
 	component: Nadchazejici,
+	validateSearch: (s: Record<string, unknown>): { pohled?: string } => ({
+		pohled: typeof s.pohled === "string" ? s.pohled : undefined,
+	}),
 });
 const schrankaRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/schranka",
-	component: Schranka,
+	component: () => <UkolyShell defaultTab="prichozi" />,
 });
 const hledatRoute = createRoute({
 	getParentRoute: () => rootRoute,

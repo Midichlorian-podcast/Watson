@@ -754,7 +754,7 @@ const local_private_state = new Table(
 	{ localOnly: true },
 );
 
-/** Strukturované osobní a týmové pohledy úkolů; zápis probíhá CAS API commandem. */
+/** Strukturované osobní a týmové pohledy Úkolů/Nadcházejících; zápis přes CAS API. */
 const filters = new Table(
 	{
 		owner_scope: column.text,

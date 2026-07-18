@@ -489,6 +489,13 @@
 		"invalid": "This view has an invalid or outdated configuration",
 		"saveError": "Could not save the view"
 	},
+	"navigationPins": {
+		"title": "My shortcuts",
+		"addProject": "Add project to My shortcuts",
+		"removeProject": "Remove project from My shortcuts",
+		"addView": "Add view to My shortcuts",
+		"removeView": "Remove view from My shortcuts"
+	},
 	"knowledge": {
 		"title": "Knowledge & SOP",
 		"subtitle": "One verified place for guides, operating procedures, and policies. The team always reads the latest published version while changes remain safely in draft.",
@@ -606,7 +613,7 @@
 		"mail": "Mail",
 		"meetings": "Meets",
 		"search": "Search",
-		"inbox": "Inbox",
+		"inbox": "Incoming",
 		"today": "Today",
 		"upcoming": "Upcoming",
 		"upcomingShort": "Plan",
@@ -645,7 +652,7 @@
 		"assistant": "Watson",
 		"collapse": "Collapse panel",
 		"soon": "Coming soon",
-		"lockView": "Lock this view as default for all sections",
+		"lockView": "Set this view as the default for this module",
 		"defaultView": "Default",
 		"searchInline": "Search…",
 		"searchClose": "Close search",
@@ -1745,7 +1752,7 @@
 		"actionSearch": "Open full search"
 	},
 	"inbox": {
-		"heading": "Inbox",
+		"heading": "Incoming tasks",
 		"subtitle": "Quick ideas and unsorted tasks land here. Assign a project and date — the task then flies on to Today or Upcoming.",
 		"empty": "Inbox is empty",
 		"emptyHint": "Everything is sorted. Add new ideas with the + Task button.",
@@ -2564,6 +2571,7 @@
 	},
 	"tasks": {
 		"tabToday": "Today",
+		"tabIncoming": "Incoming",
 		"tabAll": "All",
 		"tabBacklog": "Backlog"
 	},

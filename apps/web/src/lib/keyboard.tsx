@@ -50,7 +50,8 @@ const G_ROUTES: Record<
 export function KeyboardProvider({ children }: { children: ReactNode }) {
 	const navigate = useNavigate();
 	const { openAdd, openCapture } = useAddTask();
-	const { setView, locked } = useViewMode();
+	const { setView: setTaskView, locked: taskViewLocked } = useViewMode("tasks");
+	const { setView: setUpcomingView, locked: upcomingViewLocked } = useViewMode("upcoming");
 	const { setOpen: setSearchOpen } = useListSearch();
 	const { openId } = useTaskDetail();
 	const [cheatOpen, setCheatOpen] = useState(false);
@@ -126,8 +127,8 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 				if (dest) {
 					e.preventDefault();
 					// Zamčený výchozí pohled g-zkratky nepřepínají (prototyp goTo + viewLock).
-					if (key === "k" && !locked) setView("calendar");
-					else if (key === "u" && !locked) setView("list");
+					if (key === "k" && !upcomingViewLocked) setUpcomingView("calendar");
+					else if (key === "u" && !taskViewLocked) setTaskView("list");
 					void navigate({ to: dest });
 					return;
 				}
@@ -168,8 +169,10 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 		navigate,
 		openAdd,
 		openCapture,
-		setView,
-		locked,
+		setTaskView,
+		taskViewLocked,
+		setUpcomingView,
+		upcomingViewLocked,
 		setSearchOpen,
 		openId,
 	]);

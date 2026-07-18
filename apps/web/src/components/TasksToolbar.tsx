@@ -4,6 +4,7 @@ import { useTranslation } from "@watson/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
+import type { SavedViewSurface } from "../lib/savedViews";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 import { chipStyle, FilterSectionLabel, pillStyle } from "./filterUi";
 import { SavedViewsControl } from "./SavedViewsControl";
@@ -218,12 +219,18 @@ export function TasksToolbar({
 	ctx,
 	allowGrouping = false,
 	showSavedViews = false,
+	savedViewsSurface = "tasks",
+	savedViewsWorkspaceFilter = null,
+	onSavedViewsWorkspaceFilterChange,
 }: {
 	state: ToolbarState;
 	onChange: (next: ToolbarState) => void;
 	ctx: ToolbarCtx;
 	allowGrouping?: boolean;
 	showSavedViews?: boolean;
+	savedViewsSurface?: SavedViewSurface;
+	savedViewsWorkspaceFilter?: string | null;
+	onSavedViewsWorkspaceFilterChange?: (workspaceId: string | null) => void;
 }) {
 	const { t } = useTranslation();
 	const [open, setOpen] = useState<"filter" | "sort" | "group" | null>(null);
@@ -339,7 +346,15 @@ export function TasksToolbar({
 			className="relative flex flex-wrap items-center"
 			style={{ gap: 8, padding: "8px 4px 2px" }}
 		>
-			{showSavedViews && <SavedViewsControl state={state} onChange={onChange} />}
+			{showSavedViews && (
+				<SavedViewsControl
+					state={state}
+					onChange={onChange}
+					surface={savedViewsSurface}
+					workspaceFilter={savedViewsWorkspaceFilter}
+					onWorkspaceFilterChange={onSavedViewsWorkspaceFilterChange}
+				/>
+			)}
 			{/* Filtr (prototyp ř. 350) */}
 			<div className="relative">
 				<button

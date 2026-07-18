@@ -26,7 +26,7 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 	const inboxIds = useMemo(() => inboxProjectIds(projects), [projects]);
 	const flowSteps = useFlowSteps();
-	const { view } = useViewMode();
+	const { view } = useViewMode("favorites");
 
 	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		`SELECT * FROM tasks WHERE completed_at IS NULL AND ${NOT_MEETING} ORDER BY priority, due_date IS NULL, due_date`,

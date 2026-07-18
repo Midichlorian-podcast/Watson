@@ -17,10 +17,10 @@ const TABS: {
 	labelKey: string;
 	mobileLabelKey?: string;
 	/** Další prefix cesty, který má tab také zvýraznit (sloučený modul). */
-	activePrefix?: string;
+	activePrefixes?: string[];
 }[] = [
 	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
-	{ to: "/", icon: "ukoly", labelKey: "nav.tasks", activePrefix: "/ukoly" },
+	{ to: "/", icon: "ukoly", labelKey: "nav.tasks", activePrefixes: ["/ukoly", "/schranka"] },
 	{ to: "/mail", icon: "mail", labelKey: "nav.mail" },
 	{
 		to: "/nadchazejici",
@@ -40,7 +40,6 @@ const MORE: { to: string; icon: IconName; labelKey: string }[] = [
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists" },
 	{ to: "/znalosti", icon: "popis", labelKey: "nav.knowledge" },
 	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
-	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox" },
 	{ to: "/cile", icon: "cile", labelKey: "nav.goals" },
 	{ to: "/reporty", icon: "reporty", labelKey: "nav.reports" },
 	{ to: "/postupy", icon: "postup", labelKey: "nav.flows" },
@@ -54,9 +53,6 @@ export function MobileTabBar() {
 	const { t } = useTranslation();
 	const { toggleWatson, watsonOpen } = useWatson();
 	const path = useRouterState({ select: (s) => s.location.pathname });
-	const overviewEntry = useRouterState({
-		select: (s) => (s.location.search as { vstup?: string }).vstup,
-	});
 	const [moreOpen, setMoreOpen] = useState(false);
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs, setActiveWs } = useWorkspace();
@@ -160,78 +156,6 @@ export function MobileTabBar() {
 								))}
 							</div>
 						)}
-						<div className="px-3 pt-3">
-							<div className="mb-1 px-1 font-display text-[10px] font-bold uppercase tracking-[.07em] text-ink-3">
-								{t("nav.personalizedEntries")}
-							</div>
-							<nav
-								aria-label={t("nav.personalizedEntries")}
-								className={`grid gap-1 ${leadership ? "grid-cols-3" : "grid-cols-2"}`}
-							>
-								<Link
-									to="/"
-									search={{}}
-									onClick={() => setMoreOpen(false)}
-									aria-current={path === "/" ? "page" : undefined}
-									className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line px-2 font-display text-xs font-semibold"
-									style={{
-										background: path === "/" ? "var(--w-brass-soft)" : "var(--w-panel-2)",
-										color: path === "/" ? "var(--w-brass-text)" : "var(--w-ink-2)",
-									}}
-								>
-									<Icon name="dnes" size={17} />
-									{t("nav.myDay")}
-								</Link>
-								<Link
-									to="/prehled"
-									search={{ vstup: "tym" }}
-									onClick={() => setMoreOpen(false)}
-									aria-current={
-										path === "/prehled" && overviewEntry === "tym" ? "page" : undefined
-									}
-									className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line px-2 font-display text-xs font-semibold"
-									style={{
-										background:
-											path === "/prehled" && overviewEntry === "tym"
-												? "var(--w-brass-soft)"
-												: "var(--w-panel-2)",
-										color:
-											path === "/prehled" && overviewEntry === "tym"
-												? "var(--w-brass-text)"
-												: "var(--w-ink-2)",
-									}}
-								>
-									<Icon name="tym" size={17} />
-									{t("nav.teamEntry")}
-								</Link>
-								{leadership && (
-									<Link
-										to="/prehled"
-										search={{ vstup: "provoz" }}
-										onClick={() => setMoreOpen(false)}
-										aria-current={
-											path === "/prehled" && overviewEntry === "provoz"
-												? "page"
-												: undefined
-										}
-										className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line px-2 font-display text-xs font-semibold"
-										style={{
-											background:
-												path === "/prehled" && overviewEntry === "provoz"
-													? "var(--w-brass-soft)"
-													: "var(--w-panel-2)",
-											color:
-												path === "/prehled" && overviewEntry === "provoz"
-													? "var(--w-brass-text)"
-													: "var(--w-ink-2)",
-										}}
-									>
-										<Icon name="velin" size={17} />
-										{t("nav.operationsEntry")}
-									</Link>
-								)}
-							</nav>
-						</div>
 						<nav aria-label={t("nav.moreSections")} className="grid grid-cols-2 gap-1 p-3">
 							{more.map((m) => {
 								const active = path.startsWith(m.to);
@@ -274,7 +198,7 @@ export function MobileTabBar() {
 				{TABS.map((tab) => {
 					const active =
 						(tab.to === "/" ? path === "/" : path.startsWith(tab.to)) ||
-						(tab.activePrefix ? path.startsWith(tab.activePrefix) : false);
+						tab.activePrefixes?.some((prefix) => path.startsWith(prefix)) === true;
 					const badge = tab.to === "/mail" ? mailUnread : 0;
 					return (
 						<Link
@@ -287,6 +211,7 @@ export function MobileTabBar() {
 							style={{
 								gap: 3,
 								padding: "9px 0",
+								minHeight: 44,
 								color: active ? "var(--w-brass-text)" : "var(--w-ink-3)",
 							}}
 						>
@@ -332,6 +257,7 @@ export function MobileTabBar() {
 					style={{
 						gap: 3,
 						padding: "9px 0",
+						minHeight: 44,
 						color: moreOpen || moreActive ? "var(--w-brass-text)" : "var(--w-ink-3)",
 					}}
 				>
@@ -349,6 +275,7 @@ export function MobileTabBar() {
 					style={{
 						gap: 3,
 						padding: "9px 0",
+						minHeight: 44,
 						background: watsonOpen ? "var(--w-panel-2)" : undefined,
 					}}
 				>

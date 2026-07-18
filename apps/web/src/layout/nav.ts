@@ -8,11 +8,7 @@ export interface NavItem {
 	count?: boolean;
 }
 
-/**
- * „Dnes" = domovská routa `/` (záložka Dnes sloučeného modulu Úkoly). NENÍ samostatná plochá
- * položka navigace — v Sidebaru se renderuje jako zanořená pod „Úkoly". Drženo v ALL_NAV kvůli
- * titulku headeru a jako badge (dnes+zpožděné bez nedatovaných).
- */
+/** „Dnes" = domovská záložka sloučeného modulu Úkoly. V ALL_NAV zůstává kvůli titulku. */
 export const TODAY_NAV: NavItem = {
 	to: "/",
 	icon: "dnes",
@@ -20,27 +16,35 @@ export const TODAY_NAV: NavItem = {
 	count: true,
 };
 
-/**
- * Hlavní navigace (dle Claude Design handoffu). „Úkoly" je sloučený modul (Dnes/Vše/Zásobník) —
- * v Sidebaru se rozbaluje na zanořené záložky (viz Sidebar). Počty: Schránka/Dnes/Nadcházející/Zásobník.
- */
+/** Vyhledávání zůstává routa i titulkový cíl, ale neobsazuje místo v hlavním sidebaru. */
+export const SEARCH_NAV: NavItem = {
+	to: "/hledat",
+	icon: "hledat",
+	labelKey: "nav.search",
+};
+
+/** Původní deep-link Schránky zůstává titulkový cíl, ale žije jako Příchozí v Úkolech. */
+export const INBOX_NAV: NavItem = {
+	to: "/schranka",
+	icon: "schranka",
+	labelKey: "nav.inbox",
+	count: true,
+};
+
 /**
  * Jádro navigace zůstává krátké i při růstu Watsonu. Vedené zobrazení ukazuje
  * tyto cíle přímo; ostatní plně funkční moduly jsou o jeden explicitní krok níž.
  */
 export const CORE_NAV: NavItem[] = [
 	{ to: "/prehled", icon: "prehled", labelKey: "nav.overview" },
-	{ to: "/hledat", icon: "hledat", labelKey: "nav.search" },
-	{ to: "/schranka", icon: "schranka", labelKey: "nav.inbox", count: true },
 	{ to: "/mail", icon: "mail", labelKey: "nav.mail", count: true },
-	{ to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks" },
+	{ to: "/ukoly", icon: "ukoly", labelKey: "nav.tasks", count: true },
 	{
 		to: "/nadchazejici",
 		icon: "nadchazejici",
 		labelKey: "nav.upcoming",
 		count: true,
 	},
-	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
 ];
 
 /**
@@ -48,6 +52,7 @@ export const CORE_NAV: NavItem[] = [
  * každodenním vstupům — přesně podle scope locku informační architektury.
  */
 export const TOOL_NAV: NavItem[] = [
+	{ to: "/projekty", icon: "projekty", labelKey: "nav.projects" },
 	{ to: "/meets", icon: "tym", labelKey: "nav.meetings" },
 	{ to: "/prijem-prace", icon: "schranka", labelKey: "nav.intake" },
 	{ to: "/seznamy", icon: "seznamy", labelKey: "nav.lists", count: true },
@@ -85,4 +90,13 @@ export const EMPLOYEE_NAV: NavItem = {
 	labelKey: "nav.employee",
 };
 
-export const ALL_NAV: NavItem[] = [TODAY_NAV, ...MAIN_NAV, ...FAV_NAV, SETTINGS_NAV, VELIN_NAV, EMPLOYEE_NAV];
+export const ALL_NAV: NavItem[] = [
+	TODAY_NAV,
+	INBOX_NAV,
+	SEARCH_NAV,
+	...MAIN_NAV,
+	...FAV_NAV,
+	SETTINGS_NAV,
+	VELIN_NAV,
+	EMPLOYEE_NAV,
+];

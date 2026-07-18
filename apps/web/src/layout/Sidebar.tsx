@@ -9,7 +9,9 @@ import { useSession } from "../lib/auth-client";
 import { useEmployeeHub } from "../lib/employee";
 import { initials } from "../lib/format";
 import { inboxProjectIds } from "../lib/inbox";
+import { useNavigationPins } from "../lib/navigationPins";
 import { useNavigationMode } from "../lib/navigationPreferences";
+import type { FilterRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
@@ -99,6 +101,44 @@ function NavRow({
 	);
 }
 
+function PinnedRow({
+	label,
+	onClick,
+	active,
+	marker,
+	icon = "nastaveni",
+}: {
+	label: string;
+	onClick: () => void;
+	active: boolean;
+	marker?: CSSProperties;
+	icon?: NavItem["icon"];
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className={`w-full text-left font-display ${
+				active
+					? "text-[var(--w-sidebar-ink)]"
+					: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
+			}`}
+			style={{
+				...NAV_BASE,
+				background: active ? "rgba(255,255,255,.09)" : "transparent",
+				borderLeftColor: active ? "var(--w-brass)" : "transparent",
+			}}
+		>
+			{marker ? (
+				<span style={{ width: 9, height: 9, flex: "none", ...marker }} />
+			) : (
+				<Icon name={icon} size={16} />
+			)}
+			<span className="min-w-0 flex-1 truncate">{label}</span>
+		</button>
+	);
+}
+
 /** Levý sidebar — 1:1 dle Cloud Design (brass „Přidat úkol", počty, aktivní brass okraj, footer). */
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
 	const { t } = useTranslation();
@@ -106,20 +146,44 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 	const { openAdd } = useAddTask();
 	const { data: session } = useSession();
 	const path = useRouterState({ select: (s) => s.location.pathname });
-	const overviewEntry = useRouterState({
-		select: (s) => (s.location.search as { vstup?: string }).vstup,
-	});
 	const navigationMode = useNavigationMode();
 	const [toolsOpen, setToolsOpen] = useState(false);
 	// Aktivní projektový filtr (?projekt=) — zvýraznění řádku projektu (prototyp data-projrow).
 	const activeProjekt = useRouterState({
 		select: (s) => (s.location.search as { projekt?: string }).projekt,
 	});
-	// Aktivní záložka sloučeného modulu Úkoly (?tab=) — zvýraznění zanořených řádků.
-	const searchTab = useRouterState({
-		select: (s) => (s.location.search as { tab?: string }).tab,
+	const activePohled = useRouterState({
+		select: (s) => (s.location.search as { pohled?: string }).pohled,
 	});
 	const projects = useProjects();
+	const { pins } = useNavigationPins();
+	const { data: savedViewRows } = usePsQuery<FilterRow>(
+		"SELECT * FROM filters WHERE query IN ('tasks:v1', 'upcoming:v1') ORDER BY lower(name)",
+	);
+	const pinnedProjects = pins
+		.filter((pin) => pin.kind === "project")
+		.map((pin) => projects.find((project) => project.id === pin.id))
+		.filter((project): project is NonNullable<typeof project> => !!project);
+	const pinnedViews = pins
+		.filter((pin) => pin.kind === "saved_view")
+		.map((pin) => {
+			const synced = (savedViewRows ?? []).find((view) => view.id === pin.id);
+			if (synced)
+				return {
+					id: synced.id,
+					name: synced.name,
+					surface: synced.surface,
+					workspaceId: synced.workspace_id,
+				};
+			if (!pin.label) return null;
+			return {
+				id: pin.id,
+				name: pin.label,
+				surface: pin.surface ?? "tasks",
+				workspaceId: pin.workspaceId ?? null,
+			};
+		})
+		.filter((view): view is NonNullable<typeof view> => !!view);
 	const userId = session?.user?.id;
 
 	const { data: openTasks } = usePsQuery<{
@@ -208,89 +272,28 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 
 	const isActive = (to: string) => {
 		if (to === "/") return path === "/";
-		if (to === "/prehled") return path.startsWith(to) && !overviewEntry;
+		if (to === "/prehled") return path.startsWith(to);
 		return path.startsWith(to);
 	};
 	const userName = session?.user?.name ?? "";
-
-	// Sloučený modul Úkoly: „/" = Dnes, „/ukoly" = Vše (i drill-down projektu), „?tab=zasobnik" = Zásobník.
-	const effTab = path === "/" ? "dnes" : activeProjekt ? "vse" : (searchTab ?? "vse");
-	const dnesActive = path === "/";
-	const vseActive = path.startsWith("/ukoly") && effTab === "vse";
-	const zasobnikActive = path.startsWith("/ukoly") && effTab === "zasobnik";
-	// Styl zanořené záložky (Dnes/Zásobník) pod „Úkoly" — indent jako projekty.
-	const subRow = (active: boolean): CSSProperties => ({
-		display: "flex",
-		alignItems: "center",
-		gap: 11,
-		padding: "6px 10px 6px 27px",
-		borderRadius: 9,
-		borderLeft: "3px solid transparent",
-		borderLeftColor: active ? "var(--w-brass)" : "transparent",
-		background: active ? "rgba(255,255,255,.09)" : "transparent",
-		fontWeight: 600,
-		fontSize: 13,
-	});
+	const taskModuleActive =
+		path === "/" || path.startsWith("/ukoly") || path.startsWith("/schranka");
 	const leadership = isLeadership(workspaces);
 	const toolRouteActive =
 		TOOL_NAV.some((item) => path.startsWith(item.to)) || path.startsWith("/velin");
 	const showTools = collapsed || navigationMode === "advanced" || toolsOpen || toolRouteActive;
 	const renderNavItem = (item: NavItem) => {
-		// Sloučený modul Úkoly = jedna položka „Úkoly" (→ Vše) se zanořenými
-		// záložkami Dnes/Zásobník (ne dvě samostatné ploché položky).
+		// Úkoly jsou v sidebaru jediný modul. Dnes/Příchozí/Vše/Zásobník jsou jeho
+		// záložky uvnitř obsahu, takže zde nevznikají čtyři konkurenční vstupy.
 		if (item.to === "/ukoly") {
 			return (
-				<Fragment key={item.to}>
-					<NavRow item={item} active={vseActive} collapsed={collapsed} />
-					{!collapsed && (
-						<>
-							<Link
-								to="/"
-								search={{}}
-								className={`font-display ${
-									dnesActive
-										? "text-[var(--w-sidebar-ink)]"
-										: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
-								}`}
-								style={subRow(dnesActive)}
-							>
-								<span
-									style={{
-										width: 8,
-										height: 8,
-										borderRadius: "50%",
-										flex: "none",
-										background: "var(--w-brass)",
-									}}
-								/>
-								<span style={{ flex: 1, minWidth: 0 }}>{t("nav.today")}</span>
-								{counts["/"] != null && <span style={BADGE}>{counts["/"]}</span>}
-							</Link>
-							<Link
-								to="/ukoly"
-								search={{ tab: "zasobnik" }}
-								className={`font-display ${
-									zasobnikActive
-										? "text-[var(--w-sidebar-ink)]"
-										: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
-								}`}
-								style={subRow(zasobnikActive)}
-							>
-								<span
-									style={{
-										width: 8,
-										height: 8,
-										borderRadius: 2,
-										flex: "none",
-										background: "var(--w-sidebar-ink-2)",
-									}}
-								/>
-								<span style={{ flex: 1, minWidth: 0 }}>{t("tasks.tabBacklog")}</span>
-								{counts.zasobnik != null && <span style={BADGE}>{counts.zasobnik}</span>}
-							</Link>
-						</>
-					)}
-				</Fragment>
+				<NavRow
+					key={item.to}
+					item={{ ...item, to: "/" }}
+					active={taskModuleActive}
+					collapsed={collapsed}
+					count={counts["/"]}
+				/>
 			);
 		}
 		return (
@@ -409,90 +412,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 					padding: "0 4px",
 				}}
 			>
-				<nav aria-label={t("nav.personalizedEntries")} className="mb-2">
-					{!collapsed && (
-						<div className="px-2 pb-1 font-display text-[10px] font-bold uppercase tracking-[.07em] text-[var(--w-sidebar-ink-2)]">
-							{t("nav.personalizedEntries")}
-						</div>
-					)}
-					<Link
-						to="/"
-						search={{}}
-						title={collapsed ? t("nav.myDay") : undefined}
-						aria-current={path === "/" ? "page" : undefined}
-						className="flex min-h-9 items-center rounded-lg border-l-[3px] font-display text-[13px] font-semibold"
-						style={{
-							gap: 11,
-							padding: collapsed ? "7px 10px" : "7px 10px",
-							justifyContent: collapsed ? "center" : undefined,
-							color: path === "/" ? "var(--w-sidebar-ink)" : "var(--w-sidebar-ink-2)",
-							background: path === "/" ? "rgba(255,255,255,.09)" : "transparent",
-							borderLeftColor: path === "/" && !collapsed ? "var(--w-brass)" : "transparent",
-						}}
-					>
-						<Icon name="dnes" size={17} />
-						{!collapsed && <span>{t("nav.myDay")}</span>}
-					</Link>
-					<Link
-						to="/prehled"
-						search={{ vstup: "tym" }}
-						title={collapsed ? t("nav.teamEntry") : undefined}
-						aria-current={path === "/prehled" && overviewEntry === "tym" ? "page" : undefined}
-						className="flex min-h-9 items-center rounded-lg border-l-[3px] font-display text-[13px] font-semibold"
-						style={{
-							gap: 11,
-							padding: "7px 10px",
-							justifyContent: collapsed ? "center" : undefined,
-							color:
-								path === "/prehled" && overviewEntry === "tym"
-									? "var(--w-sidebar-ink)"
-									: "var(--w-sidebar-ink-2)",
-							background:
-								path === "/prehled" && overviewEntry === "tym"
-									? "rgba(255,255,255,.09)"
-									: "transparent",
-							borderLeftColor:
-								path === "/prehled" && overviewEntry === "tym" && !collapsed
-									? "var(--w-brass)"
-									: "transparent",
-						}}
-					>
-						<Icon name="tym" size={17} />
-						{!collapsed && <span>{t("nav.teamEntry")}</span>}
-					</Link>
-					{leadership && (
-						<Link
-							to="/prehled"
-							search={{ vstup: "provoz" }}
-							title={collapsed ? t("nav.operationsEntry") : undefined}
-							aria-current={
-								path === "/prehled" && overviewEntry === "provoz" ? "page" : undefined
-							}
-							className="flex min-h-9 items-center rounded-lg border-l-[3px] font-display text-[13px] font-semibold"
-							style={{
-								gap: 11,
-								padding: "7px 10px",
-								justifyContent: collapsed ? "center" : undefined,
-								color:
-									path === "/prehled" && overviewEntry === "provoz"
-										? "var(--w-sidebar-ink)"
-										: "var(--w-sidebar-ink-2)",
-								background:
-									path === "/prehled" && overviewEntry === "provoz"
-										? "rgba(255,255,255,.09)"
-										: "transparent",
-								borderLeftColor:
-									path === "/prehled" && overviewEntry === "provoz" && !collapsed
-										? "var(--w-brass)"
-										: "transparent",
-							}}
-						>
-							<Icon name="velin" size={17} />
-							{!collapsed && <span>{t("nav.operationsEntry")}</span>}
-						</Link>
-					)}
-				</nav>
-
 				{CORE_NAV.map(renderNavItem)}
 				{!collapsed && navigationMode === "guided" && (
 					<button
@@ -528,7 +447,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 								padding: "16px 10px 6px",
 							}}
 						>
-							{t("nav.favorites")}
+							{t("navigationPins.title")}
 						</div>
 						<NavRow
 							item={{
@@ -552,6 +471,35 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 							count={counts["/oblibene/me"]}
 							marker={{ borderRadius: "50%", background: "#2a6fdb" }}
 						/>
+						{pinnedProjects.map((project) => (
+							<PinnedRow
+								key={`project:${project.id}`}
+								label={project.name ?? t("nav.projects")}
+								active={activeProjekt === project.id}
+								marker={{
+									borderRadius: "50%",
+									background: project.color ?? "var(--w-sidebar-ink-2)",
+								}}
+								onClick={() => {
+									if (project.workspace_id) setActiveWs(project.workspace_id);
+									void navigate({ to: "/ukoly", search: { projekt: project.id } });
+								}}
+							/>
+						))}
+						{pinnedViews.map((savedView) => (
+							<PinnedRow
+								key={`saved-view:${savedView.id}`}
+								label={savedView.name ?? t("savedViews.button")}
+								active={activePohled === savedView.id}
+								onClick={() => {
+									if (savedView.workspaceId) setActiveWs(savedView.workspaceId);
+									void navigate({
+										to: savedView.surface === "upcoming" ? "/nadchazejici" : "/ukoly",
+										search: { pohled: savedView.id },
+									});
+								}}
+							/>
+						))}
 
 						{/* Pracovní prostory — přepínač + projekty (1:1 dle Cloud Design) */}
 						<div
@@ -569,7 +517,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 						</div>
 						{(workspaces ?? []).map((ws) => {
 							const wsProjects = projects.filter((p) => p.workspace_id === ws.id);
-							const wsCollapsed = isCollapsed(ws.id);
+							const wsCollapsed = ws.isPersonal ? false : isCollapsed(ws.id);
 							const wsActive = ws.id === activeWs;
 							return (
 								<div key={ws.id}>

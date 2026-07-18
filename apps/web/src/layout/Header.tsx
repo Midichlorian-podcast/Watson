@@ -2,8 +2,8 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useMemo, useState } from "react";
-import { NotifCenter, useNotifItems } from "../components/NotifCenter";
 import { AvailabilityQuickToggle } from "../components/AvailabilityQuickToggle";
+import { NotifCenter, useNotifItems } from "../components/NotifCenter";
 import { useAddTask } from "../lib/addTask";
 import { focusOnMount } from "../lib/focusOnMount";
 import { INBOX_NAMES } from "../lib/inbox";
@@ -59,8 +59,10 @@ export function Header() {
 	);
 	// Sloučený modul Úkoly (Dnes/Vše/Zásobník žijí pod „/" i „/ukoly") — záložka z URL.
 	const search = useSearch({ strict: false }) as { tab?: string; projekt?: string };
-	const inTaskModule = path === "/" || path.startsWith("/ukoly");
-	const activeTab = search.tab ?? (path === "/" ? "dnes" : "vse");
+	const inTaskModule = path === "/" || path.startsWith("/ukoly") || path.startsWith("/schranka");
+	const activeTab = path.startsWith("/schranka")
+		? "prichozi"
+		: (search.tab ?? (path === "/" ? "dnes" : "vse"));
 	const isWorkspace =
 		inTaskModule || path.startsWith("/nadchazejici") || path.startsWith("/oblibene");
 	const subtitle = useMemo(() => {
@@ -73,9 +75,12 @@ export function Header() {
 		);
 		// Domovská „/" = záložka Dnes (dnešní + zpožděné, BEZ nedatovaných — ty jsou v Zásobníku).
 		const dnesView = path === "/" && activeTab === "dnes";
+		const incomingView = inTaskModule && activeTab === "prichozi";
 		const backlogView = inTaskModule && activeTab === "zasobnik";
 		const src = (openRows ?? []).filter((r) => {
 			const d = r.due_date ? r.due_date.slice(0, 10) : null;
+			if (incomingView)
+				return !r.parent_id && !d && !!r.project_id && inboxIds.has(r.project_id);
 			if (!d && r.project_id && inboxIds.has(r.project_id)) return false;
 			if (dnesView)
 				// jen s termínem dnes/zpožděné (nedatované už nepatří do Dnes);
@@ -100,7 +105,12 @@ export function Header() {
 	const { q, setQ, open: searchOpen, setOpen: setSearchOpen } = useListSearch();
 
 	// Přepínač pohledů Seznam|Nástěnka|Kalendář v headeru (prototyp ř. 277–287; ne Dnes/Schránka).
-	const { view, setView, locked, toggleLock } = useViewMode();
+	const viewSurface = path.startsWith("/nadchazejici")
+		? "upcoming"
+		: path.startsWith("/oblibene")
+			? "favorites"
+			: "tasks";
+	const { view, setView, locked, defaultView, toggleLock } = useViewMode(viewSurface);
 	// Přepínač pohledů dává smysl jen tam, kde víc pohledů existuje: záložka „Vše"
 	// sloučeného modulu (ne Dnes/Zásobník), Nadcházející a Oblíbené.
 	const showViewSwitcher =
@@ -161,6 +171,7 @@ export function Header() {
 								key={v}
 								type="button"
 								onClick={() => setView(v)}
+								aria-pressed={view === v}
 								className="cursor-pointer font-display font-semibold"
 								style={{
 									fontSize: 12.5,
@@ -179,6 +190,8 @@ export function Header() {
 							type="button"
 							onClick={toggleLock}
 							title={t("shell.lockView")}
+							aria-label={t("shell.lockView")}
+							aria-pressed={locked}
 							className="flex shrink-0 cursor-pointer items-center justify-center hover:border-brass"
 							style={{
 								width: 32,
@@ -227,7 +240,7 @@ export function Header() {
 							)}
 						</button>
 					)}
-					{!isMobile && locked && (
+					{!isMobile && locked && defaultView && (
 						<span
 							className="inline-flex shrink-0 items-center font-display font-semibold"
 							style={{
@@ -241,7 +254,7 @@ export function Header() {
 							}}
 							title={t("shell.lockView")}
 						>
-							{t("shell.defaultView")}: {viewLabels[view]}
+							{t("shell.defaultView")}: {viewLabels[defaultView]}
 						</span>
 					)}
 				</>

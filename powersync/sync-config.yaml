@@ -124,6 +124,9 @@ bucket_definitions:
       - SELECT id, owner_scope, user_id, workspace_id, name, query, surface, config, version, created_at, updated_at
         FROM filters
         WHERE user_id = bucket.user_id AND owner_scope = 'user' AND query = 'tasks:v1'
+      - SELECT id, owner_scope, user_id, workspace_id, name, query, surface, config, version, created_at, updated_at
+        FROM filters
+        WHERE user_id = bucket.user_id AND owner_scope = 'user' AND query = 'upcoming:v1'
 
   # Workspace-scoped entity (cíle) — jeden bucket na každý prostor, kde je uživatel členem.
   user_workspaces:
@@ -184,3 +187,6 @@ bucket_definitions:
       - SELECT id, owner_scope, user_id, workspace_id, name, query, surface, config, version, created_at, updated_at
         FROM filters
         WHERE workspace_id = bucket.workspace_id AND owner_scope = 'workspace' AND query = 'tasks:v1'
+      - SELECT id, owner_scope, user_id, workspace_id, name, query, surface, config, version, created_at, updated_at
+        FROM filters
+        WHERE workspace_id = bucket.workspace_id AND owner_scope = 'workspace' AND query = 'upcoming:v1'

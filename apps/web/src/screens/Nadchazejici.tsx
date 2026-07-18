@@ -67,7 +67,7 @@ function dayBucket(d: string, tdy: string): Bucket {
 export function Nadchazejici() {
 	const { t } = useTranslation();
 	const { openAdd } = useAddTask();
-	const { view } = useViewMode();
+	const { view } = useViewMode("upcoming");
 	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
@@ -112,13 +112,16 @@ export function Nadchazejici() {
 		return filterByQuery(sortTasks(filterTasks(list, tb, tbCtx), tb, tbCtx), searchQ);
 	}, [allTasks, tb, tbCtx, wsFilter, projMap, searchQ]);
 
-	// Zdroj pro kalendář — jen wsFilter, bez ořezu na budoucnost, bez toolbaru/hledání.
+	// Kalendář není ořezaný jen na budoucnost, ale respektuje stejný uložitelný filtr,
+	// řazení, workspace a hledání jako ostatní pohledy tohoto modulu.
 	const calTasks = useMemo(() => {
-		const list = calAll ?? [];
-		return wsFilter
-			? list.filter((x) => x.project_id && projMap.get(x.project_id)?.workspace_id === wsFilter)
-			: list;
-	}, [calAll, wsFilter, projMap]);
+		let list = calAll ?? [];
+		if (wsFilter)
+			list = list.filter(
+				(x) => x.project_id && projMap.get(x.project_id)?.workspace_id === wsFilter,
+			);
+		return filterByQuery(sortTasks(filterTasks(list, tb, tbCtx), tb, tbCtx), searchQ);
+	}, [calAll, wsFilter, projMap, tb, tbCtx, searchQ]);
 
 	const view2 = useMemo(() => {
 		const tdy = todayISO();
@@ -179,6 +182,15 @@ export function Nadchazejici() {
 		return (
 			<div className="mx-auto max-w-[1080px] px-5 py-7">
 				<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
+				<TasksToolbar
+					state={tb}
+					onChange={setTb}
+					ctx={tbCtx}
+					showSavedViews
+					savedViewsSurface="upcoming"
+					savedViewsWorkspaceFilter={wsFilter}
+					onSavedViewsWorkspaceFilterChange={setWsFilter}
+				/>
 				<Calendar tasks={calTasks} />
 			</div>
 		);
@@ -187,7 +199,15 @@ export function Nadchazejici() {
 		return (
 			<div className="mx-auto max-w-[1080px] px-5 py-7">
 				<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
-				<TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />
+				<TasksToolbar
+					state={tb}
+					onChange={setTb}
+					ctx={tbCtx}
+					showSavedViews
+					savedViewsSurface="upcoming"
+					savedViewsWorkspaceFilter={wsFilter}
+					onSavedViewsWorkspaceFilterChange={setWsFilter}
+				/>
 				<Board tasks={tasks} />
 			</div>
 		);
@@ -196,7 +216,15 @@ export function Nadchazejici() {
 	return (
 		<div className="mx-auto max-w-[1080px]" style={{ padding: "10px 22px 90px" }}>
 			<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
-			<TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />
+			<TasksToolbar
+				state={tb}
+				onChange={setTb}
+				ctx={tbCtx}
+				showSavedViews
+				savedViewsSurface="upcoming"
+				savedViewsWorkspaceFilter={wsFilter}
+				onSavedViewsWorkspaceFilterChange={setWsFilter}
+			/>
 			{empty && (
 				<div className="text-center" style={{ padding: "80px 20px" }}>
 					<p className="font-body text-ink-3" style={{ fontSize: 13.5 }}>

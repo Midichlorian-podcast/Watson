@@ -18,6 +18,7 @@ import { USER_COLORS } from "../lib/colors";
 import { focusOnMount } from "../lib/focusOnMount";
 import { initials } from "../lib/format";
 import { inboxProjectIds } from "../lib/inbox";
+import { useNavigationPins } from "../lib/navigationPins";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
 import { useProjectsWithState } from "../lib/projects";
@@ -51,6 +52,7 @@ export function Projekty() {
 	const cm = useContextMenu();
 	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { open } = useProjectDetail();
+	const { isPinned, setPinned } = useNavigationPins();
 	useEffect(() => {
 		if (search.projekt) open(search.projekt);
 	}, [search.projekt, open]);
@@ -247,6 +249,8 @@ export function Projekty() {
 									name: nameById.get(uid) ?? "?",
 									isOwner: uid === p.owner_id,
 								}))}
+								pinned={isPinned("project", p.id)}
+								onTogglePin={() => setPinned("project", p.id, !isPinned("project", p.id))}
 								onOpen={() =>
 									void navigate({ to: "/projekty", search: { projekt: p.id } })
 								}
@@ -260,6 +264,13 @@ export function Projekty() {
 											label: t("projects.editProject"),
 											onClick: () =>
 												void navigate({ to: "/projekty", search: { projekt: p.id } }),
+										},
+										{
+											label: isPinned("project", p.id)
+												? t("navigationPins.removeProject")
+												: t("navigationPins.addProject"),
+											onClick: () =>
+												setPinned("project", p.id, !isPinned("project", p.id)),
 										},
 										{ sep: true },
 										{
@@ -551,6 +562,8 @@ function ProjectCard({
 	week,
 	members,
 	avatars,
+	pinned,
+	onTogglePin,
 	onOpen,
 	onContextMenu,
 }: {
@@ -560,6 +573,8 @@ function ProjectCard({
 	week?: { weekDone: number; added: number; overdue: number; bars: number[] };
 	members: number;
 	avatars: { id: string; name: string; isOwner: boolean }[];
+	pinned: boolean;
+	onTogglePin: () => void;
 	onOpen: () => void;
 	onContextMenu: (e: MouseEvent) => void;
 }) {
@@ -593,12 +608,13 @@ function ProjectCard({
 		isToday: index === 7,
 	}));
 	return (
-		<button
-			type="button"
-			onClick={onOpen}
-			onContextMenu={onContextMenu}
-			className="flex flex-col rounded-2xl border border-line bg-card p-4 text-left shadow-[var(--w-shadow-sm)] transition hover:-translate-y-0.5 hover:shadow-[var(--w-shadow)]"
-		>
+		<article className="relative flex flex-col rounded-2xl border border-line bg-card p-4 shadow-[var(--w-shadow-sm)] transition hover:-translate-y-0.5 hover:shadow-[var(--w-shadow)]">
+			<button
+				type="button"
+				onClick={onOpen}
+				onContextMenu={onContextMenu}
+				className="flex w-full flex-1 flex-col text-left"
+			>
 			<div className="flex items-center gap-2">
 				<span
 					className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -608,6 +624,7 @@ function ProjectCard({
 					{project.name}
 				</span>
 				<StatusBadge status={status} t={t} />
+				<span aria-hidden className="w-7 shrink-0" />
 			</div>
 
 			<div className="mt-1.5 flex items-center gap-2">
@@ -721,7 +738,18 @@ function ProjectCard({
 					)}
 				</div>
 			)}
-		</button>
+			</button>
+			<button
+				type="button"
+				onClick={onTogglePin}
+				aria-pressed={pinned}
+				aria-label={pinned ? t("navigationPins.removeProject") : t("navigationPins.addProject")}
+				title={pinned ? t("navigationPins.removeProject") : t("navigationPins.addProject")}
+				className="absolute top-2.5 right-2.5 grid h-11 w-11 place-items-center rounded-lg text-lg text-ink-3 hover:bg-panel-2 hover:text-brass-text"
+			>
+				<span aria-hidden>{pinned ? "★" : "☆"}</span>
+			</button>
+		</article>
 	);
 }
 

@@ -71,7 +71,10 @@ body {
 .w-settings-content {
 	min-width: 0;
 }
-@media (max-width: 780px) {
+/* Po zobrazení hlavního sidebaru zbývá Nastavení výrazně méně místa než udává
+   viewport. Jednosloupcový režim proto zapínáme dřív, než se začnou překrývat
+   profil, popisy a akce (kritická oblast byla přibližně 840–1080 px). */
+@media (max-width: 1080px) {
 	.w-settings-shell {
 		padding: 18px 14px 90px;
 	}

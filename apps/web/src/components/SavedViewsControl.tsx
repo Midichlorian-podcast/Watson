@@ -1,54 +1,82 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
+import { useNavigationPins } from "../lib/navigationPins";
 import type { FilterRow } from "../lib/powersync/AppSchema";
 import {
 	makeSavedTaskViewConfig,
+	makeSavedUpcomingViewConfig,
 	parseSavedTaskViewConfig,
+	parseSavedUpcomingViewConfig,
+	type SavedViewSurface,
 	toolbarStateFromSavedView,
 } from "../lib/savedViews";
-import { getDensity, setDensity } from "../lib/tweaks";
 import { showToast } from "../lib/toast";
+import { getDensity, setDensity } from "../lib/tweaks";
 import { usePopoverLayer } from "../lib/usePopoverLayer";
 import { useViewMode } from "../lib/viewMode";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
-import type { ToolbarState } from "./TasksToolbar";
 import { chipStyle } from "./filterUi";
+import type { ToolbarState } from "./TasksToolbar";
 
 export function SavedViewsControl({
 	state,
 	onChange,
+	surface = "tasks",
+	workspaceFilter = null,
+	onWorkspaceFilterChange,
 }: {
 	state: ToolbarState;
 	onChange: (next: ToolbarState) => void;
+	surface?: SavedViewSurface;
+	workspaceFilter?: string | null;
+	onWorkspaceFilterChange?: (workspaceId: string | null) => void;
 }) {
 	const { t } = useTranslation();
+	const navigate = useNavigate();
+	const search = useSearch({ strict: false }) as { pohled?: string };
 	const { data: session } = useSession();
 	const { activeWs } = useWorkspace();
 	const { data: workspaces } = useWorkspaces();
-	const { view, setView } = useViewMode();
+	const { view, setView } = useViewMode(surface);
+	const { isPinned, setPinned } = useNavigationPins();
 	const [open, setOpen] = useState(false);
 	const [name, setName] = useState("");
 	const [scope, setScope] = useState<"personal" | "team">("personal");
 	const [busy, setBusy] = useState(false);
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+	const [optimisticRows, setOptimisticRows] = useState<FilterRow[]>([]);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const triggerRef = useRef<HTMLButtonElement>(null);
+	const appliedDeepLinkRef = useRef<string | null>(null);
 	const popoverRef = usePopoverLayer<HTMLDivElement>(open, () => setOpen(false), triggerRef);
 	const activeWorkspace = workspaces?.find((workspace) => workspace.id === activeWs);
 	const canManageTeam = activeWorkspace?.capabilities?.manageGoals === true;
 
 	const { data: rows, isLoading } = usePsQuery<FilterRow>(
 		`SELECT * FROM filters
-		 WHERE workspace_id = ? AND surface = 'tasks' AND query = 'tasks:v1'
+		 WHERE workspace_id = ? AND surface = ? AND query = ?
 		 ORDER BY owner_scope DESC, lower(name)`,
-		[activeWs ?? ""],
+		[activeWs ?? "", surface, `${surface}:v1`],
 	);
-	const savedViews = rows ?? [];
+	const syncedRows = useMemo(() => rows ?? [], [rows]);
+	const savedViews = useMemo(
+		() => [
+			...syncedRows,
+			...optimisticRows.filter(
+				(optimistic) =>
+					optimistic.workspace_id === activeWs &&
+					optimistic.surface === surface &&
+					!syncedRows.some((synced) => synced.id === optimistic.id),
+			),
+		],
+		[activeWs, optimisticRows, surface, syncedRows],
+	);
 	const activeSavedView = savedViews.find((row) => row.id === activeId) ?? null;
 
 	useEffect(() => {
@@ -60,11 +88,14 @@ export function SavedViewsControl({
 	}, []);
 	useEffect(() => {
 		void activeWs;
-		setActiveId(null);
+		setActiveId(search.pohled ?? null);
 		setConfirmDelete(null);
-	}, [activeWs]);
+	}, [activeWs, search.pohled]);
 
-	const currentConfig = () => makeSavedTaskViewConfig(state, view, getDensity());
+	const currentConfig = () =>
+		surface === "upcoming"
+			? makeSavedUpcomingViewConfig(state, view, getDensity(), workspaceFilter)
+			: makeSavedTaskViewConfig(state, view, getDensity());
 	const errorMessage = (code: string | undefined) =>
 		code === "saved_view_name_conflict"
 			? t("savedViews.nameConflict")
@@ -79,6 +110,7 @@ export function SavedViewsControl({
 		setBusy(true);
 		try {
 			const id = crypto.randomUUID();
+			const config = currentConfig();
 			const response = await fetch(`${API_URL}/api/saved-views`, {
 				method: "POST",
 				credentials: "include",
@@ -88,7 +120,8 @@ export function SavedViewsControl({
 					workspaceId: activeWs,
 					name: name.trim(),
 					scope,
-					config: currentConfig(),
+					surface,
+					config,
 				}),
 			});
 			const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -98,6 +131,28 @@ export function SavedViewsControl({
 			}
 			setName("");
 			setActiveId(id);
+			const now = new Date().toISOString();
+			setOptimisticRows((current) => [
+				...current.filter((row) => row.id !== id),
+				{
+					id,
+					owner_scope: scope === "team" ? "workspace" : "user",
+					user_id: session?.user?.id ?? null,
+					workspace_id: activeWs,
+					name: name.trim(),
+					query: `${surface}:v1`,
+					surface,
+					config: JSON.stringify(config),
+					version: 1,
+					created_at: now,
+					updated_at: now,
+				},
+			]);
+			void navigate({
+				to: surface === "upcoming" ? "/nadchazejici" : "/ukoly",
+				search: { pohled: id },
+				replace: true,
+			});
 			showToast(t("savedViews.saved"));
 		} catch {
 			showToast(t("savedViews.saveError"));
@@ -106,32 +161,53 @@ export function SavedViewsControl({
 		}
 	};
 
-	const apply = (row: FilterRow) => {
-		const config = parseSavedTaskViewConfig(row.config);
+	const apply = useCallback((row: FilterRow, notify = true) => {
+		const config =
+			surface === "upcoming"
+				? parseSavedUpcomingViewConfig(row.config)
+				: parseSavedTaskViewConfig(row.config);
 		if (!config) {
 			showToast(t("savedViews.invalid"));
 			return;
 		}
 		onChange(toolbarStateFromSavedView(config));
 		setView(config.viewMode);
+		if ("workspaceFilter" in config)
+			onWorkspaceFilterChange?.(config.workspaceFilter);
 		setDensity(config.density);
 		setActiveId(row.id);
+		appliedDeepLinkRef.current = `${surface}:${row.id}:${row.version}`;
 		setOpen(false);
-		showToast(t("savedViews.applied", { name: row.name ?? "" }));
-	};
+		void navigate({
+			to: surface === "upcoming" ? "/nadchazejici" : "/ukoly",
+			search: { pohled: row.id },
+			replace: true,
+		});
+		if (notify) showToast(t("savedViews.applied", { name: row.name ?? "" }));
+	}, [navigate, onChange, onWorkspaceFilterChange, setView, surface, t]);
+
+	useEffect(() => {
+		if (!search.pohled) return;
+		const row = savedViews.find((candidate) => candidate.id === search.pohled);
+		if (!row) return;
+		const key = `${surface}:${row.id}:${row.version}`;
+		if (appliedDeepLinkRef.current === key) return;
+		apply(row, false);
+	}, [apply, savedViews, search.pohled, surface]);
 
 	const update = async () => {
 		if (!activeSavedView || busy) return;
+		const target = activeSavedView;
 		setBusy(true);
 		try {
-			const response = await fetch(`${API_URL}/api/saved-views/${activeSavedView.id}`, {
+			const response = await fetch(`${API_URL}/api/saved-views/${target.id}`, {
 				method: "PATCH",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					name: activeSavedView.name,
+					name: target.name,
 					config: currentConfig(),
-					expectedVersion: activeSavedView.version,
+					expectedVersion: target.version,
 				}),
 			});
 			const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -139,6 +215,18 @@ export function SavedViewsControl({
 				showToast(errorMessage(payload.error));
 				return;
 			}
+			setOptimisticRows((current) =>
+				current.map((row) =>
+					row.id === target.id
+						? {
+								...row,
+								config: JSON.stringify(currentConfig()),
+								version: (row.version ?? target.version ?? 1) + 1,
+								updated_at: new Date().toISOString(),
+							}
+						: row,
+				),
+			);
 			showToast(t("savedViews.updated"));
 		} catch {
 			showToast(t("savedViews.saveError"));
@@ -164,6 +252,8 @@ export function SavedViewsControl({
 				return;
 			}
 			if (activeId === row.id) setActiveId(null);
+			setOptimisticRows((current) => current.filter((candidate) => candidate.id !== row.id));
+			setPinned("saved_view", row.id, false);
 			setConfirmDelete(null);
 			showToast(t("savedViews.deleted"));
 		} catch {
@@ -184,11 +274,14 @@ export function SavedViewsControl({
 				onClick={() => setOpen((value) => !value)}
 				className="font-display font-semibold hover:border-brass"
 				style={chipStyle(!!activeSavedView)}
+				aria-label={t("savedViews.button")}
 				aria-expanded={open}
 			>
 				<Icon name="nastaveni" size={14} />
 				{activeSavedView?.name ?? t("savedViews.button")}
-				<span style={{ fontSize: 10, opacity: 0.6 }}>▾</span>
+				<span aria-hidden style={{ fontSize: 10, opacity: 0.6 }}>
+					▾
+				</span>
 			</button>
 			{open && (
 				<div
@@ -228,6 +321,30 @@ export function SavedViewsControl({
 										<span className="text-ink-3" style={{ fontSize: 10.5 }}>
 											{row.owner_scope === "workspace" ? t("savedViews.team") : t("savedViews.personal")}
 										</span>
+									</button>
+									<button
+										type="button"
+										onClick={() =>
+							setPinned("saved_view", row.id, !isPinned("saved_view", row.id), {
+								label: row.name ?? undefined,
+								surface,
+								workspaceId: row.workspace_id ?? undefined,
+							})
+										}
+										aria-pressed={isPinned("saved_view", row.id)}
+										aria-label={
+											isPinned("saved_view", row.id)
+												? t("navigationPins.removeView")
+												: t("navigationPins.addView")
+										}
+										title={
+											isPinned("saved_view", row.id)
+												? t("navigationPins.removeView")
+												: t("navigationPins.addView")
+										}
+										className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-base text-ink-3 hover:bg-panel-2 hover:text-brass-text"
+									>
+										<span aria-hidden>{isPinned("saved_view", row.id) ? "★" : "☆"}</span>
 									</button>
 									{canEdit(row) && (
 										<button

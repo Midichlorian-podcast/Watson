@@ -2,11 +2,11 @@ import {
 	and,
 	auditEvents,
 	eq,
-	filters as savedViews,
 	getDb,
 	inArray,
 	memberships,
 	projects,
+	filters as savedViews,
 	users,
 	workspaces,
 } from "@watson/db";
@@ -38,19 +38,29 @@ export const savedTaskViewConfigSchema = z
 	})
 	.strict();
 
+export const savedUpcomingViewConfigSchema = savedTaskViewConfigSchema.extend({
+	viewMode: z.enum(["list", "board", "calendar"]),
+	workspaceFilter: uuid.nullable(),
+});
+
+const savedViewSurfaceSchema = z.enum(["tasks", "upcoming"]);
+const configForSurface = (surface: z.infer<typeof savedViewSurfaceSchema>, raw: unknown) =>
+	(surface === "upcoming" ? savedUpcomingViewConfigSchema : savedTaskViewConfigSchema).safeParse(raw);
+
 const createSchema = z
 	.object({
 		id: uuid,
 		workspaceId: uuid,
 		name: z.string().trim().min(1).max(160),
 		scope: z.enum(["personal", "team"]),
-		config: savedTaskViewConfigSchema,
+		surface: savedViewSurfaceSchema.default("tasks"),
+		config: z.unknown(),
 	})
 	.strict();
 const updateSchema = z
 	.object({
 		name: z.string().trim().min(1).max(160),
-		config: savedTaskViewConfigSchema,
+		config: z.unknown(),
 		expectedVersion: z.number().int().positive(),
 	})
 	.strict();
@@ -93,6 +103,10 @@ savedViewRoutes.post("/api/saved-views", async (c) => {
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	const body = await parseJson(c.req.raw, createSchema);
 	if (!body) return c.json({ error: "invalid_saved_view" }, 422);
+	const surface = body.surface ?? "tasks";
+	const parsedConfig = configForSurface(surface, body.config);
+	if (!parsedConfig.success) return c.json({ error: "invalid_saved_view" }, 422);
+	const config = parsedConfig.data;
 	const ownerScope = body.scope === "team" ? "workspace" : "user";
 
 	try {
@@ -120,21 +134,21 @@ savedViewRoutes.post("/api/saved-views", async (c) => {
 			if (ownerScope === "workspace" && !isManager(membership?.role, owner))
 				throw new ViewError(403, "team_view_manager_only");
 
-			if (body.config.projects.length > 0) {
+			if (config.projects.length > 0) {
 				const valid = await tx
 					.select({ id: projects.id })
 					.from(projects)
 					.where(
 						and(
 							eq(projects.workspaceId, body.workspaceId),
-							inArray(projects.id, body.config.projects),
+							inArray(projects.id, config.projects),
 							ownerScope === "workspace" ? eq(projects.visibility, "team") : undefined,
 						),
 					);
-				if (valid.length !== body.config.projects.length)
+				if (valid.length !== config.projects.length)
 					throw new ViewError(422, "invalid_project_scope");
 			}
-			const people = body.config.people.filter((value) => uuid.safeParse(value).success);
+			const people = config.people.filter((value) => uuid.safeParse(value).success);
 			if (people.length > 0) {
 				const valid = await tx
 					.select({ id: users.id })
@@ -158,7 +172,8 @@ savedViewRoutes.post("/api/saved-views", async (c) => {
 					existing.userId === session.user.id &&
 					existing.ownerScope === ownerScope &&
 					existing.name === body.name &&
-					canonicalJson(existing.config) === canonicalJson(body.config);
+					existing.surface === surface &&
+					canonicalJson(existing.config) === canonicalJson(config);
 				if (!same) throw new ViewError(409, "saved_view_id_conflict");
 				return { view: existing, replayed: true };
 			}
@@ -171,9 +186,9 @@ savedViewRoutes.post("/api/saved-views", async (c) => {
 					userId: session.user.id,
 					workspaceId: body.workspaceId,
 					name: body.name,
-					query: "tasks:v1",
-					surface: "tasks",
-					config: body.config,
+					query: `${surface}:v1`,
+					surface,
+					config,
 				})
 				.returning();
 			if (!view) throw new ViewError(409, "saved_view_create_failed");
@@ -209,8 +224,15 @@ savedViewRoutes.patch("/api/saved-views/:id", async (c) => {
 			const current = (
 				await tx.select().from(savedViews).where(eq(savedViews.id, id.data))
 			)[0];
-			if (current?.query !== "tasks:v1" || !current.workspaceId)
+			if (
+				!current?.workspaceId ||
+				(current.query !== "tasks:v1" && current.query !== "upcoming:v1") ||
+				(current.surface !== "tasks" && current.surface !== "upcoming")
+			)
 				throw new ViewError(404, "saved_view_not_found");
+			const parsedConfig = configForSurface(current.surface, body.config);
+			if (!parsedConfig.success) throw new ViewError(422, "invalid_saved_view");
+			const config = parsedConfig.data;
 			const workspace = (
 				await tx
 					.select({ ownerId: workspaces.ownerId })
@@ -235,23 +257,23 @@ savedViewRoutes.patch("/api/saved-views/:id", async (c) => {
 					: isManager(membership?.role, owner);
 			if (!canEdit) throw new ViewError(403, "forbidden");
 
-			if (body.config.projects.length > 0) {
+			if (config.projects.length > 0) {
 				const valid = await tx
 					.select({ id: projects.id })
 					.from(projects)
 					.where(
 						and(
 							eq(projects.workspaceId, current.workspaceId),
-							inArray(projects.id, body.config.projects),
+							inArray(projects.id, config.projects),
 							current.ownerScope === "workspace"
 								? eq(projects.visibility, "team")
 								: undefined,
 						),
 					);
-				if (valid.length !== body.config.projects.length)
+				if (valid.length !== config.projects.length)
 					throw new ViewError(422, "invalid_project_scope");
 			}
-			const people = body.config.people.filter((value) => uuid.safeParse(value).success);
+			const people = config.people.filter((value) => uuid.safeParse(value).success);
 			if (people.length > 0) {
 				const valid = await tx
 					.select({ id: memberships.userId })
@@ -269,7 +291,7 @@ savedViewRoutes.patch("/api/saved-views/:id", async (c) => {
 				.update(savedViews)
 				.set({
 					name: body.name,
-					config: body.config,
+					config,
 					version: current.version + 1,
 					updatedAt: new Date(),
 				})
@@ -312,7 +334,10 @@ savedViewRoutes.delete("/api/saved-views/:id", async (c) => {
 			const current = (
 				await tx.select().from(savedViews).where(eq(savedViews.id, id.data))
 			)[0];
-			if (current?.query !== "tasks:v1" || !current.workspaceId)
+			if (
+				!current?.workspaceId ||
+				(current.query !== "tasks:v1" && current.query !== "upcoming:v1")
+			)
 				throw new ViewError(404, "saved_view_not_found");
 			const workspace = (
 				await tx

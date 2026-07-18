@@ -8,15 +8,29 @@ import type {
 import type { Density } from "./tweaks";
 import type { ViewMode } from "./viewMode";
 
-export interface SavedTaskViewConfig extends ToolbarState {
-	viewMode: Exclude<ViewMode, "calendar">;
+export type SavedViewSurface = "tasks" | "upcoming";
+
+interface SavedToolbarConfig extends ToolbarState {
 	density: Density;
+}
+
+export interface SavedTaskViewConfig extends SavedToolbarConfig {
+	viewMode: Exclude<ViewMode, "calendar">;
+}
+
+export interface SavedUpcomingViewConfig extends SavedToolbarConfig {
+	viewMode: ViewMode;
+	/** null = všechny prostory; UUID = konkrétní workspace chip. */
+	workspaceFilter: string | null;
 }
 
 const unique = (values: unknown[], valid: (value: unknown) => boolean, max: number) =>
 	values.length <= max && new Set(values).size === values.length && values.every(valid);
 
-export function parseSavedTaskViewConfig(raw: unknown): SavedTaskViewConfig | null {
+function parseToolbarConfig(
+	raw: unknown,
+	allowedViews: ViewMode[],
+): (SavedToolbarConfig & { viewMode: ViewMode; workspaceFilter?: string | null }) | null {
 	let value = raw;
 	if (typeof value === "string") {
 		try {
@@ -47,7 +61,7 @@ export function parseSavedTaskViewConfig(raw: unknown): SavedTaskViewConfig | nu
 		typeof row.asc !== "boolean" ||
 		typeof row.showDone !== "boolean" ||
 		!["project", "priority", "status", "none"].includes(String(row.groupBy)) ||
-		!["list", "board"].includes(String(row.viewMode)) ||
+		!allowedViews.includes(row.viewMode as ViewMode) ||
 		!["vzdusne", "vyvazene", "kompaktni"].includes(String(row.density))
 	)
 		return null;
@@ -61,8 +75,39 @@ export function parseSavedTaskViewConfig(raw: unknown): SavedTaskViewConfig | nu
 		asc: row.asc,
 		showDone: row.showDone,
 		groupBy: row.groupBy as GroupBy,
-		viewMode: row.viewMode as "list" | "board",
+		viewMode: row.viewMode as ViewMode,
 		density: row.density as Density,
+	};
+}
+
+export function parseSavedTaskViewConfig(raw: unknown): SavedTaskViewConfig | null {
+	return parseToolbarConfig(raw, ["list", "board"]) as SavedTaskViewConfig | null;
+}
+
+export function parseSavedUpcomingViewConfig(raw: unknown): SavedUpcomingViewConfig | null {
+	const parsed = parseToolbarConfig(raw, ["list", "board", "calendar"]);
+	if (!parsed) return null;
+	let value = raw;
+	if (typeof value === "string") {
+		try {
+			value = JSON.parse(value);
+		} catch {
+			return null;
+		}
+	}
+	const workspaceFilter = (value as Record<string, unknown>).workspaceFilter;
+	if (workspaceFilter !== null && typeof workspaceFilter !== "string") return null;
+	return { ...parsed, workspaceFilter } as SavedUpcomingViewConfig;
+}
+
+function copyToolbar(state: ToolbarState): ToolbarState {
+	return {
+		...state,
+		priorities: [...state.priorities],
+		statuses: [...state.statuses],
+		projects: [...state.projects],
+		people: [...state.people],
+		due: [...state.due],
 	};
 }
 
@@ -72,25 +117,23 @@ export function makeSavedTaskViewConfig(
 	density: Density,
 ): SavedTaskViewConfig {
 	return {
-		...state,
-		priorities: [...state.priorities],
-		statuses: [...state.statuses],
-		projects: [...state.projects],
-		people: [...state.people],
-		due: [...state.due],
+		...copyToolbar(state),
 		viewMode: viewMode === "board" ? "board" : "list",
 		density,
 	};
 }
 
-export function toolbarStateFromSavedView(config: SavedTaskViewConfig): ToolbarState {
-	const { viewMode: _viewMode, density: _density, ...state } = config;
-	return {
-		...state,
-		priorities: [...state.priorities],
-		statuses: [...state.statuses],
-		projects: [...state.projects],
-		people: [...state.people],
-		due: [...state.due],
-	};
+export function makeSavedUpcomingViewConfig(
+	state: ToolbarState,
+	viewMode: ViewMode,
+	density: Density,
+	workspaceFilter: string | null,
+): SavedUpcomingViewConfig {
+	return { ...copyToolbar(state), viewMode, density, workspaceFilter };
+}
+
+export function toolbarStateFromSavedView(
+	config: SavedTaskViewConfig | SavedUpcomingViewConfig,
+): ToolbarState {
+	return copyToolbar(config);
 }

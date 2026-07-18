@@ -194,11 +194,40 @@ async function main() {
 		response = await request(memberCookie, "DELETE", `/api/saved-views/${personalId}?version=2`);
 		check("autor smaže osobní pohled", response.status === 200, response.status);
 
+		const upcomingId = crypto.randomUUID();
+		response = await request(managerCookie, "POST", "/api/saved-views", {
+			id: upcomingId,
+			workspaceId: workspace.id,
+			name: "Kalendář příštího týdne",
+			scope: "personal",
+			surface: "upcoming",
+			config: {
+				...config([teamProject.id]),
+				viewMode: "calendar",
+				workspaceFilter: workspace.id,
+			},
+		});
+		check("Nadcházející uloží vlastní kalendářový pohled", response.status === 201, response.status);
+		const upcomingStored = (await db.select().from(filters).where(eq(filters.id, upcomingId)))[0];
+		check(
+			"pohled Nadcházejících má oddělený surface a query",
+			upcomingStored?.surface === "upcoming" && upcomingStored.query === "upcoming:v1",
+			upcomingStored,
+		);
+		response = await request(managerCookie, "PATCH", `/api/saved-views/${upcomingId}`, {
+			name: "Nadcházející na nástěnce",
+			config: { ...config(), viewMode: "board", workspaceFilter: null },
+			expectedVersion: 1,
+		});
+		check("kalendářový pohled lze bezpečně aktualizovat přes CAS", response.status === 200, response.status);
+		response = await request(managerCookie, "DELETE", `/api/saved-views/${upcomingId}?version=2`);
+		check("autor smaže pohled Nadcházejících", response.status === 200, response.status);
+
 		const audits = await db
 			.select({ id: auditEvents.id })
 			.from(auditEvents)
 			.where(and(eq(auditEvents.workspaceId, workspace.id), eq(auditEvents.entity, "filters")));
-		check("create/update/delete jsou auditované bez replay duplikátu", audits.length === 5, audits.length);
+		check("create/update/delete jsou auditované bez replay duplikátu", audits.length === 8, audits.length);
 	} finally {
 		await db.delete(workspaces).where(eq(workspaces.id, otherWorkspace.id));
 		await db.delete(workspaces).where(eq(workspaces.id, workspace.id));
