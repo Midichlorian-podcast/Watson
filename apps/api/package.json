@@ -68,6 +68,8 @@
 		"verify:mail-execution": "tsx verify-mail-execution.ts",
 		"verify:mail-outbound": "tsx verify-mail-outbound.ts",
 		"verify:mail-advanced": "tsx verify-mail-advanced.ts",
+		"verify:mail-shared-drafts": "tsx verify-mail-shared-drafts.ts",
+		"verify:mail-shared-drafts-ui": "tsx verify-mail-shared-drafts-ui.ts",
 		"verify:personal-mail-ui": "tsx verify-personal-mail-ui.ts",
 		"verify:integrations-ui": "tsx verify-integrations-ui.ts",
 		"verify:recurrence": "tsx verify-recurrence.ts",

@@ -55,6 +55,7 @@ import { mailAdvancedRoutes } from "./mailAdvanced";
 import { mailExecutionRoutes } from "./mailExecution";
 import { mailOutboundRoutes, startMailOutboundWorker } from "./mailOutbound";
 import { mailSyncRoutes, startMailSyncWorker } from "./mailSync";
+import { mailSharedDraftRoutes } from "./mailSharedDrafts";
 import { parseMailVaultKeyring } from "./mailVault";
 import { meetingsRoutes } from "./meetings";
 import { isOpsTokenAuthorized, readOpsSloSnapshot, recordHttpMetric } from "./opsMetrics";
@@ -502,6 +503,7 @@ app.route("/", mailAdvancedRoutes);
 app.route("/", mailSyncRoutes);
 app.route("/", mailExecutionRoutes);
 app.route("/", mailOutboundRoutes);
+app.route("/", mailSharedDraftRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
 app.route("/", employeeRoutes);

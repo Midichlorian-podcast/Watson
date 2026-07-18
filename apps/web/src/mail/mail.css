@@ -231,3 +231,8 @@
   [data-personal-mail][data-detail-open="true"] [data-personal-detail]{ display:block !important; width:100%; padding:14px !important; }
 }
 @media (min-width:880px){ [data-personal-back]{ display:none !important; } }
+@media (max-width:760px){
+  [data-shared-draft-layout]{ grid-template-columns:minmax(0, 1fr) !important; grid-template-rows:auto minmax(0, 1fr); }
+  [data-shared-draft-list]{ max-height:176px; border-right:0 !important; border-bottom:1px solid var(--line); }
+  [data-shared-draft-main]{ padding:14px 12px !important; }
+}

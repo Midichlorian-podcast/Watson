@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { PersonalMailComposer } from "./PersonalMailComposer";
 import { PersonalMailTaskDialog } from "./PersonalMailTaskDialog";
+import { SharedDraftsDialog } from "./SharedDraftsDialog";
 import { useMail } from "./state";
 import { usePersonalMailTools, type PersonalMailPerson, type PersonalMailView } from "./usePersonalMailTools";
 import type {
@@ -173,6 +174,7 @@ export function PersonalMailWorkspace({
 	const tools = usePersonalMailTools(true);
 	const [taskDialogMessage, setTaskDialogMessage] = useState<PersonalMessageSummary | null>(null);
 	const [composerOpen, setComposerOpen] = useState(false);
+	const [sharedDraftsOpen, setSharedDraftsOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<PersonalMailView["sort"]>("newest");
 	const [saveViewOpen, setSaveViewOpen] = useState(false);
@@ -278,18 +280,22 @@ export function PersonalMailWorkspace({
 
 	if (!model.loadingAccounts && model.accounts.length === 0) {
 		return (
-			<section data-personal-mail data-detail-open="false" style={{ flex: 1, minWidth: 0, minHeight: 0, display: "grid", placeItems: "center", padding: 24 }}>
-				<div style={{ maxWidth: 480, textAlign: "center", border: "1px solid var(--line)", borderRadius: 16, padding: 24, background: "var(--panel)" }}>
-					<div aria-hidden style={{ width: 48, height: 48, borderRadius: 14, margin: "0 auto 12px", display: "grid", placeItems: "center", background: "var(--accent-soft)", fontSize: 22 }}>✉</div>
-					<h2 style={{ margin: 0, fontSize: 18, color: "var(--ink)" }}>Připoj osobní Gmail</h2>
-					<p style={{ margin: "8px 0 16px", fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-3)" }}>
-						Watson zprávy synchronizuje šifrovaně. Heslo nevidí a obsah zpřístupní jen vlastníkovi účtu.
-					</p>
-					<button type="button" onClick={() => void navigate({ to: "/nastaveni", search: { sekce: "integrace" } })} style={{ minHeight: 44, border: 0, borderRadius: 10, padding: "0 16px", background: "var(--ink)", color: "var(--panel)", fontWeight: 700, cursor: "pointer" }}>
-						Přejít k připojení účtu
-					</button>
-				</div>
-			</section>
+			<>
+				<section data-personal-mail data-detail-open="false" style={{ flex: 1, minWidth: 0, minHeight: 0, display: "grid", placeItems: "center", padding: 24 }}>
+					<div style={{ maxWidth: 480, textAlign: "center", border: "1px solid var(--line)", borderRadius: 16, padding: 24, background: "var(--panel)" }}>
+						<div aria-hidden style={{ width: 48, height: 48, borderRadius: 14, margin: "0 auto 12px", display: "grid", placeItems: "center", background: "var(--accent-soft)", fontSize: 22 }}>✉</div>
+						<h2 style={{ margin: 0, fontSize: 18, color: "var(--ink)" }}>Osobní pošta a týmové koncepty</h2>
+						<p style={{ margin: "8px 0 16px", fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-3)" }}>
+							Připoj vlastní účet, nebo otevři jednotlivé koncepty, které ti kolegové výslovně nasdíleli k úpravě či schválení.
+						</p>
+						<div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+							<button type="button" data-personal-shared-drafts onClick={() => setSharedDraftsOpen(true)} style={{ minHeight: 44, border: "1px solid var(--line)", borderRadius: 10, padding: "0 16px", background: "transparent", color: "var(--ink-2)", fontWeight: 700, cursor: "pointer" }}>Sdílené koncepty</button>
+							<button type="button" onClick={() => void navigate({ to: "/nastaveni", search: { sekce: "integrace" } })} style={{ minHeight: 44, border: 0, borderRadius: 10, padding: "0 16px", background: "var(--ink)", color: "var(--panel)", fontWeight: 700, cursor: "pointer" }}>Připojit osobní účet</button>
+						</div>
+					</div>
+				</section>
+				<SharedDraftsDialog open={sharedDraftsOpen} accounts={model.accounts} onClose={() => setSharedDraftsOpen(false)} />
+			</>
 		);
 	}
 
@@ -353,6 +359,7 @@ export function PersonalMailWorkspace({
 						{tools.views.map((view) => <span key={view.id} style={{ display: "inline-flex", alignItems: "center", border: "1px solid var(--line)", borderRadius: 999, overflow: "hidden" }}><button type="button" onClick={() => { setQuery(view.query); setSort(view.sort); }} style={{ minHeight: 32, border: 0, background: query === view.query ? "var(--accent-soft)" : "transparent", color: "var(--ink-2)", padding: "0 8px", fontSize: 9.5, cursor: "pointer" }}>{view.name}</button><button type="button" aria-label={`Smazat uložený pohled ${view.name}`} onClick={() => void tools.deleteView(view)} style={{ minWidth: 32, minHeight: 32, border: 0, borderLeft: "1px solid var(--line)", background: "transparent", color: "var(--ink-3)", cursor: "pointer" }}>×</button></span>)}
 					</div>
 					<div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+						<button type="button" data-personal-shared-drafts onClick={() => setSharedDraftsOpen(true)} style={{ minHeight: 36, border: "1px solid var(--line)", borderRadius: 9, background: "transparent", color: "var(--ink-2)", padding: "0 10px", fontSize: 10, cursor: "pointer" }}>Sdílené koncepty</button>
 						<button type="button" onClick={() => setShowFollowups((value) => !value)} style={{ minHeight: 36, border: "1px solid var(--line)", borderRadius: 9, background: showFollowups ? "var(--accent-soft)" : "transparent", color: "var(--ink-2)", padding: "0 10px", fontSize: 10, cursor: "pointer" }}>Follow-upy · {tools.followups.filter((item) => item.status === "waiting").length}</button>
 						<button type="button" onClick={() => setShowInsights((value) => !value)} style={{ minHeight: 36, border: "1px solid var(--line)", borderRadius: 9, background: showInsights ? "var(--accent-soft)" : "transparent", color: "var(--ink-2)", padding: "0 10px", fontSize: 10, cursor: "pointer" }}>Analytika schránky</button>
 					</div>
@@ -540,6 +547,7 @@ export function PersonalMailWorkspace({
 				/>
 			)}
 			{composerOpen && <PersonalMailComposer model={model} onClose={() => setComposerOpen(false)} />}
+			<SharedDraftsDialog open={sharedDraftsOpen} accounts={model.accounts} onClose={() => setSharedDraftsOpen(false)} />
 		</section>
 	);
 }

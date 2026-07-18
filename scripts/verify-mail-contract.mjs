@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
-const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecution, mailOutbound, mailAdvanced, personalTools, exportRoutes, personalWorkspace, personalComposer, mailScreen, demoBanner, env, preflight, foundationMigration, oauthMigration, syncMigration, generationMigration, executionMigration, outboundMigration, advancedMigration, advancedGuards] =
+const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecution, mailOutbound, mailAdvanced, sharedDrafts, personalTools, sharedDraftHook, sharedDraftDialog, exportRoutes, personalWorkspace, personalComposer, mailScreen, demoBanner, env, preflight, foundationMigration, oauthMigration, syncMigration, generationMigration, executionMigration, outboundMigration, advancedMigration, advancedGuards, sharedDraftMigration, sharedDraftGuards] =
   await Promise.all([
     read("packages/db/src/schema/mail.ts"),
     read("apps/api/src/mailVault.ts"),
@@ -13,7 +13,10 @@ const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecu
     read("apps/api/src/mailExecution.ts"),
     read("apps/api/src/mailOutbound.ts"),
     read("apps/api/src/mailAdvanced.ts"),
+    read("apps/api/src/mailSharedDrafts.ts"),
     read("apps/web/src/mail/usePersonalMailTools.ts"),
+    read("apps/web/src/mail/useSharedDrafts.ts"),
+    read("apps/web/src/mail/SharedDraftsDialog.tsx"),
     read("apps/api/src/export.ts"),
     read("apps/web/src/mail/PersonalMailWorkspace.tsx"),
     read("apps/web/src/mail/PersonalMailComposer.tsx"),
@@ -29,6 +32,8 @@ const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecu
     read("packages/db/drizzle/0073_bored_fat_cobra.sql"),
     read("packages/db/drizzle/0084_bitter_phil_sheldon.sql"),
     read("packages/db/drizzle/0085_mail_advanced_guards.sql"),
+    read("packages/db/drizzle/0086_romantic_lethal_legion.sql"),
+    read("packages/db/drizzle/0087_mail_shared_draft_guards.sql"),
   ]);
 
 assert.match(schema, /mailAccounts = pgTable/);
@@ -40,6 +45,9 @@ assert.match(schema, /mailOutboundMessages = pgTable/);
 assert.match(schema, /mailSavedViews = pgTable/);
 assert.match(schema, /mailProviderLabels = pgTable/);
 assert.match(schema, /mailFollowups = pgTable/);
+assert.match(schema, /mailSharedDrafts = pgTable/);
+assert.match(schema, /mailSharedDraftMembers = pgTable/);
+assert.match(schema, /mailSharedDraftApprovals = pgTable/);
 assert.doesNotMatch(schema, /accessToken|refreshToken|password/i);
 assert.match(vault, /aes-256-gcm/);
 assert.match(vault, /setAAD\(aad\(context\)\)/);
@@ -57,6 +65,9 @@ assert.doesNotMatch(powersync, /mail_outbound_messages/);
 assert.doesNotMatch(powersync, /mail_saved_views/);
 assert.doesNotMatch(powersync, /mail_provider_labels/);
 assert.doesNotMatch(powersync, /mail_followups/);
+assert.doesNotMatch(powersync, /mail_shared_drafts/);
+assert.doesNotMatch(powersync, /mail_shared_draft_members/);
+assert.doesNotMatch(powersync, /mail_shared_draft_approvals/);
 assert.match(mailAccounts, /https:\/\/www\.googleapis\.com\/auth\/gmail\.modify/);
 assert.match(mailAccounts, /code_challenge_method:\s*"S256"/);
 assert.match(mailAccounts, /stateHash:\s*sha256\(state\)/);
@@ -91,8 +102,16 @@ assert.match(mailAdvanced, /parseMailSearch/);
 assert.match(mailAdvanced, /mail_view_name_exists/);
 assert.match(mailAdvanced, /reconcileFollowups/);
 assert.match(mailAdvanced, /Agregace schránky, nikoli skóre produktivity zaměstnance/);
+assert.match(sharedDrafts, /encryptMailContent/);
+assert.match(sharedDrafts, /expectedVersion/);
+assert.match(sharedDrafts, /pending_approval/);
+assert.match(sharedDrafts, /approved_content_queued/);
+assert.match(sharedDrafts, /row\.owner_user_id !== session\.user\.id/);
 assert.match(personalTools, /\/api\/mail\/search/);
 assert.match(personalTools, /scheduleFollowup/);
+assert.match(sharedDraftHook, /\/api\/mail\/shared-drafts/);
+assert.match(sharedDraftDialog, /Soukromá schránka ani ostatní zprávy se kolegům nezpřístupní/);
+assert.match(sharedDraftDialog, /viewerApproval\?\.status === "pending"/);
 assert.match(exportRoutes, /WHEN t\.mail_th LIKE 'personal:%'/);
 assert.match(exportRoutes, /restored tasks do not retain mail deep links/);
 assert.match(personalWorkspace, /Execution Inbox/);
@@ -131,5 +150,11 @@ assert.match(advancedMigration, /mail_provider_labels/);
 assert.match(advancedMigration, /mail_followups/);
 assert.match(advancedGuards, /mail_saved_view_owner_mismatch/);
 assert.match(advancedGuards, /mail_followup_owner_mismatch/);
+assert.match(sharedDraftMigration, /mail_shared_drafts/);
+assert.match(sharedDraftMigration, /mail_shared_draft_members/);
+assert.match(sharedDraftMigration, /mail_shared_draft_approvals/);
+assert.match(sharedDraftGuards, /mail_shared_draft_scope_mismatch/);
+assert.match(sharedDraftGuards, /mail_shared_draft_content_locked/);
+assert.match(sharedDraftGuards, /mail_shared_draft_outbound_mismatch/);
 
-console.log("Mail M1/M2+ static contract: OAuth, encrypted sync/send/search, provider labels, views, follow-up, analytics, DB guards, and honest UI verified.");
+console.log("Mail M1/M2+ static contract: OAuth, encrypted sync/send/search, explicit shared drafts with approval, provider labels, views, follow-up, analytics, DB guards, and honest UI verified.");

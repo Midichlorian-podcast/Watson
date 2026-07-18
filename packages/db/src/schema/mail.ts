@@ -565,3 +565,105 @@ export const mailFollowups = pgTable(
 		index("mail_followups_owner_due_idx").on(t.ownerUserId, t.status, t.dueAt),
 	],
 );
+
+/**
+ * Výslovně sdílený draft. Account zůstává soukromý; týmový workspace dostane
+ * ACL pouze k tomuto jednomu šifrovanému objektu. Odeslat smí vždy jen vlastník
+ * účtu a pouze obsah schválené verze.
+ */
+export const mailSharedDrafts = pgTable(
+	"mail_shared_drafts",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		accountId: uuid("account_id")
+			.notNull()
+			.references(() => mailAccounts.id, { onDelete: "cascade" }),
+		ownerUserId: uuid("owner_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		createdByUserId: uuid("created_by_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "restrict" }),
+		status: varchar("status", { length: 24 }).notNull().default("draft"),
+		requiredApprovals: integer("required_approvals").notNull().default(1),
+		algorithm: varchar("algorithm", { length: 24 }).notNull().default("aes-256-gcm-v1"),
+		keyId: varchar("key_id", { length: 64 }).notNull(),
+		nonce: varchar("nonce", { length: 24 }).notNull(),
+		authTag: varchar("auth_tag", { length: 32 }).notNull(),
+		ciphertext: text("ciphertext").notNull(),
+		contentVersion: integer("content_version").notNull().default(1),
+		version: integer("version").notNull().default(1),
+		submittedAt: timestamp("submitted_at", { withTimezone: true }),
+		approvedAt: timestamp("approved_at", { withTimezone: true }),
+		queuedAt: timestamp("queued_at", { withTimezone: true }),
+		outboundId: uuid("outbound_id").references(() => mailOutboundMessages.id, { onDelete: "set null" }),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check("mail_shared_drafts_status_valid", sql`${t.status} in ('draft', 'pending_approval', 'approved', 'rejected', 'queued', 'cancelled')`),
+		check("mail_shared_drafts_approval_count_valid", sql`${t.requiredApprovals} between 1 and 20`),
+		check("mail_shared_drafts_algorithm_valid", sql`${t.algorithm} = 'aes-256-gcm-v1'`),
+		check("mail_shared_drafts_key_id_valid", sql`length(${t.keyId}) between 1 and 64`),
+		check("mail_shared_drafts_nonce_valid", sql`length(${t.nonce}) between 16 and 24`),
+		check("mail_shared_drafts_tag_valid", sql`length(${t.authTag}) between 22 and 32`),
+		check("mail_shared_drafts_ciphertext_valid", sql`length(${t.ciphertext}) > 0`),
+		check("mail_shared_drafts_content_version_positive", sql`${t.contentVersion} > 0`),
+		check("mail_shared_drafts_version_positive", sql`${t.version} > 0`),
+		check("mail_shared_drafts_submitted_consistent", sql`(${t.status} in ('pending_approval', 'approved', 'rejected', 'queued')) = (${t.submittedAt} IS NOT NULL)`),
+		check("mail_shared_drafts_approved_consistent", sql`(${t.status} in ('approved', 'queued')) = (${t.approvedAt} IS NOT NULL)`),
+		check("mail_shared_drafts_queued_consistent", sql`(${t.status} = 'queued') = (${t.queuedAt} IS NOT NULL AND ${t.outboundId} IS NOT NULL)`),
+		index("mail_shared_drafts_workspace_status_idx").on(t.workspaceId, t.status, t.updatedAt),
+		index("mail_shared_drafts_owner_idx").on(t.ownerUserId, t.updatedAt),
+	],
+);
+
+/** Explicitní editor/approver ACL; vlastník účtu má přístup implicitně. */
+export const mailSharedDraftMembers = pgTable(
+	"mail_shared_draft_members",
+	{
+		id: pk(),
+		draftId: uuid("draft_id")
+			.notNull()
+			.references(() => mailSharedDrafts.id, { onDelete: "cascade" }),
+		userId: uuid("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		role: varchar("role", { length: 24 }).notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		check("mail_shared_draft_members_role_valid", sql`${t.role} in ('editor', 'approver')`),
+		uniqueIndex("mail_shared_draft_members_draft_user_uq").on(t.draftId, t.userId),
+		index("mail_shared_draft_members_user_idx").on(t.userId, t.role),
+	],
+);
+
+/** Rozhodnutí je oddělené od ACL, takže každá revize má dohledatelný stav. */
+export const mailSharedDraftApprovals = pgTable(
+	"mail_shared_draft_approvals",
+	{
+		id: pk(),
+		draftId: uuid("draft_id")
+			.notNull()
+			.references(() => mailSharedDrafts.id, { onDelete: "cascade" }),
+		approverUserId: uuid("approver_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		status: varchar("status", { length: 24 }).notNull().default("pending"),
+		decidedContentVersion: integer("decided_content_version"),
+		decidedAt: timestamp("decided_at", { withTimezone: true }),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check("mail_shared_draft_approvals_status_valid", sql`${t.status} in ('pending', 'approved', 'rejected')`),
+		check("mail_shared_draft_approvals_decision_consistent", sql`(${t.status} = 'pending') = (${t.decidedAt} IS NULL AND ${t.decidedContentVersion} IS NULL)`),
+		check("mail_shared_draft_approvals_version_positive", sql`${t.decidedContentVersion} IS NULL OR ${t.decidedContentVersion} > 0`),
+		uniqueIndex("mail_shared_draft_approvals_draft_user_uq").on(t.draftId, t.approverUserId),
+		index("mail_shared_draft_approvals_user_status_idx").on(t.approverUserId, t.status),
+	],
+);
