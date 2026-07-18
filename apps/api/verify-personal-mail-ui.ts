@@ -377,12 +377,57 @@ async function run(browserName: "chromium" | "webkit") {
 			if ((await composer.getByLabel("Předmět", { exact: true }).inputValue()) !== "Re: Synchronizovaná zpráva 3") {
 				throw new Error("personal_mail_ui_reply_subject_missing");
 			}
-			await composer.getByLabel("Zpráva", { exact: true }).fill("Odpověď z detailu zprávy.");
-			await assertAxeClean(page, `${browserName}_threaded_reply_composer`);
+			const replyBody = composer.locator("textarea");
+			await replyBody.fill("Odpověď z detailu zprávy.");
+			const enableAi = composer.getByRole("checkbox", { name: /Povolit AI návrhy pro mou osobní poštu/ });
+			await enableAi.check();
+			await composer.getByRole("button", { name: "Povolit AI návrhy", exact: true }).click();
+			await composer.getByRole("button", { name: "Navrhnout odpověď", exact: true }).waitFor();
+			const replyAiRoute = /\/api\/mail\/accounts\/[^/]+\/messages\/[^/]+\/reply-suggestion$/;
+			let replyAiRequest: Record<string, unknown> | null = null;
+			await page.route(replyAiRoute, async (route) => {
+				replyAiRequest = route.request().postDataJSON() as Record<string, unknown>;
+				await route.fulfill({
+					status: 200,
+					contentType: "application/json",
+					body: JSON.stringify({
+						suggestion: "Děkuji za zprávu. Termín potvrzuji.",
+						mock: true,
+						provider: null,
+					}),
+				});
+			});
+			await composer.getByLabel("Volitelné zadání stylu", { exact: true }).fill("stručně a přátelsky");
+			await composer.getByRole("checkbox", { name: /Souhlasím s tím, že se pro tento návrh/ }).check();
+			await composer.getByRole("button", { name: "Navrhnout odpověď", exact: true }).click();
+			await composer.getByText("Děkuji za zprávu. Termín potvrzuji.", { exact: true }).waitFor();
+			if (
+				replyAiRequest?.vendorConsent !== true ||
+				replyAiRequest.instruction !== "stručně a přátelsky" ||
+				Object.keys(replyAiRequest).some((key) => !["vendorConsent", "instruction"].includes(key))
+			) {
+				throw new Error(`personal_mail_ui_ai_request_overexposed:${JSON.stringify(replyAiRequest)}`);
+			}
+			if ((await replyBody.inputValue()) !== "Odpověď z detailu zprávy.") {
+				throw new Error("personal_mail_ui_ai_suggestion_overwrote_draft");
+			}
+			await assertAxeClean(page, `${browserName}_threaded_reply_ai_suggestion`);
 			if (SCREENSHOT_DIR) {
 				await mkdir(SCREENSHOT_DIR, { recursive: true });
-				await composer.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-threaded-reply.png` });
+				await composer.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-threaded-reply-ai.png` });
 			}
+			await page.setViewportSize({ width: 390, height: 844 });
+			await assertNoOverflow(page, `${browserName}_threaded_reply_ai_mobile`);
+			await assertAxeClean(page, `${browserName}_threaded_reply_ai_mobile`);
+			if (SCREENSHOT_DIR) {
+				await composer.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-threaded-reply-ai-mobile.png` });
+			}
+			await page.setViewportSize({ width: 1_280, height: 800 });
+			await composer.getByRole("button", { name: "Nahradit rozepsaný text návrhem", exact: true }).click();
+			if ((await replyBody.inputValue()) !== "Děkuji za zprávu. Termín potvrzuji.") {
+				throw new Error("personal_mail_ui_ai_suggestion_not_applied");
+			}
+			await page.unroute(replyAiRoute);
 			await composer.getByRole("button", { name: "Odeslat", exact: true }).click();
 			await composer.waitFor({ state: "hidden" });
 			const replyQueued = (

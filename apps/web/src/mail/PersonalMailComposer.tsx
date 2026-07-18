@@ -1,9 +1,18 @@
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
+import { useMailReplyAssistant } from "./useMailReplyAssistant";
 import type { PersonalMailModel, PersonalMessageDetail } from "./usePersonalMail";
 
 const ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ATTACHMENT_PHRASE = /\b(příloh|přiklád|v příloze|attached|attachment|enclos)/i;
+const AI_ERROR_LABELS: Record<string, string> = {
+	ai_not_configured: "Poskytovatel AI teď není nakonfigurovaný.",
+	ai_policy_disabled: "AI návrhy jsou pro osobní poštu vypnuté.",
+	ai_daily_quota_exceeded: "Dnešní limit AI návrhů byl vyčerpán.",
+	mail_ai_provider_unavailable: "Návrh se teď nepodařilo vytvořit. Rozepsaná odpověď zůstala beze změny.",
+	mail_ai_policy_unavailable: "Nastavení AI návrhů se nepodařilo načíst.",
+	mail_message_not_found: "Původní zpráva už není dostupná.",
+};
 
 function addresses(value: string) {
 	return [...new Set(value.split(/[\s,;]+/).map((item) => item.trim().toLowerCase()).filter(Boolean))];
@@ -59,7 +68,12 @@ export function PersonalMailComposer({
 	const [showCopies, setShowCopies] = useState(false);
 	const [sendWithoutAttachment, setSendWithoutAttachment] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [aiEnableConsent, setAiEnableConsent] = useState(false);
+	const [aiTransferConsent, setAiTransferConsent] = useState(false);
+	const [aiInstruction, setAiInstruction] = useState("");
+	const replyAssistant = useMailReplyAssistant(accountId, replyTo?.id ?? null);
 	const toRef = useRef<HTMLInputElement>(null);
+	const aiSuggestionRef = useRef<HTMLDivElement>(null);
 	const submission = useRef<{ fingerprint: string; id: string; operationId: string } | null>(null);
 	const dialogRef = useOverlayLayer<HTMLFormElement>(true, () => {
 		if (!model.sendingMail) onClose();
@@ -68,6 +82,13 @@ export function PersonalMailComposer({
 	useEffect(() => {
 		toRef.current?.focus();
 	}, []);
+	useEffect(() => {
+		if (!replyAssistant.suggestion) return;
+		const frame = window.requestAnimationFrame(() => {
+			aiSuggestionRef.current?.scrollIntoView({ block: "nearest" });
+		});
+		return () => window.cancelAnimationFrame(frame);
+	}, [replyAssistant.suggestion]);
 
 	const mentionsAttachment = useMemo(
 		() => ATTACHMENT_PHRASE.test(`${subject} ${textBody}`),
@@ -79,6 +100,9 @@ export function PersonalMailComposer({
 		const offset = date.getTimezoneOffset() * 60_000;
 		return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 	}, []);
+	const aiError = replyAssistant.error
+		? AI_ERROR_LABELS[replyAssistant.error] ?? "AI návrh se teď nepodařilo zpracovat."
+		: null;
 
 	const submit = async (event: FormEvent) => {
 		event.preventDefault();
@@ -205,6 +229,58 @@ export function PersonalMailComposer({
 						Zpráva
 						<textarea value={textBody} onChange={(event) => { setTextBody(event.target.value); setSendWithoutAttachment(false); }} rows={10} maxLength={512 * 1024} style={{ ...fieldStyle(), resize: "vertical", lineHeight: 1.55 }} />
 					</label>
+
+					{replyTo && (
+						<section data-mail-reply-ai aria-labelledby="mail-reply-ai-title" style={{ display: "grid", gap: 10, border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: "var(--panel-2)" }}>
+							<div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+								<div aria-hidden style={{ width: 30, height: 30, flex: "none", display: "grid", placeItems: "center", borderRadius: 9, background: "var(--accent-soft)", color: "var(--brass-text)" }}>✦</div>
+								<div style={{ flex: 1, minWidth: 0 }}>
+									<strong id="mail-reply-ai-title" style={{ display: "block", color: "var(--ink)", fontSize: 12 }}>AI návrh odpovědi</strong>
+									<div style={{ marginTop: 3, color: "var(--ink-3)", fontSize: 10.5, lineHeight: 1.5 }}>Návrh se nikdy neodešle sám a nezapisuje se do historie. Do zprávy se dostane až po tvém kliknutí.</div>
+								</div>
+								{replyAssistant.policy?.enabled && <button type="button" disabled={replyAssistant.updatingPolicy} onClick={() => void replyAssistant.setEnabled(false).catch(() => undefined)} style={{ minHeight: 40, border: 0, background: "transparent", color: "var(--ink-3)", padding: "0 6px", cursor: "pointer", fontSize: 10.5 }}>Vypnout</button>}
+							</div>
+
+							{replyAssistant.loadingPolicy ? (
+								<div aria-live="polite" style={{ color: "var(--ink-3)", fontSize: 10.5 }}>Načítám nastavení…</div>
+							) : replyAssistant.policy && !replyAssistant.policy.available ? (
+								<div role="status" style={{ color: "var(--ink-3)", fontSize: 10.5 }}>Poskytovatel AI není v tomto prostředí nakonfigurovaný. Běžnou odpověď můžeš odeslat bez omezení.</div>
+							) : replyAssistant.policy && !replyAssistant.policy.enabled ? (
+								<>
+									<label style={{ display: "flex", alignItems: "flex-start", gap: 8, color: "var(--ink-2)", fontSize: 10.5, lineHeight: 1.5, cursor: "pointer" }}>
+										<input type="checkbox" checked={aiEnableConsent} onChange={(event) => setAiEnableConsent(event.target.checked)} />
+										<span>Povolit AI návrhy pro mou osobní poštu s limitem {replyAssistant.policy.dailyLimit} návrhů denně. Samotné povolení nic nikam neodesílá.</span>
+									</label>
+									<button type="button" disabled={!aiEnableConsent || replyAssistant.updatingPolicy} onClick={() => void replyAssistant.setEnabled(true).then(() => setAiEnableConsent(false)).catch(() => undefined)} style={{ justifySelf: "start", minHeight: 44, border: "1px solid var(--line)", borderRadius: 9, background: "var(--panel)", color: "var(--ink-2)", padding: "0 13px", cursor: "pointer", fontWeight: 700 }}>{replyAssistant.updatingPolicy ? "Ukládám…" : "Povolit AI návrhy"}</button>
+								</>
+							) : replyAssistant.policy?.enabled ? (
+								<>
+									<label style={{ display: "grid", gap: 5, color: "var(--ink-3)", fontSize: 10.5 }}>
+										Volitelné zadání stylu
+										<input value={aiInstruction} onChange={(event) => setAiInstruction(event.target.value)} maxLength={1_000} placeholder="např. stručně, přátelsky, potvrdit termín" style={fieldStyle()} />
+									</label>
+									<label style={{ display: "flex", alignItems: "flex-start", gap: 8, color: "var(--ink-2)", fontSize: 10.5, lineHeight: 1.5, cursor: "pointer" }}>
+										<input type="checkbox" checked={aiTransferConsent} onChange={(event) => setAiTransferConsent(event.target.checked)} />
+										<span>Souhlasím s tím, že se pro tento návrh poskytovateli {replyAssistant.policy.provider ?? "AI"} předá předmět, odesílatel a nejvýše 12&nbsp;000 znaků poslední zprávy. E-mailové adresy a telefony Watson předem redukuje.</span>
+									</label>
+									{replyAssistant.policy.mock && <div role="status" style={{ color: "var(--success-ink)", fontSize: 10 }}>Vývojový režim: tento návrh vytváří lokální simulátor a data Watson neopustí.</div>}
+									<button type="button" disabled={!aiTransferConsent || replyAssistant.generating} onClick={() => void replyAssistant.generate(aiInstruction).then(() => setAiTransferConsent(false)).catch(() => undefined)} style={{ justifySelf: "start", minHeight: 44, border: 0, borderRadius: 9, background: "var(--ink)", color: "var(--panel)", padding: "0 14px", cursor: "pointer", fontWeight: 750 }}>{replyAssistant.generating ? "Vytvářím návrh…" : "Navrhnout odpověď"}</button>
+								</>
+							) : null}
+
+							{replyAssistant.suggestion && (
+								<div ref={aiSuggestionRef} data-mail-reply-ai-suggestion aria-live="polite" style={{ display: "grid", gap: 9, border: "1px solid var(--line)", borderRadius: 10, padding: 11, background: "var(--panel)" }}>
+									<strong style={{ color: "var(--ink-2)", fontSize: 10.5 }}>Návrh ke kontrole</strong>
+									<div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: "var(--ink-2)", fontSize: 11.5, lineHeight: 1.55 }}>{replyAssistant.suggestion}</div>
+									<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+										<button type="button" onClick={() => { setTextBody(replyAssistant.suggestion ?? ""); setSendWithoutAttachment(false); }} style={{ minHeight: 44, border: 0, borderRadius: 9, background: "var(--ink)", color: "var(--panel)", padding: "0 13px", cursor: "pointer", fontWeight: 700 }}>{textBody.trim() ? "Nahradit rozepsaný text návrhem" : "Použít návrh"}</button>
+										<button type="button" onClick={replyAssistant.discardSuggestion} style={{ minHeight: 44, border: "1px solid var(--line)", borderRadius: 9, background: "transparent", color: "var(--ink-2)", padding: "0 13px", cursor: "pointer" }}>Zahodit návrh</button>
+									</div>
+								</div>
+							)}
+							{aiError && <div role="alert" style={{ borderRadius: 9, padding: "9px 11px", background: "var(--danger-soft)", color: "var(--danger-ink)", fontSize: 10.5 }}>{aiError}</div>}
+						</section>
+					)}
 
 					{mentionsAttachment && (
 						<div role="alert" style={{ borderRadius: 10, padding: "10px 12px", background: "var(--w-brass-soft)", color: "var(--ink)", fontSize: 11, lineHeight: 1.5 }}>

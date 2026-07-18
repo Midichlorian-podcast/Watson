@@ -163,6 +163,7 @@ MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-google
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-sync
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-execution
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-outbound
+MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-replies-ai
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-advanced
 MAIL_API="$API_URL" pnpm --filter @watson/api verify:mail-shared-drafts
 RECURRENCE_API="$API_URL" pnpm --filter @watson/api verify:recurrence

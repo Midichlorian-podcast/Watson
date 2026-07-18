@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
-const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailImapSmtp, mailExecution, mailOutbound, mailAdvanced, sharedDrafts, mailboxWizard, personalTools, sharedDraftHook, sharedDraftDialog, exportRoutes, personalWorkspace, personalComposer, mailScreen, demoBanner, env, preflight, foundationMigration, oauthMigration, syncMigration, generationMigration, executionMigration, outboundMigration, advancedMigration, advancedGuards, sharedDraftMigration, sharedDraftGuards, imapCursorMigration] =
+const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailImapSmtp, mailExecution, mailOutbound, mailReplies, mailAdvanced, sharedDrafts, mailboxWizard, personalTools, replyAssistant, sharedDraftHook, sharedDraftDialog, exportRoutes, personalWorkspace, personalComposer, mailScreen, demoBanner, env, preflight, foundationMigration, oauthMigration, syncMigration, generationMigration, executionMigration, outboundMigration, advancedMigration, advancedGuards, sharedDraftMigration, sharedDraftGuards, imapCursorMigration] =
   await Promise.all([
     read("packages/db/src/schema/mail.ts"),
     read("apps/api/src/mailVault.ts"),
@@ -13,10 +13,12 @@ const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailImapS
     read("apps/api/src/mailImapSmtp.ts"),
     read("apps/api/src/mailExecution.ts"),
     read("apps/api/src/mailOutbound.ts"),
+    read("apps/api/src/mailReplies.ts"),
     read("apps/api/src/mailAdvanced.ts"),
     read("apps/api/src/mailSharedDrafts.ts"),
     read("apps/web/src/mail/MailboxWizard.tsx"),
     read("apps/web/src/mail/usePersonalMailTools.ts"),
+    read("apps/web/src/mail/useMailReplyAssistant.ts"),
     read("apps/web/src/mail/useSharedDrafts.ts"),
     read("apps/web/src/mail/SharedDraftsDialog.tsx"),
     read("apps/api/src/export.ts"),
@@ -111,6 +113,14 @@ assert.match(mailOutbound, /mail_delivery_uncertain/);
 assert.match(mailOutbound, /outbound\.status = 'queued'/);
 assert.match(mailOutbound, /FOR UPDATE OF outbound SKIP LOCKED/);
 assert.match(mailOutbound, /Message-ID: <watson-/);
+assert.match(mailOutbound, /replyToMessageId/);
+assert.match(mailOutbound, /In-Reply-To:/);
+assert.match(mailReplies, /authorizeAiVendorTransfer/);
+assert.match(mailReplies, /redactVendorText/);
+assert.match(mailReplies, /mail_reply_suggestion/);
+assert.match(mailReplies, /ai_policy_disabled/);
+assert.match(mailReplies, /mockSuggestion/);
+assert.doesNotMatch(mailReplies, /mailOutboundMessages|scanMailOutbound|enqueue/);
 assert.match(mailAdvanced, /MAX_SEARCH_CORPUS = 5_000/);
 assert.match(mailAdvanced, /decryptMailContent/);
 assert.match(mailAdvanced, /parseMailSearch/);
@@ -128,6 +138,8 @@ assert.match(mailboxWizard, /Ověřit a připojit/);
 assert.match(mailboxWizard, /setImapForm\(emptyImapForm\(\)\)/);
 assert.match(personalTools, /\/api\/mail\/search/);
 assert.match(personalTools, /scheduleFollowup/);
+assert.match(replyAssistant, /vendorConsent: true/);
+assert.match(replyAssistant, /reply-suggestion/);
 assert.match(sharedDraftHook, /\/api\/mail\/shared-drafts/);
 assert.match(sharedDraftDialog, /Soukromá schránka ani ostatní zprávy se kolegům nezpřístupní/);
 assert.match(sharedDraftDialog, /viewerApproval\?\.status === "pending"/);
@@ -139,6 +151,8 @@ assert.match(personalWorkspace, /model\.cancelOutbound/);
 assert.match(personalComposer, /model\.enqueueOutbound/);
 assert.match(personalComposer, /Nezapomněl\/a jsi přílohu/);
 assert.match(personalComposer, /Po kliknutí máš 10 sekund na vrácení odeslání/);
+assert.match(personalComposer, /Návrh se nikdy neodešle sám/);
+assert.match(personalComposer, /Nahradit rozepsaný text návrhem/);
 assert.match(mailScreen, /<MailDemoBanner/);
 assert.match(demoBanner, /data-mail-demo-banner/);
 assert.match(env, /MAIL_VAULT_KEYS_JSON/);
@@ -177,4 +191,4 @@ assert.match(sharedDraftGuards, /mail_shared_draft_content_locked/);
 assert.match(sharedDraftGuards, /mail_shared_draft_outbound_mismatch/);
 assert.match(imapCursorMigration, /\[0-9\]\{1,32\}:\[0-9\]\{1,20\}/);
 
-console.log("Mail M1/M2+ static contract: OAuth, encrypted sync/send/search, explicit shared drafts with approval, provider labels, views, follow-up, analytics, DB guards, and honest UI verified.");
+console.log("Mail M1/M2+ static contract: OAuth, encrypted sync/send/search/threaded replies, explicit-consent non-sending AI suggestions, shared draft approval, provider labels, views, follow-up, analytics, DB guards, and honest UI verified.");

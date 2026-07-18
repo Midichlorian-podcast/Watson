@@ -12,7 +12,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { auth } from "./auth";
 
-export const AI_CAPABILITIES = ["meeting_extract", "watson_command"] as const;
+export const AI_CAPABILITIES = ["meeting_extract", "watson_command", "mail_reply_suggestion"] as const;
 type AiCapability = (typeof AI_CAPABILITIES)[number];
 
 const policySchema = z

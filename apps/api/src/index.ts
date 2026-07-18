@@ -55,6 +55,7 @@ import { mailAdvancedRoutes } from "./mailAdvanced";
 import { mailExecutionRoutes } from "./mailExecution";
 import { mailImapSmtpRoutes, startMailImapWorker } from "./mailImapSmtp";
 import { mailOutboundRoutes, startMailOutboundWorker } from "./mailOutbound";
+import { mailReplyRoutes } from "./mailReplies";
 import { mailSyncRoutes, startMailSyncWorker } from "./mailSync";
 import { mailSharedDraftRoutes } from "./mailSharedDrafts";
 import { parseMailVaultKeyring } from "./mailVault";
@@ -314,6 +315,10 @@ app.use(
 	rateLimit({ name: "watson-ai", windowMs: 60_000, max: 20, scope: "session-or-ip" }),
 );
 app.use(
+	"/api/mail/accounts/:accountId/messages/:messageId/reply-suggestion",
+	rateLimit({ name: "mail-reply-ai", windowMs: 60_000, max: 20, scope: "session-or-ip" }),
+);
+app.use(
 	"/api/employee/*",
 	rateLimit({ name: "employee", windowMs: 60_000, max: 120, scope: "session-or-ip" }),
 );
@@ -505,6 +510,7 @@ app.route("/", mailAdvancedRoutes);
 app.route("/", mailSyncRoutes);
 app.route("/", mailExecutionRoutes);
 app.route("/", mailOutboundRoutes);
+app.route("/", mailReplyRoutes);
 app.route("/", mailSharedDraftRoutes);
 
 /** Zaměstnanecký modul — broker na LuckyOS employee API (bridge-token). */
