@@ -1,4 +1,9 @@
 /// <reference lib="webworker" />
+import {
+	notificationNavigationUrl,
+	notificationWindowPriority,
+} from "./lib/notificationWindowRouting";
+
 /**
  * Vlastní service worker (vite-plugin-pwa `injectManifest`) — bez workboxu (self-contained):
  * - precache app shellu z `self.__WB_MANIFEST` (offline PWA), navigační fallback na index.html,
@@ -14,14 +19,18 @@ const PRECACHE = "watson-precache-v2";
 const FONTS = "watson-fonts-v2";
 const RUNTIME_ASSETS = "watson-runtime-assets-v1";
 const PRECACHE_URLS = self.__WB_MANIFEST.map((e) => e.url);
-const PRECACHE_ABSOLUTE = new Set(PRECACHE_URLS.map((url) => new URL(url, self.location.origin).href));
+const PRECACHE_ABSOLUTE = new Set(
+	PRECACHE_URLS.map((url) => new URL(url, self.location.origin).href),
+);
 const MAX_FONT_ENTRIES = 24;
 const MAX_RUNTIME_ASSET_ENTRIES = 48;
 
 async function trimCache(cacheName: string, maxEntries: number): Promise<void> {
 	const cache = await caches.open(cacheName);
 	const keys = await cache.keys();
-	await Promise.all(keys.slice(0, Math.max(0, keys.length - maxEntries)).map((key) => cache.delete(key)));
+	await Promise.all(
+		keys.slice(0, Math.max(0, keys.length - maxEntries)).map((key) => cache.delete(key)),
+	);
 }
 
 self.addEventListener("install", (event) => {
@@ -65,10 +74,7 @@ self.addEventListener("fetch", (event) => {
 	if (req.mode === "navigate") {
 		event.respondWith(
 			fetch(req).catch(
-				() =>
-					caches
-						.match("/index.html")
-						.then((r) => r ?? Response.error()) as Promise<Response>,
+				() => caches.match("/index.html").then((r) => r ?? Response.error()) as Promise<Response>,
 			),
 		);
 		return;
@@ -148,21 +154,27 @@ self.addEventListener("notificationclick", (event) => {
 	try {
 		const candidate = new URL(rawUrl, self.location.origin);
 		// Push payload nesmí aplikaci použít jako open-redirect/phishing launcher.
-		if (candidate.origin === self.location.origin) url = `${candidate.pathname}${candidate.search}${candidate.hash}`;
+		if (candidate.origin === self.location.origin)
+			url = `${candidate.pathname}${candidate.search}${candidate.hash}`;
 	} catch {
 		url = "/";
 	}
 	event.waitUntil(
-		self.clients
-			.matchAll({ type: "window", includeUncontrolled: true })
-			.then((clientList) => {
-				for (const client of clientList) {
-					if ("focus" in client) {
-						void client.navigate(url);
-						return client.focus();
-					}
-				}
-				return self.clients.openWindow(url);
-			}),
+		self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+			const client = [...clientList]
+				.map((candidate) => ({
+					candidate,
+					priority: notificationWindowPriority(url, candidate.url, self.location.origin),
+				}))
+				.filter((candidate) => Number.isFinite(candidate.priority))
+				.sort((a, b) => a.priority - b.priority)[0]?.candidate;
+			if (client && "focus" in client) {
+				void client.navigate(
+					notificationNavigationUrl(url, client.url, self.location.origin) ?? url,
+				);
+				return client.focus();
+			}
+			return self.clients.openWindow(url);
+		}),
 	);
 });

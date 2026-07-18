@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL } from "../lib/api";
+import { publishWindowEvent, subscribeWindowEvent } from "../lib/windowCoordinator";
 
 export type PersonalMailAccount = {
 	id: string;
@@ -111,7 +112,11 @@ export type PersonalMessageDetail = Omit<PersonalMessageSummary, "hasText" | "at
 		fromDomain: string | null;
 		replyDomain: string | null;
 		returnDomain: string | null;
-		authentication: { spf: "pass" | "fail" | "unknown"; dkim: "pass" | "fail" | "unknown"; dmarc: "pass" | "fail" | "unknown" };
+		authentication: {
+			spf: "pass" | "fail" | "unknown";
+			dkim: "pass" | "fail" | "unknown";
+			dmarc: "pass" | "fail" | "unknown";
+		};
 	};
 	attachments: Array<{
 		filename: string;
@@ -182,7 +187,9 @@ export function usePersonalMail(enabled: boolean) {
 	const loadAccounts = useCallback(async () => {
 		setLoadingAccounts(true);
 		try {
-			const result = await readJson<{ accounts: PersonalMailAccount[] }>(`${API_URL}/api/mail/accounts`);
+			const result = await readJson<{ accounts: PersonalMailAccount[] }>(
+				`${API_URL}/api/mail/accounts`,
+			);
 			setAccounts(result.accounts);
 			setError(null);
 			return result.accounts.filter((account) => account.status !== "revoked");
@@ -255,7 +262,9 @@ export function usePersonalMail(enabled: boolean) {
 			result.status === "fulfilled" ? result.value : [],
 		);
 		setOutbound(
-			successful.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.id.localeCompare(a.id)),
+			successful.sort(
+				(a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.id.localeCompare(a.id),
+			),
 		);
 	}, []);
 
@@ -265,9 +274,10 @@ export function usePersonalMail(enabled: boolean) {
 		try {
 			const results = await Promise.allSettled(
 				targets.map(async (account) => {
-					const result = await readJson<{ messages: Omit<PersonalMessageSummary, "accountId">[]; nextCursor: string | null }>(
-						`${API_URL}/api/mail/accounts/${account.id}/messages?limit=25`,
-					);
+					const result = await readJson<{
+						messages: Omit<PersonalMessageSummary, "accountId">[];
+						nextCursor: string | null;
+					}>(`${API_URL}/api/mail/accounts/${account.id}/messages?limit=25`);
 					return {
 						accountId: account.id,
 						messages: result.messages.map((message) => ({ ...message, accountId: account.id })),
@@ -275,20 +285,30 @@ export function usePersonalMail(enabled: boolean) {
 					};
 				}),
 			);
-			const pages = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+			const pages = results.flatMap((result) =>
+				result.status === "fulfilled" ? [result.value] : [],
+			);
 			const failedAccountIds = new Set(
-				results.flatMap((result, index) => result.status === "rejected" ? [targets[index]?.id ?? ""] : []),
+				results.flatMap((result, index) =>
+					result.status === "rejected" ? [targets[index]?.id ?? ""] : [],
+				),
 			);
 			if (pages.length === 0 && targets.length > 0) {
 				const rejected = results.find((result) => result.status === "rejected");
-				throw rejected?.status === "rejected" ? rejected.reason : new Error("mail_messages_unavailable");
+				throw rejected?.status === "rejected"
+					? rejected.reason
+					: new Error("mail_messages_unavailable");
 			}
-			setMessages((current) => mergeMessages(
-				current.filter((message) => failedAccountIds.has(message.accountId)),
-				pages.flatMap((page) => page.messages),
-			));
+			setMessages((current) =>
+				mergeMessages(
+					current.filter((message) => failedAccountIds.has(message.accountId)),
+					pages.flatMap((page) => page.messages),
+				),
+			);
 			setCursors((current) => ({
-				...Object.fromEntries([...failedAccountIds].map((accountId) => [accountId, current[accountId] ?? null])),
+				...Object.fromEntries(
+					[...failedAccountIds].map((accountId) => [accountId, current[accountId] ?? null]),
+				),
 				...Object.fromEntries(pages.map((page) => [page.accountId, page.nextCursor])),
 			}));
 			hasLoadedPages.current = true;
@@ -319,7 +339,8 @@ export function usePersonalMail(enabled: boolean) {
 				const status = runtime[account.id]?.sync?.status;
 				return status === "pending" || status === "running";
 			})
-		) return;
+		)
+			return;
 		const timer = window.setTimeout(() => {
 			void Promise.all([
 				loadRuntime(activeAccounts),
@@ -334,16 +355,19 @@ export function usePersonalMail(enabled: boolean) {
 	useEffect(() => {
 		if (
 			!enabled ||
-			!outbound.some((message) =>
-				message.status === "queued" || message.status === "sending" || message.status === "retry",
+			!outbound.some(
+				(message) =>
+					message.status === "queued" || message.status === "sending" || message.status === "retry",
 			)
-		) return;
+		)
+			return;
 		const timer = window.setTimeout(() => void loadOutbound(activeAccounts), 1_000);
 		return () => window.clearTimeout(timer);
 	}, [activeAccounts, enabled, loadOutbound, outbound]);
 
 	useEffect(() => {
-		if (accountFilter === "all" || activeAccounts.some((account) => account.id === accountFilter)) return;
+		if (accountFilter === "all" || activeAccounts.some((account) => account.id === accountFilter))
+			return;
 		setAccountFilter("all");
 	}, [accountFilter, activeAccounts]);
 
@@ -429,6 +453,19 @@ export function usePersonalMail(enabled: boolean) {
 		]);
 	}, [enabled, loadAccounts, loadExecutions, loadFirstPages, loadOutbound, loadRuntime]);
 
+	// Osobní Mail používá serverové API, nikoliv PowerSync query subscription.
+	// Mutace v jiném okně proto explicitně invalidují lokální hook; focus navíc
+	// dorovná stav po návratu z OAuth nebo ze správy účtů.
+	useEffect(() => {
+		const onRefresh = () => void refresh();
+		const unsubscribe = subscribeWindowEvent("mail-invalidated", onRefresh);
+		window.addEventListener("focus", onRefresh);
+		return () => {
+			unsubscribe();
+			window.removeEventListener("focus", onRefresh);
+		};
+	}, [refresh]);
+
 	const executionFor = useCallback(
 		(message: Pick<PersonalMessageSummary, "accountId" | "providerMessageId">) =>
 			executions[`${message.accountId}:${message.providerMessageId}`] ?? null,
@@ -453,6 +490,7 @@ export function usePersonalMail(enabled: boolean) {
 					...current,
 					[`${result.execution.accountId}:${result.execution.providerMessageId}`]: result.execution,
 				}));
+				publishWindowEvent("mail-invalidated", { accountId: message.accountId });
 				return result.execution;
 			} catch (cause) {
 				const code = cause instanceof Error ? cause.message : "mail_execution_unavailable";
@@ -490,6 +528,8 @@ export function usePersonalMail(enabled: boolean) {
 				}
 				return next;
 			});
+			for (const account of targets)
+				publishWindowEvent("mail-invalidated", { accountId: account.id });
 			window.setTimeout(() => void refresh(), 1_500);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : "mail_sync_unavailable");
@@ -526,6 +566,7 @@ export function usePersonalMail(enabled: boolean) {
 					result.outbound,
 					...current.filter((message) => message.id !== result.outbound.id),
 				]);
+				publishWindowEvent("mail-invalidated", { accountId: input.accountId });
 				return result.outbound;
 			} catch (cause) {
 				setError(cause instanceof Error ? cause.message : "mail_outbound_unavailable");
@@ -545,26 +586,31 @@ export function usePersonalMail(enabled: boolean) {
 			const operationId = cancelOperations.current[message.id] ?? crypto.randomUUID();
 			cancelOperations.current[message.id] = operationId;
 			try {
-				const result = await readJson<{ outbound: Pick<PersonalMailOutbound, "id" | "status" | "version"> }>(
-					`${API_URL}/api/mail/accounts/${message.accountId}/outbound/${message.id}/cancel`,
-					{
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							operationId,
-							expectedVersion: message.version,
-						}),
-					},
-				);
+				const result = await readJson<{
+					outbound: Pick<PersonalMailOutbound, "id" | "status" | "version">;
+				}>(`${API_URL}/api/mail/accounts/${message.accountId}/outbound/${message.id}/cancel`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						operationId,
+						expectedVersion: message.version,
+					}),
+				});
 				setOutbound((current) =>
 					current.map((item) =>
 						item.id === message.id
-							? { ...item, status: result.outbound.status, version: result.outbound.version, canCancel: false }
+							? {
+									...item,
+									status: result.outbound.status,
+									version: result.outbound.version,
+									canCancel: false,
+								}
 							: item,
 					),
 				);
 				delete cancelOperations.current[message.id];
 				await loadOutbound(activeAccounts);
+				publishWindowEvent("mail-invalidated", { accountId: message.accountId });
 			} catch (cause) {
 				setError(cause instanceof Error ? cause.message : "mail_outbound_unavailable");
 				await loadOutbound(activeAccounts);
@@ -584,7 +630,10 @@ export function usePersonalMail(enabled: boolean) {
 		try {
 			const results = await Promise.allSettled(
 				targets.map(async (account) => {
-					const result = await readJson<{ messages: Omit<PersonalMessageSummary, "accountId">[]; nextCursor: string | null }>(
+					const result = await readJson<{
+						messages: Omit<PersonalMessageSummary, "accountId">[];
+						nextCursor: string | null;
+					}>(
 						`${API_URL}/api/mail/accounts/${account.id}/messages?limit=25&cursor=${encodeURIComponent(cursors[account.id] ?? "")}`,
 					);
 					return {
@@ -594,12 +643,21 @@ export function usePersonalMail(enabled: boolean) {
 					};
 				}),
 			);
-			const pages = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+			const pages = results.flatMap((result) =>
+				result.status === "fulfilled" ? [result.value] : [],
+			);
 			if (pages.length === 0) {
 				const rejected = results.find((result) => result.status === "rejected");
-				throw rejected?.status === "rejected" ? rejected.reason : new Error("mail_messages_unavailable");
+				throw rejected?.status === "rejected"
+					? rejected.reason
+					: new Error("mail_messages_unavailable");
 			}
-			setMessages((current) => mergeMessages(current, pages.flatMap((page) => page.messages)));
+			setMessages((current) =>
+				mergeMessages(
+					current,
+					pages.flatMap((page) => page.messages),
+				),
+			);
 			setCursors((current) => ({
 				...current,
 				...Object.fromEntries(pages.map((page) => [page.accountId, page.nextCursor])),

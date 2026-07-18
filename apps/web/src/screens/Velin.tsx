@@ -1,16 +1,23 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+	type CSSProperties,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
 import { KpiCard } from "../components/KpiCard";
 import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
 import { RadarPanel } from "../components/RadarPanel";
 import { useSession } from "../lib/auth-client";
+import { kpi, useAllReady } from "../lib/dataState";
 import { initials } from "../lib/format";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import { useAllMembers, useFlowsOverview, useGoalsOverview } from "../lib/overview";
 import type { TaskRow } from "../lib/powersync/AppSchema";
-import { kpi, useAllReady } from "../lib/dataState";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { todayISO } from "../lib/tasks";
@@ -86,6 +93,7 @@ function NavyAvatar({ text }: { text: string }) {
 export function Velin() {
 	const { t, i18n } = useTranslation();
 	const navigate = useNavigate();
+	const { firma } = useSearch({ from: "/velin" });
 	const { open } = useTaskDetail();
 	const { data: session } = useSession();
 	const { data: workspaces } = useWorkspaces();
@@ -98,7 +106,19 @@ export function Velin() {
 	const digest = useMailDigest();
 	const openMailThread = useOpenMailThread();
 	const urgMails = (digest?.items ?? []).filter((x) => x.flag === "p1" || x.flag === "p2");
-	const [firm, setFirm] = useState<string | null>(null); // velFirm
+	const [firm, setFirmState] = useState<string | null>(firma ?? null); // velFirm
+	useEffect(() => setFirmState(firma ?? null), [firma]);
+	const setFirm = useCallback(
+		(next: string | null) => {
+			setFirmState(next);
+			void navigate({
+				to: "/velin",
+				search: (current) => ({ ...current, firma: next ?? undefined }),
+				replace: true,
+			});
+		},
+		[navigate],
+	);
 	// peek — náhled položky na místě (feedback: neodvádět z Velína pryč)
 	const [peek, setPeek] = useState<PeekTarget | null>(null);
 	// „dnešek" z tikajícího zdroje — jinak u dlouho otevřené karty (přes půlnoc)
@@ -869,7 +889,7 @@ function Row({
 	onClick?: () => void;
 	column?: boolean;
 	pad?: string;
-	}) {
+}) {
 	return (
 		// Biome neumí odvodit, že role, tabIndex i klávesová obsluha jsou přítomné
 		// současně právě tehdy, když je řádek interaktivní.

@@ -2,7 +2,14 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { type CSSProperties, Fragment, useMemo, useState } from "react";
+import {
+	type CSSProperties,
+	Fragment,
+	type MouseEvent as ReactMouseEvent,
+	useMemo,
+	useState,
+} from "react";
+import { type CtxItem, useContextMenu } from "../components/ContextMenu";
 import { SidebarTrustState } from "../components/TrustState";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
@@ -13,6 +20,7 @@ import { useNavigationPins } from "../lib/navigationPins";
 import { useNavigationMode } from "../lib/navigationPreferences";
 import type { FilterRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
+import { openWatsonWindow, windowSurfaceForPath } from "../lib/windowSurfaces";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
 import { CORE_NAV, EMPLOYEE_NAV, type NavItem, TOOL_NAV, VELIN_NAV } from "./nav";
@@ -47,6 +55,7 @@ function NavRow({
 	marker,
 	badge,
 	title,
+	onContextMenu,
 }: {
 	item: NavItem;
 	active: boolean;
@@ -56,17 +65,15 @@ function NavRow({
 	/** Textový odznak místo počtu (Velín → „VEDENÍ", prototyp ř. 255). */
 	badge?: string;
 	title?: string;
+	onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
 }) {
 	const { t } = useTranslation();
 	return (
 		<Link
 			to={item.to}
 			title={title ?? (collapsed ? t(item.labelKey) : undefined)}
-			className={`font-display ${
-				active
-					? "text-[var(--w-sidebar-ink)]"
-					: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
-			}`}
+			className={`font-display ${active ? "text-[var(--w-sidebar-ink)]" : "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"}`}
+			onContextMenu={onContextMenu}
 			style={{
 				...NAV_BASE,
 				justifyContent: collapsed ? "center" : undefined,
@@ -107,22 +114,21 @@ function PinnedRow({
 	active,
 	marker,
 	icon = "nastaveni",
+	onContextMenu,
 }: {
 	label: string;
 	onClick: () => void;
 	active: boolean;
 	marker?: CSSProperties;
 	icon?: NavItem["icon"];
+	onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
 }) {
 	return (
 		<button
 			type="button"
 			onClick={onClick}
-			className={`w-full text-left font-display ${
-				active
-					? "text-[var(--w-sidebar-ink)]"
-					: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
-			}`}
+			className={`w-full text-left font-display ${active ? "text-[var(--w-sidebar-ink)]" : "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"}`}
+			onContextMenu={onContextMenu}
 			style={{
 				...NAV_BASE,
 				background: active ? "rgba(255,255,255,.09)" : "transparent",
@@ -143,6 +149,7 @@ function PinnedRow({
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const cm = useContextMenu();
 	const { openAdd } = useAddTask();
 	const { data: session } = useSession();
 	const path = useRouterState({ select: (s) => s.location.pathname });
@@ -282,6 +289,33 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 	const toolRouteActive =
 		TOOL_NAV.some((item) => path.startsWith(item.to)) || path.startsWith("/velin");
 	const showTools = collapsed || navigationMode === "advanced" || toolsOpen || toolRouteActive;
+	const windowMenu = (href: string): CtxItem[] => {
+		const surface = windowSurfaceForPath(new URL(href, window.location.origin).pathname);
+		return [
+			{
+				label: t("shell.openNewWindow"),
+				onClick: () => openWatsonWindow(href, "app"),
+			},
+			...(surface?.focus
+				? [
+						{
+							label: t("shell.openFocusedWindow"),
+							onClick: () => openWatsonWindow(href, "focus"),
+						} satisfies CtxItem,
+					]
+				: []),
+			...(surface?.wallboard
+				? [
+						{
+							label: t("shell.openWallboard"),
+							onClick: () => openWatsonWindow(href, "wallboard"),
+						} satisfies CtxItem,
+					]
+				: []),
+		];
+	};
+	const openWindowMenu = (event: ReactMouseEvent<HTMLElement>, href: string) =>
+		cm.open(event, windowMenu(href));
 	const renderNavItem = (item: NavItem) => {
 		// Úkoly jsou v sidebaru jediný modul. Dnes/Příchozí/Vše/Zásobník jsou jeho
 		// záložky uvnitř obsahu, takže zde nevznikají čtyři konkurenční vstupy.
@@ -293,6 +327,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 					active={taskModuleActive}
 					collapsed={collapsed}
 					count={counts["/"]}
+					onContextMenu={(event) => openWindowMenu(event, "/")}
 				/>
 			);
 		}
@@ -303,12 +338,14 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 					active={isActive(item.to)}
 					collapsed={collapsed}
 					count={item.count ? counts[item.to] : undefined}
+					onContextMenu={(event) => openWindowMenu(event, item.to)}
 				/>
 				{item.to === "/mail" && employeeLinked && (
 					<NavRow
 						item={EMPLOYEE_NAV}
 						active={isActive(EMPLOYEE_NAV.to)}
 						collapsed={collapsed}
+						onContextMenu={(event) => openWindowMenu(event, EMPLOYEE_NAV.to)}
 					/>
 				)}
 				{item.to === "/reporty" && leadership && (
@@ -318,6 +355,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 						collapsed={collapsed}
 						badge={t("velin.badge")}
 						title={t("velin.navTitle")}
+						onContextMenu={(event) => openWindowMenu(event, VELIN_NAV.to)}
 					/>
 				)}
 			</Fragment>
@@ -459,6 +497,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 							collapsed={false}
 							count={counts["/oblibene/p1"]}
 							marker={{ borderRadius: 2, background: "var(--w-brass)" }}
+							onContextMenu={(event) => openWindowMenu(event, "/oblibene/p1")}
 						/>
 						<NavRow
 							item={{
@@ -470,6 +509,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 							collapsed={false}
 							count={counts["/oblibene/me"]}
 							marker={{ borderRadius: "50%", background: "#2a6fdb" }}
+							onContextMenu={(event) => openWindowMenu(event, "/oblibene/me")}
 						/>
 						{pinnedProjects.map((project) => (
 							<PinnedRow
@@ -484,6 +524,11 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 									if (project.workspace_id) setActiveWs(project.workspace_id);
 									void navigate({ to: "/ukoly", search: { projekt: project.id } });
 								}}
+								onContextMenu={(event) => {
+									const search = new URLSearchParams({ projekt: project.id });
+									if (project.workspace_id) search.set("prostor", project.workspace_id);
+									openWindowMenu(event, `/ukoly?${search}`);
+								}}
 							/>
 						))}
 						{pinnedViews.map((savedView) => (
@@ -497,6 +542,14 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 										to: savedView.surface === "upcoming" ? "/nadchazejici" : "/ukoly",
 										search: { pohled: savedView.id },
 									});
+								}}
+								onContextMenu={(event) => {
+									const search = new URLSearchParams({ pohled: savedView.id });
+									if (savedView.workspaceId) search.set("prostor", savedView.workspaceId);
+									openWindowMenu(
+										event,
+										`${savedView.surface === "upcoming" ? "/nadchazejici" : "/ukoly"}?${search}`,
+									);
 								}}
 							/>
 						))}
@@ -579,6 +632,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 												setActiveWs(ws.id);
 												void navigate({ to: "/projekty" });
 											}}
+											onContextMenu={(event) =>
+												openWindowMenu(event, `/projekty?prostor=${encodeURIComponent(ws.id)}`)
+											}
 											className="truncate text-left font-display hover:text-[var(--w-sidebar-ink)]"
 											style={{
 												flex: 1,
@@ -612,6 +668,13 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 														search: { projekt: p.id },
 													})
 												}
+												onContextMenu={(event) => {
+													const search = new URLSearchParams({
+														projekt: p.id,
+														prostor: ws.id,
+													});
+													openWindowMenu(event, `/ukoly?${search}`);
+												}}
 												className="flex w-full items-center text-left font-display hover:text-[var(--w-sidebar-ink)]"
 												style={{
 													gap: 11,
@@ -653,6 +716,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 			{/* footer — uživatel → Nastavení */}
 			<Link
 				to="/nastaveni"
+				onContextMenu={(event) => openWindowMenu(event, "/nastaveni")}
 				style={{
 					display: "flex",
 					alignItems: "center",

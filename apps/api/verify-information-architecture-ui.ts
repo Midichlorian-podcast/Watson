@@ -13,7 +13,7 @@ import {
 } from "@watson/db";
 import axe from "axe-core";
 import { hashPassword } from "better-auth/crypto";
-import { type Browser, chromium, type Page, webkit } from "playwright";
+import { type Browser, type BrowserContext, chromium, type Page, webkit } from "playwright";
 
 const WEB = process.env.IA_UI_WEB ?? "http://localhost:5173";
 const SCREENSHOT_DIR = process.env.IA_UI_SCREENSHOT_DIR;
@@ -159,7 +159,9 @@ async function signIn(page: Page, fixture: Fixture) {
 	await page.getByRole("button", { name: "Přihlásit se", exact: true }).click();
 	const response = await responsePromise;
 	if (!response.ok()) {
-		throw new Error(`ia_ui_sign_in_http_${response.status()}:${(await response.text()).slice(0, 500)}`);
+		throw new Error(
+			`ia_ui_sign_in_http_${response.status()}:${(await response.text()).slice(0, 500)}`,
+		);
 	}
 	try {
 		await page.waitForSelector("main", { timeout: 30_000 });
@@ -197,6 +199,216 @@ async function screenshot(page: Page, browserName: string, label: string) {
 		path: `${SCREENSHOT_DIR}/${browserName}-${label}.png`,
 		fullPage: true,
 	});
+}
+
+async function openWindowSurface(
+	context: BrowserContext,
+	href: string,
+	shell: "focus" | "wallboard",
+	browserName: string,
+) {
+	const page = await context.newPage();
+	const runtimeErrors: string[] = [];
+	page.on("pageerror", (error) => runtimeErrors.push(error.message));
+	const response = await page.goto(`${WEB}${href}`, {
+		waitUntil: "domcontentloaded",
+		timeout: 30_000,
+	});
+	if (response && !response.ok()) {
+		throw new Error(`ia_ui_window_http_${browserName}_${response.status()}:${href}`);
+	}
+	try {
+		await page.locator(`[data-window-chrome="${shell}"]`).waitFor({ timeout: 30_000 });
+	} catch {
+		const body = (await page.locator("body").innerText()).replace(/\s+/g, " ").slice(0, 800);
+		throw new Error(
+			`ia_ui_window_chrome_${browserName}:${page.url()}:${body}:${runtimeErrors.join(" | ")}`,
+		);
+	}
+	// Hlavička je eager, obrazovka lazy. Nezavírat okno, dokud WebKit nedotáhne
+	// modul a API bootstrap; přerušený import jinak vypadá jako runtime chyba aplikace.
+	await page.waitForLoadState("networkidle", { timeout: 30_000 });
+	if ((await page.locator("aside").count()) !== 0) {
+		throw new Error(`ia_ui_window_global_sidebar_${browserName}:${href}`);
+	}
+	if ((await page.locator("main").count()) !== 1) {
+		throw new Error(`ia_ui_window_main_${browserName}:${href}`);
+	}
+	return { page, runtimeErrors };
+}
+
+async function verifyMultiWindowSurfaces(
+	context: BrowserContext,
+	mainPage: Page,
+	fixture: Fixture,
+	browserName: "chromium" | "webkit",
+	runtimeErrors: string[],
+) {
+	// Plný shell drží týmový prostor. Focus okno dostane jiný `?prostor=`, ale
+	// nesmí jej zapsat do sdílené globální preference ostatních oken.
+	await mainPage.evaluate(
+		(workspaceId) => localStorage.setItem("watson.activeWs", workspaceId),
+		fixture.workspaceId,
+	);
+	const supportsConcurrentWindows = await mainPage.evaluate(() => {
+		const maybeSafari = window as Window & { safari?: unknown };
+		return (
+			typeof SharedWorker !== "undefined" &&
+			!/(Android|iPhone|iPod|iPad)/i.test(navigator.userAgent) &&
+			!maybeSafari.safari
+		);
+	});
+	if (!supportsConcurrentWindows) {
+		const runtimeErrorStart = runtimeErrors.length;
+		// WebKit/mobile mají stejný fail-safe jako runtime: žádná druhá instance
+		// lokální DB. Reálný affordance přepne stávající okno do focus shellu.
+		await mainPage.getByRole("button", { name: "Otevřít ve fokusovém okně", exact: true }).click();
+		await mainPage.waitForURL(
+			(url) => url.pathname === "/prehled" && url.searchParams.get("shell") === "focus",
+		);
+		await mainPage.locator('[data-window-chrome="focus"]').waitFor({ timeout: 30_000 });
+		if ((await mainPage.locator("aside").count()) !== 0) {
+			throw new Error(`ia_ui_window_fallback_sidebar_${browserName}`);
+		}
+		await mainPage.getByRole("heading", { name: "Přehled", exact: true }).waitFor();
+		const persistedWorkspace = await mainPage.evaluate(() =>
+			localStorage.getItem("watson.activeWs"),
+		);
+		if (persistedWorkspace !== fixture.workspaceId) {
+			throw new Error(`ia_ui_window_fallback_workspace_leak_${browserName}:${persistedWorkspace}`);
+		}
+		await mainPage.getByRole("button", { name: "Zavřít okno", exact: true }).click();
+		await mainPage.waitForURL(
+			(url) => url.pathname === "/prehled" && !url.searchParams.has("shell"),
+		);
+		await mainPage.getByRole("heading", { name: "Přehled", exact: true }).waitFor();
+		await mainPage
+			.getByRole("button", { name: "Otevřít jako velkoplošný přehled", exact: true })
+			.click();
+		await mainPage.waitForURL(
+			(url) => url.pathname === "/prehled" && url.searchParams.get("shell") === "wallboard",
+		);
+		await mainPage.locator('[data-window-chrome="wallboard"]').waitFor({ timeout: 30_000 });
+		if ((await mainPage.locator("aside").count()) !== 0) {
+			throw new Error(`ia_ui_window_fallback_wallboard_sidebar_${browserName}`);
+		}
+		await mainPage.getByRole("heading", { name: "Přehled", exact: true }).waitFor();
+		await mainPage.getByRole("button", { name: "Otevřít ve Watsonu", exact: true }).click();
+		await mainPage.waitForURL(
+			(url) => url.pathname === "/prehled" && !url.searchParams.has("shell"),
+		);
+		await mainPage.getByRole("heading", { name: "Přehled", exact: true }).waitFor();
+		await mainPage.waitForLoadState("networkidle", { timeout: 30_000 });
+		if (await mainPage.getByText("Něco se pokazilo", { exact: true }).count()) {
+			throw new Error(`ia_ui_window_fallback_screen_${browserName}`);
+		}
+		const navigationNoise = runtimeErrors.slice(runtimeErrorStart);
+		const unexpected = navigationNoise.filter(
+			(error) =>
+				!error.includes("Importing a module script failed") &&
+				!error.includes("due to access control checks"),
+		);
+		if (unexpected.length) {
+			throw new Error(`ia_ui_window_fallback_runtime_${browserName}:${unexpected.join(" | ")}`);
+		}
+		// WebKit může při location.assign nahlásit přerušený fetch starého shellu.
+		// Aktuální focus, wallboard i návrat jsme ověřili až po vykreslení a networkidle.
+		runtimeErrors.splice(runtimeErrorStart);
+		return;
+	}
+	const upcoming = await openWindowSurface(
+		context,
+		`/nadchazejici?shell=focus&prostor=${fixture.personalWorkspaceId}&zobrazeni=calendar&rozsah=week&datum=2026-07-20`,
+		"focus",
+		browserName,
+	);
+	try {
+		await upcoming.page.getByRole("button", { name: "Nástěnka", exact: true }).first().click();
+		try {
+			await upcoming.page.waitForURL((url) => {
+				return (
+					url.pathname === "/nadchazejici" &&
+					url.searchParams.get("shell") === "focus" &&
+					url.searchParams.get("prostor") === fixture.personalWorkspaceId &&
+					url.searchParams.get("zobrazeni") === "board" &&
+					url.searchParams.get("rozsah") === "week" &&
+					url.searchParams.get("datum") === "2026-07-20"
+				);
+			});
+		} catch {
+			throw new Error(`ia_ui_window_url_state_${browserName}:${upcoming.page.url()}`);
+		}
+		const persistedWorkspace = await mainPage.evaluate(() =>
+			localStorage.getItem("watson.activeWs"),
+		);
+		if (persistedWorkspace !== fixture.workspaceId) {
+			throw new Error(`ia_ui_window_workspace_leak_${browserName}:${persistedWorkspace}`);
+		}
+
+		// Motiv je naopak vědomě sdílená preference a musí se propsat i do focus
+		// shellu, který nemá běžný Header.
+		const beforeTheme = await upcoming.page.locator("html").getAttribute("data-w-theme");
+		await mainPage.getByRole("button", { name: "Přepnout motiv", exact: true }).click();
+		await upcoming.page.waitForFunction(
+			(previous) => document.documentElement.getAttribute("data-w-theme") !== previous,
+			beforeTheme,
+		);
+		await mainPage.getByRole("button", { name: "Přepnout motiv", exact: true }).click();
+		await upcoming.page.waitForFunction(
+			(previous) => document.documentElement.getAttribute("data-w-theme") === previous,
+			beforeTheme,
+		);
+		if (upcoming.runtimeErrors.length) {
+			throw new Error(
+				`ia_ui_window_runtime_${browserName}_upcoming:${upcoming.runtimeErrors.join(" | ")}`,
+			);
+		}
+	} finally {
+		await upcoming.page.close();
+	}
+
+	const surfaces: Array<{ href: string; shell: "focus" | "wallboard" }> = [
+		{
+			href: `/mail?shell=focus&prostor=${fixture.personalWorkspaceId}`,
+			shell: "focus",
+		},
+		{
+			href: `/ukoly?shell=focus&prostor=${fixture.workspaceId}&zobrazeni=list`,
+			shell: "focus",
+		},
+		{
+			href: `/seznamy?shell=focus&prostor=${fixture.workspaceId}`,
+			shell: "focus",
+		},
+		{
+			href: `/prehled?shell=focus&prostor=${fixture.workspaceId}&vstup=tym&rozlozeni=feed`,
+			shell: "focus",
+		},
+		{
+			href: `/prehled?shell=wallboard&prostor=${fixture.workspaceId}&vstup=provoz&firma=${fixture.workspaceId}&rozlozeni=grid`,
+			shell: "wallboard",
+		},
+		{
+			href: `/velin?shell=focus&prostor=${fixture.workspaceId}&firma=${fixture.workspaceId}`,
+			shell: "focus",
+		},
+		{
+			href: `/velin?shell=wallboard&prostor=${fixture.workspaceId}&firma=${fixture.workspaceId}`,
+			shell: "wallboard",
+		},
+	];
+	for (const surface of surfaces) {
+		const opened = await openWindowSurface(context, surface.href, surface.shell, browserName);
+		try {
+			if (opened.runtimeErrors.length) {
+				throw new Error(
+					`ia_ui_window_runtime_${browserName}:${surface.href}:${opened.runtimeErrors.join(" | ")}`,
+				);
+			}
+		} finally {
+			await opened.page.close();
+		}
+	}
 }
 
 async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit") {
@@ -275,10 +487,7 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 			throw new Error(`ia_ui_team_contains_personal_today_${browserName}`);
 		}
 
-		await page
-			.locator("main")
-			.getByRole("button", { name: "Provoz", exact: true })
-			.click();
+		await page.locator("main").getByRole("button", { name: "Provoz", exact: true }).click();
 		await page.waitForURL(/\/prehled\?vstup=provoz/);
 		await page.getByRole("heading", { name: "Provoz", exact: true }).waitFor();
 		await page.getByRole("button", { name: "Otevřít Velín", exact: true }).waitFor();
@@ -331,16 +540,22 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 		if (storedAfterUnlock.tasks !== null || storedAfterUnlock.upcoming !== "calendar")
 			throw new Error(`ia_ui_unlock_cross_surface_${browserName}`);
 		await page.reload({ waitUntil: "domcontentloaded" });
-		if ((await page.getByRole("button", { name: "Seznam", exact: true }).getAttribute("aria-pressed")) !== "true")
+		if (
+			(await page
+				.getByRole("button", { name: "Seznam", exact: true })
+				.getAttribute("aria-pressed")) !== "true"
+		)
 			throw new Error(`ia_ui_unlocked_task_reload_${browserName}`);
 		await page.goto(`${WEB}/nadchazejici`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-		if ((await page.getByRole("button", { name: "Kalendář", exact: true }).getAttribute("aria-pressed")) !== "true")
+		if (
+			(await page
+				.getByRole("button", { name: "Kalendář", exact: true })
+				.getAttribute("aria-pressed")) !== "true"
+		)
 			throw new Error(`ia_ui_upcoming_default_reload_${browserName}`);
 
 		await page.goto(`${WEB}/projekty`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-		await page
-			.getByRole("button", { name: "Přidat projekt do Mých záložek", exact: true })
-			.click();
+		await page.getByRole("button", { name: "Přidat projekt do Mých záložek", exact: true }).click();
 		await sidebar.getByRole("button", { name: fixture.projectName, exact: true }).waitFor();
 
 		await page.goto(`${WEB}/ukoly`, { waitUntil: "domcontentloaded", timeout: 30_000 });
@@ -391,6 +606,10 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 		await assertNoOverflow(page, `${browserName}_more_390`);
 		await assertAxeClean(page, `${browserName}_more_390`);
 		await screenshot(page, browserName, "ia-operations-390");
+		await page.setViewportSize({ width: 1280, height: 900 });
+		await page.goto(`${WEB}/prehled`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+		await page.getByRole("heading", { name: "Přehled", exact: true }).waitFor();
+		await verifyMultiWindowSurfaces(context, page, fixture, browserName, runtimeErrors);
 		if (runtimeErrors.length) throw new Error(`ia_ui_runtime:${runtimeErrors.join(" | ")}`);
 		console.log(
 			`  ✓ ${browserName}: simplified nav, isolated view defaults, team/operations, 390 px and axe`,
@@ -419,7 +638,9 @@ async function verifyMember(browser: Browser, browserName: "chromium" | "webkit"
 		});
 		await page.waitForURL(/\/prehled\?vstup=tym/);
 		await page.getByRole("heading", { name: "Tým", exact: true }).waitFor();
-		if ((await page.locator("aside").getByRole("link", { name: "Provoz", exact: true }).count()) !== 0) {
+		if (
+			(await page.locator("aside").getByRole("link", { name: "Provoz", exact: true }).count()) !== 0
+		) {
 			throw new Error(`ia_ui_member_operations_sidebar_${browserName}`);
 		}
 		const mainEntries = page

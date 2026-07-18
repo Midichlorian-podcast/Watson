@@ -61,7 +61,8 @@ const checks = [
 	[
 		"Provoz se omezuje na skutečně vedené prostory a členův deep-link přesměruje na Tým",
 		overview.includes('vstup !== "provoz" || leadership') &&
-			overview.includes('search: { vstup: "tym" }, replace: true') &&
+			overview.includes('search: (current) => ({ ...current, vstup: "tym" })') &&
+			overview.includes("replace: true") &&
 			overview.includes("leadershipWorkspaceIds.has(workspaceId)") &&
 			overview.includes("leadershipWorkspaceIds.has(g.wsId)"),
 	],
@@ -70,7 +71,7 @@ const checks = [
 		overview.includes('surface === "overview"') &&
 			overview.includes('surface !== "provoz"') &&
 			overview.includes('surface !== "tym"') &&
-			overview.includes('navigate({ to: "/prehled", search: { vstup: "tym" } })') &&
+			overview.includes('search: (current) => ({ ...current, vstup: "tym" })') &&
 			!sidebar.includes('search={{ vstup: "tym" }}'),
 	],
 	[

@@ -1,7 +1,7 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "../components/Board";
 import { Calendar } from "../components/CalendarLazy";
 import { DataLoading } from "../components/Loading";
@@ -42,16 +42,54 @@ import { useViewMode } from "../lib/viewMode";
  */
 export function VseTab() {
 	const { t } = useTranslation();
+	const navigate = useNavigate({ from: "/ukoly" });
 	const search = useSearch({ strict: false }) as {
 		projekt?: string;
 		ukol?: string;
+		zobrazeni?: "list" | "board" | "calendar";
+		rozsah?: "day" | "week" | "month";
+		datum?: string;
 	};
 	const projektId = search.projekt;
 	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { open } = useTaskDetail();
 	const projDetail = useProjectDetail();
 	const { openAdd } = useAddTask();
-	const { view: rawView } = useViewMode("tasks");
+	const { view: rawView, setView } = useViewMode("tasks");
+	const externalView = useRef(search.zobrazeni ?? null);
+	useEffect(() => {
+		if (!search.zobrazeni) return;
+		externalView.current = search.zobrazeni;
+		setView(search.zobrazeni);
+	}, [search.zobrazeni, setView]);
+	useEffect(() => {
+		if (!projektId) return;
+		if (externalView.current) {
+			if (externalView.current === rawView) externalView.current = null;
+			return;
+		}
+		if (search.zobrazeni === rawView) return;
+		void navigate({
+			to: "/ukoly",
+			search: (current) => ({ ...current, zobrazeni: rawView }),
+			replace: true,
+		});
+	}, [navigate, projektId, rawView, search.zobrazeni]);
+	const updateCalendarNavigation = useCallback(
+		(next: { range: "day" | "week" | "month"; date: string }) => {
+			void navigate({
+				to: "/ukoly",
+				search: (current) => ({
+					...current,
+					zobrazeni: "calendar",
+					rozsah: next.range,
+					datum: next.date,
+				}),
+				replace: true,
+			});
+		},
+		[navigate],
+	);
 	// Globální „Vše": kalendář není pohled (fallback na seznam). Projekt: všechny 3 pohledy.
 	const view = projektId ? rawView : rawView === "calendar" ? "list" : rawView;
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
@@ -108,7 +146,9 @@ export function VseTab() {
 		}
 		// Stabilní pořadí sekcí = pořadí projektů, ne pořadí seřazených úkolů (prototyp ř. 3040).
 		const projectOrder = new Map(projects.map((p, i) => [p.id, i] as const));
-		const statusOrder = new Map(["probiha", "kontrola", "", "hotovo"].map((key, i) => [`s:${key}`, i]));
+		const statusOrder = new Map(
+			["probiha", "kontrola", "", "hotovo"].map((key, i) => [`s:${key}`, i]),
+		);
 		const rank = (key: string) =>
 			tb.groupBy === "priority"
 				? Number(key.slice(1))
@@ -180,10 +220,7 @@ export function VseTab() {
 	// (capped) seznam = přesně to, co je vykreslené v DOM, aby j/k a Space/⌫ nemířily
 	// na neviditelné řádky nad capem.
 	const visualList = useMemo(
-		() =>
-			projektId || tb.groupBy === "none"
-				? shownCapped
-				: groupsCapped.flatMap((g) => g.list),
+		() => (projektId || tb.groupBy === "none" ? shownCapped : groupsCapped.flatMap((g) => g.list)),
 		[projektId, tb.groupBy, shownCapped, groupsCapped],
 	);
 	const { setNavIds } = useTaskDetail();
@@ -240,7 +277,12 @@ export function VseTab() {
 			{projectsLoading || tasksLoading ? (
 				<DataLoading />
 			) : view === "calendar" ? (
-				<Calendar tasks={scoped} />
+				<Calendar
+					tasks={scoped}
+					range={search.rozsah}
+					anchorDate={search.datum}
+					onNavigationChange={updateCalendarNavigation}
+				/>
 			) : view === "board" ? (
 				// Cap platí i pro Nástěnku (jinak by velký workspace vykreslil desetitisíce karet);
 				// projectId → „+ Přidat" ve sloupci zakládá do filtrovaného projektu, ne do Schránky.

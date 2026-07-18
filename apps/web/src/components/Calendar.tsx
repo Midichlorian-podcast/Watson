@@ -11,10 +11,7 @@ import {
 } from "react";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
-import {
-	materializeRecurringTasks,
-	type OccurrenceOverrideRow,
-} from "../lib/occurrenceProjection";
+import { materializeRecurringTasks, type OccurrenceOverrideRow } from "../lib/occurrenceProjection";
 import { parseOccId } from "../lib/occurrences";
 import type {
 	AvailabilityBlockRow,
@@ -45,11 +42,12 @@ import { pushUndo } from "../lib/undo";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useUserColors } from "../lib/userColors";
+import type { CalendarRange } from "../lib/windowSurfaces";
 import { useWorkspace } from "../lib/workspace";
 import { CalendarMonth } from "./CalendarMonth";
 import { RecurrenceMoveDialog } from "./RecurrenceMoveDialog";
 
-type Mode = "day" | "week" | "month";
+type Mode = CalendarRange;
 type WeekView = "cols" | "grid";
 type CalBorder = "priority" | "project";
 
@@ -98,8 +96,10 @@ export function availabilitySegment(
 	const startMs = Math.max(Date.parse(block.starts_at), dayStartMs);
 	const endMs = Math.min(Date.parse(block.ends_at), nextStartMs);
 	if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
-	const start = startMs === dayStartMs ? 0 : minutesInTimeZone(new Date(startMs).toISOString(), timeZone);
-	const end = endMs === nextStartMs ? 1440 : minutesInTimeZone(new Date(endMs).toISOString(), timeZone);
+	const start =
+		startMs === dayStartMs ? 0 : minutesInTimeZone(new Date(startMs).toISOString(), timeZone);
+	const end =
+		endMs === nextStartMs ? 1440 : minutesInTimeZone(new Date(endMs).toISOString(), timeZone);
 	return start === null || end === null || end <= start ? null : { start, end };
 }
 const fmtMin = (m: number) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
@@ -246,7 +246,22 @@ interface PendingRecurrenceMove {
  * vícedenní pruhy, pás CELÝ DEN, drag move/create/resize, lanes + „+N", now-line se štítkem,
  * gear menu (hustota / barevný okraj / Plánování panel), klik do prázdna = nový úkol.
  */
-export function Calendar({ tasks }: { tasks: TaskRow[] }) {
+export interface CalendarNavigationState {
+	range: CalendarRange;
+	date: string;
+}
+
+export function Calendar({
+	tasks,
+	range,
+	anchorDate,
+	onNavigationChange,
+}: {
+	tasks: TaskRow[];
+	range?: CalendarRange;
+	anchorDate?: string;
+	onNavigationChange?: (state: CalendarNavigationState) => void;
+}) {
 	const { t } = useTranslation();
 	const { data: session } = useSession();
 	const userTimeZone = session?.user?.timezone ?? deviceTimeZone();
@@ -264,10 +279,12 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	const projName = (id: string | null) =>
 		(id ? projects.find((p) => p.id === id)?.name : null) ?? "";
 
-	const [mode, setModeState] = useState<Mode>(() => {
+	const initialMode: Mode = (() => {
+		if (range) return range;
 		const m = storageGet(MODE_LS);
 		return m === "day" || m === "month" ? m : "week";
-	});
+	})();
+	const [mode, setModeState] = useState<Mode>(initialMode);
 	const [weekView, setWeekViewState] = useState<WeekView>(() =>
 		storageGet(WEEKVIEW_LS) === "grid" ? "grid" : "cols",
 	);
@@ -279,9 +296,12 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	);
 	const [planningOn, setPlanningOn] = useState(() => storageGet(PLANNING_LS) === "1");
 	const [gearOpen, setGearOpen] = useState(false);
-	const [pendingEmergencyMove, setPendingEmergencyMove] = useState<PendingEmergencyMove | null>(null);
-	const [pendingRecurrenceMove, setPendingRecurrenceMove] =
-		useState<PendingRecurrenceMove | null>(null);
+	const [pendingEmergencyMove, setPendingEmergencyMove] = useState<PendingEmergencyMove | null>(
+		null,
+	);
+	const [pendingRecurrenceMove, setPendingRecurrenceMove] = useState<PendingRecurrenceMove | null>(
+		null,
+	);
 	const [emergencyReason, setEmergencyReason] = useState("");
 	const [emergencyBusy, setEmergencyBusy] = useState(false);
 	const emergencyBusyRef = useRef(false);
@@ -298,11 +318,30 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	// Kotevní datum (calCur) — týden je „rolující" od kotvy bez snapu (prototyp weekDates, ř. 2658);
 	// při startu v týdnu kotvíme na pondělí (ekvivalent calToday, ř. 2661).
 	const [cur, setCur] = useState<Date>(() => {
-		const d = new Date(`${dateInTimeZone(userTimeZone)}T12:00:00`);
-		const m = storageGet(MODE_LS);
+		const d = new Date(`${anchorDate ?? dateInTimeZone(userTimeZone)}T12:00:00`);
+		const m = initialMode;
 		if (m !== "day" && m !== "month") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
 		return d;
 	});
+	const applyingExternalNavigation = useRef(false);
+	useEffect(() => {
+		if (!range || range === mode) return;
+		applyingExternalNavigation.current = true;
+		setModeState(range);
+	}, [range, mode]);
+	useEffect(() => {
+		if (!anchorDate || isoOf(cur) === anchorDate) return;
+		applyingExternalNavigation.current = true;
+		setCur(fromISO(anchorDate));
+	}, [anchorDate, cur]);
+	useEffect(() => {
+		if (!onNavigationChange) return;
+		if (applyingExternalNavigation.current) {
+			applyingExternalNavigation.current = false;
+			return;
+		}
+		onNavigationChange({ range: mode, date: isoOf(cur) });
+	}, [mode, cur, onNavigationChange]);
 	const PPM = PPMOPT[density];
 
 	const setMode = useCallback((m: Mode) => {
@@ -331,15 +370,18 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 		return () => window.removeEventListener("resize", upd);
 	}, []);
 
-	const shiftCur = useCallback((dir: number) => {
-		setCur((c) => {
-			const d = new Date(c);
-			if (mode === "day") d.setDate(d.getDate() + dir);
-			else if (mode === "week") d.setDate(d.getDate() + dir * 7);
-			else d.setMonth(d.getMonth() + dir, 1);
-			return d;
-		});
-	}, [mode]);
+	const shiftCur = useCallback(
+		(dir: number) => {
+			setCur((c) => {
+				const d = new Date(c);
+				if (mode === "day") d.setDate(d.getDate() + dir);
+				else if (mode === "week") d.setDate(d.getDate() + dir * 7);
+				else d.setMonth(d.getMonth() + dir, 1);
+				return d;
+			});
+		},
+		[mode],
+	);
 	const goToday = useCallback(() => {
 		const d = new Date(`${dateInTimeZone(userTimeZone)}T12:00:00`);
 		// Dnes v týdnu → snap kotvy na pondělí (prototyp calToday, ř. 2661).
@@ -472,8 +514,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 		};
 		await write(move.dueDate, move.startsAt, move.startTimezone);
 		pushUndo({
-			undo: () =>
-				write(move.previousDueDate, move.previousStartsAt, move.previousStartTimezone),
+			undo: () => write(move.previousDueDate, move.previousStartsAt, move.previousStartTimezone),
 			redo: () => write(move.dueDate, move.startsAt, move.startTimezone),
 		});
 	};
@@ -548,7 +589,9 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 				if (strictNonFocus.length > 0) {
 					showToast(
 						t("calendar.availabilityStrictBlocked", {
-							names: [...new Set(strictNonFocus.map((conflict) => conflict.assigneeName))].join(", "),
+							names: [...new Set(strictNonFocus.map((conflict) => conflict.assigneeName))].join(
+								", ",
+							),
 						}),
 					);
 					return;
@@ -763,7 +806,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 													on={density === k}
 													onClick={() => {
 														setDensity(k);
-												storageSet(DENSITY_LS, k);
+														storageSet(DENSITY_LS, k);
 													}}
 												>
 													{l}
@@ -777,7 +820,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 												onClick={() => {
 													const next: CalBorder = calBorder === "priority" ? "project" : "priority";
 													setCalBorder(next);
-											storageSet(BORDER_LS, next);
+													storageSet(BORDER_LS, next);
 												}}
 											>
 												<span
@@ -802,7 +845,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 										on={planningOn}
 										onClick={() => {
 											setPlanningOn((v) => {
-										storageSet(PLANNING_LS, v ? "0" : "1");
+												storageSet(PLANNING_LS, v ? "0" : "1");
 												return !v;
 											});
 										}}
@@ -921,7 +964,10 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 								<span aria-hidden>!</span>
 							</div>
 							<div>
-								<h2 id="focus-emergency-title" className="font-display font-extrabold text-base text-ink">
+								<h2
+									id="focus-emergency-title"
+									className="font-display font-extrabold text-base text-ink"
+								>
 									{t("calendar.emergencyTitle")}
 								</h2>
 								<p className="mt-1 text-sm text-ink-2">{t("calendar.emergencyDesc")}</p>
@@ -929,13 +975,19 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 						</div>
 						<ul className="my-4 space-y-2" aria-label={t("calendar.emergencyConflicts")}>
 							{pendingEmergencyMove.conflicts.map((conflict) => (
-								<li key={`${conflict.blockId}:${conflict.assigneeId}`} className="rounded-xl bg-panel-2 px-3 py-2 text-sm text-ink">
+								<li
+									key={`${conflict.blockId}:${conflict.assigneeId}`}
+									className="rounded-xl bg-panel-2 px-3 py-2 text-sm text-ink"
+								>
 									<span className="font-semibold">{conflict.assigneeName}</span>
 									{conflict.label ? ` · ${conflict.label}` : ""}
 								</li>
 							))}
 						</ul>
-						<label className="block font-display font-semibold text-sm text-ink" htmlFor="focus-emergency-reason">
+						<label
+							className="block font-display font-semibold text-sm text-ink"
+							htmlFor="focus-emergency-reason"
+						>
 							{t("calendar.emergencyReason")}
 						</label>
 						<textarea
@@ -1124,12 +1176,17 @@ function WeekColumns({
 					const availabilityToday = availability
 						.map((block) => ({ block, segment: availabilitySegment(block, iso, timeZone) }))
 						.filter(
-							(value): value is { block: CalendarAvailabilityBlock; segment: { start: number; end: number } } =>
-								Boolean(value.segment),
+							(
+								value,
+							): value is {
+								block: CalendarAvailabilityBlock;
+								segment: { start: number; end: number };
+							} => Boolean(value.segment),
 						)
 						.sort((left, right) => left.segment.start - right.segment.start);
 					return (
-						<div role="region"
+						<div
+							role="region"
 							key={iso}
 							className="flex min-w-0 flex-1 flex-col border-line border-l"
 							style={{
@@ -1148,7 +1205,7 @@ function WeekColumns({
 								if (id) onDrop(id, iso);
 							}}
 						>
-					{availabilityToday.map(({ block, segment }) => (
+							{availabilityToday.map(({ block, segment }) => (
 								<div
 									key={`availability-${block.id}`}
 									role="note"
@@ -1167,7 +1224,9 @@ function WeekColumns({
 								>
 									<strong>
 										{t(`availability.kind.${block.kind ?? "unavailable"}`)}
-										{block.approval_status === "pending" ? ` · ${t("availability.approval.pending")}` : ""}
+										{block.approval_status === "pending"
+											? ` · ${t("availability.approval.pending")}`
+											: ""}
 									</strong>
 									<div className="font-mono" style={{ marginTop: 2, fontSize: 9.5 }}>
 										{fmtMin(segment.start)}–{fmtMin(segment.end)}
@@ -1183,7 +1242,15 @@ function WeekColumns({
 								const sm = startMin(tk);
 								const done = Boolean(tk.completed_at);
 								return (
-									<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+									<div
+										role="button"
+										tabIndex={0}
+										onKeyDown={(event) => {
+											if (event.key === "Enter" || event.key === " ") {
+												event.preventDefault();
+												event.currentTarget.click();
+											}
+										}}
 										key={tk.id}
 										draggable
 										onDragStart={(e) => e.dataTransfer.setData("text/plain", tk.id)}
@@ -1709,7 +1776,9 @@ function TimeGrid({
 					const list = allDay.cols.get(adPopover.iso)?.overflow ?? [];
 					return (
 						<>
-							<button type="button" aria-label={t("common.close")}
+							<button
+								type="button"
+								aria-label={t("common.close")}
 								className="fixed inset-0"
 								style={{ zIndex: 89 }}
 								onClick={() => setAdPopover(null)}
@@ -1877,7 +1946,7 @@ function TimeGrid({
 									: (uc(sg.tk.id, sg.tk.color) as string) || borderColorOf(sg.tk);
 								return (
 									<div
-									key={`${sg.tk.id}:${sg.x0}:${sg.x1}`}
+										key={`${sg.tk.id}:${sg.x0}:${sg.x1}`}
 										data-adchip
 										onPointerDown={allDayChipDown(sg.tk)}
 										title={`${sg.tk.name ?? ""} · ${t("today.daysCount", { count: sg.tk.days ?? 1 })}`}
@@ -1908,7 +1977,15 @@ function TimeGrid({
 							const overflowN = colM.overflow.length;
 							const isToday = iso === todayIso;
 							return (
-								<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+								<div
+									role="button"
+									tabIndex={0}
+									onKeyDown={(event) => {
+										if (event.key === "Enter" || event.key === " ") {
+											event.preventDefault();
+											event.currentTarget.click();
+										}
+									}}
 									key={iso}
 									onClick={(e) => {
 										if ((e.target as HTMLElement).closest("[data-adchip]")) return;
@@ -2021,7 +2098,7 @@ function TimeGrid({
 				>
 					{/* hodinová osa (0–24 vč.; 00:00 s výjimkou top:2 — prototyp ř. 2832) */}
 					<div style={{ width: 46, flex: "none", position: "relative" }}>
-					{HOURS.map((h) => (
+						{HOURS.map((h) => (
 							<span
 								key={h}
 								className="absolute right-1.5 font-mono text-ink-3"
@@ -2093,11 +2170,23 @@ function TimeGrid({
 						const availabilityToday = availability
 							.map((block) => ({ block, segment: availabilitySegment(block, iso, timeZone) }))
 							.filter(
-								(value): value is { block: CalendarAvailabilityBlock; segment: { start: number; end: number } } =>
-									Boolean(value.segment),
+								(
+									value,
+								): value is {
+									block: CalendarAvailabilityBlock;
+									segment: { start: number; end: number };
+								} => Boolean(value.segment),
 							);
 						return (
-							<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+							<div
+								role="button"
+								tabIndex={0}
+								onKeyDown={(event) => {
+									if (event.key === "Enter" || event.key === " ") {
+										event.preventDefault();
+										event.currentTarget.click();
+									}
+								}}
 								key={iso}
 								onClick={gridClickAdd(iso)}
 								onPointerDown={createDown(iso)}
@@ -2145,7 +2234,7 @@ function TimeGrid({
 												top: segment.start * PPM,
 												height,
 												zIndex: 1,
-											border: `1px ${kind === "focus" || block.approval_status === "pending" ? "dashed" : "solid"} var(--w-brass)`,
+												border: `1px ${kind === "focus" || block.approval_status === "pending" ? "dashed" : "solid"} var(--w-brass)`,
 												borderRadius: 5,
 												background:
 													kind === "focus"
@@ -2156,7 +2245,15 @@ function TimeGrid({
 											}}
 										>
 											{height >= 22 && (
-												<span className="font-display" style={{ display: "inline-block", padding: "2px 5px", fontSize: 9.5, fontWeight: 750 }}>
+												<span
+													className="font-display"
+													style={{
+														display: "inline-block",
+														padding: "2px 5px",
+														fontSize: 9.5,
+														fontWeight: 750,
+													}}
+												>
 													{label} · {fmtMin(segment.start)}–{fmtMin(segment.end)}
 												</span>
 											)}
@@ -2582,7 +2679,15 @@ function PlanningPanel({
 					{list.map((tk) => {
 						const due = rowDue(tk, t);
 						return (
-							<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+							<div
+								role="button"
+								tabIndex={0}
+								onKeyDown={(event) => {
+									if (event.key === "Enter" || event.key === " ") {
+										event.preventDefault();
+										event.currentTarget.click();
+									}
+								}}
 								key={tk.id}
 								draggable
 								onDragStart={(e) => e.dataTransfer.setData("text/plain", tk.id)}

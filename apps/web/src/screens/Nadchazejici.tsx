@@ -1,6 +1,7 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import i18n, { useTranslation } from "@watson/i18n";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "../components/Board";
 import { Calendar } from "../components/CalendarLazy";
 import { DataLoading } from "../components/Loading";
@@ -18,10 +19,7 @@ import { useAddTask } from "../lib/addTask";
 import { useFlowSteps } from "../lib/flowSteps";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
-import {
-	materializeRecurringTasks,
-	type OccurrenceOverrideRow,
-} from "../lib/occurrenceProjection";
+import { materializeRecurringTasks, type OccurrenceOverrideRow } from "../lib/occurrenceProjection";
 import type { TaskRecurrencePrefixRow, TaskRow } from "../lib/powersync/AppSchema";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
@@ -66,12 +64,59 @@ function dayBucket(d: string, tdy: string): Bucket {
  */
 export function Nadchazejici() {
 	const { t } = useTranslation();
+	const navigate = useNavigate();
+	const search = useSearch({ from: "/nadchazejici" });
 	const { openAdd } = useAddTask();
-	const { view } = useViewMode("upcoming");
+	const { view, setView } = useViewMode("upcoming");
+	const externalView = useRef(search.zobrazeni ?? null);
+	useEffect(() => {
+		if (!search.zobrazeni) return;
+		externalView.current = search.zobrazeni;
+		setView(search.zobrazeni);
+	}, [search.zobrazeni, setView]);
+	useEffect(() => {
+		if (externalView.current) {
+			if (externalView.current === view) externalView.current = null;
+			return;
+		}
+		if (search.zobrazeni === view) return;
+		void navigate({
+			to: "/nadchazejici",
+			search: (current) => ({ ...current, zobrazeni: view }),
+			replace: true,
+		});
+	}, [navigate, search.zobrazeni, view]);
 	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
-	const [wsFilter, setWsFilter] = useState<string | null>(null);
+	const [wsFilter, setWsFilter] = useState<string | null>(search.prostor ?? null);
+	useEffect(() => setWsFilter(search.prostor ?? null), [search.prostor]);
+	const updateWorkspaceFilter = useCallback(
+		(workspaceId: string | null) => {
+			setWsFilter(workspaceId);
+			void navigate({
+				to: "/nadchazejici",
+				search: (current) => ({ ...current, prostor: workspaceId ?? undefined }),
+				replace: true,
+			});
+		},
+		[navigate],
+	);
+	const updateCalendarNavigation = useCallback(
+		(next: { range: "day" | "week" | "month"; date: string }) => {
+			void navigate({
+				to: "/nadchazejici",
+				search: (current) => ({
+					...current,
+					zobrazeni: "calendar",
+					rozsah: next.range,
+					datum: next.date,
+				}),
+				replace: true,
+			});
+		},
+		[navigate],
+	);
 	// Výkon: bez „Dokončené" filtruj hotové v SQL (opakované úkoly mají completed_at vždy NULL —
 	// dokončení posouvá due_date, takže se neztratí žádná řada).
 	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
@@ -181,7 +226,7 @@ export function Nadchazejici() {
 	if (view === "calendar") {
 		return (
 			<div className="mx-auto max-w-[1080px] px-5 py-7">
-				<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
+				<WorkspaceChips value={wsFilter} onChange={updateWorkspaceFilter} />
 				<TasksToolbar
 					state={tb}
 					onChange={setTb}
@@ -189,16 +234,21 @@ export function Nadchazejici() {
 					showSavedViews
 					savedViewsSurface="upcoming"
 					savedViewsWorkspaceFilter={wsFilter}
-					onSavedViewsWorkspaceFilterChange={setWsFilter}
+					onSavedViewsWorkspaceFilterChange={updateWorkspaceFilter}
 				/>
-				<Calendar tasks={calTasks} />
+				<Calendar
+					tasks={calTasks}
+					range={search.rozsah}
+					anchorDate={search.datum}
+					onNavigationChange={updateCalendarNavigation}
+				/>
 			</div>
 		);
 	}
 	if (view === "board") {
 		return (
 			<div className="mx-auto max-w-[1080px] px-5 py-7">
-				<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
+				<WorkspaceChips value={wsFilter} onChange={updateWorkspaceFilter} />
 				<TasksToolbar
 					state={tb}
 					onChange={setTb}
@@ -206,7 +256,7 @@ export function Nadchazejici() {
 					showSavedViews
 					savedViewsSurface="upcoming"
 					savedViewsWorkspaceFilter={wsFilter}
-					onSavedViewsWorkspaceFilterChange={setWsFilter}
+					onSavedViewsWorkspaceFilterChange={updateWorkspaceFilter}
 				/>
 				<Board tasks={tasks} />
 			</div>
@@ -215,7 +265,7 @@ export function Nadchazejici() {
 
 	return (
 		<div className="mx-auto max-w-[1080px]" style={{ padding: "10px 22px 90px" }}>
-			<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
+			<WorkspaceChips value={wsFilter} onChange={updateWorkspaceFilter} />
 			<TasksToolbar
 				state={tb}
 				onChange={setTb}
@@ -223,7 +273,7 @@ export function Nadchazejici() {
 				showSavedViews
 				savedViewsSurface="upcoming"
 				savedViewsWorkspaceFilter={wsFilter}
-				onSavedViewsWorkspaceFilterChange={setWsFilter}
+				onSavedViewsWorkspaceFilterChange={updateWorkspaceFilter}
 			/>
 			{empty && (
 				<div className="text-center" style={{ padding: "80px 20px" }}>

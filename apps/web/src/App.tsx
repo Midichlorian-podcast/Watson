@@ -5,6 +5,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { retryPendingAttachmentFinalizations } from "./lib/attachments";
 import { useSession } from "./lib/auth-client";
 import { initPowerSyncForUser, powerSync } from "./lib/powersync/db";
+import { startLeaderTask, subscribeWindowEvent } from "./lib/windowCoordinator";
 import { router } from "./router";
 import { SignIn } from "./screens/SignIn";
 
@@ -20,27 +21,13 @@ function safeDbErrorChain(error: unknown) {
 
 function AttachmentFinalizationRecovery() {
 	useEffect(() => {
-		let active = true;
-		let running = false;
-		const retry = async () => {
-			if (!active || running) return;
-			running = true;
+		return startLeaderTask("attachment-finalization", 15_000, async () => {
 			try {
 				await retryPendingAttachmentFinalizations();
 			} catch (error) {
 				if (import.meta.env.DEV) console.warn("[attachments] retry selhal", error);
-			} finally {
-				running = false;
 			}
-		};
-		void retry();
-		window.addEventListener("online", retry);
-		const interval = window.setInterval(retry, 15_000);
-		return () => {
-			active = false;
-			window.removeEventListener("online", retry);
-			window.clearInterval(interval);
-		};
+		});
 	}, []);
 	return null;
 }
@@ -53,6 +40,10 @@ export function App() {
 	const [dbError, setDbError] = useState<string | null>(null);
 	const [dbAttempt, setDbAttempt] = useState(0);
 	const userId = session?.user?.id ?? null;
+
+	// Cookie relace je společná všem oknům. Po odhlášení v jednom z nich se ostatní
+	// okamžitě znovu načtou a nikdy nezůstanou nad odemčenou lokální DB staré identity.
+	useEffect(() => subscribeWindowEvent("session-invalidated", () => window.location.reload()), []);
 
 	useEffect(() => {
 		// Explicitní retry nonce: tlačítko musí znovu spustit celý bezpečný init.
@@ -76,11 +67,7 @@ export function App() {
 	}, [userId, dbAttempt]);
 
 	if (isPending) {
-		return (
-			<div className="grid min-h-full place-items-center text-sm text-ink-3">
-				…
-			</div>
-		);
+		return <div className="grid min-h-full place-items-center text-sm text-ink-3">…</div>;
 	}
 	if (!session) return <SignIn />;
 	if (dbUserId !== userId) {
@@ -103,11 +90,7 @@ export function App() {
 				</div>
 			);
 		}
-		return (
-			<div className="grid min-h-full place-items-center text-sm text-ink-3">
-				…
-			</div>
-		);
+		return <div className="grid min-h-full place-items-center text-sm text-ink-3">…</div>;
 	}
 
 	return (

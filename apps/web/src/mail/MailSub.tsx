@@ -112,6 +112,7 @@ export function MailSub({
 	onCloseDrawer,
 	sube,
 	onToggleSube,
+	onOpenWindow,
 	personalSummary,
 }: {
 	drawer: boolean;
@@ -119,6 +120,7 @@ export function MailSub({
 	/** Rozbalený panel složek; false = režim ikon 58 px (prototyp sube, CSS ≥1100 px). */
 	sube: boolean;
 	onToggleSube: () => void;
+	onOpenWindow: () => void;
 	personalSummary: {
 		accounts: Array<{ emailAddress: string }>;
 		unreadCount: number;
@@ -195,8 +197,31 @@ export function MailSub({
 					>
 						Doručené
 					</span>
+					<button
+						type="button"
+						data-rowbtn
+						onClick={onOpenWindow}
+						title="Otevřít Mail ve fokusovém okně"
+						aria-label="Otevřít Mail ve fokusovém okně"
+						style={{
+							border: "1px solid var(--line)",
+							background: "var(--panel)",
+							fontFamily: "var(--w-font-mono)",
+							fontSize: 11,
+						}}
+					>
+						↗
+					</button>
 					{/* přepínač sbalení panelu na ikony (prototyp subToggle, ř. 349) */}
-					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+					<span
+						role="button"
+						tabIndex={0}
+						onKeyDown={(event) => {
+							if (event.key === "Enter" || event.key === " ") {
+								event.preventDefault();
+								event.currentTarget.click();
+							}
+						}}
 						data-rowbtn
 						onClick={onToggleSube}
 						title={sube ? "Sbalit složky na ikony" : "Rozbalit panel složek"}
@@ -611,7 +636,9 @@ export function MailSub({
 						data-mbdot="osobni"
 						style={{ width: 9, height: 9, borderRadius: "50%", flex: "none" }}
 					/>
-					<span data-mbini="osobni">{personalSummary.accounts.length === 1 ? mbIni(personalLabel) : "OS"}</span>
+					<span data-mbini="osobni">
+						{personalSummary.accounts.length === 1 ? mbIni(personalLabel) : "OS"}
+					</span>
 					<div data-sublbl style={{ flex: 1, minWidth: 0 }}>
 						<div
 							style={{
@@ -675,9 +702,7 @@ export function MailSub({
 				</SRow>
 				<SRow
 					active={false}
-					onClick={() =>
-						void navigate({ to: "/nastaveni", search: { sekce: "integrace" } })
-					}
+					onClick={() => void navigate({ to: "/nastaveni", search: { sekce: "integrace" } })}
 					title="Nastavení pošty — teď v jednom Nastavení (sekce Pošta)"
 				>
 					<svg
@@ -725,7 +750,15 @@ export function MailSub({
 				</SRow>
 			</div>
 			{drawer && (
-				<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+				<div
+					role="button"
+					tabIndex={0}
+					onKeyDown={(event) => {
+						if (event.key === "Enter" || event.key === " ") {
+							event.preventDefault();
+							event.currentTarget.click();
+						}
+					}}
 					data-mscrim
 					onClick={onCloseDrawer}
 					style={{

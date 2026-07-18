@@ -2,6 +2,8 @@ import { PowerSyncDatabase } from "@powersync/web";
 import { API_URL } from "../api";
 import { queryClient } from "../queryClient";
 import { storageGet, storageKeys, storageRemove, storageSet } from "../storage";
+import { withCrossWindowLock } from "../windowCoordinator";
+import { browserSupportsSafeMultiWindowData } from "../windowSurfaces";
 import { AppSchema } from "./AppSchema";
 import { connectBeforePublish, deleteIndexedDatabase } from "./connectionLifecycle";
 import { WatsonConnector } from "./connector";
@@ -55,7 +57,8 @@ type PowerSyncHmrState = {
 
 // Produkční stránka nesmí vystavovat živý databázový objekt na globalThis.
 // Globální úložiště je potřeba pouze ve Vite dev režimu, kde drží instanci přes HMR.
-const hmr: PowerSyncHmrState = import.meta.env?.DEV === true ? (globalThis as PowerSyncHmrState) : {};
+const hmr: PowerSyncHmrState =
+	import.meta.env?.DEV === true ? (globalThis as PowerSyncHmrState) : {};
 
 // Živá vazba — nastaví ji initPowerSyncForUser dřív, než se vyrenderuje router.
 export let powerSync: PowerSyncDatabase = hmr.__watsonPowerSync as PowerSyncDatabase;
@@ -192,47 +195,52 @@ async function migratePlaintextDb(h: string): Promise<string> {
 export function initPowerSyncForUser(userId: string): Promise<void> {
 	return enqueue(async () => {
 		const h = await userHash(userId);
-		if (currentHash === h && powerSync) return;
+		return withCrossWindowLock(`powersync-init:${h}`, async () => {
+			if (currentHash === h && powerSync) return;
 
-		if (powerSync) {
-			try {
-				await powerSync.disconnect();
-				await powerSync.close();
-			} catch (err) {
-				console.warn("[powersync] zavírání staré DB selhalo:", err);
+			if (powerSync) {
+				try {
+					await powerSync.disconnect();
+					await powerSync.close();
+				} catch (err) {
+					console.warn("[powersync] zavírání staré DB selhalo:", err);
+				}
 			}
-		}
-		// Jiná identita, než pro kterou tu jsou lokální data → vyčistit.
-		if (storageGet(LAST_USER_KEY) !== h) wipeSensitiveLocalState();
-		await wipeLegacySharedDb();
-		const encryptionKey = await fetchLocalDataKey();
-		const dbFilename = await migratePlaintextDb(h);
-		storageSet(LAST_USER_KEY, h);
+			// Jiná identita, než pro kterou tu jsou lokální data → vyčistit.
+			if (storageGet(LAST_USER_KEY) !== h) wipeSensitiveLocalState();
+			await wipeLegacySharedDb();
+			const encryptionKey = await fetchLocalDataKey();
+			const dbFilename = await migratePlaintextDb(h);
+			storageSet(LAST_USER_KEY, h);
 
-		const db = new PowerSyncDatabase({
-			schema: AppSchema,
-			database: { dbFilename },
-			encryptionKey,
-		});
-		try {
-			await connectBeforePublish({
-				candidate: db,
-				connect: async (candidate) => candidate.connect(new WatsonConnector()),
-				publish: (candidate) => {
-					powerSync = candidate;
-					currentHash = h;
-					hmr.__watsonPowerSync = candidate;
-					hmr.__watsonUserHash = h;
-					// Dev-only handle pro ladění/verifikaci z konzole (dynamický import ve Vite
-					// vyrábí druhou instanci modulu, takže live-binding z konzole nejde použít).
-					if (import.meta.env?.DEV === true) {
-						(window as unknown as { __watsonDb?: PowerSyncDatabase }).__watsonDb = candidate;
-					}
-				},
+			const db = new PowerSyncDatabase({
+				schema: AppSchema,
+				database: { dbFilename },
+				encryptionKey,
+				// SDK používá SharedWorker pro DB i sync stream. Explicitní flag drží
+				// Watson na stejné, otestovatelné hranici i po budoucím upgradu SDK.
+				flags: { enableMultiTabs: browserSupportsSafeMultiWindowData() },
 			});
-		} catch (error) {
-			throw new Error("local_database_connect_failed", { cause: error });
-		}
+			try {
+				await connectBeforePublish({
+					candidate: db,
+					connect: async (candidate) => candidate.connect(new WatsonConnector()),
+					publish: (candidate) => {
+						powerSync = candidate;
+						currentHash = h;
+						hmr.__watsonPowerSync = candidate;
+						hmr.__watsonUserHash = h;
+						// Dev-only handle pro ladění/verifikaci z konzole (dynamický import ve Vite
+						// vyrábí druhou instanci modulu, takže live-binding z konzole nejde použít).
+						if (import.meta.env?.DEV === true) {
+							(window as unknown as { __watsonDb?: PowerSyncDatabase }).__watsonDb = candidate;
+						}
+					},
+				});
+			} catch (error) {
+				throw new Error("local_database_connect_failed", { cause: error });
+			}
+		});
 	});
 }
 

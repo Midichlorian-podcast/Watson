@@ -12,11 +12,11 @@ const KEY = "w-theme";
 let current: Theme = storageGet(KEY) === "dark" ? "dark" : "light";
 const listeners = new Set<() => void>();
 
-function apply(theme: Theme) {
+function apply(theme: Theme, persist = true) {
 	const el = document.documentElement;
 	if (theme === "dark") el.setAttribute("data-w-theme", "dark");
 	else el.removeAttribute("data-w-theme");
-	storageSet(KEY, theme);
+	if (persist) storageSet(KEY, theme);
 }
 if (typeof document !== "undefined") apply(current);
 
@@ -28,7 +28,17 @@ function setTheme(theme: Theme) {
 
 const subscribe = (l: () => void) => {
 	listeners.add(l);
-	return () => listeners.delete(l);
+	const onStorage = (event: StorageEvent) => {
+		if (event.key !== KEY) return;
+		current = event.newValue === "dark" ? "dark" : "light";
+		apply(current, false);
+		l();
+	};
+	window.addEventListener("storage", onStorage);
+	return () => {
+		listeners.delete(l);
+		window.removeEventListener("storage", onStorage);
+	};
 };
 
 export function useTheme() {

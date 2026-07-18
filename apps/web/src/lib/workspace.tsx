@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { API_URL } from "./api";
 import { storageGet, storageSet } from "./storage";
 
@@ -59,30 +59,56 @@ const Ctx = createContext<WorkspaceCtx>({
 
 const LS_KEY = "watson.activeWs";
 
-/** Aktivní pracovní prostor (per-user v localStorage) + sbalování v sidebaru. */
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
+/**
+ * Aktivní pracovní prostor + sbalování v sidebaru. Plný app shell ukládá poslední
+ * volbu jako výchozí pro příští okno; focus/wallboard dostanou izolovaný kontext,
+ * takže jejich `?prostor=` nikdy nepřepne ostatní okna.
+ */
+export function WorkspaceProvider({
+	children,
+	initialWorkspaceId,
+	persist = true,
+}: {
+	children: ReactNode;
+	initialWorkspaceId?: string | null;
+	persist?: boolean;
+}) {
 	const { data: workspaces } = useWorkspaces();
-	const [activeWs, setActiveWsState] = useState<string | null>(() => storageGet(LS_KEY));
+	const [activeWs, setActiveWsState] = useState<string | null>(
+		() => initialWorkspaceId ?? (persist ? storageGet(LS_KEY) : null),
+	);
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-	// Zvol výchozí prostor (první neosobní / první), pokud žádný nebo neplatný.
+	// Deep-link má přednost, ale jen pokud ho server skutečně vrátil přihlášenému uživateli.
 	useEffect(() => {
 		if (!workspaces || workspaces.length === 0) return;
+		if (
+			initialWorkspaceId &&
+			initialWorkspaceId !== activeWs &&
+			workspaces.some((workspace) => workspace.id === initialWorkspaceId)
+		) {
+			setActiveWsState(initialWorkspaceId);
+			if (persist) storageSet(LS_KEY, initialWorkspaceId);
+			return;
+		}
 		if (activeWs && workspaces.some((w) => w.id === activeWs)) return;
 		const def = workspaces.find((w) => !w.isPersonal) ?? workspaces[0];
 		if (def) {
 			setActiveWsState(def.id);
-			storageSet(LS_KEY, def.id);
+			if (persist) storageSet(LS_KEY, def.id);
 		}
-	}, [workspaces, activeWs]);
+	}, [workspaces, activeWs, initialWorkspaceId, persist]);
 
-	const setActiveWs = (id: string) => {
-		setActiveWsState(id);
-		storageSet(LS_KEY, id);
-		// Vyčistit explicitní stavy — rozbalený zůstane jen nově aktivní prostor
-		// (jinak by se dřívější aktivní/ručně rozbalené hromadily rozbalené naráz).
-		setCollapsed({ [id]: false });
-	};
+	const setActiveWs = useCallback(
+		(id: string) => {
+			setActiveWsState(id);
+			if (persist) storageSet(LS_KEY, id);
+			// Vyčistit explicitní stavy — rozbalený zůstane jen nově aktivní prostor
+			// (jinak by se dřívější aktivní/ručně rozbalené hromadily rozbalené naráz).
+			setCollapsed({ [id]: false });
+		},
+		[persist],
+	);
 	const isCollapsed = (id: string) =>
 		collapsed[id] !== undefined ? collapsed[id] : id !== activeWs;
 	const toggleCollapse = (id: string) =>

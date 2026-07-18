@@ -1,6 +1,6 @@
 # Watson — závazný re-audit a implementační plán pro Claude Code
 
-> Stav dokumentu: 2026-07-17 po stabilizaci a průběžných produktových dávkách do F8b / migrace 0081.
+> Stav dokumentu: 2026-07-18 po stabilizaci, průběžných produktových dávkách do F8b / migrace 0081 a víceokenním shellu.
 >
 > CLAUDE CODE: přečti celý soubor před první změnou. Toto je jediný aktuální řídicí dokument. Staré audity, handoffy a plány ve `files/` jsou historické podklady. Pokud odporují tomuto souboru nebo současnému schématu, nemají autoritu.
 
@@ -36,6 +36,10 @@ Tato rozhodnutí jsou závazná a nesmí být změněna bez výslovného souhlas
 10. STT provider musí být vyměnitelný a projít EU/DPA gate.
 11. Cílové DR parametry pilotu jsou RPO 15 minut a RTO 2 hodiny.
 12. Implementaci řídí jeden člověk; WIP limit je jedna epika plus jeden naléhavý fix.
+13. Samostatná okna nejsou samostatné systémy: Mail, Úkoly, Nadcházející/Kalendář,
+    Seznamy, Přehled a Velín sdílejí jednu datovou a oprávněnostní autoritu Watsonu;
+    focus/wallboard mění pouze shell a izolovaný URL kontext. Na enginech bez bezpečné
+    PowerSync multi-tab capability se stejný povrch otevře v aktuálním okně.
 
 ### 0.3 Zakázané zkratky
 
@@ -982,6 +986,12 @@ Poslední ověření 2026-07-17:
   tasky, projekty, meetingy, dostupnost, booking a intake a cílovou DB po sobě odstranil.
   Čtyři historická dev přiřazení bez projektového členství jsou explicitní varování;
   lokální drill kvůli nim svévolně nemaže data ani neuděluje přístup, produkční drill je odmítá.
+- Víceokenný shell sdílí jediný provider/auth/PowerSync strom a adresuje stav přes URL.
+  Chromium ověřuje souběžný Mail, Úkoly, Nadcházející/Kalendář, Seznamy, Přehled a
+  Velín včetně wallboardů, izolace workspace a propagace motivu. WebKit ověřuje
+  bezpečný same-window fallback bez druhé lokální DB. Verze zpráv, single-leader
+  background práce, notifikační routing a allowlist shellů hlídají unit a statický
+  kontrakt; provozní hranice a rollback jsou v `docs/multi-window-runbook.md`.
 
 Neověřené v tomto snapshotu:
 

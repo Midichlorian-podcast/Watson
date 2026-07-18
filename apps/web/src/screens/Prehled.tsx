@@ -4,6 +4,7 @@ import { useTranslation } from "@watson/i18n";
 import {
 	type CSSProperties,
 	type ReactNode,
+	useCallback,
 	useEffect,
 	useMemo,
 	useRef,
@@ -91,7 +92,7 @@ function Bar({ pct, color }: { pct: number; color?: string }) {
 export function Prehled() {
 	const { t, i18n } = useTranslation();
 	const navigate = useNavigate();
-	const { vstup } = useSearch({ from: "/prehled" });
+	const { vstup, firma, rozlozeni } = useSearch({ from: "/prehled" });
 	const { open } = useTaskDetail();
 	const { data: session } = useSession();
 	const { data: workspaces } = useWorkspaces();
@@ -102,8 +103,7 @@ export function Prehled() {
 				(workspaces ?? [])
 					.filter(
 						(workspace) =>
-							!workspace.isPersonal &&
-							(workspace.role === "admin" || workspace.role === "manager"),
+							!workspace.isPersonal && (workspace.role === "admin" || workspace.role === "manager"),
 					)
 					.map((workspace) => workspace.id),
 			),
@@ -113,7 +113,11 @@ export function Prehled() {
 	const surface = vstup === "provoz" && !leadership ? "tym" : (vstup ?? "overview");
 	useEffect(() => {
 		if (vstup !== "provoz" || leadership) return;
-		void navigate({ to: "/prehled", search: { vstup: "tym" }, replace: true });
+		void navigate({
+			to: "/prehled",
+			search: (current) => ({ ...current, vstup: "tym" }),
+			replace: true,
+		});
 	}, [leadership, navigate, vstup]);
 	const { projects, isLoading: projLoading } = useProjectsWithState();
 	const flowSteps = useFlowSteps();
@@ -124,16 +128,31 @@ export function Prehled() {
 	const digest = useMailDigest();
 	const openMailThread = useOpenMailThread();
 	// ovFirm — filtr firmy (prototyp: null = Vše)
-	const [firm, setFirm] = useState<string | null>(null);
+	const [firm, setFirmState] = useState<string | null>(firma ?? null);
+	useEffect(() => setFirmState(firma ?? null), [firma]);
+	const setFirm = useCallback(
+		(next: string | null) => {
+			setFirmState(next);
+			void navigate({
+				to: "/prehled",
+				search: (current) => ({ ...current, firma: next ?? undefined }),
+				replace: true,
+			});
+		},
+		[navigate],
+	);
 	useEffect(() => {
 		if (surface === "provoz" && firm && !leadershipWorkspaceIds.has(firm)) setFirm(null);
-	}, [firm, leadershipWorkspaceIds, surface]);
+	}, [firm, leadershipWorkspaceIds, setFirm, surface]);
 	// peek — náhled položky na místě (feedback: neodvádět z Přehledu pryč)
 	const [peek, setPeek] = useState<PeekTarget | null>(null);
 	// ovLayout (prototyp prop prehledLayout: Mřížka | Ranní feed) — per-user volba
-	const [layout, setLayout] = useState<"grid" | "feed">(() =>
-		storageGet("watson.ovLayout") === "feed" ? "feed" : "grid",
+	const [layout, setLayout] = useState<"grid" | "feed">(
+		() => rozlozeni ?? (storageGet("watson.ovLayout") === "feed" ? "feed" : "grid"),
 	);
+	useEffect(() => {
+		if (rozlozeni) setLayout(rozlozeni);
+	}, [rozlozeni]);
 	const [communicationFilter, setCommunicationFilter] = useState<"all" | "mentions" | "tasks">(
 		"all",
 	);
@@ -141,6 +160,11 @@ export function Prehled() {
 	const switchLayout = (v: "grid" | "feed") => {
 		setLayout(v);
 		storageSet("watson.ovLayout", v);
+		void navigate({
+			to: "/prehled",
+			search: (current) => ({ ...current, rozlozeni: v }),
+			replace: true,
+		});
 	};
 
 	// kind IS NOT 'meeting' — KPI/přehled počítá úkoly; porady nezkreslují čísla
@@ -263,9 +287,7 @@ export function Prehled() {
 				const due = isOver
 					? `${t("today.duePastLower")} · ${wd(tk.due_date?.slice(0, 10) ?? tdy)}`
 					: startMinOf(tk) !== null
-						? `${String(Math.floor((startMinOf(tk) ?? 0) / 60)).padStart(2, "0")}:${String(
-								(startMinOf(tk) ?? 0) % 60,
-							).padStart(2, "0")}`
+						? `${String(Math.floor((startMinOf(tk) ?? 0) / 60)).padStart(2, "0")}:${String((startMinOf(tk) ?? 0) % 60).padStart(2, "0")}`
 						: "";
 				return {
 					id: tk.id,
@@ -300,10 +322,7 @@ export function Prehled() {
 					? (projById.get(f.projectId)?.workspace_id ?? f.wsId)
 					: f.wsId;
 				if (!f.stuck) return false;
-				if (
-					surface === "provoz" &&
-					(!workspaceId || !leadershipWorkspaceIds.has(workspaceId))
-				) {
+				if (surface === "provoz" && (!workspaceId || !leadershipWorkspaceIds.has(workspaceId))) {
 					return false;
 				}
 				return !firm || workspaceId === firm;
@@ -364,7 +383,11 @@ export function Prehled() {
 					body: comment.body,
 					author,
 					initials: author ? initials(author) : "?",
-					kind: mentioned ? ("mention" as const) : repliesToMe ? ("reply" as const) : ("task" as const),
+					kind: mentioned
+						? ("mention" as const)
+						: repliesToMe
+							? ("reply" as const)
+							: ("task" as const),
 					createdAt: comment.created_at ?? "",
 				};
 			})
@@ -434,10 +457,7 @@ export function Prehled() {
 					? (projById.get(f.projectId)?.workspace_id ?? f.wsId)
 					: f.wsId;
 				if (!f.hasNow) return false;
-				if (
-					surface === "provoz" &&
-					(!workspaceId || !leadershipWorkspaceIds.has(workspaceId))
-				) {
+				if (surface === "provoz" && (!workspaceId || !leadershipWorkspaceIds.has(workspaceId))) {
 					return false;
 				}
 				return !firm || workspaceId === firm;
@@ -614,9 +634,7 @@ export function Prehled() {
 			const attention = view.communication.length;
 			const waiting = view.waiting.onMe.length + view.waiting.forOthers.length;
 			const parts = [
-				...(attention > 0
-					? [t("prehled.teamSynCommunication", { count: attention })]
-					: []),
+				...(attention > 0 ? [t("prehled.teamSynCommunication", { count: attention })] : []),
 				...(waiting > 0 ? [t("prehled.teamSynWaiting", { count: waiting })] : []),
 			];
 			return parts.join(" ") || t("prehled.teamSynCalm");
@@ -719,7 +737,12 @@ export function Prehled() {
 				>
 					<button
 						type="button"
-						onClick={() => void navigate({ to: "/prehled", search: {} })}
+						onClick={() =>
+							void navigate({
+								to: "/prehled",
+								search: (current) => ({ ...current, vstup: undefined }),
+							})
+						}
 						aria-pressed={surface === "overview"}
 						className="min-h-11 rounded-lg px-3 font-display text-xs font-semibold"
 						style={{
@@ -732,7 +755,12 @@ export function Prehled() {
 					</button>
 					<button
 						type="button"
-						onClick={() => void navigate({ to: "/prehled", search: { vstup: "tym" } })}
+						onClick={() =>
+							void navigate({
+								to: "/prehled",
+								search: (current) => ({ ...current, vstup: "tym" }),
+							})
+						}
 						aria-pressed={surface === "tym"}
 						className="min-h-11 rounded-lg px-3 font-display text-xs font-semibold"
 						style={{
@@ -747,7 +775,10 @@ export function Prehled() {
 						<button
 							type="button"
 							onClick={() =>
-								void navigate({ to: "/prehled", search: { vstup: "provoz" } })
+								void navigate({
+									to: "/prehled",
+									search: (current) => ({ ...current, vstup: "provoz" }),
+								})
 							}
 							aria-pressed={surface === "provoz"}
 							className="min-h-11 rounded-lg px-3 font-display text-xs font-semibold"
@@ -874,82 +905,85 @@ export function Prehled() {
 				{/* Dnes */}
 				{surface === "overview" && (
 					<div className={cardCls} style={cardStyle}>
-					<CardHead
-						title={t("prehled.cardToday")}
-						footLabel={
-							view.dnesMore > 0
-								? t("prehled.moreInToday", { count: view.dnesMore })
-								: t("prehled.openToday")
-						}
-						onFoot={() => void navigate({ to: "/" })}
-					/>
-					{!ready && <LoadingNote />}
-					{ready && view.dnes.length === 0 && (
-						<div
-							className="font-body text-ink-3"
-							style={{ padding: "8px 16px 16px", fontSize: 12.5 }}
-						>
-							{t("prehled.emptyToday")}
-						</div>
-					)}
-					{view.dnes.map((r) => (
-						<OvRow key={r.id} label={r.name} onClick={() => open(r.id)}>
-							<button
-								type="button"
-								aria-label={t("detail.ariaComplete")}
-								onClick={(e) => {
-									e.stopPropagation();
-									void toggleTask(r.row, session?.user?.id);
-								}}
-								className="pointer-events-auto relative z-[3] grid shrink-0 place-items-center rounded-full border-[1.6px] border-line bg-card text-transparent hover:border-brass"
-								style={{ width: 17, height: 17 }}
+						<CardHead
+							title={t("prehled.cardToday")}
+							footLabel={
+								view.dnesMore > 0
+									? t("prehled.moreInToday", { count: view.dnesMore })
+									: t("prehled.openToday")
+							}
+							onFoot={() => void navigate({ to: "/" })}
+						/>
+						{!ready && <LoadingNote />}
+						{ready && view.dnes.length === 0 && (
+							<div
+								className="font-body text-ink-3"
+								style={{ padding: "8px 16px 16px", fontSize: 12.5 }}
 							>
-								<svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden>
-									<path
-										d="M1.5 5.5 L4 8 L8.5 2.5"
-										stroke="currentColor"
-										strokeWidth="1.8"
-										strokeLinecap="round"
-										strokeLinejoin="round"
-									/>
-								</svg>
-							</button>
-							<span
-								className="shrink-0 rounded-full"
-								style={{
-									width: 8,
-									height: 8,
-									background: r.color ?? "var(--w-ink-3)",
-								}}
-							/>
-							<span className="min-w-0 flex-1 truncate font-body text-ink" style={{ fontSize: 13 }}>
-								{r.name}
-							</span>
-							{r.p1 && (
+								{t("prehled.emptyToday")}
+							</div>
+						)}
+						{view.dnes.map((r) => (
+							<OvRow key={r.id} label={r.name} onClick={() => open(r.id)}>
+								<button
+									type="button"
+									aria-label={t("detail.ariaComplete")}
+									onClick={(e) => {
+										e.stopPropagation();
+										void toggleTask(r.row, session?.user?.id);
+									}}
+									className="pointer-events-auto relative z-[3] grid shrink-0 place-items-center rounded-full border-[1.6px] border-line bg-card text-transparent hover:border-brass"
+									style={{ width: 17, height: 17 }}
+								>
+									<svg width="9" height="9" viewBox="0 0 10 10" fill="none" aria-hidden>
+										<path
+											d="M1.5 5.5 L4 8 L8.5 2.5"
+											stroke="currentColor"
+											strokeWidth="1.8"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
+									</svg>
+								</button>
+								<span
+									className="shrink-0 rounded-full"
+									style={{
+										width: 8,
+										height: 8,
+										background: r.color ?? "var(--w-ink-3)",
+									}}
+								/>
+								<span
+									className="min-w-0 flex-1 truncate font-body text-ink"
+									style={{ fontSize: 13 }}
+								>
+									{r.name}
+								</span>
+								{r.p1 && (
+									<span
+										className="shrink-0 font-mono"
+										style={{
+											fontSize: 10,
+											color: "var(--w-overdue)",
+											border: "1px solid var(--w-overdue)",
+											borderRadius: 5,
+											padding: "0 5px",
+										}}
+									>
+										P1
+									</span>
+								)}
 								<span
 									className="shrink-0 font-mono"
 									style={{
-										fontSize: 10,
-										color: "var(--w-overdue)",
-										border: "1px solid var(--w-overdue)",
-										borderRadius: 5,
-										padding: "0 5px",
+										fontSize: 11,
+										color: r.isOver ? "var(--w-overdue)" : "var(--w-ink-3)",
 									}}
 								>
-									P1
+									{r.due}
 								</span>
-							)}
-							<span
-								className="shrink-0 font-mono"
-								style={{
-									fontSize: 11,
-									color: r.isOver ? "var(--w-overdue)" : "var(--w-ink-3)",
-								}}
-							>
-								{r.due}
-							</span>
-						</OvRow>
-					))}
+							</OvRow>
+						))}
 					</div>
 				)}
 
@@ -1021,7 +1055,8 @@ export function Prehled() {
 					/>
 					<div className="mx-3 mb-2 grid grid-cols-2 rounded-lg border border-line bg-panel-2 p-[3px]">
 						{(["on_me", "for_others"] as const).map((side) => {
-							const count = side === "on_me" ? view.waiting.onMe.length : view.waiting.forOthers.length;
+							const count =
+								side === "on_me" ? view.waiting.onMe.length : view.waiting.forOthers.length;
 							return (
 								<button
 									key={side}
@@ -1035,7 +1070,8 @@ export function Prehled() {
 										color: waitingSide === side ? "var(--w-ink)" : "var(--w-ink-3)",
 									}}
 								>
-									{t(side === "on_me" ? "prehled.waitingOnMe" : "prehled.waitingForOthers")} · {waitingReady ? count : "—"}
+									{t(side === "on_me" ? "prehled.waitingOnMe" : "prehled.waitingForOthers")} ·{" "}
+									{waitingReady ? count : "—"}
 								</button>
 							);
 						})}
@@ -1050,144 +1086,163 @@ export function Prehled() {
 							)}
 						</div>
 					)}
-					{waitingReady && waitingRows.map((entry: WaitingRoomEntry) => (
-						<OvRow key={entry.key} label={entry.taskName} onClick={() => open(entry.taskId)}>
-							<span
-								aria-hidden
-								className="h-2 w-2 shrink-0 rounded-full"
-								style={{
-									background:
-										projById.get(entry.projectId ?? "")?.color ?? "var(--w-ink-3)",
-								}}
-							/>
-							<div className="min-w-0 flex-1">
-								<div className="flex items-center gap-1.5">
-									<span className="truncate font-display font-semibold text-ink" style={{ fontSize: 12.5 }}>
-										{entry.taskName}
-									</span>
-									<span className="shrink-0 rounded-full bg-panel-2 px-1.5 py-0.5 font-display font-semibold text-ink-3" style={{ fontSize: 9.5 }}>
-										{t(entry.source === "flow" ? "prehled.waitingFlow" : "prehled.waitingDependency")}
-									</span>
+					{waitingReady &&
+						waitingRows.map((entry: WaitingRoomEntry) => (
+							<OvRow key={entry.key} label={entry.taskName} onClick={() => open(entry.taskId)}>
+								<span
+									aria-hidden
+									className="h-2 w-2 shrink-0 rounded-full"
+									style={{
+										background: projById.get(entry.projectId ?? "")?.color ?? "var(--w-ink-3)",
+									}}
+								/>
+								<div className="min-w-0 flex-1">
+									<div className="flex items-center gap-1.5">
+										<span
+											className="truncate font-display font-semibold text-ink"
+											style={{ fontSize: 12.5 }}
+										>
+											{entry.taskName}
+										</span>
+										<span
+											className="shrink-0 rounded-full bg-panel-2 px-1.5 py-0.5 font-display font-semibold text-ink-3"
+											style={{ fontSize: 9.5 }}
+										>
+											{t(
+												entry.source === "flow"
+													? "prehled.waitingFlow"
+													: "prehled.waitingDependency",
+											)}
+										</span>
+									</div>
+									<div className="mt-0.5 truncate font-body text-ink-3" style={{ fontSize: 11.5 }}>
+										{t(
+											waitingSide === "on_me" ? "prehled.waitingUnlocks" : "prehled.waitingBlocks",
+											{ task: entry.relatedTaskName },
+										)}
+										{" · "}
+										{waitingPeople(
+											waitingSide === "on_me" ? entry.relatedOwnerIds : entry.ownerIds,
+											waitingSide === "on_me",
+										)}
+									</div>
 								</div>
-								<div className="mt-0.5 truncate font-body text-ink-3" style={{ fontSize: 11.5 }}>
-									{t(
-										waitingSide === "on_me"
-											? "prehled.waitingUnlocks"
-											: "prehled.waitingBlocks",
-										{ task: entry.relatedTaskName },
-									)}
-									{" · "}
-									{waitingPeople(
-										waitingSide === "on_me" ? entry.relatedOwnerIds : entry.ownerIds,
-										waitingSide === "on_me",
-									)}
-								</div>
-							</div>
-							{entry.priority === 1 && (
-								<span className="shrink-0 rounded border border-overdue px-1 font-mono text-overdue" style={{ fontSize: 10 }}>
-									P1
-								</span>
-							)}
-						</OvRow>
-					))}
+								{entry.priority === 1 && (
+									<span
+										className="shrink-0 rounded border border-overdue px-1 font-mono text-overdue"
+										style={{ fontSize: 10 }}
+									>
+										P1
+									</span>
+								)}
+							</OvRow>
+						))}
 				</div>
 
 				{/* Komunikace pro mě — zmínky, odpovědi a komentáře k mým úkolům. */}
 				{surface !== "provoz" && (
 					<div className={cardCls} style={cardStyle}>
-					<CardHead
-						title={t("prehled.cardCommunication")}
-						footLabel={
-							view.communication.length > 0
-								? t("prehled.communicationCount", { count: view.communication.length })
-								: undefined
-						}
-					/>
-					<div className="mx-3 mb-2 flex rounded-lg border border-line bg-panel-2 p-[3px]">
-						{(["all", "mentions", "tasks"] as const).map((filter) => (
-							<button
-								key={filter}
-								type="button"
-								aria-pressed={communicationFilter === filter}
-								onClick={() => setCommunicationFilter(filter)}
-								className="min-h-11 flex-1 rounded-md px-2 font-display font-semibold"
-								style={{
-									fontSize: 10.5,
-									background: communicationFilter === filter ? "var(--w-card)" : "transparent",
-									color: communicationFilter === filter ? "var(--w-ink)" : "var(--w-ink-3)",
-								}}
-							>
-								{t(`prehled.communicationFilter${filter.charAt(0).toUpperCase()}${filter.slice(1)}`)}
-							</button>
-						))}
-					</div>
-					{!ready && <LoadingNote />}
-					{ready && communicationRows.length === 0 && (
-						<div className="px-4 pt-1 pb-4 font-body text-ink-3" style={{ fontSize: 12.5 }}>
-							{t("prehled.communicationEmpty")}
+						<CardHead
+							title={t("prehled.cardCommunication")}
+							footLabel={
+								view.communication.length > 0
+									? t("prehled.communicationCount", { count: view.communication.length })
+									: undefined
+							}
+						/>
+						<div className="mx-3 mb-2 flex rounded-lg border border-line bg-panel-2 p-[3px]">
+							{(["all", "mentions", "tasks"] as const).map((filter) => (
+								<button
+									key={filter}
+									type="button"
+									aria-pressed={communicationFilter === filter}
+									onClick={() => setCommunicationFilter(filter)}
+									className="min-h-11 flex-1 rounded-md px-2 font-display font-semibold"
+									style={{
+										fontSize: 10.5,
+										background: communicationFilter === filter ? "var(--w-card)" : "transparent",
+										color: communicationFilter === filter ? "var(--w-ink)" : "var(--w-ink-3)",
+									}}
+								>
+									{t(
+										`prehled.communicationFilter${filter.charAt(0).toUpperCase()}${filter.slice(1)}`,
+									)}
+								</button>
+							))}
 						</div>
-					)}
-					{communicationRows.map((item) => (
-						<OvRow
-							key={item.id}
-							label={`${item.author || t("detail.timelineUnknownUser")}: ${item.taskName}`}
-							onClick={() => open(item.taskId)}
-						>
-							<span
+						{!ready && <LoadingNote />}
+						{ready && communicationRows.length === 0 && (
+							<div className="px-4 pt-1 pb-4 font-body text-ink-3" style={{ fontSize: 12.5 }}>
+								{t("prehled.communicationEmpty")}
+							</div>
+						)}
+						{communicationRows.map((item) => (
+							<OvRow
+								key={item.id}
+								label={`${item.author || t("detail.timelineUnknownUser")}: ${item.taskName}`}
+								onClick={() => open(item.taskId)}
+							>
+								<span
 									className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-display font-bold text-white"
 									style={{ fontSize: 9, background: "var(--w-avatar)" }}
-							>
-								{item.initials}
-							</span>
-							<div className="min-w-0 flex-1">
-								<div className="flex items-center gap-1.5">
-									{item.kind === "mention" && (
-										<span className="shrink-0 rounded-full bg-brass-soft px-1.5 py-0.5 font-display font-bold text-brass-text" style={{ fontSize: 9.5 }}>
-											@
+								>
+									{item.initials}
+								</span>
+								<div className="min-w-0 flex-1">
+									<div className="flex items-center gap-1.5">
+										{item.kind === "mention" && (
+											<span
+												className="shrink-0 rounded-full bg-brass-soft px-1.5 py-0.5 font-display font-bold text-brass-text"
+												style={{ fontSize: 9.5 }}
+											>
+												@
+											</span>
+										)}
+										<span
+											className="truncate font-display font-semibold text-ink"
+											style={{ fontSize: 12.5 }}
+										>
+											{item.author || t("detail.timelineUnknownUser")}
 										</span>
-									)}
-									<span className="truncate font-display font-semibold text-ink" style={{ fontSize: 12.5 }}>
-										{item.author || t("detail.timelineUnknownUser")}
-									</span>
-									<span className="truncate font-body text-ink-3" style={{ fontSize: 10.5 }}>
-										· {item.taskName}
-									</span>
+										<span className="truncate font-body text-ink-3" style={{ fontSize: 10.5 }}>
+											· {item.taskName}
+										</span>
+									</div>
+									<div className="mt-0.5 truncate font-body text-ink-2" style={{ fontSize: 12 }}>
+										{item.body}
+									</div>
 								</div>
-								<div className="mt-0.5 truncate font-body text-ink-2" style={{ fontSize: 12 }}>
-									{item.body}
-								</div>
-							</div>
-							<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 10.5 }}>
-								{communicationTime(item.createdAt)}
-							</span>
-						</OvRow>
-					))}
+								<span className="shrink-0 font-mono text-ink-3" style={{ fontSize: 10.5 }}>
+									{communicationTime(item.createdAt)}
+								</span>
+							</OvRow>
+						))}
 					</div>
 				)}
 
 				{/* Kalendář — měsíční widget s denní agendou (feedback 2026-07-11) */}
 				{surface === "overview" && (
 					<div className={cardCls} style={cardStyle}>
-					<CardHead
-						title={t("prehled.cardCalendar")}
-						footLabel={t("prehled.openUpcoming")}
-						onFoot={() => void navigate({ to: "/nadchazejici" })}
-					/>
-					<CalendarWidget
-						onDay={(dateISO) =>
-							setPeek({
-								kind: "day",
-								dateISO,
-								firm,
-								name: new Intl.DateTimeFormat(i18n.language, {
-									weekday: "long",
-									day: "numeric",
-									month: "long",
-								}).format(new Date(`${dateISO}T00:00:00`)),
-								openFull: () => void navigate({ to: "/nadchazejici" }),
-							})
-						}
-					/>
+						<CardHead
+							title={t("prehled.cardCalendar")}
+							footLabel={t("prehled.openUpcoming")}
+							onFoot={() => void navigate({ to: "/nadchazejici" })}
+						/>
+						<CalendarWidget
+							onDay={(dateISO) =>
+								setPeek({
+									kind: "day",
+									dateISO,
+									firm,
+									name: new Intl.DateTimeFormat(i18n.language, {
+										weekday: "long",
+										day: "numeric",
+										month: "long",
+									}).format(new Date(`${dateISO}T00:00:00`)),
+									openFull: () => void navigate({ to: "/nadchazejici" }),
+								})
+							}
+						/>
 					</div>
 				)}
 
@@ -1540,11 +1595,7 @@ function OvRow({
 						? "pointer-events-none relative z-[2]"
 						: "pointer-events-none relative z-[2] flex items-center"
 				}
-				style={
-					column
-						? { padding: "9px 16px 11px" }
-						: { gap: 10, padding: "8px 16px" }
-				}
+				style={column ? { padding: "9px 16px 11px" } : { gap: 10, padding: "8px 16px" }}
 			>
 				{children}
 			</div>

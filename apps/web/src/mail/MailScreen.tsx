@@ -7,7 +7,7 @@
  * z aplikace (kontrakt `vzhled`) přes data-wm-theme scope.
  */
 
-import { useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
 	type KeyboardEvent as ReactKeyboardEvent,
 	type PointerEvent as ReactPointerEvent,
@@ -20,6 +20,7 @@ import { useTheme } from "../layout/useTheme";
 import "./mail.css";
 import { storageGet, storageSet } from "../lib/storage";
 import { showToast } from "../lib/toast";
+import { openWatsonWindow } from "../lib/windowSurfaces";
 import { CheatSheet } from "./CheatSheet";
 import { MailDemoBanner } from "./DemoBanner";
 import { DeniScreen } from "./DeniScreen";
@@ -40,10 +41,12 @@ const openSearch = () => window.dispatchEvent(new Event("watson:open-palette"));
 export function MailScreen() {
 	const m = useMail();
 	const personalMail = usePersonalMail(m.scr === "mail" && m.folder === "osobni");
+	const navigate = useNavigate();
 	const search = useSearch({ from: "/mail" });
 	const { theme } = useTheme();
 	const deepLinkedThread = useRef<string | null>(null);
 	const deepLinkedPersonal = useRef<string | null>(null);
+	const applyingThreadDeepLink = useRef(false);
 	const handledConnection = useRef<string | null>(null);
 	useEffect(() => {
 		if (!search.mailConnection) return;
@@ -51,7 +54,9 @@ export function MailScreen() {
 		if (handledConnection.current === key) return;
 		handledConnection.current = key;
 		if (search.mailConnection === "success") {
-			showToast("Google účet je připojený a bezpečný sync běží na pozadí. Skutečné zprávy najdeš v Osobní poště.");
+			showToast(
+				"Google účet je připojený a bezpečný sync běží na pozadí. Skutečné zprávy najdeš v Osobní poště.",
+			);
 		} else {
 			const messages: Record<string, string> = {
 				mail_oauth_denied: "Google souhlas byl zrušen. Žádný účet ani credential nevznikl.",
@@ -65,7 +70,9 @@ export function MailScreen() {
 				mail_rate_limited: "Google teď omezuje počet požadavků. Zkus připojení později.",
 				mail_auth_session_missing: "Přihlášení vypršelo. Přihlas se a spusť připojení znovu.",
 			};
-			showToast(messages[search.code ?? ""] ?? "Připojení se nepodařilo bezpečně dokončit. Zkus to znovu.");
+			showToast(
+				messages[search.code ?? ""] ?? "Připojení se nepodařilo bezpečně dokončit. Zkus to znovu.",
+			);
 		}
 		const cleaned = new URL(window.location.href);
 		cleaned.searchParams.delete("mailConnection");
@@ -78,7 +85,8 @@ export function MailScreen() {
 		if (
 			deepLinkedPersonal.current === key ||
 			!personalMail.accounts.some((account) => account.id === search.mailAccount)
-		) return;
+		)
+			return;
 		deepLinkedPersonal.current = key;
 		m.setScr("mail");
 		m.setFolder("osobni");
@@ -96,9 +104,54 @@ export function MailScreen() {
 		if (!id || deepLinkedThread.current === id || !m.threads.some((thread) => thread.id === id))
 			return;
 		deepLinkedThread.current = id;
+		applyingThreadDeepLink.current = true;
 		m.setScr("mail");
 		m.openThread(id);
 	}, [search.vlakno, m.threads, m.setScr, m.openThread]);
+	useEffect(() => {
+		const activeThread =
+			m.scr === "mail" && m.folder !== "osobni" && m.mstep === "thread" ? m.sel : null;
+		if (applyingThreadDeepLink.current) {
+			if (activeThread === search.vlakno) applyingThreadDeepLink.current = false;
+			return;
+		}
+		if (activeThread === (search.vlakno ?? null)) return;
+		deepLinkedThread.current = activeThread;
+		void navigate({
+			to: "/mail",
+			search: (current) => ({ ...current, vlakno: activeThread ?? undefined }),
+			replace: true,
+		});
+	}, [m.folder, m.mstep, m.scr, m.sel, navigate, search.vlakno]);
+	const openPersonalMessage = useCallback(
+		(message: Parameters<typeof personalMail.openMessage>[0]) => {
+			deepLinkedPersonal.current = `${message.accountId}:${message.id}`;
+			void navigate({
+				to: "/mail",
+				search: (current) => ({
+					...current,
+					vlakno: undefined,
+					mailAccount: message.accountId,
+					mailMessage: message.id,
+				}),
+				replace: true,
+			});
+			return personalMail.openMessage(message);
+		},
+		[navigate, personalMail.openMessage],
+	);
+	const closePersonalMessage = useCallback(() => {
+		personalMail.closeMessage();
+		void navigate({
+			to: "/mail",
+			search: (current) => ({
+				...current,
+				mailAccount: undefined,
+				mailMessage: undefined,
+			}),
+			replace: true,
+		});
+	}, [navigate, personalMail.closeMessage]);
 	const [drawer, setDrawer] = useState(false);
 	// overlaye: hledání (⌘K, /), Nová zpráva (C, Napsat), tahák zkratek (?)
 	const [newOn, setNewOn] = useState(false);
@@ -178,7 +231,9 @@ export function MailScreen() {
 			e.preventDefault();
 			const el = document.querySelector<HTMLElement>("[data-listpane]");
 			const current = el?.getBoundingClientRect().width ?? 340;
-			const next = Math.round(Math.max(300, Math.min(620, current + (e.key === "ArrowLeft" ? -20 : 20))));
+			const next = Math.round(
+				Math.max(300, Math.min(620, current + (e.key === "ArrowLeft" ? -20 : 20))),
+			);
 			lwRef.current = `${next}px`;
 			if (el) el.style.width = lwRef.current;
 			setListWidth(next);
@@ -315,6 +370,7 @@ export function MailScreen() {
 					onCloseDrawer={() => setDrawer(false)}
 					sube={sube}
 					onToggleSube={toggleSube}
+					onOpenWindow={() => openWatsonWindow(window.location.href, "focus")}
 					personalSummary={{
 						accounts: personalMail.accounts,
 						unreadCount: personalMail.unreadCount,
@@ -328,88 +384,94 @@ export function MailScreen() {
 				{m.scr === "mail" ? (
 					m.folder === "osobni" ? (
 						<PersonalMailWorkspace
-							model={personalMail}
-							onOpenDrawer={() => setDrawer(true)}
-						/>
-					) : <>
-						<MailList
-							listWidth={listWidth}
-							onOpenDrawer={() => setDrawer(true)}
-							onSearch={openSearch}
-							onCompose={() => setNewOn(true)}
-						/>
-						{/* táhlo šířky seznamu + Full Screen čtení (prototyp ř. 779–784) */}
-						<div
-							data-rz
-							data-tabup
-							style={{
-								width: 9,
-								flex: "none",
-								cursor: "col-resize",
-								position: "relative",
-								margin: "0 -5px 0 -4px",
-								zIndex: 6,
+							model={{
+								...personalMail,
+								openMessage: openPersonalMessage,
+								closeMessage: closePersonalMessage,
 							}}
-						>
+							onOpenDrawer={() => setDrawer(true)}
+						/>
+					) : (
+						<>
+							<MailList
+								listWidth={listWidth}
+								onOpenDrawer={() => setDrawer(true)}
+								onSearch={openSearch}
+								onCompose={() => setNewOn(true)}
+							/>
+							{/* táhlo šířky seznamu + Full Screen čtení (prototyp ř. 779–784) */}
 							<div
-								role="separator"
-								aria-orientation="vertical"
-								aria-label="Šířka seznamu zpráv"
-								aria-valuemin={300}
-								aria-valuemax={620}
-								aria-valuenow={listWidth}
-								tabIndex={0}
-								onPointerDown={rzDown}
-								onDoubleClick={rzReset}
-								onKeyDown={rzKey}
-								title="Táhni pro změnu šířky seznamu · dvojklik vrátí výchozí"
-								style={{ position: "absolute", inset: 0, cursor: "col-resize" }}
-							>
-								<span
-									data-rzline
-									style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1 }}
-								/>
-							</div>
-							<button
-								type="button"
-								onClick={() => {
-									const n = !lcol;
-									setLcol(n);
-									showToast(
-										n
-											? "Full Screen — čtení na celou šířku. Šipkou na děliči se vrátíš."
-											: "Split View — seznam vedle čtení.",
-									);
-								}}
-								title={
-									lcol ? "Zobrazit seznam (Split View)" : "Skrýt seznam — čtení na celou šířku"
-								}
+								data-rz
+								data-tabup
 								style={{
-									position: "absolute",
-									top: "50%",
-									left: -18,
-									transform: "translateY(-50%)",
-									width: 44,
-									height: 44,
-									zIndex: 1,
-									borderRadius: 9,
-									border: "1px solid var(--line)",
-									background: "var(--panel)",
-									display: "flex",
-									alignItems: "center",
-									justifyContent: "center",
-									cursor: "pointer",
-									color: "var(--ink-3)",
-									boxShadow: "var(--shadow-sm)",
-									fontFamily: "var(--w-font-mono)",
-									fontSize: 11,
+									width: 9,
+									flex: "none",
+									cursor: "col-resize",
+									position: "relative",
+									margin: "0 -5px 0 -4px",
+									zIndex: 6,
 								}}
 							>
-								{lcol ? "›" : "‹"}
-							</button>
-						</div>
-						<MailThread />
-					</>
+								<div
+									role="separator"
+									aria-orientation="vertical"
+									aria-label="Šířka seznamu zpráv"
+									aria-valuemin={300}
+									aria-valuemax={620}
+									aria-valuenow={listWidth}
+									tabIndex={0}
+									onPointerDown={rzDown}
+									onDoubleClick={rzReset}
+									onKeyDown={rzKey}
+									title="Táhni pro změnu šířky seznamu · dvojklik vrátí výchozí"
+									style={{ position: "absolute", inset: 0, cursor: "col-resize" }}
+								>
+									<span
+										data-rzline
+										style={{ position: "absolute", left: 4, top: 0, bottom: 0, width: 1 }}
+									/>
+								</div>
+								<button
+									type="button"
+									onClick={() => {
+										const n = !lcol;
+										setLcol(n);
+										showToast(
+											n
+												? "Full Screen — čtení na celou šířku. Šipkou na děliči se vrátíš."
+												: "Split View — seznam vedle čtení.",
+										);
+									}}
+									title={
+										lcol ? "Zobrazit seznam (Split View)" : "Skrýt seznam — čtení na celou šířku"
+									}
+									style={{
+										position: "absolute",
+										top: "50%",
+										left: -18,
+										transform: "translateY(-50%)",
+										width: 44,
+										height: 44,
+										zIndex: 1,
+										borderRadius: 9,
+										border: "1px solid var(--line)",
+										background: "var(--panel)",
+										display: "flex",
+										alignItems: "center",
+										justifyContent: "center",
+										cursor: "pointer",
+										color: "var(--ink-3)",
+										boxShadow: "var(--shadow-sm)",
+										fontFamily: "var(--w-font-mono)",
+										fontSize: 11,
+									}}
+								>
+									{lcol ? "›" : "‹"}
+								</button>
+							</div>
+							<MailThread />
+						</>
+					)
 				) : m.scr === "deni" ? (
 					<DeniScreen />
 				) : m.scr === "prirucka" ? (

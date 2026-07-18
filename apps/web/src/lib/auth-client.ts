@@ -1,6 +1,7 @@
 import { inferAdditionalFields, twoFactorClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { API_URL } from "./api";
+import { publishWindowEvent } from "./windowCoordinator";
 
 /** Better Auth klient — míří na náš Hono backend (/api/auth). */
 export const authClient = createAuthClient({
@@ -16,4 +17,10 @@ export const authClient = createAuthClient({
 	],
 });
 
-export const { signIn, signUp, signOut, useSession } = authClient;
+export const { signIn, signUp, useSession } = authClient;
+
+export const signOut: typeof authClient.signOut = async (...args) => {
+	const result = await authClient.signOut(...args);
+	publishWindowEvent("session-invalidated", {});
+	return result;
+};

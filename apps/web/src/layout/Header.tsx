@@ -11,6 +11,7 @@ import { useListSearch } from "../lib/listSearch";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useViewMode, type ViewMode } from "../lib/viewMode";
 import { useWatson } from "../lib/watson";
+import { openWatsonWindow, windowSurfaceForPath } from "../lib/windowSurfaces";
 import { ALL_NAV } from "./nav";
 import { useTheme } from "./useTheme";
 
@@ -24,11 +25,14 @@ const ICON_BTN_TEXT = `${ICON_BASE} hover:text-brass-text`;
 export function Header() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const navigateUpcoming = useNavigate({ from: "/nadchazejici" });
+	const navigateTasks = useNavigate({ from: "/ukoly" });
 	const { openAdd } = useAddTask();
 	const { toggleWatson } = useWatson();
 	const path = useRouterState({ select: (s) => s.location.pathname });
 	const active = ALL_NAV.find((n) => (n.to === "/" ? path === "/" : path.startsWith(n.to)));
 	const title = active ? t(active.labelKey) : t("app.name");
+	const windowSurface = windowSurfaceForPath(path);
 	const { theme, toggle } = useTheme();
 	const isDark = theme === "dark";
 	// Mobil: header nesmí přetékat 375px. Redundantní ovládání skryto (Watson = spodní lišta,
@@ -58,7 +62,11 @@ export function Header() {
 		"SELECT id, name FROM projects",
 	);
 	// Sloučený modul Úkoly (Dnes/Vše/Zásobník žijí pod „/" i „/ukoly") — záložka z URL.
-	const search = useSearch({ strict: false }) as { tab?: string; projekt?: string };
+	const search = useSearch({ strict: false }) as {
+		tab?: string;
+		projekt?: string;
+		zobrazeni?: ViewMode;
+	};
 	const inTaskModule = path === "/" || path.startsWith("/ukoly") || path.startsWith("/schranka");
 	const activeTab = path.startsWith("/schranka")
 		? "prichozi"
@@ -79,8 +87,7 @@ export function Header() {
 		const backlogView = inTaskModule && activeTab === "zasobnik";
 		const src = (openRows ?? []).filter((r) => {
 			const d = r.due_date ? r.due_date.slice(0, 10) : null;
-			if (incomingView)
-				return !r.parent_id && !d && !!r.project_id && inboxIds.has(r.project_id);
+			if (incomingView) return !r.parent_id && !d && !!r.project_id && inboxIds.has(r.project_id);
 			if (!d && r.project_id && inboxIds.has(r.project_id)) return false;
 			if (dnesView)
 				// jen s termínem dnes/zpožděné (nedatované už nepatří do Dnes);
@@ -129,12 +136,30 @@ export function Header() {
 		board: t("toolbar.board"),
 		calendar: t("calendar.viewCalendar"),
 	};
+	const selectedView =
+		path.startsWith("/nadchazejici") || path.startsWith("/ukoly")
+			? (search.zobrazeni ?? view)
+			: view;
+	const selectView = (nextView: ViewMode) => {
+		setView(nextView);
+		if (path.startsWith("/nadchazejici")) {
+			void navigateUpcoming({
+				to: "/nadchazejici",
+				search: (current) => ({ ...current, zobrazeni: nextView }),
+				replace: true,
+			});
+		} else if (path.startsWith("/ukoly")) {
+			void navigateTasks({
+				to: "/ukoly",
+				search: (current) => ({ ...current, zobrazeni: nextView }),
+				replace: true,
+			});
+		}
+	};
 
 	return (
 		<header
-			className={`flex items-center gap-3 border-line border-b bg-card px-4 ${
-				isMobile ? "flex-wrap overflow-visible" : "overflow-x-auto"
-			}`}
+			className={`flex items-center gap-3 border-line border-b bg-card px-4 ${isMobile ? "flex-wrap overflow-visible" : "overflow-x-auto"}`}
 			style={{ padding: "11px 16px", flex: "none" }}
 		>
 			<div style={{ flex: "none", minWidth: 0, maxWidth: isMobile ? "40vw" : "34vw" }}>
@@ -170,15 +195,15 @@ export function Header() {
 							<button
 								key={v}
 								type="button"
-								onClick={() => setView(v)}
-								aria-pressed={view === v}
+								onClick={() => selectView(v)}
+								aria-pressed={selectedView === v}
 								className="cursor-pointer font-display font-semibold"
 								style={{
 									fontSize: 12.5,
 									padding: "5px 12px",
 									borderRadius: 7,
-									background: view === v ? "var(--w-card)" : "transparent",
-									color: view === v ? "var(--w-ink)" : "var(--w-ink-3)",
+									background: selectedView === v ? "var(--w-card)" : "transparent",
+									color: selectedView === v ? "var(--w-ink)" : "var(--w-ink-3)",
 								}}
 							>
 								{viewLabels[v]}
@@ -348,6 +373,56 @@ export function Header() {
 
 				<AvailabilityQuickToggle isMobile={isMobile} />
 
+				{!isMobile && (
+					<button
+						type="button"
+						onClick={() =>
+							openWatsonWindow(window.location.href, windowSurface?.focus ? "focus" : "app")
+						}
+						title={windowSurface?.focus ? t("shell.openFocusedWindow") : t("shell.openNewWindow")}
+						aria-label={
+							windowSurface?.focus ? t("shell.openFocusedWindow") : t("shell.openNewWindow")
+						}
+						className={ICON_BTN_BORDER}
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.3"
+							aria-hidden
+						>
+							<rect x="2" y="4.5" width="8.5" height="8.5" rx="1.5" />
+							<path d="M6 2.5h6.5c.55 0 1 .45 1 1V10" />
+							<path d="m9.5 6.5 4-4m-3.5 0h3.5V6" />
+						</svg>
+					</button>
+				)}
+				{!isMobile && windowSurface?.wallboard && (
+					<button
+						type="button"
+						onClick={() => openWatsonWindow(window.location.href, "wallboard")}
+						title={t("shell.openWallboard")}
+						aria-label={t("shell.openWallboard")}
+						className={ICON_BTN_BORDER}
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.3"
+							aria-hidden
+						>
+							<rect x="2" y="2.5" width="12" height="9" rx="1.5" />
+							<path d="M6 14h4M8 11.5V14" />
+						</svg>
+					</button>
+				)}
+
 				<div className="relative">
 					<button
 						type="button"
@@ -503,12 +578,14 @@ export function Header() {
 						<button
 							key={v}
 							type="button"
-							onClick={() => setView(v)}
+							onClick={() => selectView(v)}
+							aria-pressed={selectedView === v}
 							className="min-h-11 flex-1 rounded-lg font-display font-semibold"
 							style={{
 								fontSize: 12.5,
-								background: view === v ? "var(--w-brass-soft)" : "transparent",
-								color: view === v ? "var(--w-brass-text)" : "var(--w-ink-3)",
+								background: selectedView === v ? "var(--w-brass-soft)" : "transparent",
+								color:
+									selectedView === v ? "var(--w-brass-text)" : "var(--w-ink-3)",
 							}}
 						>
 							{viewLabels[v]}
