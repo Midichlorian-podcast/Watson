@@ -211,6 +211,7 @@ async function claimDue(now: Date): Promise<(DueReminder & { attempts: number })
 
 type ReminderDependencies = {
 	sendEmail?: typeof sendTaskReminderEmail;
+	sendPush?: typeof deliverPushToUser;
 };
 
 /** Projde splatné připomínky přes delivery state machine a označí sent jen po ACK. */
@@ -221,6 +222,7 @@ export async function scanAndSendDue(
 	const db = getDb();
 	const rows = await claimDue(now);
 	const sendEmail = dependencies.sendEmail ?? sendTaskReminderEmail;
+	const sendPush = dependencies.sendPush ?? deliverPushToUser;
 
 	let fired = 0;
 	for (const r of rows) {
@@ -254,7 +256,7 @@ export async function scanAndSendDue(
 						providerMessageId: result.ok ? result.messageId : null,
 						permanent: result.ok ? false : result.permanent,
 					}))
-				: await deliverPushToUser(r.userId, {
+				: await sendPush(r.userId, {
 						title: "Watson · připomínka",
 						body: r.taskName,
 						tag: `reminder-${r.id}`,

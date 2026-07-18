@@ -130,6 +130,12 @@ async function main() {
 				emailCalls++;
 				return { ok: true as const, messageId: `provider-${input.reminderId}` };
 			},
+			sendPush: async () => ({
+				delivered: 0,
+				errorCode: "provider_unavailable",
+				providerMessageId: null,
+				permanent: false,
+			}),
 		};
 		// Dva workery současně: SKIP LOCKED dovolí claim pouze jednomu.
 		await Promise.all([
@@ -190,7 +196,7 @@ async function main() {
 				.update(reminders)
 				.set({ nextAttemptAt: new Date(Date.now() - 1_000) })
 				.where(eq(reminders.id, pushId));
-			await scanAndSendDue();
+			await scanAndSendDue(new Date(), dependencies);
 		}
 		const [dead] = await db
 			.select({

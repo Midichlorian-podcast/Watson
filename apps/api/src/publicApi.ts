@@ -8,7 +8,7 @@
  * - the control plane is owner/admin only and remains behind session + 2FA middleware;
  * - webhook delivery is implemented separately in webhookDelivery.ts.
  */
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
 	and,
 	apiClients,
@@ -32,6 +32,7 @@ import { z } from "zod";
 import { auth } from "./auth";
 import { env } from "./env";
 import { consumeRateLimit } from "./rateLimit";
+import { webhookSigningSecret } from "./webhookSigning";
 
 export const PUBLIC_API_SCOPES = ["projects:read", "tasks:read", "tasks:write"] as const;
 export const WEBHOOK_EVENT_TYPES = [
@@ -228,12 +229,6 @@ function decodeCursor(value: string | undefined): { updatedAt: Date; id: string 
 	} catch {
 		return null;
 	}
-}
-
-export function webhookSigningSecret(subscriptionId: string): string {
-	const root = env.publicWebhookSigningSecret;
-	if (!root) throw new Error("public_webhook_signing_secret_missing");
-	return `whsec_${createHmac("sha256", root).update(`watson-webhook:v1:${subscriptionId}`).digest("base64url")}`;
 }
 
 function validEndpoint(value: string): boolean {

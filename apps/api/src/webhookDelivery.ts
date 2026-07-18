@@ -12,7 +12,7 @@ import http from "node:http";
 import https from "node:https";
 import { isIP } from "node:net";
 import { getDb, sql } from "@watson/db";
-import { webhookSigningSecret } from "./publicApi";
+import { webhookSigningSecret } from "./webhookSigning";
 
 const MAX_ATTEMPTS = 8;
 const REQUEST_TIMEOUT_MS = 5_000;
