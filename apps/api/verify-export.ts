@@ -26,17 +26,29 @@ async function login(email: string): Promise<string> {
 		body: JSON.stringify({ email, callbackURL: "http://localhost:5173/" }),
 	});
 	if (!response.ok) throw new Error(`magic-link: ${response.status}`);
-	const rows = (await db.execute(
-		sql`SELECT identifier FROM verifications ORDER BY created_at DESC LIMIT 1`,
-	)) as { identifier: string }[];
+	const rows = (await db.execute(sql`
+		SELECT identifier FROM verifications
+		WHERE value::jsonb->>'email' = ${email}
+		ORDER BY created_at DESC, id DESC LIMIT 1
+	`)) as { identifier: string }[];
+	const token = rows[0]?.identifier;
+	if (!token) throw new Error("magic-link token fixture missing");
 	const verified = await fetch(
-		`${API}/api/auth/magic-link/verify?token=${rows[0]?.identifier}&callbackURL=http://localhost:5173/`,
+		`${API}/api/auth/magic-link/verify?token=${token}&callbackURL=${encodeURIComponent("http://localhost:5173/")}`,
 		{ redirect: "manual" },
 	);
-	const cookie = (verified.headers.getSetCookie?.() ?? [])
-		.map((value) => value.split(";")[0])
+	const setCookies = verified.headers.getSetCookie?.() ?? [];
+	const raw = setCookies.length > 0 ? setCookies.join("; ") : (verified.headers.get("set-cookie") ?? "");
+	const cookie = raw
+		.split(/,(?=\s*\w+=)/)
+		.map((value) => value.split(";")[0]?.trim())
+		.filter(Boolean)
 		.join("; ");
-	if (!cookie) throw new Error("chybí session cookie");
+	if (!cookie) {
+		const location = verified.headers.get("location");
+		const error = location ? new URL(location, API).searchParams.get("error") : null;
+		throw new Error(`magic-link verify failed: status=${verified.status}, error=${error ?? "none"}`);
+	}
 	return cookie;
 }
 
