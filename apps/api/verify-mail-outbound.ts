@@ -7,6 +7,7 @@ import {
 	eq,
 	getDb,
 	mailAccounts,
+	mailMessages,
 	mailOutboundMessages,
 	memberships,
 	users,
@@ -14,6 +15,7 @@ import {
 } from "@watson/db";
 import { hashPassword } from "better-auth/crypto";
 import { scanMailOutbound } from "./src/mailOutbound";
+import { encryptMailContent } from "./src/mailContentVault";
 
 const API = process.env.MAIL_API ?? "http://127.0.0.1:8790";
 const STUB = process.env.MAIL_GOOGLE_API_BASE_URL ?? "http://127.0.0.1:8793";
@@ -141,6 +143,7 @@ function command(
 		subject: string;
 		textBody: string;
 		sendAt: string | null;
+		replyToMessageId: string | null;
 	}> = {},
 ) {
 	return {
@@ -152,6 +155,7 @@ function command(
 		subject: overrides.subject ?? "Watson odchozí důkaz",
 		textBody: overrides.textBody ?? "Citlivé tělo odchozího e-mailu.",
 		...(overrides.sendAt === undefined ? {} : { sendAt: overrides.sendAt }),
+		...(overrides.replyToMessageId === undefined ? {} : { replyToMessageId: overrides.replyToMessageId }),
 	};
 }
 
@@ -192,7 +196,41 @@ async function main() {
 				.where(eq(mailAccounts.ownerUserId, owner.userId))
 				.limit(1)
 		)[0];
-		if (!account) throw new Error("mail outbound account missing");
+			if (!account) throw new Error("mail outbound account missing");
+			const replySourceId = crypto.randomUUID();
+			const replyProviderId = "reply-source-001";
+			const replyThreadId = "thread-reply-source-001";
+			const replySourceContent = {
+				subject: "Původní zpráva",
+				from: "Původní odesílatel <reply-source@example.test>",
+				to: [owner.email],
+				cc: [],
+				replyTo: "",
+				dateHeader: new Date().toUTCString(),
+				authenticationResults: "spf=pass; dkim=pass; dmarc=pass",
+				returnPath: "<reply-source@example.test>",
+				messageIdHeader: "<reply-source@example.test>",
+				references: ["<reply-root@example.test>"],
+				snippet: "Původní zpráva",
+				textBody: "Původní text, který se nesmí propsat do auditu.",
+				htmlBody: "",
+				attachments: [],
+			};
+			await db.insert(mailMessages).values({
+				id: replySourceId,
+				accountId: account.id,
+				providerMessageId: replyProviderId,
+				providerThreadId: replyThreadId,
+				historyId: "999001",
+				internalDate: new Date(),
+				labelIds: ["INBOX"],
+				sizeEstimate: 512,
+				lastSeenSyncGeneration: crypto.randomUUID(),
+				...encryptMailContent(
+					{ accountId: account.id, provider: "google", providerMessageId: replyProviderId },
+					replySourceContent,
+				),
+			});
 
 		let response = await request(null, `/api/mail/accounts/${account.id}/outbound`);
 		check("odchozí registr je bez session fail-closed", response.status === 401, response);
@@ -273,8 +311,8 @@ async function main() {
 				sentAfterNormal.messages.length === 1,
 			{ normalRow, sentAfterNormal },
 		);
-		check(
-			"provider dostane korektní MIME s To/Cc/Bcc, stabilním ID a UTF-8 tělem",
+			check(
+				"provider dostane korektní MIME s To/Cc/Bcc, stabilním ID a UTF-8 tělem",
 			Boolean(normalSent) &&
 				/^To: recipient@example\.test$/m.test(normalSent?.raw ?? "") &&
 				/^Cc: copy@example\.test$/m.test(normalSent?.raw ?? "") &&
@@ -283,8 +321,34 @@ async function main() {
 				(normalSent?.raw ?? "").includes(
 					Buffer.from(normalPayload.textBody, "utf8").toString("base64"),
 				),
-			normalSent,
-		);
+				normalSent,
+			);
+
+			const missingReply = command("reply@example.test", {
+				replyToMessageId: crypto.randomUUID(),
+				subject: "Re: neexistující zpráva",
+			});
+			response = await enqueue(ownerCookie, account.id, missingReply);
+			check("odpověď nelze navázat na cizí nebo neexistující zprávu", response.status === 404, response);
+			const replyPayload = command("reply-source@example.test", {
+				replyToMessageId: replySourceId,
+				subject: "Re: Původní zpráva",
+				textBody: "Bezpečná odpověď ve vlákně.",
+			});
+			response = await enqueue(ownerCookie, account.id, replyPayload);
+			check("odpověď vstoupí do stejné šifrované Undo fronty", response.status === 201, response);
+			await scanMailOutbound(due);
+			const threadedSent = (await sent(owner.email)).messages.find(
+				(item) => item.messageId === `watson-${replyPayload.id}@watson.invalid`,
+			);
+			check(
+				"server odvodí RFC hlavičky a provider thread pouze z ownerovy zdrojové zprávy",
+				Boolean(threadedSent) &&
+					threadedSent?.threadId === replyThreadId &&
+					/^In-Reply-To: <reply-source@example\.test>$/m.test(threadedSent.raw) &&
+					/^References: <reply-root@example\.test> <reply-source@example\.test>$/m.test(threadedSent.raw),
+				threadedSent,
+			);
 		response = await request(ownerCookie, `/api/mail/accounts/${account.id}/outbound`);
 		const listed = response.body.outbound as Array<Record<string, unknown>> | undefined;
 		check(

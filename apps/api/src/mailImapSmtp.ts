@@ -300,8 +300,16 @@ async function syncImapPage(state: ClaimedImap) {
 					const htmlRaw = typeof parsed.html === "string" ? parsed.html : "";
 					const textBody = limitUtf8(textRaw, MAX_TEXT_BYTES);
 					const htmlBody = limitUtf8(htmlRaw, MAX_HTML_BYTES);
-					const providerId = `imap-${uidValidity}-${message.uid}`;
-					const root = parsed.inReplyTo ?? parsed.references?.at(-1) ?? parsed.messageId ?? providerId;
+						const providerId = `imap-${uidValidity}-${message.uid}`;
+						const root = parsed.inReplyTo ?? parsed.references?.at(-1) ?? parsed.messageId ?? providerId;
+						const references = (Array.isArray(parsed.references)
+							? parsed.references
+							: parsed.references
+								? [parsed.references]
+								: [])
+							.map((value) => value.trim())
+							.filter((value) => /^<[^<>\r\n]{1,998}>$/.test(value))
+							.slice(-100);
 					const flags = message.flags ?? new Set<string>();
 					const dateValue = message.internalDate ?? parsed.date;
 					const internalDate = dateValue instanceof Date ? dateValue : dateValue ? new Date(dateValue) : null;
@@ -310,7 +318,8 @@ async function syncImapPage(state: ClaimedImap) {
 						subject: (parsed.subject ?? "").slice(0, 32_768), from: parsed.from?.text?.slice(0, 32_768) ?? "",
 						to: addresses(parsed.to), cc: addresses(parsed.cc), replyTo: parsed.replyTo?.text?.slice(0, 32_768) ?? "",
 						dateHeader: parsed.date?.toUTCString() ?? "", authenticationResults: String(parsed.headers.get("authentication-results") ?? "").slice(0, 32_768),
-						returnPath: String(parsed.headers.get("return-path") ?? "").slice(0, 32_768), messageIdHeader: (parsed.messageId ?? "").slice(0, 32_768),
+							returnPath: String(parsed.headers.get("return-path") ?? "").slice(0, 32_768), messageIdHeader: (parsed.messageId ?? "").slice(0, 32_768),
+							references,
 						snippet: textBody.replace(/\s+/g, " ").trim().slice(0, 500), textBody, htmlBody,
 						attachments: parsed.attachments.slice(0, 256).map((attachment) => ({ filename: attachment.filename?.slice(0, 1024) ?? "", mimeType: attachment.contentType.slice(0, 256), size: attachment.size, attachmentId: null })),
 					} });

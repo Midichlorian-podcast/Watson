@@ -51,6 +51,7 @@ export type EnqueuePersonalMailInput = {
 	subject: string;
 	textBody: string;
 	sendAt: string | null;
+	replyToMessageId?: string | null;
 };
 
 export type PersonalMailExecution = {
@@ -517,6 +518,7 @@ export function usePersonalMail(enabled: boolean) {
 							subject: input.subject,
 							textBody: input.textBody,
 							sendAt: input.sendAt,
+							replyToMessageId: input.replyToMessageId ?? null,
 						}),
 					},
 				);

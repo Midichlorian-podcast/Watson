@@ -47,6 +47,7 @@ const storedContentSchema = z.object({
 	authenticationResults: z.string().max(32_768).default(""),
 	returnPath: z.string().max(32_768).default(""),
 	messageIdHeader: z.string().max(32_768).default(""),
+	references: z.array(z.string().max(32_768)).max(100).default([]),
 	snippet: z.string().max(32_768),
 	textBody: z.string().max(256 * 1024),
 	htmlBody: z.string().max(512 * 1024),

@@ -366,10 +366,47 @@ async function run(browserName: "chromium" | "webkit") {
 		await personDialog.getByText("Zprávy v synchronizaci", { exact: true }).waitFor();
 		await assertAxeClean(page, `${browserName}_person_card`);
 		await personDialog.getByRole("button", { name: "Zavřít", exact: true }).click();
-		if ((await workspace.getByRole("button", { name: /Odpovědět|Přeposlat|Archivovat/ }).count()) !== 0) {
-			throw new Error("personal_mail_ui_demo_action_exposed");
-		}
-		await assertNoOverflow(page, `${browserName}_desktop`);
+			await workspace.getByRole("button", { name: "Odpovědět", exact: true }).click();
+			composer = page.getByRole("dialog", { name: "Odpověď na zprávu", exact: true });
+			if (await composer.locator("select").isEnabled()) {
+				throw new Error("personal_mail_ui_reply_account_switch_exposed");
+			}
+			if ((await composer.getByLabel("Komu", { exact: true }).inputValue()) !== "sender-3@example.test") {
+				throw new Error("personal_mail_ui_reply_recipient_missing");
+			}
+			if ((await composer.getByLabel("Předmět", { exact: true }).inputValue()) !== "Re: Synchronizovaná zpráva 3") {
+				throw new Error("personal_mail_ui_reply_subject_missing");
+			}
+			await composer.getByLabel("Zpráva", { exact: true }).fill("Odpověď z detailu zprávy.");
+			await assertAxeClean(page, `${browserName}_threaded_reply_composer`);
+			if (SCREENSHOT_DIR) {
+				await mkdir(SCREENSHOT_DIR, { recursive: true });
+				await composer.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-threaded-reply.png` });
+			}
+			await composer.getByRole("button", { name: "Odeslat", exact: true }).click();
+			await composer.waitFor({ state: "hidden" });
+			const replyQueued = (
+				await db
+					.select()
+					.from(mailOutboundMessages)
+					.where(
+						and(
+							eq(mailOutboundMessages.accountId, account.id),
+							eq(mailOutboundMessages.status, "queued"),
+						),
+					)
+			)[0];
+			if (!replyQueued) throw new Error("personal_mail_ui_reply_queue_missing");
+			await scanMailOutbound(new Date(Date.now() + 60_000));
+			const replySentResponse = await fetch(`${STUB}/test/sent?email=${encodeURIComponent(fixture.email)}`);
+			const replySentBody = (await replySentResponse.json()) as { messages: Array<{ messageId: string; threadId: string; raw: string }> };
+			const replySent = replySentBody.messages.find(
+				(message) => message.messageId === `watson-${replyQueued.id}@watson.invalid`,
+			);
+			if (replySent?.threadId !== "thread-002" || !/^In-Reply-To: <message-3@example\.test>$/m.test(replySent.raw) || !/^References: <message-3@example\.test>$/m.test(replySent.raw)) {
+				throw new Error(`personal_mail_ui_reply_thread_missing:${JSON.stringify(replySent)}`);
+			}
+			await assertNoOverflow(page, `${browserName}_desktop`);
 		await assertAxeClean(page, `${browserName}_desktop`);
 
 		await workspace.getByRole("button", { name: "Vytvořit úkol", exact: true }).click();

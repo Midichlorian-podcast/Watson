@@ -161,6 +161,7 @@ const storedContentSchema = z.object({
 	authenticationResults: z.string().max(32_768).default(""),
 	returnPath: z.string().max(32_768).default(""),
 	messageIdHeader: z.string().max(32_768).default(""),
+	references: z.array(z.string().max(32_768)).max(100).default([]),
 	snippet: z.string().max(32_768),
 	textBody: z.string().max(MAX_TEXT_BODY_BYTES),
 	htmlBody: z.string().max(MAX_HTML_BODY_BYTES),
@@ -573,6 +574,9 @@ function parseMessage(message: z.infer<typeof gmailMessageSchema>): {
 	// Address headers remain RFC-shaped lines. Splitting on comma would corrupt
 	// quoted display names ("Doe, Jane" <jane@example.com>).
 	const addressHeaders = (key: string) => (headers.get(key) ?? []).slice(0, 200);
+	const references = (headers.get("references") ?? [])
+		.flatMap((value) => value.match(/<[^<>\r\n]{1,998}>/g) ?? [])
+		.slice(-100);
 	return {
 		content: {
 			subject: headers.get("subject")?.[0] ?? "",
@@ -583,7 +587,8 @@ function parseMessage(message: z.infer<typeof gmailMessageSchema>): {
 			dateHeader: headers.get("date")?.[0] ?? "",
 			authenticationResults: (headers.get("authentication-results") ?? []).join("\n").slice(0, 32_768),
 			returnPath: headers.get("return-path")?.[0] ?? "",
-			messageIdHeader: headers.get("message-id")?.[0] ?? "",
+				messageIdHeader: headers.get("message-id")?.[0] ?? "",
+				references,
 			snippet: cleanText(message.snippet),
 			textBody: joinLimited(textParts, MAX_TEXT_BODY_BYTES),
 			htmlBody: joinLimited(htmlParts, MAX_HTML_BODY_BYTES),
@@ -1241,7 +1246,7 @@ mailSyncRoutes.get("/api/mail/accounts/:accountId/messages/:messageId", async (c
 			envelopeFrom(row),
 		),
 	);
-	const { htmlBody, authenticationResults, returnPath, messageIdHeader, ...safeContent } = content;
+	const { htmlBody, authenticationResults, returnPath, messageIdHeader, references, ...safeContent } = content;
 	return c.json({
 		message: {
 			id: row.id,

@@ -8,6 +8,7 @@ import {
 	getDb,
 	mailAccounts,
 	mailCommandReceipts,
+	mailMessages,
 	mailOutboundMessages,
 	mailSyncStates,
 	sql,
@@ -44,6 +45,7 @@ const enqueueSchema = z
 			.refine((value) => !/[\r\n]/.test(value), "invalid_subject"),
 		textBody: z.string().max(512 * 1024),
 		sendAt: z.string().datetime({ offset: true }).nullable().optional(),
+		replyToMessageId: z.string().uuid().nullable().optional(),
 	})
 	.strict()
 	.refine((value) => value.subject.length > 0 || value.textBody.trim().length > 0, "empty_message")
@@ -71,7 +73,14 @@ const outboundContentSchema = z.object({
 	textBody: z.string().max(512 * 1024),
 	inReplyTo: z.string().max(32_768).refine((value) => !/[\r\n]/.test(value)).nullable().optional(),
 	references: z.array(z.string().max(32_768).refine((value) => !/[\r\n]/.test(value))).max(100).optional(),
+	replyThreadId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).nullable().optional(),
 });
+const replySourceContentSchema = z
+	.object({
+		messageIdHeader: z.string().max(32_768).default(""),
+		references: z.array(z.string().max(32_768)).max(100).default([]),
+	})
+	.passthrough();
 
 type OutboundContent = z.infer<typeof outboundContentSchema>;
 type OutboundStatus =
@@ -131,6 +140,31 @@ function normalizeRecipients(input: z.infer<typeof enqueueSchema>): OutboundCont
 		bcc: unique(input.bcc),
 		subject: input.subject,
 		textBody: input.textBody.replace(/\r\n?/g, "\n"),
+	};
+}
+
+const MESSAGE_ID_HEADER = /^<[^<>\r\n]{1,998}>$/;
+
+function safeMessageId(value: string): string | null {
+	const normalized = value.trim();
+	return MESSAGE_ID_HEADER.test(normalized) ? normalized : null;
+}
+
+function replyContext(input: {
+	messageIdHeader: string;
+	references: string[];
+	providerThreadId: string;
+}) {
+	const inReplyTo = safeMessageId(input.messageIdHeader);
+	const references = [...input.references, ...(inReplyTo ? [inReplyTo] : [])]
+		.map(safeMessageId)
+		.filter((value): value is string => Boolean(value));
+	return {
+		inReplyTo,
+		references: [...new Set(references)].slice(-100),
+		replyThreadId: /^[A-Za-z0-9_-]{1,128}$/.test(input.providerThreadId)
+			? input.providerThreadId
+			: null,
 	};
 }
 
@@ -259,6 +293,7 @@ mailOutboundRoutes.post("/api/mail/accounts/:accountId/outbound", async (c) => {
 			id: body.data.id,
 			content,
 			sendAt: body.data.sendAt ?? null,
+			replyToMessageId: body.data.replyToMessageId ?? null,
 		}),
 	);
 	try {
@@ -297,11 +332,50 @@ mailOutboundRoutes.post("/api/mail/accounts/:accountId/outbound", async (c) => {
 				throw new MailOutboundError("mail_account_inactive", 409);
 			}
 			const provider = supportedProvider(account.provider);
+			let storedContent = content;
+			if (body.data.replyToMessageId) {
+				const source = (
+					await tx
+						.select()
+						.from(mailMessages)
+						.where(
+							and(
+								eq(mailMessages.id, body.data.replyToMessageId),
+								eq(mailMessages.accountId, account.id),
+							),
+						)
+						.limit(1)
+				)[0];
+				if (!source) throw new MailOutboundError("mail_message_not_found", 404);
+				let sourceContent: z.infer<typeof replySourceContentSchema>;
+				try {
+					sourceContent = replySourceContentSchema.parse(
+						decryptMailContent(
+							{
+								accountId: account.id,
+								provider,
+								providerMessageId: source.providerMessageId,
+							},
+							envelopeFrom(source),
+						),
+					);
+				} catch {
+					throw new MailOutboundError("mail_contract_rejected", 422);
+				}
+				storedContent = {
+					...content,
+					...replyContext({
+						messageIdHeader: sourceContent.messageIdHeader,
+						references: sourceContent.references,
+						providerThreadId: source.providerThreadId,
+					}),
+				};
+			}
 			const undoUntil = new Date(now.getTime() + UNDO_WINDOW_MS);
 			const scheduledFor = requestedSendAt && requestedSendAt > undoUntil ? requestedSendAt : undoUntil;
 			const encrypted = encryptMailContent(
 				{ accountId: account.id, provider, providerMessageId: `outbound:${body.data.id}` },
-				content,
+				storedContent,
 			);
 			const inserted = await tx
 				.insert(mailOutboundMessages)
@@ -327,8 +401,9 @@ mailOutboundRoutes.post("/api/mail/accounts/:accountId/outbound", async (c) => {
 				entity: "mail_outbound",
 				entityId: row.id,
 				action: requestedSendAt ? "scheduled" : "queued_with_undo",
-				diff: {
-					provider,
+					diff: {
+						provider,
+						isReply: Boolean(body.data.replyToMessageId),
 					recipientCount: content.to.length + content.cc.length + content.bcc.length,
 					hasSubject: content.subject.length > 0,
 					bodyBytes: Buffer.byteLength(content.textBody, "utf8"),
@@ -620,7 +695,10 @@ async function processOutbound(claim: ClaimedOutbound) {
 			{
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ raw }),
+					body: JSON.stringify({
+						raw,
+						...(content.replyThreadId ? { threadId: content.replyThreadId } : {}),
+					}),
 			},
 		);
 		if (response.status === 429) {

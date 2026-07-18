@@ -1,12 +1,23 @@
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
-import type { PersonalMailModel } from "./usePersonalMail";
+import type { PersonalMailModel, PersonalMessageDetail } from "./usePersonalMail";
 
 const ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ATTACHMENT_PHRASE = /\b(příloh|přiklád|v příloze|attached|attachment|enclos)/i;
 
 function addresses(value: string) {
 	return [...new Set(value.split(/[\s,;]+/).map((item) => item.trim().toLowerCase()).filter(Boolean))];
+}
+
+function replyAddress(value: string) {
+	return (/<([^<>\s]+@[^<>\s]+)>/.exec(value)?.[1] ?? /([^<>\s]+@[^<>\s]+)/.exec(value)?.[1] ?? "")
+		.replace(/[>,;]+$/, "")
+		.toLowerCase();
+}
+
+function replySubject(value: string) {
+	const normalized = value.trim();
+	return /^re\s*:/i.test(normalized) ? normalized : `Re: ${normalized || "(bez předmětu)"}`;
 }
 
 function fieldStyle(): CSSProperties {
@@ -26,20 +37,22 @@ function fieldStyle(): CSSProperties {
 export function PersonalMailComposer({
 	model,
 	onClose,
+	replyTo = null,
 }: {
 	model: PersonalMailModel;
 	onClose: () => void;
+	replyTo?: PersonalMessageDetail | null;
 }) {
 	const connected = model.accounts.filter((account) => account.status === "connected");
 	const [accountId, setAccountId] = useState(
-		model.accountFilter !== "all" && connected.some((account) => account.id === model.accountFilter)
+		replyTo?.accountId ?? (model.accountFilter !== "all" && connected.some((account) => account.id === model.accountFilter)
 			? model.accountFilter
-			: connected[0]?.id ?? "",
+			: connected[0]?.id ?? ""),
 	);
-	const [to, setTo] = useState("");
+	const [to, setTo] = useState(() => replyTo ? replyAddress(replyTo.replyTo || replyTo.from) : "");
 	const [cc, setCc] = useState("");
 	const [bcc, setBcc] = useState("");
-	const [subject, setSubject] = useState("");
+	const [subject, setSubject] = useState(() => replyTo ? replySubject(replyTo.subject) : "");
 	const [textBody, setTextBody] = useState("");
 	const [sendLater, setSendLater] = useState(false);
 	const [sendAt, setSendAt] = useState("");
@@ -92,6 +105,7 @@ export function PersonalMailComposer({
 			subject: subject.trim(),
 			textBody,
 			sendAt: sendLater ? new Date(sendAt).toISOString() : null,
+			replyToMessageId: replyTo?.id ?? null,
 		};
 		const fingerprint = JSON.stringify(outboundInput);
 		if (submission.current?.fingerprint !== fingerprint) {
@@ -112,6 +126,7 @@ export function PersonalMailComposer({
 				subject: subject.trim(),
 				textBody,
 				sendAt: outboundInput.sendAt,
+				replyToMessageId: outboundInput.replyToMessageId,
 			});
 			onClose();
 		} catch {
@@ -153,21 +168,22 @@ export function PersonalMailComposer({
 				<header style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
 					<div style={{ flex: 1, minWidth: 0 }}>
 						<h2 id="personal-composer-title" style={{ margin: 0, fontSize: 16, color: "var(--ink)" }}>
-							Nová osobní zpráva
+							{replyTo ? "Odpověď na zprávu" : "Nová osobní zpráva"}
 						</h2>
 						<div style={{ marginTop: 3, fontSize: 10.5, color: "var(--ink-3)" }}>
-							Skutečné odeslání přes připojený Gmail · obsah je ve frontě šifrovaný
+							{replyTo ? "Watson bezpečně zachová mailové vlákno" : "Skutečné odeslání přes připojený účet"} · obsah je ve frontě šifrovaný
 						</div>
 					</div>
-					<button type="button" onClick={onClose} disabled={model.sendingMail} aria-label="Zavřít novou zprávu" style={{ width: 44, height: 44, border: "1px solid var(--line)", borderRadius: 10, background: "transparent", color: "var(--ink-2)", cursor: "pointer", fontSize: 18 }}>×</button>
+					<button type="button" onClick={onClose} disabled={model.sendingMail} aria-label={replyTo ? "Zavřít odpověď" : "Zavřít novou zprávu"} style={{ width: 44, height: 44, border: "1px solid var(--line)", borderRadius: 10, background: "transparent", color: "var(--ink-2)", cursor: "pointer", fontSize: 18 }}>×</button>
 				</header>
 
 				<div style={{ display: "grid", gap: 12, padding: 16, overflow: "auto", minHeight: 0, flex: 1 }}>
 					<label style={{ display: "grid", gap: 5, fontSize: 11, color: "var(--ink-3)" }}>
 						Od
-						<select value={accountId} onChange={(event) => setAccountId(event.target.value)} style={fieldStyle()}>
+						<select value={accountId} onChange={(event) => setAccountId(event.target.value)} disabled={Boolean(replyTo)} aria-describedby={replyTo ? "personal-reply-account-help" : undefined} style={fieldStyle()}>
 							{connected.map((account) => <option key={account.id} value={account.id}>{account.displayName ? `${account.displayName} · ` : ""}{account.emailAddress}</option>)}
 						</select>
+						{replyTo && <span id="personal-reply-account-help" style={{ fontSize: 9.5, lineHeight: 1.4 }}>Odpověď se odešle ze stejného účtu, do kterého přišla původní zpráva.</span>}
 					</label>
 					<label style={{ display: "grid", gap: 5, fontSize: 11, color: "var(--ink-3)" }}>
 						Komu

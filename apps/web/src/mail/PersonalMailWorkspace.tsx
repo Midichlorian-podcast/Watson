@@ -9,6 +9,7 @@ import { usePersonalMailTools, type PersonalMailPerson, type PersonalMailView } 
 import type {
 	PersonalMailExecution,
 	PersonalMailModel,
+	PersonalMessageDetail,
 	PersonalMessageSummary,
 } from "./usePersonalMail";
 
@@ -179,6 +180,7 @@ export function PersonalMailWorkspace({
 	const tools = usePersonalMailTools(true);
 	const [taskDialogMessage, setTaskDialogMessage] = useState<PersonalMessageSummary | null>(null);
 	const [composerOpen, setComposerOpen] = useState(false);
+	const [composerReply, setComposerReply] = useState<PersonalMessageDetail | null>(null);
 	const [sharedDraftsOpen, setSharedDraftsOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<PersonalMailView["sort"]>("newest");
@@ -247,6 +249,7 @@ export function PersonalMailWorkspace({
 			}
 			if (key === "c") {
 				event.preventDefault();
+				setComposerReply(null);
 				setComposerOpen(true);
 				return;
 			}
@@ -317,7 +320,7 @@ export function PersonalMailWorkspace({
 								{syncLabels[aggregateStatus]} · {model.totalCount} zpráv · {model.unreadCount} nepřečtených
 							</div>
 						</div>
-						<button type="button" data-personal-compose onClick={() => setComposerOpen(true)} disabled={model.accounts.every((account) => account.status !== "connected")} style={{ minHeight: 44, border: 0, borderRadius: 10, background: "var(--ink)", color: "var(--panel)", padding: "0 12px", fontWeight: 750, cursor: "pointer" }}>
+						<button type="button" data-personal-compose onClick={() => { setComposerReply(null); setComposerOpen(true); }} disabled={model.accounts.every((account) => account.status !== "connected")} style={{ minHeight: 44, border: 0, borderRadius: 10, background: "var(--ink)", color: "var(--panel)", padding: "0 12px", fontWeight: 750, cursor: "pointer" }}>
 							Napsat
 						</button>
 						<button type="button" onClick={() => void model.requestSync()} disabled={model.syncing || model.accounts.every((account) => account.status !== "connected")} title="Zkontrolovat nové zprávy" style={{ minWidth: 44, height: 44, border: "1px solid var(--line)", borderRadius: 10, background: "transparent", color: "var(--ink-2)", cursor: "pointer" }}>
@@ -475,6 +478,7 @@ export function PersonalMailWorkspace({
 							<time dateTime={model.detail.internalDate} style={{ flex: "none", fontSize: 10.5, color: "var(--ink-3)" }}>{formatDate(model.detail.internalDate)}</time>
 						</div>
 						<div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
+							<button type="button" disabled={selectedAccount?.status !== "connected" || !emailAddress(model.detail.replyTo || model.detail.from)} onClick={() => { setComposerReply(model.detail); setComposerOpen(true); }} style={{ minHeight: 40, border: 0, borderRadius: 9, background: "var(--ink)", color: "var(--panel)", padding: "0 13px", cursor: "pointer", fontWeight: 750 }}>Odpovědět</button>
 							<button type="button" disabled={personLoading || !emailAddress(model.detail.from)} onClick={() => {
 								const address = emailAddress(model.detail?.from ?? "");
 								if (!address) return;
@@ -552,7 +556,7 @@ export function PersonalMailWorkspace({
 					onOpenTask={openTask}
 				/>
 			)}
-			{composerOpen && <PersonalMailComposer model={model} onClose={() => setComposerOpen(false)} />}
+			{composerOpen && <PersonalMailComposer model={model} replyTo={composerReply} onClose={() => { setComposerOpen(false); setComposerReply(null); }} />}
 			<SharedDraftsDialog open={sharedDraftsOpen} accounts={model.accounts} onClose={() => setSharedDraftsOpen(false)} />
 		</section>
 	);

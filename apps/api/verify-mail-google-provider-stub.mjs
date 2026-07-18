@@ -87,10 +87,10 @@ function historyEvent(mailbox, event) {
   return entry;
 }
 
-function acceptSentMessage(email, raw) {
+function acceptSentMessage(email, raw, requestedThreadId = null) {
   const messageId = /^Message-ID:\s*<([^>]+)>/im.exec(raw)?.[1] ?? `missing-${randomUUID()}`;
   const providerId = `sent-${randomUUID()}`;
-  const threadId = `sent-thread-${randomUUID()}`;
+	const threadId = requestedThreadId ?? `sent-thread-${randomUUID()}`;
   const mailbox = ensureMailbox(email);
   const history = historyEvent(mailbox, {
     messagesAdded: [{ message: { id: providerId, threadId } }],
@@ -393,7 +393,10 @@ const server = createServer(async (request, response) => {
 		rateLimitedMessageIds.add(stableMessageId);
 		return json(response, 429, { error: "rate_limited" });
 	  }
-	  const accepted = acceptSentMessage(email, raw);
+		  const requestedThreadId = typeof payload?.threadId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(payload.threadId)
+			? payload.threadId
+			: null;
+		  const accepted = acceptSentMessage(email, raw, requestedThreadId);
 	  if (raw.includes("uncertain@example.test")) {
 		return json(response, 503, { error: "provider_uncertain_after_accept" });
 	  }
