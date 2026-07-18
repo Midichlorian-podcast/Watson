@@ -183,6 +183,33 @@ async function run(browserName: "chromium" | "webkit") {
 			throw new Error("personal_mail_ui_body_leaked_in_summary");
 		}
 
+		// Pokročilé owner-only hledání + uložený Watson pohled. Klávesa / musí
+		// mířit do mailového hledání, ne do demo seedů ani do celé aplikace.
+		await page.keyboard.press("/");
+		const mailSearch = workspace.locator("[data-personal-search]");
+		if (!(await mailSearch.evaluate((element) => element === document.activeElement))) {
+			throw new Error("personal_mail_ui_keyboard_search_focus_missing");
+		}
+		await mailSearch.fill("from:sender-2 is:unread");
+		await workspace.getByText("Synchronizovaná zpráva 2", { exact: true }).waitFor();
+		await workspace.getByText("1 výsledků", { exact: false }).waitFor();
+		if ((await workspace.getByText("Synchronizovaná zpráva 3", { exact: true }).count()) !== 0) {
+			throw new Error("personal_mail_ui_search_not_filtered");
+		}
+		await workspace.getByTitle("Uložit tento pohled", { exact: true }).click();
+		await workspace.getByLabel("Název pohledu", { exact: true }).fill(`Moje filtry ${browserName}`);
+		await workspace.getByRole("button", { name: "Uložit", exact: true }).click();
+		await workspace.getByRole("button", { name: `Moje filtry ${browserName}`, exact: true }).waitFor();
+		await mailSearch.fill("");
+		await workspace.getByText("Synchronizovaná zpráva 3", { exact: true }).waitFor();
+		await workspace.getByRole("button", { name: "Analytika schránky", exact: true }).click();
+		await workspace.getByText("nejde o skóre lidí", { exact: false }).waitFor();
+		await assertAxeClean(page, `${browserName}_advanced_search_views_analytics`);
+		if (SCREENSHOT_DIR) {
+			await mkdir(SCREENSHOT_DIR, { recursive: true });
+			await workspace.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-personal-advanced-tools.png` });
+		}
+
 		await workspace.getByRole("button", { name: "Napsat", exact: true }).click();
 		let composer = page.getByRole("dialog", { name: "Nová osobní zpráva", exact: true });
 		await composer.getByLabel("Komu", { exact: true }).fill("undo-ui@example.test");
@@ -257,6 +284,11 @@ async function run(browserName: "chromium" | "webkit") {
 		if (!queued) throw new Error("personal_mail_ui_send_queue_missing");
 		await scanMailOutbound(new Date(Date.now() + 60_000));
 		await workspace.getByText("Google přijal zprávu", { exact: true }).waitFor({ timeout: 10_000 });
+		await workspace.getByRole("button", { name: "Pohlídat odpověď", exact: true }).click();
+		const followupInput = workspace.getByLabel("Pokud nikdo neodpoví do", { exact: true });
+		await followupInput.fill(new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 16));
+		await workspace.getByRole("button", { name: "Nastavit", exact: true }).click();
+		await workspace.locator('[data-personal-outbound-status="accepted"]').getByText("Follow-up", { exact: false }).waitFor();
 		if (SCREENSHOT_DIR) {
 			await workspace.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-personal-outbound-status.png` });
 		}
@@ -283,6 +315,13 @@ async function run(browserName: "chromium" | "webkit") {
 		await workspace.getByText("Synchronizovaná zpráva 3", { exact: true }).click();
 		await workspace.getByText("Text zprávy 3. Token sem nikdy nepatří.", { exact: true }).waitFor();
 		await workspace.getByText("Surové HTML, tracking pixely a vzdálené obrázky se nespouštějí.", { exact: false }).waitFor();
+		await workspace.getByText("Provider ověřil identitu domény", { exact: false }).waitFor();
+		await workspace.getByRole("button", { name: "Osoba a firma", exact: true }).click();
+		const personDialog = page.getByRole("dialog", { name: "sender-3", exact: true });
+		await personDialog.getByText("sender-3@example.test", { exact: true }).waitFor();
+		await personDialog.getByText("Zprávy v synchronizaci", { exact: true }).waitFor();
+		await assertAxeClean(page, `${browserName}_person_card`);
+		await personDialog.getByRole("button", { name: "Zavřít", exact: true }).click();
 		if ((await workspace.getByRole("button", { name: /Odpovědět|Přeposlat|Archivovat/ }).count()) !== 0) {
 			throw new Error("personal_mail_ui_demo_action_exposed");
 		}

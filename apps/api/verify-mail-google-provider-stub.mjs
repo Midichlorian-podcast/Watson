@@ -36,6 +36,9 @@ function message(email, index, historyId) {
         { name: "From", value: `Odesílatel ${index} <sender-${index}@example.test>` },
         { name: "To", value: email },
         { name: "Date", value: new Date(at).toUTCString() },
+        { name: "Message-ID", value: `<message-${index}@example.test>` },
+        { name: "Return-Path", value: `<bounce-${index}@example.test>` },
+        { name: "Authentication-Results", value: "mx.watson.test; spf=pass; dkim=pass; dmarc=pass" },
       ],
       body: { size: 0 },
       parts: [
@@ -188,6 +191,18 @@ const server = createServer(async (request, response) => {
       item.historyId = String(mailbox.historyId);
       return json(response, 200, { id: item.id, historyId: String(mailbox.historyId) });
     }
+    if (action === "phishing" && item) {
+      item.payload.headers = item.payload.headers.filter((header) => !["from", "reply-to", "return-path", "authentication-results"].includes(header.name.toLowerCase()));
+      item.payload.headers.push(
+        { name: "From", value: "Watson Support <security@watson.test>" },
+        { name: "Reply-To", value: "collect@lookalike.test" },
+        { name: "Return-Path", value: "<bounce@lookalike.test>" },
+        { name: "Authentication-Results", value: "mx.watson.test; spf=fail; dkim=fail; dmarc=fail" },
+      );
+      historyEvent(mailbox, { messagesAdded: [{ message: { id: item.id, threadId: item.threadId } }] });
+      item.historyId = String(mailbox.historyId);
+      return json(response, 200, { id: item.id, historyId: String(mailbox.historyId) });
+    }
     if (action === "delete" && item) {
       mailbox.messages.delete(messageId);
       historyEvent(mailbox, { messagesDeleted: [{ message: { id: item.id, threadId: item.threadId } }] });
@@ -307,6 +322,20 @@ const server = createServer(async (request, response) => {
       historyId: String(mailbox.historyId),
       messagesTotal: mailbox.messages.size,
       threadsTotal: new Set([...mailbox.messages.values()].map((item) => item.threadId)).size,
+    });
+  }
+  if (request.method === "GET" && url.pathname === "/gmail/v1/users/me/labels") {
+    const token = request.headers.authorization?.replace(/^Bearer\s+/i, "") ?? "";
+    const email = accessTokens.get(token);
+    if (!email) return json(response, 401, { error: "invalid_token" });
+    return json(response, 200, {
+      labels: [
+        { id: "INBOX", name: "Doručená pošta", type: "system" },
+        { id: "UNREAD", name: "Nepřečtené", type: "system" },
+        { id: "STARRED", name: "S hvězdičkou", type: "system" },
+        { id: "CATEGORY_UPDATES", name: "Aktualizace", type: "system" },
+        { id: "Label_Projects", name: "Projekty", type: "user", color: { backgroundColor: "#c2e7ff" } },
+      ],
     });
   }
   if (request.method === "GET" && url.pathname === "/gmail/v1/users/me/messages") {

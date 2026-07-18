@@ -17,6 +17,7 @@ import {
 	mailAccountCredentials,
 	mailAccounts,
 	mailMessages,
+	mailProviderLabels,
 	mailSyncStates,
 	ne,
 	sql,
@@ -117,6 +118,13 @@ const gmailMessageSchema = z
 	})
 	.passthrough();
 const profileSchema = z.object({ historyId: z.string().regex(/^[0-9]{1,64}$/) }).passthrough();
+const providerLabelSchema = z.object({
+	id: z.string().min(1).max(256),
+	name: z.string().min(1).max(256),
+	type: z.enum(["system", "user"]).optional().default("user"),
+	color: z.object({ backgroundColor: z.string().max(32).optional() }).optional(),
+}).passthrough();
+const providerLabelsSchema = z.object({ labels: z.array(providerLabelSchema).max(1000).default([]) }).passthrough();
 const historyMessageSchema = z.object({
 	id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
 	threadId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).optional(),
@@ -150,12 +158,63 @@ const storedContentSchema = z.object({
 	cc: z.array(z.string().max(32_768)).max(200),
 	replyTo: z.string().max(32_768),
 	dateHeader: z.string().max(32_768),
+	authenticationResults: z.string().max(32_768).default(""),
+	returnPath: z.string().max(32_768).default(""),
+	messageIdHeader: z.string().max(32_768).default(""),
 	snippet: z.string().max(32_768),
 	textBody: z.string().max(MAX_TEXT_BODY_BYTES),
 	htmlBody: z.string().max(MAX_HTML_BODY_BYTES),
 	attachments: z.array(attachmentSchema).max(MAX_PARTS),
 });
 type StoredContent = z.infer<typeof storedContentSchema>;
+
+function addressDomain(value: string): string | null {
+	const match = /@([a-z0-9.-]+)(?:>|\s|$)/i.exec(value.trim());
+	return match?.[1]?.replace(/\.$/, "").toLowerCase() ?? null;
+}
+
+/** Vysvětlitelné, konzervativní varování; nikdy netvrdí, že zpráva je bezpečná. */
+function assessSenderIdentity(input: {
+	from: string;
+	replyTo: string;
+	returnPath: string;
+	authenticationResults: string;
+	messageIdHeader: string;
+}) {
+	const auth = input.authenticationResults.toLowerCase();
+	const fromDomain = addressDomain(input.from);
+	const replyDomain = addressDomain(input.replyTo);
+	const returnDomain = addressDomain(input.returnPath);
+	const reasons: string[] = [];
+	const dmarcFail = /\bdmarc\s*=\s*(?:fail|temperror|permerror)\b/.test(auth);
+	const spfFail = /\bspf\s*=\s*(?:fail|softfail|temperror|permerror)\b/.test(auth);
+	const dkimFail = /\bdkim\s*=\s*(?:fail|temperror|permerror)\b/.test(auth);
+	const dmarcPass = /\bdmarc\s*=\s*pass\b/.test(auth);
+	const spfPass = /\bspf\s*=\s*pass\b/.test(auth);
+	const dkimPass = /\bdkim\s*=\s*pass\b/.test(auth);
+	if (dmarcFail) reasons.push("Ověření DMARC odesílatele selhalo.");
+	if (spfFail && dkimFail) reasons.push("Selhalo SPF i DKIM ověření.");
+	if (fromDomain && replyDomain && fromDomain !== replyDomain) {
+		reasons.push(`Odpověď míří na jinou doménu (${replyDomain}).`);
+	}
+	if (fromDomain?.startsWith("xn--") || fromDomain?.includes(".xn--")) {
+		reasons.push("Doména používá mezinárodní punycode; zkontroluj její zápis.");
+	}
+	const high = dmarcFail || (spfFail && dkimFail);
+	const medium = !high && reasons.length > 0;
+	return {
+		level: high ? "danger" : medium ? "warning" : dmarcPass || (spfPass && dkimPass) ? "verified" : "unknown",
+		reasons,
+		fromDomain,
+		replyDomain,
+		returnDomain,
+		authentication: {
+			spf: spfPass ? "pass" : spfFail ? "fail" : "unknown",
+			dkim: dkimPass ? "pass" : dkimFail ? "fail" : "unknown",
+			dmarc: dmarcPass ? "pass" : dmarcFail ? "fail" : "unknown",
+		},
+	};
+}
 
 class MailSyncError extends Error {
 	constructor(
@@ -522,6 +581,9 @@ function parseMessage(message: z.infer<typeof gmailMessageSchema>): {
 			cc: addressHeaders("cc"),
 			replyTo: headers.get("reply-to")?.[0] ?? "",
 			dateHeader: headers.get("date")?.[0] ?? "",
+			authenticationResults: (headers.get("authentication-results") ?? []).join("\n").slice(0, 32_768),
+			returnPath: headers.get("return-path")?.[0] ?? "",
+			messageIdHeader: headers.get("message-id")?.[0] ?? "",
 			snippet: cleanText(message.snippet),
 			textBody: joinLimited(textParts, MAX_TEXT_BODY_BYTES),
 			htmlBody: joinLimited(htmlParts, MAX_HTML_BODY_BYTES),
@@ -733,6 +795,26 @@ async function persistPage(
 }
 
 async function fullSyncPage(state: ClaimedState) {
+	if (!state.page_token) {
+		const labelsResponse = await googleFetch(state.account_id, "/gmail/v1/users/me/labels");
+		if (!labelsResponse.ok) providerError(labelsResponse);
+		const labels = providerLabelsSchema.safeParse(await readMailProviderJson(labelsResponse, 512 * 1024));
+		if (!labels.success) throw new MailSyncError("mail_contract_rejected", false, "labels");
+		await getDb().transaction(async (tx) => {
+			for (const label of labels.data.labels) {
+				await tx.insert(mailProviderLabels).values({
+					accountId: state.account_id,
+					providerLabelId: label.id,
+					name: label.name,
+					kind: label.type,
+					color: label.color?.backgroundColor ?? null,
+				}).onConflictDoUpdate({
+					target: [mailProviderLabels.accountId, mailProviderLabels.providerLabelId],
+					set: { name: label.name, kind: label.type, color: label.color?.backgroundColor ?? null },
+				});
+			}
+		});
+	}
 	const query = new URLSearchParams({ maxResults: String(PAGE_SIZE), includeSpamTrash: "false" });
 	if (state.page_token) query.set("pageToken", state.page_token);
 	const response = await googleFetch(
@@ -1154,7 +1236,7 @@ mailSyncRoutes.get("/api/mail/accounts/:accountId/messages/:messageId", async (c
 			envelopeFrom(row),
 		),
 	);
-	const { htmlBody, ...safeContent } = content;
+	const { htmlBody, authenticationResults, returnPath, messageIdHeader, ...safeContent } = content;
 	return c.json({
 		message: {
 			id: row.id,
@@ -1167,6 +1249,13 @@ mailSyncRoutes.get("/api/mail/accounts/:accountId/messages/:messageId", async (c
 			contentTruncated: row.contentTruncated,
 			...safeContent,
 			hasHtml: htmlBody.length > 0,
+			security: assessSenderIdentity({
+				from: content.from,
+				replyTo: content.replyTo,
+				returnPath,
+				authenticationResults,
+				messageIdHeader,
+			}),
 		},
 	});
 });

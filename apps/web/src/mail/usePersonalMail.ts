@@ -104,6 +104,14 @@ export type PersonalMessageSummary = {
 
 export type PersonalMessageDetail = Omit<PersonalMessageSummary, "hasText" | "attachmentCount"> & {
 	textBody: string;
+	security: {
+		level: "danger" | "warning" | "verified" | "unknown";
+		reasons: string[];
+		fromDomain: string | null;
+		replyDomain: string | null;
+		returnDomain: string | null;
+		authentication: { spf: "pass" | "fail" | "unknown"; dkim: "pass" | "fail" | "unknown"; dmarc: "pass" | "fail" | "unknown" };
+	};
 	attachments: Array<{
 		filename: string;
 		mimeType: string;

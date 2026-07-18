@@ -25,7 +25,7 @@ const VERIFIED_ACCOUNT_CLAIMS: Record<string, RegExp[]> = {
 	"MailSub.tsx": [/zatím nepřipojeno/],
 	"PersonalMailWorkspace.tsx": [
 		/Watson zprávy synchronizuje šifrovaně\. Heslo nevidí a obsah zpřístupní jen vlastníkovi účtu/,
-		/Skutečný šifrovaný příjem i odesílání/,
+		/Skutečný šifrovaný příjem, odesílání, hledání a Watson pohledy/,
 	],
 	"PersonalMailComposer.tsx": [
 		/Skutečné odeslání přes připojený Gmail · obsah je ve frontě šifrovaný/,

@@ -474,3 +474,94 @@ export const mailTaskLinks = pgTable(
 		index("mail_task_links_workspace_idx").on(t.workspaceId, t.createdAt),
 	],
 );
+
+/**
+ * Osobní Watson pohled nad jedním nebo více provider účty. Provider labely se
+ * nikdy nepřepisují: pohled ukládá pouze uživatelův dotaz a způsob řazení.
+ */
+export const mailSavedViews = pgTable(
+	"mail_saved_views",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		ownerUserId: uuid("owner_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		name: varchar("name", { length: 120 }).notNull(),
+		query: varchar("query", { length: 1000 }).notNull(),
+		sort: varchar("sort", { length: 24 }).notNull().default("newest"),
+		version: integer("version").notNull().default(1),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check("mail_saved_views_sort_valid", sql`${t.sort} in ('newest', 'oldest', 'sender', 'subject')`),
+		check("mail_saved_views_version_positive", sql`${t.version} > 0`),
+		uniqueIndex("mail_saved_views_owner_name_uq").on(t.ownerUserId, sql`lower(${t.name})`),
+		index("mail_saved_views_owner_idx").on(t.ownerUserId, t.updatedAt),
+	],
+);
+
+/** Cache názvů provider labelů/složek. Zpráva dál drží původní provider IDs. */
+export const mailProviderLabels = pgTable(
+	"mail_provider_labels",
+	{
+		id: pk(),
+		accountId: uuid("account_id")
+			.notNull()
+			.references(() => mailAccounts.id, { onDelete: "cascade" }),
+		providerLabelId: varchar("provider_label_id", { length: 256 }).notNull(),
+		name: varchar("name", { length: 256 }).notNull(),
+		kind: varchar("kind", { length: 24 }).notNull().default("user"),
+		color: varchar("color", { length: 32 }),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check("mail_provider_labels_kind_valid", sql`${t.kind} in ('system', 'user', 'folder')`),
+		uniqueIndex("mail_provider_labels_account_provider_uq").on(t.accountId, t.providerLabelId),
+		index("mail_provider_labels_account_name_idx").on(t.accountId, t.name),
+	],
+);
+
+/**
+ * Připomínka navázaná na skutečně odeslanou zprávu. Odpověď se odvozuje z
+ * pozdější příchozí zprávy ve stejném provider threadu; Watson ji nevydává za
+ * doručenku ani za SLA zaměstnance.
+ */
+export const mailFollowups = pgTable(
+	"mail_followups",
+	{
+		id: pk(),
+		workspaceId: uuid("workspace_id")
+			.notNull()
+			.references(() => workspaces.id, { onDelete: "cascade" }),
+		accountId: uuid("account_id")
+			.notNull()
+			.references(() => mailAccounts.id, { onDelete: "cascade" }),
+		ownerUserId: uuid("owner_user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		outboundId: uuid("outbound_id")
+			.notNull()
+			.references(() => mailOutboundMessages.id, { onDelete: "cascade" }),
+		dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+		status: varchar("status", { length: 24 }).notNull().default("waiting"),
+		completedAt: timestamp("completed_at", { withTimezone: true }),
+		version: integer("version").notNull().default(1),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check("mail_followups_status_valid", sql`${t.status} in ('waiting', 'replied', 'done', 'cancelled')`),
+		check(
+			"mail_followups_completion_consistent",
+			sql`(${t.status} in ('replied', 'done', 'cancelled')) = (${t.completedAt} IS NOT NULL)`,
+		),
+		check("mail_followups_version_positive", sql`${t.version} > 0`),
+		uniqueIndex("mail_followups_outbound_uq").on(t.outboundId),
+		index("mail_followups_owner_due_idx").on(t.ownerUserId, t.status, t.dueAt),
+	],
+);

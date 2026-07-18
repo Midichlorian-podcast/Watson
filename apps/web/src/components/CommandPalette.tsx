@@ -44,6 +44,13 @@ interface PalItem {
 	run: () => void;
 }
 
+type PersonalMailPaletteHit = {
+	accountId: string;
+	id: string;
+	from: string;
+	subject: string;
+};
+
 const ini = (name: string) =>
 	name
 		.split(/\s+/)
@@ -68,6 +75,17 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 	const [idx, setIdx] = useState(0);
 	const [recent, setRecent] = useState<RecentEntity[]>([]);
 	const overlayRef = useOverlayLayer<HTMLDivElement>(true, onClose);
+	const { data: personalMailHits } = useQuery({
+		queryKey: ["personal-mail-palette", q.trim()],
+		enabled: q.trim().length >= 2,
+		staleTime: 15_000,
+		queryFn: async () => {
+			const response = await fetch(`${API_URL}/api/mail/search?q=${encodeURIComponent(q.trim())}&limit=6`, { credentials: "include" });
+			if (!response.ok) return [] as PersonalMailPaletteHit[];
+			const body = (await response.json()) as { messages?: PersonalMailPaletteHit[] };
+			return body.messages ?? [];
+		},
+	});
 
 	useEffect(() => {
 		let active = true;
@@ -258,9 +276,19 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 				void navigate({ to: "/mail" });
 			},
 		}));
+		const personalItems: PalItem[] = (personalMailHits ?? []).map((hit) => ({
+			key: `personal-mail:${hit.accountId}:${hit.id}`,
+			kind: `${t("nav.mail")} · osobní`,
+			label: hit.subject || "(bez předmětu)",
+			initials: ini(hit.from),
+			run: () => {
+				onClose();
+				void navigate({ to: "/mail", search: { mailAccount: hit.accountId, mailMessage: hit.id } });
+			},
+		}));
 		if (query) {
 			const matches = all.filter((item) => item.label.toLowerCase().includes(query));
-			return [...matches.slice(0, 14), ...mailItems].slice(0, 18);
+			return [...personalItems, ...matches.slice(0, 12), ...mailItems].slice(0, 18);
 		}
 		const entityMap = new Map<string, PalItem>([
 			...taskItems.map((item) => [`task:${item.key.slice(2)}`, item] as const),
@@ -281,6 +309,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 		tasks,
 		meetings,
 		recent,
+		personalMailHits,
 		t,
 		m,
 		navigate,
