@@ -15,7 +15,7 @@ const CIPHER = "aes-256-gcm";
 export type MailContentContext = {
 	accountId: string;
 	providerMessageId: string;
-	provider: "google";
+	provider: "google" | "imap_smtp";
 };
 
 function fail(code: string, cause?: unknown): never {

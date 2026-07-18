@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
-const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecution, mailOutbound, mailAdvanced, sharedDrafts, personalTools, sharedDraftHook, sharedDraftDialog, exportRoutes, personalWorkspace, personalComposer, mailScreen, demoBanner, env, preflight, foundationMigration, oauthMigration, syncMigration, generationMigration, executionMigration, outboundMigration, advancedMigration, advancedGuards, sharedDraftMigration, sharedDraftGuards] =
+const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailImapSmtp, mailExecution, mailOutbound, mailAdvanced, sharedDrafts, mailboxWizard, personalTools, sharedDraftHook, sharedDraftDialog, exportRoutes, personalWorkspace, personalComposer, mailScreen, demoBanner, env, preflight, foundationMigration, oauthMigration, syncMigration, generationMigration, executionMigration, outboundMigration, advancedMigration, advancedGuards, sharedDraftMigration, sharedDraftGuards, imapCursorMigration] =
   await Promise.all([
     read("packages/db/src/schema/mail.ts"),
     read("apps/api/src/mailVault.ts"),
@@ -10,10 +10,12 @@ const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecu
     read("apps/api/src/powersync.ts"),
     read("apps/api/src/mailAccounts.ts"),
     read("apps/api/src/mailSync.ts"),
+    read("apps/api/src/mailImapSmtp.ts"),
     read("apps/api/src/mailExecution.ts"),
     read("apps/api/src/mailOutbound.ts"),
     read("apps/api/src/mailAdvanced.ts"),
     read("apps/api/src/mailSharedDrafts.ts"),
+    read("apps/web/src/mail/MailboxWizard.tsx"),
     read("apps/web/src/mail/usePersonalMailTools.ts"),
     read("apps/web/src/mail/useSharedDrafts.ts"),
     read("apps/web/src/mail/SharedDraftsDialog.tsx"),
@@ -34,6 +36,7 @@ const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailExecu
     read("packages/db/drizzle/0085_mail_advanced_guards.sql"),
     read("packages/db/drizzle/0086_romantic_lethal_legion.sql"),
     read("packages/db/drizzle/0087_mail_shared_draft_guards.sql"),
+    read("packages/db/drizzle/0088_sour_zarda.sql"),
   ]);
 
 assert.match(schema, /mailAccounts = pgTable/);
@@ -82,6 +85,17 @@ assert.match(mailSync, /fullSyncGeneration/);
 assert.match(mailSync, /ownerAccount\(accountId\.data, session\.user\.id\)/);
 assert.match(mailSync, /hasHtml: content\.htmlBody\.length > 0/);
 assert.doesNotMatch(mailSync, /htmlBody: content\.htmlBody/);
+assert.match(mailImapSmtp, /verifyImapSmtpCredential\(credential\)/);
+assert.match(mailImapSmtp, /await transporter\.verify\(\)/);
+assert.match(mailImapSmtp, /resolvePublicEndpoint/);
+assert.match(mailImapSmtp, /mail_endpoint_private/);
+assert.match(mailImapSmtp, /provider: "imap_smtp"/);
+assert.match(mailImapSmtp, /encryptMailSecret/);
+assert.match(mailImapSmtp, /encryptMailContent/);
+assert.match(mailImapSmtp, /message\.source\.fill\(0\)/);
+assert.match(mailImapSmtp, /client\.search\(\{ seen: false \}/);
+assert.match(mailImapSmtp, /provider_message_id = ANY/);
+assert.doesNotMatch(mailImapSmtp, /console\.(?:log|error)\([^\n]*(?:password|credential)/i);
 assert.match(mailExecution, /eq\(mailAccounts\.ownerUserId, session\.user\.id\)/);
 assert.match(mailExecution, /mail_execution_personal_project_required/);
 assert.match(mailExecution, /insert\(tasks\)/);
@@ -90,6 +104,7 @@ assert.match(mailExecution, /insert\(mailTaskLinks\)/);
 assert.match(mailExecution, /action: active \? "replace_from_mail" : "create_from_mail"/);
 assert.match(mailOutbound, /encryptMailContent/);
 assert.match(mailOutbound, /authenticatedGoogleMailFetch/);
+assert.match(mailOutbound, /sendImapSmtpMessage/);
 assert.match(mailOutbound, /users\/me\/messages\/send/);
 assert.match(mailOutbound, /status: "uncertain"/);
 assert.match(mailOutbound, /mail_delivery_uncertain/);
@@ -107,6 +122,10 @@ assert.match(sharedDrafts, /expectedVersion/);
 assert.match(sharedDrafts, /pending_approval/);
 assert.match(sharedDrafts, /approved_content_queued/);
 assert.match(sharedDrafts, /row\.owner_user_id !== session\.user\.id/);
+assert.match(sharedDrafts, /"imap_smtp"/);
+assert.match(mailboxWizard, /\/api\/mail\/accounts\/imap-smtp/);
+assert.match(mailboxWizard, /Ověřit a připojit/);
+assert.match(mailboxWizard, /setImapForm\(emptyImapForm\(\)\)/);
 assert.match(personalTools, /\/api\/mail\/search/);
 assert.match(personalTools, /scheduleFollowup/);
 assert.match(sharedDraftHook, /\/api\/mail\/shared-drafts/);
@@ -156,5 +175,6 @@ assert.match(sharedDraftMigration, /mail_shared_draft_approvals/);
 assert.match(sharedDraftGuards, /mail_shared_draft_scope_mismatch/);
 assert.match(sharedDraftGuards, /mail_shared_draft_content_locked/);
 assert.match(sharedDraftGuards, /mail_shared_draft_outbound_mismatch/);
+assert.match(imapCursorMigration, /\[0-9\]\{1,32\}:\[0-9\]\{1,20\}/);
 
 console.log("Mail M1/M2+ static contract: OAuth, encrypted sync/send/search, explicit shared drafts with approval, provider labels, views, follow-up, analytics, DB guards, and honest UI verified.");

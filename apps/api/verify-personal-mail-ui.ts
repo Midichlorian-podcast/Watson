@@ -161,6 +161,50 @@ async function run(browserName: "chromium" | "webkit") {
 		});
 		await page.getByRole("button", { name: "Spravovat účty", exact: true }).click();
 		const dialog = page.getByRole("dialog", { name: "Osobní e-mailové účty", exact: true });
+
+		// Obecný účet nesmí vzniknout ani zůstat ve formuláři dřív, než server
+		// potvrdí IMAP i SMTP. UI proof používá izolovaný ACK; kryptografii,
+		// SSRF a pořadí obou ověření kryje verify-mail-imap-smtp.ts.
+		await dialog.getByRole("button", { name: "Nastavit", exact: true }).click();
+		await dialog.getByLabel("Název účtu (volitelný)", { exact: true }).fill("Obecná schránka");
+		await dialog.getByLabel("E-mailová adresa", { exact: true }).fill("general@example.test");
+		await dialog.getByLabel("Přihlašovací jméno", { exact: true }).fill("general@example.test");
+		await dialog.getByLabel("Heslo nebo heslo aplikace", { exact: true }).fill("temporary-app-password");
+		await dialog.getByRole("group", { name: "Příjem — IMAP", exact: true }).getByLabel("Server", { exact: true }).fill("imap.example.test");
+		await dialog.getByRole("group", { name: "Odesílání — SMTP", exact: true }).getByLabel("Server", { exact: true }).fill("smtp.example.test");
+		let imapPayloadPassword: string | null = null;
+		await page.route(/\/api\/mail\/accounts\/imap-smtp$/, async (route) => {
+			const payload = route.request().postDataJSON() as { password?: string };
+			imapPayloadPassword = payload.password ?? null;
+			await route.fulfill({
+				status: 201,
+				contentType: "application/json",
+				body: JSON.stringify({ account: {
+					id: crypto.randomUUID(), provider: "imap_smtp", emailAddress: "general@example.test",
+					displayName: "Obecná schránka", status: "connected", grantedScopes: ["imap", "smtp"],
+					capabilities: ["imap_sync", "smtp_send", "unified_inbox"], lastSuccessAt: new Date().toISOString(),
+					lastErrorCode: null, revokedAt: null, version: 1,
+				} }),
+			});
+		});
+		await dialog.getByRole("button", { name: "Ověřit a připojit", exact: true }).click();
+		await dialog.getByText("IMAP + SMTP · Účet připravený", { exact: false }).waitFor();
+		if (imapPayloadPassword !== "temporary-app-password") throw new Error("personal_mail_ui_imap_payload_missing");
+		imapPayloadPassword = null;
+		await page.unroute(/\/api\/mail\/accounts\/imap-smtp$/);
+		await dialog.getByRole("button", { name: "Nastavit", exact: true }).click();
+		if ((await dialog.getByLabel("Heslo nebo heslo aplikace", { exact: true }).inputValue()) !== "") {
+			throw new Error("personal_mail_ui_imap_password_not_cleared");
+		}
+		await page.setViewportSize({ width: 390, height: 844 });
+		await assertNoOverflow(page, `${browserName}_imap_form_mobile`);
+		await assertAxeClean(page, `${browserName}_imap_form_mobile`);
+		if (SCREENSHOT_DIR) {
+			await mkdir(SCREENSHOT_DIR, { recursive: true });
+			await dialog.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-imap-form-390.png` });
+		}
+		await dialog.getByRole("button", { name: "Zrušit", exact: true }).click();
+		await page.setViewportSize({ width: 1280, height: 800 });
 		await dialog.getByRole("button", { name: "Pokračovat", exact: true }).click();
 		await page.waitForURL(/\/mail(?:\?|$)/, { timeout: 30_000 });
 

@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { PersonalMailComposer } from "./PersonalMailComposer";
 import { PersonalMailTaskDialog } from "./PersonalMailTaskDialog";
 import { SharedDraftsDialog } from "./SharedDraftsDialog";
@@ -17,7 +18,7 @@ const syncLabels: Record<string, string> = {
 	idle: "Aktuální",
 	retry: "Zkusím znovu",
 	dead: "Vyžaduje kontrolu",
-	reauth_required: "Obnovit Google souhlas",
+	reauth_required: "Obnovit přístup k účtu",
 };
 
 const errorLabels: Record<string, string> = {
@@ -32,19 +33,23 @@ const errorLabels: Record<string, string> = {
 	mail_outbound_not_cancellable: "Zprávu už nelze vrátit. Stav jsme obnovili.",
 	mail_outbound_conflict: "Odeslání se mezitím změnilo. Stav jsme obnovili.",
 	stale_version: "Odeslání se mezitím změnilo. Stav jsme obnovili.",
-	mail_account_inactive: "Účet není aktivní. Obnov Google souhlas v Nastavení.",
+	mail_account_inactive: "Účet není aktivní. Obnov jeho přístup v Nastavení.",
 	mail_account_not_found: "Účet už není dostupný.",
 };
 
 const outboundLabels: Record<string, string> = {
 	queued: "Čeká na odeslání",
 	sending: "Odesílá se…",
-	retry: "Google dočasně omezuje provoz · Watson zkusí znovu",
-	accepted: "Google přijal zprávu",
 	cancelled: "Odeslání vráceno",
 	uncertain: "Výsledek je nejistý · Watson zprávu automaticky neopakuje",
 	failed: "Zprávu se nepodařilo odeslat",
 };
+
+function outboundLabel(status: string, provider: string | undefined) {
+	if (status === "retry") return `${provider === "google" ? "Google" : "SMTP server"} dočasně omezuje provoz · Watson zkusí znovu`;
+	if (status === "accepted") return `${provider === "google" ? "Google" : "SMTP server"} přijal zprávu`;
+	return outboundLabels[status] ?? status;
+}
 
 function formatDate(value: string) {
 	const date = new Date(value);
@@ -182,6 +187,7 @@ export function PersonalMailWorkspace({
 	const [showInsights, setShowInsights] = useState(false);
 	const [showFollowups, setShowFollowups] = useState(false);
 	const [person, setPerson] = useState<PersonalMailPerson | null>(null);
+	const personDialogRef = useOverlayLayer<HTMLDivElement>(Boolean(person), () => setPerson(null));
 	const [personLoading, setPersonLoading] = useState(false);
 	const [followupFor, setFollowupFor] = useState<string | null>(null);
 	const [followupAt, setFollowupAt] = useState("");
@@ -396,7 +402,7 @@ export function PersonalMailWorkspace({
 							<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
 								<div style={{ flex: 1, minWidth: 0 }}>
 									<strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{message.subject || "(bez předmětu)"}</strong>
-									<span>{outboundLabels[message.status] ?? message.status}{scheduled && message.status === "queued" ? ` · ${formatDate(message.scheduledFor)}` : ""}</span>
+									<span>{outboundLabel(message.status, accountById.get(message.accountId)?.provider)}{scheduled && message.status === "queued" ? ` · ${formatDate(message.scheduledFor)}` : ""}</span>
 								</div>
 								{message.canCancel && (
 									<button type="button" onClick={() => void model.cancelOutbound(message).catch(() => undefined)} disabled={model.cancellingOutboundId !== null} style={{ minHeight: 40, border: "1px solid currentColor", borderRadius: 8, background: "transparent", color: "inherit", padding: "0 10px", fontWeight: 750, cursor: "pointer" }}>
@@ -525,7 +531,7 @@ export function PersonalMailWorkspace({
 			</article>
 			{person && <div data-esc-layer style={{ position: "fixed", inset: 0, zIndex: 130, display: "grid", placeItems: "center", padding: 12 }}>
 				<button type="button" aria-label="Zavřít kartu osoby" onClick={() => setPerson(null)} style={{ position: "absolute", inset: 0, border: 0, background: "color-mix(in srgb, var(--ink) 35%, transparent)" }} />
-				<section role="dialog" aria-modal="true" aria-labelledby="personal-mail-person-title" style={{ position: "relative", width: "min(480px, 100%)", maxHeight: "calc(100vh - 24px)", overflow: "auto", border: "1px solid var(--line)", borderRadius: 16, background: "var(--panel)", boxShadow: "var(--shadow)", padding: 18 }}>
+				<div ref={personDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="personal-mail-person-title" style={{ position: "relative", width: "min(480px, 100%)", maxHeight: "calc(100vh - 24px)", overflow: "auto", border: "1px solid var(--line)", borderRadius: 16, background: "var(--panel)", boxShadow: "var(--shadow)", padding: 18, outline: "none" }}>
 					<div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}><div aria-hidden style={{ width: 46, height: 46, flex: "none", borderRadius: "50%", display: "grid", placeItems: "center", background: "var(--avatar-navy)", color: "white", fontWeight: 800 }}>{initials(person.name)}</div><div style={{ minWidth: 0, flex: 1 }}><h2 id="personal-mail-person-title" style={{ margin: 0, color: "var(--ink)", fontSize: 18 }}>{person.name}</h2><div style={{ marginTop: 4, color: "var(--ink-3)", fontSize: 11, overflowWrap: "anywhere" }}>{person.address}</div></div><button type="button" onClick={() => setPerson(null)} aria-label="Zavřít" style={{ width: 44, height: 44, border: "1px solid var(--line)", borderRadius: 9, background: "transparent", color: "var(--ink-2)", cursor: "pointer" }}>×</button></div>
 					<div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 9, marginTop: 16 }}>{[
 						["Firma", person.organization ?? person.domain], ["Role", person.role ?? "—"], ["Zprávy v synchronizaci", person.messages.toLocaleString("cs-CZ")], ["Poslední kontakt", person.lastContactAt ? formatDate(person.lastContactAt) : "—"],
@@ -533,7 +539,7 @@ export function PersonalMailWorkspace({
 					{person.areas && <div style={{ marginTop: 12, fontSize: 11, color: "var(--ink-2)" }}><strong>Oblasti:</strong> {person.areas}</div>}
 					{person.note && <div style={{ marginTop: 8, fontSize: 11, lineHeight: 1.5, color: "var(--ink-2)" }}>{person.note}</div>}
 					<div style={{ marginTop: 14, fontSize: 9.5, lineHeight: 1.45, color: "var(--ink-3)" }}>Karta kombinuje vlastní kontakt s tvou soukromou synchronizovanou historií. Není automaticky sdílena s týmem.</div>
-				</section>
+				</div>
 			</div>}
 			{taskDialogMessage && (
 				<PersonalMailTaskDialog

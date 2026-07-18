@@ -249,11 +249,11 @@ export const mailSyncStates = pgTable(
 		),
 		check(
 			"mail_sync_states_history_valid",
-			sql`${t.historyId} IS NULL OR ${t.historyId} ~ '^[0-9]{1,64}$'`,
+			sql`${t.historyId} IS NULL OR ${t.historyId} ~ '^(?:[0-9]{1,64}|[0-9]{1,32}:[0-9]{1,20})$'`,
 		),
 		check(
 			"mail_sync_states_baseline_valid",
-			sql`${t.baselineHistoryId} IS NULL OR ${t.baselineHistoryId} ~ '^[0-9]{1,64}$'`,
+			sql`${t.baselineHistoryId} IS NULL OR ${t.baselineHistoryId} ~ '^(?:[0-9]{1,64}|[0-9]{1,32}:[0-9]{1,20})$'`,
 		),
 		check(
 			"mail_sync_states_partial_cursor",
@@ -308,7 +308,7 @@ export const mailMessages = pgTable(
 			"mail_messages_provider_thread_id_valid",
 			sql`${t.providerThreadId} ~ '^[A-Za-z0-9_-]{1,128}$'`,
 		),
-		check("mail_messages_history_valid", sql`${t.historyId} ~ '^[0-9]{1,64}$'`),
+		check("mail_messages_history_valid", sql`${t.historyId} ~ '^(?:[0-9]{1,64}|[0-9]{1,32}:[0-9]{1,20})$'`),
 		check("mail_messages_labels_array", sql`jsonb_typeof(${t.labelIds}) = 'array'`),
 		check("mail_messages_size_nonnegative", sql`${t.sizeEstimate} >= 0`),
 		check("mail_messages_algorithm_valid", sql`${t.algorithm} = 'aes-256-gcm-v1'`),

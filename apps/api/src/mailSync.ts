@@ -1065,11 +1065,16 @@ export function startMailSyncWorker(intervalMs = 10_000): void {
 async function ownerAccount(accountId: string, ownerUserId: string) {
 	return (
 		await getDb()
-			.select({ id: mailAccounts.id, status: mailAccounts.status })
+			.select({ id: mailAccounts.id, status: mailAccounts.status, provider: mailAccounts.provider })
 			.from(mailAccounts)
 			.where(and(eq(mailAccounts.id, accountId), eq(mailAccounts.ownerUserId, ownerUserId)))
 			.limit(1)
 	)[0];
+}
+
+function contentProvider(value: string): "google" | "imap_smtp" {
+	if (value === "google" || value === "imap_smtp") return value;
+	throw new Error("mail_provider_unsupported");
 }
 
 mailSyncRoutes.post("/api/mail/accounts/:accountId/sync", async (c) => {
@@ -1173,7 +1178,7 @@ mailSyncRoutes.get("/api/mail/accounts/:accountId/messages", async (c) => {
 	const messages = page.map((row) => {
 		const content = storedContentSchema.parse(
 			decryptMailContent(
-				{ accountId: account.id, provider: "google", providerMessageId: row.providerMessageId },
+					{ accountId: account.id, provider: contentProvider(account.provider), providerMessageId: row.providerMessageId },
 				envelopeFrom(row),
 			),
 		);
@@ -1232,7 +1237,7 @@ mailSyncRoutes.get("/api/mail/accounts/:accountId/messages/:messageId", async (c
 	if (!row) return c.json({ error: "mail_message_not_found" }, 404);
 	const content = storedContentSchema.parse(
 		decryptMailContent(
-			{ accountId: account.id, provider: "google", providerMessageId: row.providerMessageId },
+			{ accountId: account.id, provider: contentProvider(account.provider), providerMessageId: row.providerMessageId },
 			envelopeFrom(row),
 		),
 	);

@@ -205,6 +205,58 @@ async function main() {
 			"smazání mailboxu fyzicky odstraní credential, cursor i obsah",
 			credentialsAfterDelete.length === 0 && syncAfterDelete.length === 0 && messagesAfterDelete.length === 0,
 		);
+
+		const imapAccountId = randomUUID();
+		const imapGeneration = randomUUID();
+		const imapEnvelope = encryptMailSecret({
+			accountId: imapAccountId,
+			ownerUserId: owner.id,
+			provider: "imap_smtp",
+			secretKind: "imap_smtp",
+		}, {
+			purpose: "imap_smtp_mailbox",
+			emailAddress: `imap-${stamp}@example.test`,
+			username: `imap-${stamp}`,
+			password: `app-${randomUUID()}`,
+			imap: { host: "imap.example.test", port: 993, security: "tls" },
+			smtp: { host: "smtp.example.test", port: 587, security: "starttls" },
+		}, keyring);
+		await db.transaction(async (tx) => {
+			await tx.insert(mailAccounts).values({
+				id: imapAccountId,
+				workspaceId: personal.id,
+				ownerUserId: owner.id,
+				provider: "imap_smtp",
+				emailAddress: `imap-${stamp}@example.test`,
+				providerAccountHash: "d".repeat(64),
+				grantedScopes: ["imap", "smtp"],
+				capabilities: ["imap_sync", "smtp_send", "unified_inbox"],
+			});
+			await tx.insert(mailAccountCredentials).values({ accountId: imapAccountId, secretKind: "imap_smtp", ...imapEnvelope });
+			await tx.insert(mailSyncStates).values({
+				accountId: imapAccountId,
+				status: "idle",
+				syncMode: "partial",
+				historyId: "123456789:42",
+				fullSyncGeneration: imapGeneration,
+			});
+			await tx.insert(mailMessages).values({
+				accountId: imapAccountId,
+				providerMessageId: "imap-123456789-42",
+				providerThreadId: "imap-thread-42",
+				historyId: "123456789:42",
+				internalDate: new Date(),
+				keyId: "mail-foundation",
+				nonce: "A".repeat(16),
+				authTag: "B".repeat(22),
+				ciphertext: "C",
+				lastSeenSyncGeneration: imapGeneration,
+			});
+		});
+		check("DB přijme provider-bound IMAP credential i UIDVALIDITY:UID cursor", true);
+		await rejected("DB odmítne Google credential u IMAP účtu", () => db.update(mailAccountCredentials)
+			.set({ secretKind: "google_oauth" }).where(eq(mailAccountCredentials.accountId, imapAccountId)));
+		await db.delete(mailAccounts).where(eq(mailAccounts.id, imapAccountId));
 	} finally {
 		await db.delete(users).where(eq(users.id, owner.id));
 		await db.delete(users).where(eq(users.id, stranger.id));

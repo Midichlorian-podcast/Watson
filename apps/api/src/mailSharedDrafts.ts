@@ -40,12 +40,19 @@ function envelopeFrom(row: { algorithm: string; keyId: string; nonce: string; au
 	return { algorithm: "aes-256-gcm-v1", keyId: row.keyId, nonce: row.nonce, authTag: row.authTag, ciphertext: row.ciphertext };
 }
 
-function draftContext(row: Pick<typeof mailSharedDrafts.$inferSelect, "id" | "accountId">) {
-	return { accountId: row.accountId, provider: "google" as const, providerMessageId: `draft:${row.id}` };
+type SupportedMailProvider = "google" | "imap_smtp";
+
+function supportedProvider(value: string): SupportedMailProvider {
+	if (value === "google" || value === "imap_smtp") return value;
+	throw new Error("mail_provider_unsupported");
 }
 
-function decryptDraft(row: typeof mailSharedDrafts.$inferSelect) {
-	return draftContentSchema.parse(decryptMailContent(draftContext(row), envelopeFrom(row)));
+function draftContext(row: Pick<typeof mailSharedDrafts.$inferSelect, "id" | "accountId">, provider: SupportedMailProvider) {
+	return { accountId: row.accountId, provider, providerMessageId: `draft:${row.id}` };
+}
+
+function decryptDraft(row: typeof mailSharedDrafts.$inferSelect, provider: SupportedMailProvider) {
+	return draftContentSchema.parse(decryptMailContent(draftContext(row, provider), envelopeFrom(row)));
 }
 
 function sha256(value: string) {
@@ -63,18 +70,21 @@ function sqlState(error: unknown): string | undefined {
 }
 
 async function accessToDraft(draftId: string, userId: string) {
-	const draft = (await getDb().select().from(mailSharedDrafts).where(eq(mailSharedDrafts.id, draftId)).limit(1))[0];
-	if (!draft) return null;
-	if (draft.ownerUserId === userId) return { draft, role: "owner" as const };
+	const record = (await getDb().select({ draft: mailSharedDrafts, provider: mailAccounts.provider })
+		.from(mailSharedDrafts).innerJoin(mailAccounts, eq(mailAccounts.id, mailSharedDrafts.accountId))
+		.where(eq(mailSharedDrafts.id, draftId)).limit(1))[0];
+	if (!record) return null;
+	const provider = supportedProvider(record.provider);
+	if (record.draft.ownerUserId === userId) return { draft: record.draft, provider, role: "owner" as const };
 	const member = (await getDb().select({ role: mailSharedDraftMembers.role }).from(mailSharedDraftMembers).where(and(
 		eq(mailSharedDraftMembers.draftId, draftId),
 		eq(mailSharedDraftMembers.userId, userId),
 	)).limit(1))[0];
-	return member ? { draft, role: member.role as "editor" | "approver" } : null;
+	return member ? { draft: record.draft, provider, role: member.role as "editor" | "approver" } : null;
 }
 
 async function publicDraft(row: typeof mailSharedDrafts.$inferSelect, viewerUserId: string) {
-	const [memberRows, approvalRows, outboundRows] = await Promise.all([
+	const [memberRows, approvalRows, outboundRows, accountRows] = await Promise.all([
 		getDb().select({
 			userId: mailSharedDraftMembers.userId,
 			role: mailSharedDraftMembers.role,
@@ -92,9 +102,11 @@ async function publicDraft(row: typeof mailSharedDrafts.$inferSelect, viewerUser
 			.where(eq(mailSharedDraftApprovals.draftId, row.id)),
 		row.outboundId ? getDb().select({ status: mailOutboundMessages.status }).from(mailOutboundMessages)
 			.where(eq(mailOutboundMessages.id, row.outboundId)).limit(1) : Promise.resolve([]),
+		getDb().select({ provider: mailAccounts.provider }).from(mailAccounts)
+			.where(eq(mailAccounts.id, row.accountId)).limit(1),
 	]);
 	let content: z.infer<typeof draftContentSchema> | null = null;
-	try { content = decryptDraft(row); } catch { /* unavailable key remains explicit */ }
+	try { content = decryptDraft(row, supportedProvider(accountRows[0]?.provider ?? "")); } catch { /* unavailable key remains explicit */ }
 	const viewerRole = row.ownerUserId === viewerUserId
 		? "owner"
 		: memberRows.find((member) => member.userId === viewerUserId)?.role ?? null;
@@ -198,7 +210,7 @@ mailSharedDraftRoutes.post("/api/mail/shared-drafts", async (c) => {
 			const account = (await tx.select().from(mailAccounts).where(and(
 				eq(mailAccounts.id, body.data.accountId),
 				eq(mailAccounts.ownerUserId, session.user.id),
-				eq(mailAccounts.provider, "google"),
+				sql`${mailAccounts.provider} in ('google', 'imap_smtp')`,
 				sql`${mailAccounts.status} <> 'revoked'`,
 			)).limit(1))[0];
 			if (!account) throw new Error("mail_account_not_found");
@@ -215,7 +227,7 @@ mailSharedDraftRoutes.post("/api/mail/shared-drafts", async (c) => {
 				throw new Error("mail_shared_draft_member_invalid");
 			}
 			const envelope = encryptMailContent(
-				{ accountId: account.id, provider: "google", providerMessageId: `draft:${body.data.id}` },
+				{ accountId: account.id, provider: supportedProvider(account.provider), providerMessageId: `draft:${body.data.id}` },
 				body.data.content,
 			);
 			const created = (await tx.insert(mailSharedDrafts).values({
@@ -274,7 +286,7 @@ mailSharedDraftRoutes.put("/api/mail/shared-drafts/:draftId", async (c) => {
 	if (!access) return c.json({ error: "mail_shared_draft_not_found" }, 404);
 	if (access.role !== "owner" && access.role !== "editor") return c.json({ error: "forbidden" }, 403);
 	if (!["draft", "rejected"].includes(access.draft.status)) return c.json({ error: "mail_shared_draft_content_locked" }, 409);
-	const envelope = encryptMailContent(draftContext(access.draft), body.data.content);
+	const envelope = encryptMailContent(draftContext(access.draft, access.provider), body.data.content);
 	const row = await getDb().transaction(async (tx) => {
 		const updated = (await tx.update(mailSharedDrafts).set({
 			...envelope,
@@ -453,14 +465,15 @@ mailSharedDraftRoutes.post("/api/mail/shared-drafts/:draftId/send", async (c) =>
 			return draft ? { row: draft, replayed: true } : { error: "mail_shared_draft_not_found" as const };
 		}
 		if (row.status !== "approved" || row.version !== body.data.expectedVersion) return { error: "mail_shared_draft_conflict" as const };
-		if (row.account_status !== "connected" || row.provider !== "google") return { error: "mail_account_inactive" as const };
+		if (row.account_status !== "connected" || !["google", "imap_smtp"].includes(row.provider)) return { error: "mail_account_inactive" as const };
+		const provider = supportedProvider(row.provider);
 		const selected = (await tx.select().from(mailSharedDrafts).where(eq(mailSharedDrafts.id, row.id)).limit(1))[0];
 		if (!selected) return { error: "mail_shared_draft_not_found" as const };
-		const content = decryptDraft(selected);
+		const content = decryptDraft(selected, provider);
 		const now = new Date();
 		const scheduledFor = new Date(now.getTime() + UNDO_WINDOW_MS);
 		const envelope = encryptMailContent(
-			{ accountId: row.account_id, provider: "google", providerMessageId: `outbound:${body.data.outboundId}` },
+			{ accountId: row.account_id, provider, providerMessageId: `outbound:${body.data.outboundId}` },
 			content,
 		);
 		const requestHash = sha256(JSON.stringify({ action: "shared_draft_send", draftId: row.id, outboundId: body.data.outboundId, contentVersion: row.content_version }));

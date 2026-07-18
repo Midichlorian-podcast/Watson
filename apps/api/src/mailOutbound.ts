@@ -15,8 +15,8 @@ import {
 import { Hono } from "hono";
 import { z } from "zod";
 import { auth } from "./auth";
-import { mailGoogleEnabled } from "./env";
 import { decryptMailContent, encryptMailContent } from "./mailContentVault";
+import { sendImapSmtpMessage } from "./mailImapSmtp";
 import { authenticatedGoogleMailFetch, readMailProviderJson } from "./mailSync";
 import type { MailVaultEnvelope } from "./mailVault";
 
@@ -69,6 +69,8 @@ const outboundContentSchema = z.object({
 	bcc: z.array(email).max(50),
 	subject: z.string().max(998),
 	textBody: z.string().max(512 * 1024),
+	inReplyTo: z.string().max(32_768).refine((value) => !/[\r\n]/.test(value)).nullable().optional(),
+	references: z.array(z.string().max(32_768).refine((value) => !/[\r\n]/.test(value))).max(100).optional(),
 });
 
 type OutboundContent = z.infer<typeof outboundContentSchema>;
@@ -174,10 +176,17 @@ function publicSummary(
 	};
 }
 
-function decryptContent(row: typeof mailOutboundMessages.$inferSelect): OutboundContent {
+type SupportedMailProvider = "google" | "imap_smtp";
+
+function supportedProvider(value: string): SupportedMailProvider {
+	if (value === "google" || value === "imap_smtp") return value;
+	throw new Error("mail_provider_unsupported");
+}
+
+function decryptContent(row: typeof mailOutboundMessages.$inferSelect, provider: SupportedMailProvider): OutboundContent {
 	return outboundContentSchema.parse(
 		decryptMailContent(
-			{ accountId: row.accountId, provider: "google", providerMessageId: `outbound:${row.id}` },
+			{ accountId: row.accountId, provider, providerMessageId: `outbound:${row.id}` },
 			envelopeFrom(row),
 		),
 	);
@@ -221,7 +230,7 @@ mailOutboundRoutes.get("/api/mail/accounts/:accountId/outbound", async (c) => {
 		.limit(limit.data);
 	const outbound = rows.map((row) => {
 		try {
-			return publicSummary(row, decryptContent(row));
+			return publicSummary(row, decryptContent(row, supportedProvider(account.provider)));
 		} catch {
 			return publicSummary(row, null);
 		}
@@ -284,13 +293,14 @@ mailOutboundRoutes.post("/api/mail/accounts/:accountId/outbound", async (c) => {
 				if (replay.requestHash !== requestHash) throw new MailOutboundError("operation_id_reused", 409);
 				return { row: replay, replayed: true };
 			}
-			if (account.provider !== "google" || account.status !== "connected") {
+			if (!(["google", "imap_smtp"] as string[]).includes(account.provider) || account.status !== "connected") {
 				throw new MailOutboundError("mail_account_inactive", 409);
 			}
+			const provider = supportedProvider(account.provider);
 			const undoUntil = new Date(now.getTime() + UNDO_WINDOW_MS);
 			const scheduledFor = requestedSendAt && requestedSendAt > undoUntil ? requestedSendAt : undoUntil;
 			const encrypted = encryptMailContent(
-				{ accountId: account.id, provider: "google", providerMessageId: `outbound:${body.data.id}` },
+				{ accountId: account.id, provider, providerMessageId: `outbound:${body.data.id}` },
 				content,
 			);
 			const inserted = await tx
@@ -318,7 +328,7 @@ mailOutboundRoutes.post("/api/mail/accounts/:accountId/outbound", async (c) => {
 				entityId: row.id,
 				action: requestedSendAt ? "scheduled" : "queued_with_undo",
 				diff: {
-					provider: "google",
+					provider,
 					recipientCount: content.to.length + content.cc.length + content.bcc.length,
 					hasSubject: content.subject.length > 0,
 					bodyBytes: Buffer.byteLength(content.textBody, "utf8"),
@@ -369,14 +379,14 @@ mailOutboundRoutes.post("/api/mail/accounts/:accountId/outbound/:outboundId/canc
 				return replay.response;
 			}
 			const rows = (await tx.execute(sql`
-				SELECT outbound.*, account.workspace_id
+				SELECT outbound.*, account.workspace_id, account.provider
 				FROM mail_outbound_messages outbound
 				JOIN mail_accounts account ON account.id = outbound.account_id
 				WHERE outbound.id = ${ids.data.outboundId}
 				  AND outbound.account_id = ${ids.data.accountId}
 				  AND outbound.owner_user_id = ${session.user.id}
 				FOR UPDATE OF outbound
-			`)) as unknown as Array<{ status: string; version: number; workspace_id: string }>;
+			`)) as unknown as Array<{ status: string; version: number; workspace_id: string; provider: string }>;
 			const row = rows[0];
 			if (!row) throw new MailOutboundError("mail_outbound_not_found", 404);
 			if (row.version !== body.data.expectedVersion) throw new MailOutboundError("stale_version", 409);
@@ -416,7 +426,7 @@ mailOutboundRoutes.post("/api/mail/accounts/:accountId/outbound/:outboundId/canc
 				entity: "mail_outbound",
 				entityId: ids.data.outboundId,
 				action: "cancelled",
-				diff: { provider: "google", previousStatus: row.status },
+				diff: { provider: row.provider, previousStatus: row.status },
 				requestId: c.get("requestId") ?? null,
 			});
 			return publicResponse;
@@ -435,6 +445,7 @@ type ClaimedOutbound = {
 	owner_user_id: string;
 	lease_token: string;
 	attempts: number;
+	provider: SupportedMailProvider;
 };
 
 function headerValue(value: string): string {
@@ -454,6 +465,8 @@ function buildRawMessage(id: string, from: string, content: OutboundContent): st
 		`Subject: ${headerValue(content.subject)}`,
 		`Date: ${new Date().toUTCString()}`,
 		`Message-ID: <watson-${id}@watson.invalid>`,
+		content.inReplyTo ? `In-Reply-To: ${content.inReplyTo}` : null,
+		content.references?.length ? `References: ${content.references.join(" ")}` : null,
 		"MIME-Version: 1.0",
 		"Content-Type: text/plain; charset=UTF-8",
 		"Content-Transfer-Encoding: base64",
@@ -475,7 +488,7 @@ async function claimOutbound(now: Date, limit = 10): Promise<ClaimedOutbound[]> 
 				SELECT outbound.id
 				FROM mail_outbound_messages outbound
 				JOIN mail_accounts account ON account.id = outbound.account_id
-				WHERE account.provider = 'google' AND account.status = 'connected'
+				WHERE account.provider IN ('google', 'imap_smtp') AND account.status = 'connected'
 				  AND outbound.scheduled_for <= ${now.toISOString()}::timestamptz
 				  AND (
 					outbound.status = 'queued'
@@ -493,7 +506,8 @@ async function claimOutbound(now: Date, limit = 10): Promise<ClaimedOutbound[]> 
 			FROM candidates
 			WHERE outbound.id = candidates.id
 			RETURNING outbound.id, outbound.account_id, outbound.workspace_id,
-			          outbound.owner_user_id, outbound.lease_token, outbound.attempts
+			          outbound.owner_user_id, outbound.lease_token, outbound.attempts,
+			          (SELECT provider FROM mail_accounts WHERE id = outbound.account_id) AS provider
 		`),
 	);
 	return rows as unknown as ClaimedOutbound[];
@@ -546,7 +560,7 @@ async function finishOutbound(
 							? "delivery_uncertain"
 							: "send_failed",
 			diff: {
-				provider: "google",
+				provider: claim.provider,
 				status: result.status,
 				attempt: claim.attempts,
 				errorCode: result.errorCode,
@@ -584,17 +598,22 @@ async function processOutbound(claim: ClaimedOutbound) {
 			.limit(1)
 	)[0];
 	if (!row) return;
-	if (row.account.status !== "connected" || row.account.provider !== "google") {
+	if (row.account.status !== "connected" || !(["google", "imap_smtp"] as string[]).includes(row.account.provider)) {
 		return finishOutbound(claim, { status: "failed", errorCode: "mail_auth_rejected" });
 	}
+	const provider = supportedProvider(row.account.provider);
 	let content: OutboundContent;
 	try {
-		content = decryptContent(row.outbound);
+		content = decryptContent(row.outbound, provider);
 	} catch {
 		return finishOutbound(claim, { status: "failed", errorCode: "mail_contract_rejected" });
 	}
-	const raw = Buffer.from(buildRawMessage(row.outbound.id, row.account.emailAddress, content), "utf8").toString("base64url");
 	try {
+		if (provider === "imap_smtp") {
+			const ack = await sendImapSmtpMessage(row.account.id, row.outbound.id, content);
+			return finishOutbound(claim, { status: "accepted", errorCode: null, providerMessageId: ack.id, providerThreadId: ack.threadId });
+		}
+		const raw = Buffer.from(buildRawMessage(row.outbound.id, row.account.emailAddress, content), "utf8").toString("base64url");
 		const response = await authenticatedGoogleMailFetch(
 			row.account.id,
 			"/gmail/v1/users/me/messages/send",
@@ -637,6 +656,13 @@ async function processOutbound(claim: ClaimedOutbound) {
 		});
 	} catch (error) {
 		const code = error instanceof Error ? error.message : "mail_provider_unavailable";
+		const smtp = error as { responseCode?: number; code?: string };
+		if (provider === "imap_smtp") {
+			if (smtp.responseCode === 535 || /auth|credential|login/i.test(code)) return finishOutbound(claim, { status: "failed", errorCode: "mail_auth_rejected" });
+			if (smtp.responseCode && smtp.responseCode >= 400 && smtp.responseCode < 500) return finishOutbound(claim, { status: claim.attempts >= MAX_ATTEMPTS ? "failed" : "retry", errorCode: "mail_rate_limited" });
+			if (smtp.responseCode && smtp.responseCode >= 500) return finishOutbound(claim, { status: "failed", errorCode: "mail_contract_rejected" });
+			return finishOutbound(claim, { status: "uncertain", errorCode: "mail_delivery_uncertain" });
+		}
 		if (code === "mail_auth_rejected" || code === "mail_account_inactive" || code === "mail_contract_rejected") {
 			return finishOutbound(claim, {
 				status: "failed",
@@ -658,7 +684,7 @@ export async function scanMailOutbound(now = new Date()): Promise<number> {
 
 let timer: ReturnType<typeof setInterval> | null = null;
 export function startMailOutboundWorker(intervalMs = 1_000): void {
-	if (timer || !mailGoogleEnabled) return;
+	if (timer) return;
 	timer = setInterval(() => {
 		scanMailOutbound().catch((error) =>
 			console.error(
