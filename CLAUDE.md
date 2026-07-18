@@ -372,7 +372,7 @@ Acceptance:
 
 ### R-02 — dependency advisory evidence
 
-Reprodukovatelný `pnpm verify:dependency-audit` dne 2026-07-16 registry úspěšně kontaktoval, zapsal sanitizovaný report svázaný se SHA-256 aktuálního lockfile a vrátil nula high/critical advisories. Lokální evidence je v `docs/release-evidence/dependency-audit-2026-07-16.json`. CI stejný blokující runner spouští a report archivuje přes immutable-pinned `upload-artifact`; R-02 lze úplně uzavřít až po prvním skutečně uchovaném CI artifactu.
+Reprodukovatelný `pnpm verify:dependency-audit` dne 2026-07-16 registry úspěšně kontaktoval, zapsal sanitizovaný report svázaný se SHA-256 aktuálního lockfile a vrátil nula high/critical advisories. Lokální evidence je v `docs/release-evidence/dependency-audit-2026-07-16.json`. CI běh `29663381680` dne 2026-07-18 stejný blokující runner úspěšně spustil a uchoval artifact `dependency-audit-production` (artifact `8435018094`): report je svázaný s aktuálním lockfile SHA-256 `61d40112801ed91c40dbd4f3e9e33283a16d3a06591b8c613032fa323ef6be68` a obsahuje nula high/critical advisories. R-02 je tím pro tento release candidate uzavřený.
 
 Acceptance: úspěšný CI artifact se seznamem advisories; high/critical = stop-ship nebo explicitní časově omezená výjimka s kompenzační kontrolou.
 
@@ -398,7 +398,7 @@ Pořadí je závazné. Jedna epika aktivní, další nezačíná před acceptanc
 ### F0 — uzavřít release evidence (2–4 dny)
 
 1. Udržet kritické release E2E scénáře R-01 zelené; Chromium + WebKit axe/keyboard/reflow, task/offline recovery, 2FA, meeting commit a backup/restore jsou hotové.
-2. Udržet dependency audit R-02 zelený; runner, lokální evidence i CI upload jsou hotové, první uchovaný CI běh zůstává release podmínkou.
+2. Udržet dependency audit R-02 zelený; runner, lokální evidence i první ověřený CI artifact jsou hotové.
 3. Opravit každý runtime nález stejnou vertikální disciplínou.
 4. Znovu spustit celý gate a uložit artifacty.
 
@@ -997,8 +997,6 @@ Neověřené v tomto snapshotu:
 
 - nativní Safari smoke zůstává volitelným doplňkem k zelenému podporovanému
   Chromium + WebKit matrixu;
-- první skutečně uchovaný dependency audit artifact z CI pipeline; lokální report
-  a jeho blokující/archivační workflow jsou zelené;
 - cílený browser screenshot audit intake formulářů, urgentní akceptace a importního průvodce; lokální browser
   runtime skončil před připojením chybou pluginu, proto tyto dávky kryjí statické
   design/accessibility kontrakty, integrační testy a produkční build;
