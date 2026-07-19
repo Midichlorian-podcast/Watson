@@ -463,24 +463,27 @@ function MailRow({
 			: [actionFor(m.swipeConfig.l1), actionFor(m.swipeConfig.l2)];
 
 	// vizuál: hook dodává eased dx + mag → DOM zápis (data-swu/pilulky prototypu)
-	const swApply = (dx: number, mag: string) => {
+	const swApply = (
+		dx: number,
+		mag: string,
+		phase: "tracking" | "settling" | "committing",
+	) => {
 		const swc = swcRef.current;
 		const swu = swuRef.current;
 		if (!swc || !swu) return;
-		if (dx === 0) {
-			swc.style.transition = "transform .18s ease";
-			setTimeout(() => {
-				if (swcRef.current) swcRef.current.style.transition = "";
-			}, 200);
-		} else {
-			swc.style.transition = "";
-		}
+		swc.style.transition =
+			phase === "tracking"
+				? "none"
+				: phase === "committing"
+					? "transform 220ms cubic-bezier(.22,.72,.2,1)"
+					: "transform 210ms cubic-bezier(.2,.78,.24,1)";
 		swc.style.transform = `translateX(${dx}px)`;
 		const side: SwipeSide = dx > 0 ? "r" : "l";
 		const acts = sideActs(side);
 		const tierAct = mag === "none" ? null : (acts[mag.endsWith("2") ? 1 : 0] ?? null);
 		swu.setAttribute("data-mag", mag);
 		swu.setAttribute("data-act", tierAct ? tierAct.css : "none");
+		swu.setAttribute("data-phase", phase);
 		const pill = swu.querySelector<HTMLElement>(`[data-swpill="${side}"]`);
 		const other = swu.querySelector<HTMLElement>(`[data-swpill="${side === "r" ? "l" : "r"}"]`);
 		if (pill) {
@@ -529,10 +532,10 @@ function MailRow({
 		>
 			{/* podklad swipe akcí (prototyp data-swu + pilulky, CSS ř. 76–86) */}
 			<div ref={swuRef} data-swu data-mag="none" data-act="none">
-				<span data-swpill="r">
+				<span data-swpill="r" data-swipe-feedback>
 					<span data-swtxt />
 				</span>
-				<span data-swpill="l">
+				<span data-swpill="l" data-swipe-feedback>
 					<span data-swtxt />
 				</span>
 			</div>

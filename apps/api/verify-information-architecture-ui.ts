@@ -486,6 +486,10 @@ async function verifyCalendarNavigation(
 		scrollTop: element.scrollTop,
 		visibleDays: element.getAttribute("data-calendar-visible-days"),
 		initialHour: element.getAttribute("data-calendar-initial-hour"),
+		legacyMirrors: document.querySelectorAll("[data-calendar-scroll-mirror]").length,
+		allDayHeight:
+			document.querySelector<HTMLElement>("[data-calendar-all-day]")?.getBoundingClientRect()
+				.height ?? 0,
 	}));
 	const primaryWeekHeaders = calendar.locator(
 		'[data-calendar-day-header][data-calendar-primary="true"]',
@@ -494,6 +498,8 @@ async function verifyCalendarNavigation(
 		weekGeometry.visibleDays !== "7" ||
 		weekGeometry.initialHour !== "6" ||
 		Math.abs(weekGeometry.scrollTop - (6 * 60 * 0.62 - 8)) > 2 ||
+		weekGeometry.legacyMirrors !== 0 ||
+		weekGeometry.allDayHeight > 60 ||
 		(await primaryWeekHeaders.count()) !== 7 ||
 		(await primaryWeekHeaders.first().getAttribute("data-calendar-day-header")) !== "2026-07-20" ||
 		(await primaryWeekHeaders.last().getAttribute("data-calendar-day-header")) !== "2026-07-26"
@@ -504,17 +510,38 @@ async function verifyCalendarNavigation(
 	}
 
 	// Během gesta se hýbe pouze pixelový pás; datum se změní až po doběhu a snapu.
-	const weekDayWidth = weekGeometry.clientWidth / 7;
+	const weekDayWidth = (weekGeometry.clientWidth - 46) / 7;
 	await calendar.dispatchEvent("wheel", { deltaX: weekDayWidth * 0.72, deltaY: 0 });
 	await page.waitForTimeout(40);
 	const fluidWeek = await weekStrip.evaluate((element) => ({
 		scrollLeft: element.scrollLeft,
 		viewportX: window.scrollX,
+		trackLefts: (() => {
+			const iso = document
+				.querySelector<HTMLElement>(
+					'[data-calendar-day-header][data-calendar-primary="true"]',
+				)
+				?.getAttribute("data-calendar-day-header");
+			if (!iso) return [] as number[];
+			return [
+				document.querySelector<HTMLElement>(`[data-calendar-day-header="${iso}"]`),
+				document.querySelector<HTMLElement>(
+					`[data-calendar-track="all-day"][data-calendar-day="${iso}"]`,
+				),
+				document.querySelector<HTMLElement>(
+					`[data-calendar-track="time"][data-calendar-day="${iso}"]`,
+				),
+			].map((track) => track?.getBoundingClientRect().left ?? Number.NaN);
+		})(),
 	}));
+	const trackSpread =
+		Math.max(...fluidWeek.trackLefts) - Math.min(...fluidWeek.trackLefts);
 	if (
 		!page.url().includes("datum=2026-07-20") ||
 		fluidWeek.scrollLeft <= weekGeometry.scrollLeft + weekDayWidth * 0.5 ||
-		fluidWeek.viewportX !== 0
+		fluidWeek.viewportX !== 0 ||
+		!Number.isFinite(trackSpread) ||
+		trackSpread > 0.75
 	) {
 		throw new Error(`ia_ui_calendar_week_not_fluid_${browserName}:${JSON.stringify(fluidWeek)}`);
 	}
@@ -526,7 +553,7 @@ async function verifyCalendarNavigation(
 		return first?.dataset.calendarDayHeader === "2026-07-21";
 	});
 	const snappedWeek = await weekStrip.evaluate((element) => {
-		const width = element.clientWidth / 7;
+		const width = (element.clientWidth - 46) / 7;
 		return { scrollLeft: element.scrollLeft, center: width * 3 };
 	});
 	if (Math.abs(snappedWeek.scrollLeft - snappedWeek.center) > 2) {
@@ -567,7 +594,7 @@ async function verifyCalendarNavigation(
 	await dayStrip.evaluate((element) => {
 		element.scrollTop = 310;
 	});
-	const dayWidth = await dayStrip.evaluate((element) => element.clientWidth);
+	const dayWidth = await dayStrip.evaluate((element) => element.clientWidth - 46);
 	await calendar.dispatchEvent("wheel", { deltaX: dayWidth * 0.64, deltaY: 0 });
 	await page.waitForTimeout(40);
 	if (!page.url().includes("datum=2026-07-23")) {
@@ -609,7 +636,7 @@ async function verifyCalendarNavigation(
 	runtimeErrors.splice(runtimeErrorStart);
 
 	console.log(
-		`  ✓ ${browserName}: calendar uses a fluid seven-day strip, day snap and stable 06:00 orientation`,
+		`  ✓ ${browserName}: calendar uses one aligned fluid strip, compact all-day rows and stable 06:00 orientation`,
 	);
 }
 
@@ -636,6 +663,19 @@ async function verifyMailCommunicationHierarchy(
 	if ((await swipeRow.evaluate((element) => getComputedStyle(element).overscrollBehaviorX)) !== "none") {
 		throw new Error(`ia_ui_mail_swipe_not_contained_${browserName}`);
 	}
+	const horizontalDefaultPrevented = await swipeRow.evaluate((element) => {
+		const event = new WheelEvent("wheel", {
+			deltaX: -8,
+			deltaY: 0,
+			bubbles: true,
+			cancelable: true,
+		});
+		return !element.dispatchEvent(event);
+	});
+	if (!horizontalDefaultPrevented) {
+		throw new Error(`ia_ui_mail_swipe_browser_history_not_blocked_${browserName}`);
+	}
+	await page.waitForTimeout(650);
 	const defaultSwipe = await swipeRow.evaluate((element) => ({
 		r1: element.getAttribute("data-swipe-r1"),
 		r2: element.getAttribute("data-swipe-r2"),
@@ -666,28 +706,49 @@ async function verifyMailCommunicationHierarchy(
 
 	const unreadBeforeVertical = await swipeRow.getAttribute("data-unread");
 	await swipeRow.dispatchEvent("wheel", { deltaX: 0, deltaY: 80 });
-	await page.waitForTimeout(240);
+	await page.waitForTimeout(650);
 	if ((await swipeRow.getAttribute("data-unread")) !== unreadBeforeVertical) {
 		throw new Error(`ia_ui_mail_vertical_wheel_triggered_swipe_${browserName}`);
 	}
 
-	// Přirozený swipe doprava přichází z trackpadu jako záporné deltaX.
-	// Krátký práh přepne read/unread až po usazení gesta.
-	await swipeRow.dispatchEvent("wheel", { deltaX: -120, deltaY: 0 });
+	const dispatchSwipe = async (count: number, deltaX: number) => {
+		for (let index = 0; index < count; index++) {
+			await swipeRow.dispatchEvent("wheel", { deltaX, deltaY: 0 });
+		}
+	};
+
+	// Samotné překročení náhledového prahu nestačí: webový trackpad nemá release,
+	// proto se mělčí omyl po klidu vrátí bez mutace.
+	await dispatchSwipe(3, -42);
 	if ((await swipeRow.locator("[data-swu]").getAttribute("data-mag")) !== "r1") {
 		throw new Error(`ia_ui_mail_short_swipe_preview_${browserName}`);
+	}
+	await page.waitForTimeout(650);
+	if ((await swipeRow.getAttribute("data-unread")) !== unreadBeforeVertical) {
+		throw new Error(`ia_ui_mail_accidental_swipe_committed_${browserName}`);
+	}
+
+	// Zřetelný bezpečnostní přesah commitne až po 600 ms klidu a nejprve přehraje
+	// odjezd řádku; datová mutace přijde teprve po dokončení animace.
+	await dispatchSwipe(4, -42);
+	await page.waitForTimeout(650);
+	if ((await swipeRow.locator("[data-swu]").getAttribute("data-phase")) !== "committing") {
+		throw new Error(`ia_ui_mail_swipe_commit_animation_${browserName}`);
+	}
+	if ((await swipeRow.getAttribute("data-unread")) !== unreadBeforeVertical) {
+		throw new Error(`ia_ui_mail_swipe_mutated_before_animation_${browserName}`);
 	}
 	await page.waitForTimeout(240);
 	if ((await swipeRow.getAttribute("data-unread")) === unreadBeforeVertical) {
 		throw new Error(`ia_ui_mail_short_swipe_action_${browserName}`);
 	}
 
-	// Velký práh je samostatný stav a spouští se až po skončení gesta.
-	await swipeRow.dispatchEvent("wheel", { deltaX: -270, deltaY: 0 });
+	// Velký práh má vlastní hysterézi, bezpečnostní přesah a stejnou commit animaci.
+	await dispatchSwipe(7, -42);
 	if ((await swipeRow.locator("[data-swu]").getAttribute("data-mag")) !== "r2") {
 		throw new Error(`ia_ui_mail_long_swipe_preview_${browserName}`);
 	}
-	await page.waitForTimeout(240);
+	await page.waitForTimeout(890);
 	if ((await swipeRow.getAttribute("data-pinned")) !== "true") {
 		throw new Error(`ia_ui_mail_long_swipe_action_${browserName}`);
 	}
@@ -974,7 +1035,14 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 			waitUntil: "domcontentloaded",
 			timeout: 30_000,
 		});
-		await page.getByRole("heading", { name: "Provoz", exact: true }).waitFor();
+		try {
+			await page.getByRole("heading", { name: "Provoz", exact: true }).waitFor();
+		} catch {
+			const body = (await page.locator("body").innerText()).replace(/\s+/g, " ").slice(0, 1_000);
+			throw new Error(
+				`ia_ui_mobile_operations_missing_${browserName}:${page.url()}:${body}:runtime=${runtimeErrors.join(" | ")}`,
+			);
+		}
 		await assertNoOverflow(page, `${browserName}_operations_390`);
 		await page.getByRole("button", { name: "Více", exact: true }).click();
 		const sheet = page.getByRole("dialog", { name: "Další sekce" });

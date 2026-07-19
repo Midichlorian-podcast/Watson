@@ -110,15 +110,17 @@ export function Prehled() {
 		[workspaces],
 	);
 	const leadership = isLeadership(workspaces);
-	const surface = vstup === "provoz" && !leadership ? "tym" : (vstup ?? "overview");
+	const workspacesResolved = workspaces !== undefined;
+	const surface =
+		vstup === "provoz" && workspacesResolved && !leadership ? "tym" : (vstup ?? "overview");
 	useEffect(() => {
-		if (vstup !== "provoz" || leadership) return;
+		if (vstup !== "provoz" || !workspacesResolved || leadership) return;
 		void navigate({
 			to: "/prehled",
 			search: (current) => ({ ...current, vstup: "tym" }),
 			replace: true,
 		});
-	}, [leadership, navigate, vstup]);
+	}, [leadership, navigate, vstup, workspacesResolved]);
 	const { projects, isLoading: projLoading } = useProjectsWithState();
 	const flowSteps = useFlowSteps();
 	const goalsAll = useGoalsOverview(t);

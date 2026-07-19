@@ -14,7 +14,7 @@ import { useTaskDetail } from "../lib/taskDetail";
 import { deadlineLabel, rowDue, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { deleteTaskWithUndo, pushColumnUndo } from "../lib/undo";
-import { type SwipeMag, useSwipe } from "../lib/useSwipe";
+import { type SwipeMag, type SwipePhase, useSwipe } from "../lib/useSwipe";
 import { useWorkspaces } from "../lib/workspace";
 import { type CtxItem, useContextMenu } from "./ContextMenu";
 
@@ -68,9 +68,10 @@ export function TaskItem({
 	// provede PŘI PUŠTĚNÍ (žádná potvrzovací tlačítka — 6. kolo feedbacku).
 	// Akce jsou stavové (reverzní): hotový úkol → „Vrátit".
 	const doneTask = Boolean(task.completed_at);
-	const [sw, setSw] = useState<{ dx: number; mag: SwipeMag }>({
+	const [sw, setSw] = useState<{ dx: number; mag: SwipeMag; phase: SwipePhase }>({
 		dx: 0,
 		mag: "none",
+		phase: "settling",
 	});
 	// R4: přímý posun due_date u opakovaného úkolu by přepsal kotvu CELÉ řady bez dotazu
 	// tento/další/celá řada. Testujeme recurrence_rule (engine), ne jen recurrence (lidský
@@ -187,7 +188,7 @@ export function TaskItem({
 			];
 	const swipe = useSwipe({
 		disabled: !selectable,
-		onUpdate: (dx, mag) => setSw({ dx, mag }),
+		onUpdate: (dx, mag, phase) => setSw({ dx, mag, phase }),
 		onSwipe: (mag) => {
 			if (mag === "r1" || mag === "r2") {
 				rightActs[0]?.run();
@@ -209,6 +210,8 @@ export function TaskItem({
 			{...swipe.handlers}
 			onContextMenu={(e) => cm.open(e, ctxItems)}
 			data-swipe-surface="task"
+			data-swipe-phase={sw.phase}
+			data-swipe-mag={sw.mag}
 			style={{
 				position: "relative",
 				touchAction: "pan-y",
@@ -237,6 +240,7 @@ export function TaskItem({
 				>
 					{dragAct && (
 						<span
+							data-swipe-feedback
 							style={{
 								display: "flex",
 								alignItems: "center",
@@ -262,7 +266,12 @@ export function TaskItem({
 			<div
 				style={{
 					transform: `translateX(${sw.dx}px)`,
-					transition: sw.dx === 0 ? "transform .18s ease" : "none",
+					transition:
+						sw.phase === "tracking"
+							? "none"
+							: sw.phase === "committing"
+								? "transform 220ms cubic-bezier(.22,.72,.2,1)"
+								: "transform 210ms cubic-bezier(.2,.78,.24,1)",
 				}}
 			>
 				<TaskCard

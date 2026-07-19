@@ -60,7 +60,8 @@ const checks = [
 	],
 	[
 		"Provoz se omezuje na skutečně vedené prostory a členův deep-link přesměruje na Tým",
-		overview.includes('vstup !== "provoz" || leadership') &&
+		overview.includes("const workspacesResolved = workspaces !== undefined") &&
+			overview.includes('vstup !== "provoz" || !workspacesResolved || leadership') &&
 			overview.includes('search: (current) => ({ ...current, vstup: "tym" })') &&
 			overview.includes("replace: true") &&
 			overview.includes("leadershipWorkspaceIds.has(workspaceId)") &&

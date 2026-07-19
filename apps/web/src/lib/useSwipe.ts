@@ -2,8 +2,8 @@
  * Jednotný řádkový swipe pro mail i úkoly.
  *
  * - pointer (touch / stisk a tah): akce při skutečném puštění;
- * - trackpad (wheel): živý náhled a commit po krátkém klidu, protože webové
- *   wheel eventy nemají přenositelnou fázi „prsty zvednuty";
+ * - trackpad (wheel): živý náhled, zřetelný bezpečnostní přesah a commit až po
+ *   delším klidu, protože webové wheel eventy nemají fázi „prsty zvednuty";
  * - horizontální wheel je připojen nativně jako non-passive, aby Safari ani
  *   Chromium neposouvaly současně celý viewport;
  * - r1/r2/l1/l2 jsou čtyři samostatné dosažitelné stavy.
@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef } from "react";
 export type SwipeMag = "none" | "r0" | "r1" | "r2" | "l0" | "l1" | "l2";
 export type SwipeActionMag = "r1" | "r2" | "l1" | "l2";
 export type SwipeSide = "l" | "r";
+export type SwipePhase = "tracking" | "settling" | "committing";
 
 let gestureOwner: symbol | null = null;
 export function claimGesture(id: symbol): boolean {
@@ -28,8 +29,15 @@ export function releaseGesture(id: symbol): void {
 export const SWIPE_SHORT = 110;
 /** Velké potažení (tier 2). */
 export const SWIPE_LONG = 260;
-/** Klid trackpadu interpretovaný jako konec gesta. */
-export const SWIPE_WHEEL_SETTLE_MS = 180;
+/** Klid trackpadu interpretovaný jako konec gesta. Mikro-pauza nesmí provést akci. */
+export const SWIPE_WHEEL_SETTLE_MS = 600;
+/** Wheel nemá release, proto musí zřetelně přejet za náhledový práh. */
+export const SWIPE_WHEEL_SHORT_COMMIT = SWIPE_SHORT + 28;
+export const SWIPE_WHEEL_LONG_COMMIT = SWIPE_LONG + 32;
+export const SWIPE_COMMIT_ANIMATION_MS = 220;
+export const SWIPE_HYSTERESIS = 14;
+export const SWIPE_WHEEL_AXIS_RATIO = 1.6;
+export const SWIPE_WHEEL_MAX_DELTA = 42;
 /** Levý/pravý okraj necháváme systémovému back/forward gestu na dotyku. */
 export const SWIPE_EDGE_GUARD = 18;
 
@@ -42,6 +50,35 @@ export const swipeMag = (dx: number): SwipeMag => {
 	if (distance < SWIPE_SHORT) return `${side}0` as SwipeMag;
 	if (distance < SWIPE_LONG) return `${side}1` as SwipeMag;
 	return `${side}2` as SwipeMag;
+};
+
+/** Stabilizuje stav kolem hranice: drobné vrácení prstů nesmí rychle přepínat akce. */
+export const swipeMagWithHysteresis = (dx: number, previous: SwipeMag): SwipeMag => {
+	const next = swipeMag(dx);
+	const distance = Math.abs(dx);
+	const side = dx >= 0 ? "r" : "l";
+	if (!previous.startsWith(side)) return next;
+	if (previous.endsWith("2") && distance >= SWIPE_LONG - SWIPE_HYSTERESIS) return previous;
+	if (
+		previous.endsWith("1") &&
+		distance >= SWIPE_SHORT - SWIPE_HYSTERESIS &&
+		distance < SWIPE_LONG + SWIPE_HYSTERESIS
+	)
+		return previous;
+	return next;
+};
+
+export const clampSwipeWheelDelta = (delta: number): number =>
+	Math.sign(delta) * Math.min(Math.abs(delta), SWIPE_WHEEL_MAX_DELTA);
+
+/** Trackpadový commit je úmyslně přísnější než náhled; release u něj web nezná. */
+export const swipeWheelCommitMag = (dx: number): SwipeActionMag | null => {
+	const distance = Math.abs(dx);
+	const side = dx > 0 ? "r" : "l";
+	if (distance >= SWIPE_WHEEL_LONG_COMMIT) return `${side}2` as SwipeActionMag;
+	if (distance >= SWIPE_LONG) return null;
+	if (distance >= SWIPE_WHEEL_SHORT_COMMIT) return `${side}1` as SwipeActionMag;
+	return null;
 };
 
 /** Gumový odpor až za velkým prahem; oba akční prahy tak zůstávají dosažitelné. */
@@ -71,7 +108,7 @@ export const swipeBuzz = (kind: "threshold" | "commit" = "threshold"): void => {
 
 export function useSwipe(opts: {
 	/** Živý vizuál během tahu — dx je po gumovém odporu. */
-	onUpdate: (dx: number, mag: SwipeMag) => void;
+	onUpdate: (dx: number, mag: SwipeMag, phase: SwipePhase) => void;
 	/** Dokončený tah přes jeden ze čtyř akčních prahů. */
 	onSwipe: (mag: SwipeActionMag) => void;
 	disabled?: boolean;
@@ -81,6 +118,9 @@ export function useSwipe(opts: {
 	const gid = useRef(Symbol("swipe"));
 	const lastTier = useRef<SwipeMag>("none");
 	const blockUntil = useRef(0);
+	const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const committing = useRef(false);
 	const pointer = useRef({
 		tracking: false,
 		active: false,
@@ -95,32 +135,65 @@ export function useSwipe(opts: {
 		timer: null as ReturnType<typeof setTimeout> | null,
 	});
 
+	const pulse = useCallback((kind: "threshold" | "commit") => {
+		const surface = surfaceRef.current;
+		if (!surface) return;
+		if (pulseTimer.current) clearTimeout(pulseTimer.current);
+		surface.setAttribute("data-swipe-pulse", kind);
+		pulseTimer.current = setTimeout(() => {
+			surfaceRef.current?.removeAttribute("data-swipe-pulse");
+			pulseTimer.current = null;
+		}, kind === "commit" ? 180 : 130);
+	}, []);
+
 	const emit = useCallback(
 		(dx: number) => {
 			const eased = swipeEase(dx);
-			const mag = swipeMag(eased);
-			if (ACTION_TIERS.has(mag) && mag !== lastTier.current) swipeBuzz("threshold");
+			const mag = swipeMagWithHysteresis(dx, lastTier.current);
+			if (ACTION_TIERS.has(mag) && mag !== lastTier.current) {
+				swipeBuzz("threshold");
+				pulse("threshold");
+			}
 			lastTier.current = mag;
-			onUpdate(eased, mag);
+			onUpdate(eased, mag, "tracking");
 		},
-		[onUpdate],
+		[onUpdate, pulse],
 	);
 
 	const finish = useCallback(
-		(dx: number) => {
+		(dx: number, source: "pointer" | "wheel") => {
 			releaseGesture(gid.current);
-			lastTier.current = "none";
-			onUpdate(0, "none");
-			const mag = swipeMag(swipeEase(dx));
-			if (mag === "r1" || mag === "r2" || mag === "l1" || mag === "l2") {
-				blockUntil.current = Date.now() + 350;
-				swipeBuzz("commit");
-				onSwipe(mag);
-			} else if (Math.abs(dx) > 16) {
-				blockUntil.current = Date.now() + 350;
+			const previewMag = swipeMagWithHysteresis(dx, lastTier.current);
+			const mag =
+				source === "wheel"
+					? swipeWheelCommitMag(dx)
+					: previewMag === "r1" ||
+							previewMag === "r2" ||
+							previewMag === "l1" ||
+							previewMag === "l2"
+						? previewMag
+						: null;
+			if (!mag) {
+				lastTier.current = "none";
+				onUpdate(0, "none", "settling");
+				if (Math.abs(dx) > 16) blockUntil.current = Date.now() + 350;
+				return;
 			}
+			committing.current = true;
+			blockUntil.current = Date.now() + SWIPE_COMMIT_ANIMATION_MS + 400;
+			swipeBuzz("commit");
+			pulse("commit");
+			const width = surfaceRef.current?.clientWidth ?? SWIPE_LONG * 2;
+			onUpdate((mag.startsWith("r") ? 1 : -1) * (width + 32), mag, "committing");
+			commitTimer.current = setTimeout(() => {
+				commitTimer.current = null;
+				onSwipe(mag);
+				committing.current = false;
+				lastTier.current = "none";
+				onUpdate(0, "none", "settling");
+			}, SWIPE_COMMIT_ANIMATION_MS);
 		},
-		[onUpdate, onSwipe],
+		[onUpdate, onSwipe, pulse],
 	);
 
 	const cancelWheel = useCallback(
@@ -130,14 +203,19 @@ export function useSwipe(opts: {
 			wheel.current = { acc: 0, armed: false, timer: null };
 			lastTier.current = "none";
 			if (wasArmed) releaseGesture(gid.current);
-			if (resetVisual && wasArmed) onUpdate(0, "none");
+			if (resetVisual && wasArmed) onUpdate(0, "none", "settling");
 		},
 		[onUpdate],
 	);
 
 	const onPointerDown = useCallback(
 		(event: React.PointerEvent<HTMLDivElement>) => {
-			if (disabled || !event.isPrimary || (event.pointerType !== "touch" && event.button !== 0)) {
+			if (
+				disabled ||
+				committing.current ||
+				!event.isPrimary ||
+				(event.pointerType !== "touch" && event.button !== 0)
+			) {
 				return;
 			}
 			if (
@@ -168,7 +246,7 @@ export function useSwipe(opts: {
 			const dy = event.clientY - current.startY;
 			if (!current.active) {
 				if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
-				if (Math.abs(dx) <= Math.abs(dy)) {
+				if (Math.abs(dx) <= Math.abs(dy) * 1.25) {
 					pointer.current.tracking = false;
 					return;
 				}
@@ -202,7 +280,7 @@ export function useSwipe(opts: {
 				startY: 0,
 				dx: 0,
 			};
-			if (current.active) finish(current.dx);
+			if (current.active) finish(current.dx, "pointer");
 		},
 		[finish],
 	);
@@ -223,7 +301,7 @@ export function useSwipe(opts: {
 				releaseGesture(gid.current);
 				lastTier.current = "none";
 				blockUntil.current = Date.now() + 350;
-				onUpdate(0, "none");
+				onUpdate(0, "none", "settling");
 			}
 		},
 		[onUpdate],
@@ -231,27 +309,30 @@ export function useSwipe(opts: {
 
 	const onWheel = useCallback(
 		(event: WheelEvent) => {
-			if (disabled) return;
+			if (disabled || committing.current) return;
 			const horizontal = Math.abs(event.deltaX);
 			const vertical = Math.abs(event.deltaY);
+			// Safari si může začít rezervovat back/forward gesto dřív, než dosáhneme
+			// akčního prahu. Jasně horizontální delta se proto zastaví už v capture fázi.
+			if (horizontal > vertical && horizontal > 0) event.preventDefault();
 			if (!wheel.current.armed) {
-				if (horizontal < 3 || horizontal <= vertical) return;
+				if (horizontal < 6 || horizontal < vertical * SWIPE_WHEEL_AXIS_RATIO) return;
 				if (!claimGesture(gid.current)) return;
 				wheel.current.armed = true;
-			} else if (vertical > 12 && vertical > horizontal * 2) {
+			} else if (vertical > 10 && vertical >= horizontal) {
 				cancelWheel(true);
 				return;
 			}
 			// Od chvíle, kdy je gesto rozpoznané jako horizontální, nesmí pokračovat
 			// do Safari historie ani do celé stránky.
 			event.preventDefault();
-			wheel.current.acc -= event.deltaX;
+			wheel.current.acc -= clampSwipeWheelDelta(event.deltaX);
 			emit(wheel.current.acc);
 			if (wheel.current.timer) clearTimeout(wheel.current.timer);
 			wheel.current.timer = setTimeout(() => {
 				const dx = wheel.current.acc;
 				wheel.current = { acc: 0, armed: false, timer: null };
-				finish(dx);
+				finish(dx, "wheel");
 			}, SWIPE_WHEEL_SETTLE_MS);
 		},
 		[disabled, cancelWheel, emit, finish],
@@ -260,13 +341,15 @@ export function useSwipe(opts: {
 	useEffect(() => {
 		const surface = surfaceRef.current;
 		if (!surface) return;
-		surface.addEventListener("wheel", onWheel, { passive: false });
-		return () => surface.removeEventListener("wheel", onWheel);
+		surface.addEventListener("wheel", onWheel, { passive: false, capture: true });
+		return () => surface.removeEventListener("wheel", onWheel, { capture: true });
 	}, [onWheel]);
 
 	useEffect(
 		() => () => {
 			if (wheel.current.timer) clearTimeout(wheel.current.timer);
+			if (commitTimer.current) clearTimeout(commitTimer.current);
+			if (pulseTimer.current) clearTimeout(pulseTimer.current);
 			releaseGesture(gid.current);
 		},
 		[],

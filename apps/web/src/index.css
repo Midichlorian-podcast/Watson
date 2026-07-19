@@ -55,6 +55,7 @@ body {
    se dorovnají na den; víkend je klidnější a pondělí zůstává čitelné v každé kotvě. */
 .w-calendar-strip {
 	overscroll-behavior-x: none;
+	overflow-anchor: none;
 	scrollbar-color: color-mix(in srgb, var(--w-ink-3) 55%, transparent) transparent;
 	scrollbar-width: thin;
 }
@@ -69,6 +70,29 @@ body {
 	border-radius: 999px;
 	background: color-mix(in srgb, var(--w-ink-3) 55%, transparent);
 	background-clip: padding-box;
+}
+
+@keyframes w-swipe-threshold-pulse {
+	50% {
+		transform: scale(1.035);
+		filter: brightness(1.08);
+	}
+}
+
+/* Safari neumí vyvolat haptiku Mac trackpadu. Tato mikroodezva je viditelný
+   ekvivalent; na platformách s Vibration API ji useSwipe doplní skutečnou vibrací. */
+[data-swipe-pulse] [data-swipe-feedback] {
+	animation: w-swipe-threshold-pulse 130ms ease-out;
+}
+
+[data-swipe-pulse="commit"] [data-swipe-feedback] {
+	animation-duration: 180ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	[data-swipe-pulse] [data-swipe-feedback] {
+		animation: none;
+	}
 }
 
 .w-calendar-day-weekend {

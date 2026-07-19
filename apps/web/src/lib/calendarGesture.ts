@@ -1,8 +1,9 @@
 export const CALENDAR_WHEEL_THRESHOLD = 32;
 export const CALENDAR_WHEEL_MAX_STEPS = 8;
 export const CALENDAR_STRIP_BUFFER_DAYS = 3;
-export const CALENDAR_STRIP_SETTLE_MS = 110;
-export const CALENDAR_STRIP_SNAP_MS = 150;
+/** Fallback pro prohlížeče bez scrollend; nesmí přerušit pomalou setrvačnost trackpadu. */
+export const CALENDAR_STRIP_SETTLE_MS = 320;
+export const CALENDAR_STRIP_SNAP_MS = 190;
 export const CALENDAR_INITIAL_HOUR = 6;
 
 export interface CalendarWheelProgress {

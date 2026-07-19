@@ -76,14 +76,13 @@ const HOURS = Array.from({ length: 25 }, (_, hour) => hour);
 const PPMOPT = { comfortable: 0.62, spacious: 0.95 } as const;
 const MAX_LANES = 3;
 const CALENDAR_STRIP_INTERACTION_EVENT = "watson:calendar-strip-interaction";
-// Pás CELÝ DEN: JEDEN per-den rozpočet. Vícedenní celodenní = defaultně tenká překryvná
-// linka protínající sloupce (nezabírá kartu). V dni, kde je rozpočet plný, se linka na tom
-// segmentu nekreslí a událost spadne do „+N" toho dne (odtud otevřitelná). Přeplněné chipy
-// i přetečené vícedenní se tak kapují na „+N" — pás nikdy nescrolluje.
-const ALLDAY_PER_COL = 3; // rozpočet karet CELÝ DEN na sloupec (jednodenní chipy), pak „+N"
-const MAX_LINE_ROWS = 3; // max řádků tenkých vícedenních linek (nad rámec → „+N")
-const LINE_ROW_H = 9; // výška řádku linky (klikací obálka)
-const LINE_H = 5; // tloušťka samotné linky
+const CALENDAR_GUTTER_WIDTH = 46;
+const CALENDAR_WEEK_HEADER_HEIGHT = 50;
+// Celý den je orientační pás, ne druhý seznam úkolů. Jeden vícedenní pruh + jedna
+// karta na sloupec udrží maximum přibližně na 64 px; zbytek zůstává v „+N".
+const ALLDAY_PER_COL = 1;
+const MAX_ALLDAY_BAR_ROWS = 1;
+const ALLDAY_BAR_ROW_HEIGHT = 24;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -188,6 +187,7 @@ function useRollingCalendarStrip({
 	visibleDays,
 	totalDays,
 	bufferDays,
+	viewportInset = 0,
 	anchorKey,
 	onAnchorOffset,
 	onScrollSync,
@@ -196,6 +196,7 @@ function useRollingCalendarStrip({
 	visibleDays: number;
 	totalDays: number;
 	bufferDays: number;
+	viewportInset?: number;
 	anchorKey: string;
 	onAnchorOffset: (offset: number) => void;
 	onScrollSync?: (left: number, top: number) => void;
@@ -207,6 +208,7 @@ function useRollingCalendarStrip({
 	const ignoreScroll = useRef(false);
 	const snapping = useRef(false);
 	const lastLeft = useRef(0);
+	const lastInteractionAt = useRef(0);
 	const onAnchorOffsetRef = useRef(onAnchorOffset);
 	const onScrollSyncRef = useRef(onScrollSync);
 	onAnchorOffsetRef.current = onAnchorOffset;
@@ -227,14 +229,14 @@ function useRollingCalendarStrip({
 		const element = scrollRef.current;
 		if (!element) return;
 		const measure = () => {
-			const next = calendarStripDayWidth(element.clientWidth, visibleDays);
+			const next = calendarStripDayWidth(element.clientWidth - viewportInset, visibleDays);
 			setDayWidth((current) => (Math.abs(current - next) < 0.25 ? current : next));
 		};
 		measure();
 		const observer = new ResizeObserver(measure);
 		observer.observe(element);
 		return () => observer.disconnect();
-	}, [scrollRef, visibleDays]);
+	}, [scrollRef, viewportInset, visibleDays]);
 
 	const center = calendarStripCenter(dayWidth, bufferDays);
 	const contentWidth = dayWidth * totalDays;
@@ -325,6 +327,7 @@ function useRollingCalendarStrip({
 	}, [scrollRef, settle]);
 
 	const onInteractionStart = useCallback(() => {
+		lastInteractionAt.current = performance.now();
 		if (!snapping.current && !ignoreScroll.current) return;
 		const wasWaitingForLayout = resetTimer.current !== null;
 		cancelMotion();
@@ -340,9 +343,27 @@ function useRollingCalendarStrip({
 		const element = scrollRef.current;
 		if (!element) return;
 		element.addEventListener(CALENDAR_STRIP_INTERACTION_EVENT, onInteractionStart);
+		const onScrollEnd = () => {
+			if (ignoreScroll.current || snapping.current) return;
+			if (settleTimer.current) clearTimeout(settleTimer.current);
+			const remaining = CALENDAR_STRIP_SETTLE_MS - (performance.now() - lastInteractionAt.current);
+			if (remaining > 0) {
+				settleTimer.current = setTimeout(() => {
+					settleTimer.current = null;
+					settle();
+				}, remaining);
+				return;
+			}
+			settleTimer.current = null;
+			settle();
+		};
+		element.addEventListener("scrollend", onScrollEnd);
 		return () =>
-			element.removeEventListener(CALENDAR_STRIP_INTERACTION_EVENT, onInteractionStart);
-	}, [onInteractionStart, scrollRef]);
+			{
+				element.removeEventListener(CALENDAR_STRIP_INTERACTION_EVENT, onInteractionStart);
+				element.removeEventListener("scrollend", onScrollEnd);
+			};
+	}, [onInteractionStart, scrollRef, settle]);
 	useEffect(() => cancelMotion, [cancelMotion]);
 
 	return {
@@ -1634,10 +1655,10 @@ function WeekColumns({
 							})}
 						</div>
 					);
-				})}
+					})}
+						</div>
+					</div>
 				</div>
-			</div>
-		</div>
 	);
 }
 
@@ -1686,9 +1707,6 @@ function TimeGrid({
 	const H = 1440 * PPM;
 	const weekGridRef = useRef<HTMLDivElement>(null);
 	const allDayRef = useRef<HTMLDivElement>(null);
-	const headerScrollRef = useRef<HTMLDivElement>(null);
-	const allDayScrollRef = useRef<HTMLDivElement>(null);
-	const timeGutterScrollRef = useRef<HTMLDivElement>(null);
 	const [nowMin, setNowMin] = useState(
 		() => minutesInTimeZone(new Date().toISOString(), timeZone) ?? 0,
 	);
@@ -1708,19 +1726,14 @@ function TimeGrid({
 		x: number;
 		y: number;
 	} | null>(null);
-	const syncCalendarTracks = useCallback((left: number, top: number) => {
-		if (headerScrollRef.current) headerScrollRef.current.scrollLeft = left;
-		if (allDayScrollRef.current) allDayScrollRef.current.scrollLeft = left;
-		if (timeGutterScrollRef.current) timeGutterScrollRef.current.scrollTop = top;
-	}, []);
 	const strip = useRollingCalendarStrip({
 		scrollRef,
 		visibleDays: visibleDayCount,
 		totalDays: days.length,
 		bufferDays: anchorIndex,
+		viewportInset: CALENDAR_GUTTER_WIDTH,
 		anchorKey: isoOf(days[anchorIndex] ?? new Date()),
 		onAnchorOffset,
-		onScrollSync: syncCalendarTracks,
 	});
 
 	// now-line refresh (60 s)
@@ -1781,7 +1794,9 @@ function TimeGrid({
 		if (!el) return null;
 		const r = el.getBoundingClientRect();
 		if (strip.dayWidth <= 0) return null;
-		const idx = Math.floor((el.scrollLeft + clientX - r.left) / strip.dayWidth);
+		const idx = Math.floor(
+			(el.scrollLeft + clientX - r.left - CALENDAR_GUTTER_WIDTH) / strip.dayWidth,
+		);
 		return isos[Math.max(0, Math.min(isos.length - 1, idx))] ?? null;
 	};
 
@@ -2014,9 +2029,8 @@ function TimeGrid({
 		onAdd(iso, snap((e.clientY - rect.top) / PPM));
 	};
 
-	// ── data pro pás CELÝ DEN ── JEDEN per-den rozpočet (ALLDAY_PER_COL karet).
-	// Vícedenní celodenní = tenké linky protínající sloupce; v plném dni linka na tom segmentu
-	// nekreslí a událost spadne do „+N" toho dne (odtud otevřitelná — i přetečená vícedenní).
+	// ── data pro kompaktní pás CELÝ DEN. Vícedenní položka má jeden čitelný pruh,
+	// nikdy anonymní čáru; další položky se skládají do „+N" místo růstu celé sekce.
 	const isWeekBand = visibleDayCount > 1;
 	const isoKey = isos.join("|");
 	// biome-ignore lint/correctness/useExhaustiveDependencies: isoKey pokrývá isos (stabilní klíč).
@@ -2037,7 +2051,7 @@ function TimeGrid({
 			return { segs: [] as Seg[], stripRows: 0, cols };
 		}
 		const n = isos.length;
-		// jednodenní celodenní chipy per sloupec + vícedenní celodenní (linky)
+		// jednodenní celodenní chipy per sloupec + vícedenní celodenní pruhy
 		const singleByIso = new Map<string, TaskRow[]>();
 		for (const iso of isos) singleByIso.set(iso, []);
 		const multi: TaskRow[] = [];
@@ -2064,9 +2078,7 @@ function TimeGrid({
 			}
 			if (!placed) rows.push([tk]);
 		}
-		const shown = rows.slice(0, MAX_LINE_ROWS);
-		// den je plný, když jednodenní chipy vyčerpají rozpočet → tam se linka nekreslí
-		const isFull = (iso: string) => (singleByIso.get(iso)?.length ?? 0) >= ALLDAY_PER_COL;
+		const shown = rows.slice(0, MAX_ALLDAY_BAR_ROWS);
 		const segs: Seg[] = [];
 		shown.forEach((row, ri) => {
 			for (const tk of row) {
@@ -2075,7 +2087,7 @@ function TimeGrid({
 				let run: number | null = null;
 				for (let i = 0; i < n; i++) {
 					const iso = isos[i] ?? "";
-					const draw = iso >= s && iso <= e && !isFull(iso);
+					const draw = iso >= s && iso <= e;
 					if (draw) {
 						if (run == null) run = i;
 					} else if (run != null) {
@@ -2240,17 +2252,51 @@ function TimeGrid({
 						</>
 					);
 				})()}
-			{/* Hlavička týdenního pásu; viewport sdílí přesný scrollLeft s mřížkou. */}
-			{visibleDayCount > 1 && (
-				<div className="flex flex-none">
-					<div style={{ width: 46, flex: "none" }} />
+			{/* Jeden společný 2D scroller: hlavička, Celý den i časy sdílejí tutéž
+			    horizontální souřadnici. Sticky prvky řeší jen orientaci, ne synchronizaci. */}
+			<div
+				ref={scrollRef}
+				data-calendar-strip={visibleDayCount === 7 ? "week-grid" : "day-grid"}
+				data-calendar-visible-days={visibleDayCount}
+				data-calendar-initial-hour="6"
+				className="w-calendar-strip min-h-0 min-w-0 flex-1 overflow-auto"
+				style={{ overscrollBehaviorX: "none" }}
+				onScroll={strip.onScroll}
+				onWheel={strip.onInteractionStart}
+				onPointerDown={strip.onInteractionStart}
+			>
+				<div
+					style={{
+						width: strip.contentWidth + CALENDAR_GUTTER_WIDTH,
+						minHeight: H + 40,
+						position: "relative",
+					}}
+				>
+				{/* Hlavička dnů je součást stejného pásu a drží se nahoře. */}
+				{visibleDayCount > 1 && (
 					<div
-						ref={headerScrollRef}
-						data-calendar-scroll-mirror
-						className="w-calendar-strip min-w-0 flex-1 overflow-hidden"
+						className="flex"
+						style={{
+							position: "sticky",
+							top: 0,
+							height: CALENDAR_WEEK_HEADER_HEIGHT,
+							width: "100%",
+							zIndex: 20,
+							background: "var(--w-card)",
+						}}
 					>
+						<div
+							style={{
+								position: "sticky",
+								left: 0,
+								width: CALENDAR_GUTTER_WIDTH,
+								flex: "none",
+								zIndex: 2,
+								background: "var(--w-card)",
+							}}
+						/>
 						<div className="flex" style={{ width: strip.contentWidth }}>
-					{days.map((d, index) => {
+						{days.map((d, index) => {
 						const iso = isoOf(d);
 						const isToday = iso === todayIso;
 						const isPrimary =
@@ -2289,18 +2335,22 @@ function TimeGrid({
 								</div>
 							</div>
 						);
-					})}
+						})}
 						</div>
 					</div>
-				</div>
-			)}
+				)}
 
-			{/* pás CELÝ DEN (ř. 2798–2826) */}
+			{/* Kompaktní pás CELÝ DEN — sticky pod hlavičkou, max. jedna karta na den. */}
 			<div
 				ref={allDayRef}
-				className="relative flex flex-none items-stretch border-line border-b"
+				data-calendar-all-day
+				className="flex items-stretch border-line border-b"
 				style={{
+					position: "sticky",
+					top: visibleDayCount > 1 ? CALENDAR_WEEK_HEADER_HEIGHT : 0,
+					width: "100%",
 					minHeight: 30,
+					zIndex: 19,
 					background: "var(--w-panel-2)",
 				}}
 			>
@@ -2308,8 +2358,11 @@ function TimeGrid({
 				<div
 					className="flex items-center justify-center text-center font-mono uppercase"
 					style={{
-						width: 46,
+						position: "sticky",
+						left: 0,
+						width: CALENDAR_GUTTER_WIDTH,
 						flex: "none",
+						zIndex: 2,
 						fontSize: 8.5,
 						color: "var(--w-ink-3)",
 						letterSpacing: ".02em",
@@ -2319,43 +2372,66 @@ function TimeGrid({
 				>
 					{t("calendar.allDayBand")}
 				</div>
-				<div
-					ref={allDayScrollRef}
-					data-calendar-scroll-mirror
-					className="w-calendar-strip min-w-0 flex-1 overflow-hidden"
-				>
 				<div className="relative" style={{ width: strip.contentWidth }}>
-					{/* vícedenní celodenní = tenké překryvné linky protínající sloupce (strop MAX_LINE_ROWS).
-					    V plném dni se segment linky nekreslí — událost je v „+N" toho dne (viz allDay memo). */}
+					{/* Vícedenní položka je popsaný kompaktní pruh, ne anonymní barevná čára. */}
 					{allDay.stripRows > 0 && (
-						<div className="relative" style={{ height: allDay.stripRows * LINE_ROW_H + 4 }}>
+						<div
+							className="relative"
+							style={{ height: allDay.stripRows * ALLDAY_BAR_ROW_HEIGHT + 2 }}
+						>
 							{allDay.segs.map((sg) => {
 								const done = Boolean(sg.tk.completed_at);
 								const leftPct = (sg.x0 / isos.length) * 100;
 								const wPct = ((sg.x1 - sg.x0 + 1) / isos.length) * 100;
-								const col = done
-									? "var(--w-line)"
-									: (uc(sg.tk.id, sg.tk.color) as string) || borderColorOf(sg.tk);
+								const rangeLabel = t("today.daysCount", { count: sg.tk.days ?? 1 });
+								const labelDay = Math.max(sg.x0, Math.min(sg.x1, anchorIndex));
+								const labelInset = (labelDay - sg.x0) * strip.dayWidth;
 								return (
 									<div
 										key={`${sg.tk.id}:${sg.x0}:${sg.x1}`}
 										data-adchip
+										data-calendar-multiday-bar
 										onPointerDown={allDayChipDown(sg.tk)}
 										title={`${sg.tk.name ?? ""} · ${t("today.daysCount", { count: sg.tk.days ?? 1 })}`}
-										className="absolute flex cursor-grab items-center"
+										className="absolute flex cursor-grab items-center overflow-hidden rounded-[6px] border border-line bg-card"
 										style={{
-											top: sg.row * LINE_ROW_H + 2,
+											top: sg.row * ALLDAY_BAR_ROW_HEIGHT + 1,
 											left: `calc(${leftPct}% + 2px)`,
 											width: `calc(${wPct}% - 4px)`,
-											height: LINE_ROW_H,
+											height: 22,
+											gap: 5,
+											padding: "0 7px",
+											borderLeft: `3px solid ${done ? "var(--w-line)" : borderColorOf(sg.tk)}`,
+											background:
+												!done && uc(sg.tk.id, sg.tk.color)
+													? tcTint(uc(sg.tk.id, sg.tk.color) as string)
+													: undefined,
 											opacity: done ? 0.55 : 1,
 											zIndex: 3,
 										}}
 									>
 										<span
-											className="w-full"
-											style={{ height: LINE_H, borderRadius: 999, background: col }}
-										/>
+											className="flex min-w-0 items-center"
+											style={{
+												width: Math.max(0, strip.dayWidth - 14),
+												flex: "none",
+												marginLeft: labelInset,
+												gap: 5,
+											}}
+										>
+											<span
+												className="min-w-0 flex-1 truncate font-display font-semibold"
+												style={{ fontSize: 11, color: done ? "var(--w-ink-3)" : "var(--w-ink)" }}
+											>
+												{sg.tk.name}
+											</span>
+											<span
+												className="shrink-0 font-mono"
+												style={{ fontSize: 9, color: "var(--w-ink-3)" }}
+											>
+												{rangeLabel}
+											</span>
+										</span>
 									</div>
 								);
 							})}
@@ -2385,6 +2461,7 @@ function TimeGrid({
 									data-calendar-day={iso}
 									data-calendar-day-kind={calendarDayKind(day)}
 									data-calendar-primary={isPrimary ? "true" : "false"}
+									data-calendar-track="all-day"
 									onClick={(e) => {
 										if ((e.target as HTMLElement).closest("[data-adchip]")) return;
 										onAdd(iso, null);
@@ -2392,10 +2469,12 @@ function TimeGrid({
 									className={`${calendarDayClassName(day)} flex min-w-0 flex-col border-line border-l`}
 									style={{
 										flex: `0 0 ${strip.dayWidth}px`,
-										gap: 3,
-										padding: 4,
+										position: "relative",
+										gap: 2,
+										padding: "3px 4px",
 										background: isToday ? "var(--w-brass-soft)" : undefined,
 										minHeight: 26,
+										height: 30,
 										cursor: "pointer",
 									}}
 									onDragOver={(e) => e.preventDefault()}
@@ -2413,10 +2492,10 @@ function TimeGrid({
 												key={tk.id}
 												data-adchip
 												onPointerDown={allDayChipDown(tk)}
-												className="flex cursor-grab items-center rounded-[6px] border border-line bg-card"
-												style={{
-													gap: 5,
-													padding: "3px 7px 3px 8px",
+											className="flex h-6 cursor-grab items-center overflow-hidden rounded-[6px] border border-line bg-card"
+											style={{
+												gap: 4,
+												padding: overflowN > 0 ? "2px 29px 2px 6px" : "2px 6px",
 													borderLeft: `3px solid ${done ? "var(--w-line)" : borderColorOf(tk)}`,
 													opacity: done ? 0.55 : 1,
 													background:
@@ -2425,7 +2504,7 @@ function TimeGrid({
 															: undefined,
 												}}
 											>
-												<CalCheck t={tk} size={13} />
+											<CalCheck t={tk} size={12} />
 												<span
 													className="shrink-0 rounded-full"
 													style={{
@@ -2435,18 +2514,12 @@ function TimeGrid({
 													}}
 												/>
 												<span
-													className="font-display font-semibold"
-													style={{
-														fontSize: 11.5,
-														color: done ? "var(--w-ink-3)" : "var(--w-ink)",
-														textDecoration: done ? "line-through" : "none",
-														display: "-webkit-box",
-														WebkitLineClamp: 2,
-														WebkitBoxOrient: "vertical",
-														overflow: "hidden",
-														overflowWrap: "break-word",
-														wordBreak: "break-word",
-													}}
+												className="min-w-0 flex-1 truncate font-display font-semibold"
+												style={{
+													fontSize: 11,
+													color: done ? "var(--w-ink-3)" : "var(--w-ink)",
+													textDecoration: done ? "line-through" : "none",
+												}}
 												>
 													{tk.name}
 													{tk.recurrence ? " ↻" : ""}
@@ -2463,10 +2536,11 @@ function TimeGrid({
 												const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 												setAdPopover({ iso, x: r.left, y: r.bottom + 4 });
 											}}
-											className="rounded-[6px] text-left font-display font-semibold text-brass-text hover:bg-brass-soft"
-											style={{ fontSize: 10.5, padding: "2px 8px" }}
-										>
-											+{overflowN} {t("calendar.moreCount", { count: overflowN })}
+										aria-label={`+${overflowN} ${t("calendar.moreCount", { count: overflowN })}`}
+										className="absolute rounded-[6px] bg-panel-2 font-display font-semibold text-brass-text hover:bg-brass-soft"
+										style={{ top: 4, right: 4, zIndex: 2, fontSize: 10, padding: "2px 5px" }}
+									>
+										+{overflowN}
 										</button>
 									)}
 									{visibleDayCount === 1 && isPrimary && list.length === 0 && (
@@ -2485,17 +2559,20 @@ function TimeGrid({
 							);
 						})}
 					</div>
-				</div>
 			</div>
 			</div>
 
-			{/* Časová osa zůstává pevná; jediný scroller řídí horizontální pás i vertikální čas. */}
-			<div className="flex min-h-0 flex-1">
+			{/* Časová osa a dny jsou ve stejném scrollovacím souřadném systému. */}
+			<div className="flex" style={{ width: "100%" }}>
 				<div
-					ref={timeGutterScrollRef}
-					data-calendar-scroll-mirror
-					className="w-calendar-time-gutter flex-none overflow-hidden"
-					style={{ width: 46 }}
+					className="w-calendar-time-gutter flex-none"
+					style={{
+						position: "sticky",
+						left: 0,
+						width: CALENDAR_GUTTER_WIDTH,
+						zIndex: 8,
+						background: "var(--w-card)",
+					}}
 				>
 				<div
 					style={{ height: H + 40, position: "relative" }}
@@ -2512,17 +2589,6 @@ function TimeGrid({
 						))}
 					</div>
 				</div>
-				<div
-					ref={scrollRef}
-					data-calendar-strip={visibleDayCount === 7 ? "week-grid" : "day-grid"}
-					data-calendar-visible-days={visibleDayCount}
-					data-calendar-initial-hour="6"
-					className="w-calendar-strip min-h-0 min-w-0 flex-1 overflow-auto"
-					style={{ overscrollBehaviorX: "none" }}
-					onScroll={strip.onScroll}
-					onWheel={strip.onInteractionStart}
-					onPointerDown={strip.onInteractionStart}
-				>
 				<div
 					ref={weekGridRef}
 					className="flex"
@@ -2617,6 +2683,7 @@ function TimeGrid({
 								data-calendar-day={iso}
 								data-calendar-day-kind={calendarDayKind(d)}
 								data-calendar-primary={isPrimary ? "true" : "false"}
+								data-calendar-track="time"
 								onClick={gridClickAdd(iso)}
 								onPointerDown={createDown(iso)}
 								onDragOver={(e) => e.preventDefault()}
@@ -3043,9 +3110,10 @@ function TimeGrid({
 						);
 					})}
 				</div>
-				</div>
 			</div>
 		</div>
+	</div>
+</div>
 	);
 }
 
