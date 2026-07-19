@@ -9,13 +9,15 @@ import {
 	mailAccounts,
 	mailMessages,
 	mailOutboundMessages,
+	mailSyncStates,
 	memberships,
 	users,
 	workspaces,
 } from "@watson/db";
 import { hashPassword } from "better-auth/crypto";
-import { scanMailOutbound } from "./src/mailOutbound";
 import { encryptMailContent } from "./src/mailContentVault";
+import { scanMailOutbound } from "./src/mailOutbound";
+import { scanMailSync } from "./src/mailSync";
 
 const API = process.env.MAIL_API ?? "http://127.0.0.1:8790";
 const STUB = process.env.MAIL_GOOGLE_API_BASE_URL ?? "http://127.0.0.1:8793";
@@ -181,6 +183,22 @@ async function enqueue(cookie: string, accountId: string, payload: ReturnType<ty
 	return request(cookie, `/api/mail/accounts/${accountId}/outbound`, "POST", payload);
 }
 
+async function settleInitialSync(accountId: string) {
+	for (let attempt = 0; attempt < 50; attempt += 1) {
+		await scanMailSync();
+		const state = (
+			await db
+				.select()
+				.from(mailSyncStates)
+				.where(eq(mailSyncStates.accountId, accountId))
+				.limit(1)
+		)[0];
+		if (state?.status === "idle" && state.syncMode === "partial") return state;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+	throw new Error("mail outbound initial sync did not settle");
+}
+
 async function main() {
 	const owner = await provision("owner");
 	const stranger = await provision("stranger");
@@ -196,41 +214,42 @@ async function main() {
 				.where(eq(mailAccounts.ownerUserId, owner.userId))
 				.limit(1)
 		)[0];
-			if (!account) throw new Error("mail outbound account missing");
-			const replySourceId = crypto.randomUUID();
-			const replyProviderId = "reply-source-001";
-			const replyThreadId = "thread-reply-source-001";
-			const replySourceContent = {
-				subject: "Původní zpráva",
-				from: "Původní odesílatel <reply-source@example.test>",
-				to: [owner.email],
-				cc: [],
-				replyTo: "",
-				dateHeader: new Date().toUTCString(),
-				authenticationResults: "spf=pass; dkim=pass; dmarc=pass",
-				returnPath: "<reply-source@example.test>",
-				messageIdHeader: "<reply-source@example.test>",
-				references: ["<reply-root@example.test>"],
-				snippet: "Původní zpráva",
-				textBody: "Původní text, který se nesmí propsat do auditu.",
-				htmlBody: "",
-				attachments: [],
-			};
-			await db.insert(mailMessages).values({
-				id: replySourceId,
-				accountId: account.id,
-				providerMessageId: replyProviderId,
-				providerThreadId: replyThreadId,
-				historyId: "999001",
-				internalDate: new Date(),
-				labelIds: ["INBOX"],
-				sizeEstimate: 512,
-				lastSeenSyncGeneration: crypto.randomUUID(),
-				...encryptMailContent(
-					{ accountId: account.id, provider: "google", providerMessageId: replyProviderId },
-					replySourceContent,
-				),
-			});
+		if (!account) throw new Error("mail outbound account missing");
+		const syncState = await settleInitialSync(account.id);
+		const replySourceId = crypto.randomUUID();
+		const replyProviderId = "reply-source-001";
+		const replyThreadId = "thread-reply-source-001";
+		const replySourceContent = {
+			subject: "Původní zpráva",
+			from: "Původní odesílatel <reply-source@example.test>",
+			to: [owner.email],
+			cc: [],
+			replyTo: "",
+			dateHeader: new Date().toUTCString(),
+			authenticationResults: "spf=pass; dkim=pass; dmarc=pass",
+			returnPath: "<reply-source@example.test>",
+			messageIdHeader: "<reply-source@example.test>",
+			references: ["<reply-root@example.test>"],
+			snippet: "Původní zpráva",
+			textBody: "Původní text, který se nesmí propsat do auditu.",
+			htmlBody: "",
+			attachments: [],
+		};
+		await db.insert(mailMessages).values({
+			id: replySourceId,
+			accountId: account.id,
+			providerMessageId: replyProviderId,
+			providerThreadId: replyThreadId,
+			historyId: "999001",
+			internalDate: new Date(),
+			labelIds: ["INBOX"],
+			sizeEstimate: 512,
+			lastSeenSyncGeneration: syncState.fullSyncGeneration,
+			...encryptMailContent(
+				{ accountId: account.id, provider: "google", providerMessageId: replyProviderId },
+				replySourceContent,
+			),
+		});
 
 		let response = await request(null, `/api/mail/accounts/${account.id}/outbound`);
 		check("odchozí registr je bez session fail-closed", response.status === 401, response);
