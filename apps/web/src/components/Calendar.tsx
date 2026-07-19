@@ -10,6 +10,7 @@ import {
 	useState,
 } from "react";
 import { useAddTask } from "../lib/addTask";
+import { calendarWeekMinWidth, calendarWheelDirection } from "../lib/calendarViewport";
 import { useSession } from "../lib/auth-client";
 import { materializeRecurringTasks, type OccurrenceOverrideRow } from "../lib/occurrenceProjection";
 import { parseOccId } from "../lib/occurrences";
@@ -490,25 +491,30 @@ export function Calendar({
 		return () => window.removeEventListener("keydown", h);
 	}, [shiftCur, goToday, setMode]);
 
-	// Horizontální wheel navigace (port calWheel, ř. 2671) — mimo měsíc roluje po 1 dni.
+	// Týden má vlastní nativní horizontální scroll. V Den/Měsíc čekáme na konec gesta
+	// a provedeme nejvýš jeden krok; starý while-loop dokázal z jediného swipu vyrobit
+	// až osm renderů a osm routerových navigací.
 	const wheelAcc = useRef(0);
+	const wheelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	useEffect(
+		() => () => {
+			if (wheelTimer.current) clearTimeout(wheelTimer.current);
+		},
+		[],
+	);
 	const onWheel = (e: React.WheelEvent) => {
+		if (modeRef.current === "week") return;
 		if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+		e.preventDefault();
 		wheelAcc.current += e.deltaX;
-		let steps = 0;
-		let offset = 0;
-		while (Math.abs(wheelAcc.current) >= 32 && steps < 8) {
-			const dir = wheelAcc.current > 0 ? 1 : -1;
-			offset += dir;
-			wheelAcc.current -= dir * 32;
-			steps++;
-		}
-		if (!offset) return;
-		const currentMode = modeRef.current;
-		const next = new Date(curRef.current);
-		if (currentMode === "month") next.setMonth(next.getMonth() + offset, 1);
-		else next.setDate(next.getDate() + offset);
-		commitNavigation(currentMode, next);
+		if (wheelTimer.current) clearTimeout(wheelTimer.current);
+		wheelTimer.current = setTimeout(() => {
+			const dir = calendarWheelDirection(wheelAcc.current, 0);
+			wheelAcc.current = 0;
+			wheelTimer.current = null;
+			if (!dir) return;
+			shiftCur(dir);
+		}, 90);
 	};
 
 	const borderColorOf = (tk: TaskRow) =>
@@ -712,6 +718,7 @@ export function Calendar({
 					</button>
 				</div>
 				<span
+					data-testid="calendar-range-label"
 					className="whitespace-nowrap font-display font-extrabold text-ink capitalize"
 					style={{ fontSize: 16 }}
 				>
@@ -1141,10 +1148,17 @@ function WeekColumns({
 }) {
 	const { t } = useTranslation();
 	const uc = useUserColors();
+	const minWidth = calendarWeekMinWidth(days.length);
 	return (
-		<div className="flex min-h-0 flex-1 flex-col">
+		<div
+			data-calendar-horizontal-scroll
+			className="w-calendar-horizontal-scroll flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden"
+		>
 			{/* hlavičková lišta */}
-			<div className="flex flex-none border-line border-b">
+			<div
+				className="flex flex-none border-line border-b"
+				style={{ width: `max(100%, ${minWidth}px)` }}
+			>
 				{days.map((d) => {
 					const iso = isoOf(d);
 					const isToday = iso === todayIso;
@@ -1181,7 +1195,10 @@ function WeekColumns({
 				})}
 			</div>
 			{/* ploché sloupce — flex:1 min-height:0 overflow auto (prototyp ř. 2607) */}
-			<div className="flex min-h-0 flex-1 items-stretch overflow-y-auto">
+			<div
+				className="flex min-h-0 flex-1 items-stretch overflow-y-auto"
+				style={{ width: `max(100%, ${minWidth}px)` }}
+			>
 				{days.map((d) => {
 					const iso = isoOf(d);
 					const isToday = iso === todayIso;
@@ -1372,6 +1389,7 @@ function TimeGrid({
 	const { metaOf } = useRowMeta();
 	const uc = useUserColors();
 	const H = 1440 * PPM;
+	const minWidth = calendarWeekMinWidth(days.length, days.length > 1);
 	const weekGridRef = useRef<HTMLDivElement>(null);
 	const allDayRef = useRef<HTMLDivElement>(null);
 	const [nowMin, setNowMin] = useState(
@@ -1759,7 +1777,10 @@ function TimeGrid({
 
 	return (
 		// full-bleed flex sloupec — bez rounded karty (prototyp buildWeek, ř. 2861)
-		<div className="flex min-h-0 flex-1 flex-col">
+		<div
+			data-calendar-horizontal-scroll
+			className="w-calendar-horizontal-scroll flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden"
+		>
 			{/* plovoucí náhled tažené celodenní karty (vizuální feedback dragu) */}
 			{chipGhost && (
 				<div
@@ -1892,7 +1913,13 @@ function TimeGrid({
 				})()}
 			{/* hlavička dnů (jen týden; den view ji nemá — ř. 2846) */}
 			{isos.length > 1 && (
-				<div className="flex flex-none" style={{ marginLeft: 46 }}>
+				<div
+					className="flex flex-none"
+					style={{
+						marginLeft: 46,
+						width: `calc(max(100%, ${minWidth}px) - 46px)`,
+					}}
+				>
 					{days.map((d) => {
 						const iso = isoOf(d);
 						const isToday = iso === todayIso;
@@ -1931,7 +1958,11 @@ function TimeGrid({
 			<div
 				ref={allDayRef}
 				className="relative flex flex-none items-stretch border-line border-b"
-				style={{ minHeight: 30, background: "var(--w-panel-2)" }}
+				style={{
+					minHeight: 30,
+					background: "var(--w-panel-2)",
+					width: `max(100%, ${minWidth}px)`,
+				}}
 			>
 				{/* gutter popisek vertikálně i horizontálně na středu (prototyp ř. 2824) */}
 				<div
@@ -2106,7 +2137,11 @@ function TimeGrid({
 			</div>
 
 			{/* mřížka — flex:1 min-height:0, scroll uvnitř (prototyp ř. 2860, bez maxHeight) */}
-			<div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+			<div
+				ref={scrollRef}
+				className="min-h-0 flex-1 overflow-y-auto"
+				style={{ width: `max(100%, ${minWidth}px)` }}
+			>
 				<div
 					ref={weekGridRef}
 					className="flex"

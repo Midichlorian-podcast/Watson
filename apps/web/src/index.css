@@ -51,6 +51,26 @@ body {
 	overflow-x: clip;
 }
 
+/* Týdenní kalendář je skutečný horizontální povrch. Safari tak po trackpadu
+   posouvá dny uvnitř Watsonu a gesto se nepřenese na celý dokument. */
+.w-calendar-horizontal-scroll {
+	overscroll-behavior-x: contain;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-gutter: stable;
+	scrollbar-color: var(--w-ink-3) transparent;
+}
+
+.w-calendar-horizontal-scroll::-webkit-scrollbar {
+	height: 10px;
+}
+
+.w-calendar-horizontal-scroll::-webkit-scrollbar-thumb {
+	border: 3px solid transparent;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--w-ink-3) 62%, transparent);
+	background-clip: padding-box;
+}
+
 body {
 	margin: 0;
 	background-color: var(--w-paper);

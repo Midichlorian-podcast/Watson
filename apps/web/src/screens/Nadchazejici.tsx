@@ -102,32 +102,42 @@ export function Nadchazejici() {
 		},
 		[navigate],
 	);
+	const calendarNavigationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const calendarNavigationRef = useRef<{
+		range: "day" | "week" | "month";
+		date: string;
+	} | null>(null);
 	const updateCalendarNavigation = useCallback(
 		(next: { range: "day" | "week" | "month"; date: string }) => {
-			void navigate({
-				to: "/nadchazejici",
-				search: (current) => ({
-					...current,
-					zobrazeni: "calendar",
-					rozsah: next.range,
-					datum: next.date,
-				}),
-				replace: true,
-			});
+			calendarNavigationRef.current = next;
+			if (calendarNavigationTimer.current) clearTimeout(calendarNavigationTimer.current);
+			calendarNavigationTimer.current = setTimeout(() => {
+				const pending = calendarNavigationRef.current;
+				calendarNavigationTimer.current = null;
+				if (!pending) return;
+				void navigate({
+					to: "/nadchazejici",
+					search: (current) => ({
+						...current,
+						zobrazeni: "calendar",
+						rozsah: pending.range,
+						datum: pending.date,
+					}),
+					replace: true,
+				});
+			}, 120);
 		},
 		[navigate],
 	);
-	// Výkon: bez „Dokončené" filtruj hotové v SQL (opakované úkoly mají completed_at vždy NULL —
-	// dokončení posouvá due_date, takže se neztratí žádná řada).
-	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
-		tb.showDone
-			? "SELECT * FROM tasks WHERE due_date IS NOT NULL ORDER BY due_date"
-			: "SELECT * FROM tasks WHERE due_date IS NOT NULL AND completed_at IS NULL ORDER BY due_date",
+	useEffect(
+		() => () => {
+			if (calendarNavigationTimer.current) clearTimeout(calendarNavigationTimer.current);
+		},
+		[],
 	);
-	// Kalendář má vlastní zdroj: NEOŘEZANÝ do budoucna (jinak zmizí minulé/zpožděné úkoly a panel
-	// „Plánování → Zpožděné" je mrtvý) a nezávislý na skrytém „Dokončené" (aby šlo hotové vidět
-	// a přes CalCheck zas odškrtnout). Filtruje se jen podle workspace, ne toolbarem ani hledáním.
-	const { data: calAll, isLoading: calendarLoading } = usePsQuery<TaskRow>(
+	// Jeden lokální odběr je zdrojem pro všechny tři pohledy. Původně obrazovka držela dvě
+	// téměř shodné PowerSync subscription a při každé interakci zbytečně zpracovávala obě.
+	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		"SELECT * FROM tasks WHERE due_date IS NOT NULL ORDER BY due_date",
 	);
 	const flowSteps = useFlowSteps();
@@ -160,13 +170,13 @@ export function Nadchazejici() {
 	// Kalendář není ořezaný jen na budoucnost, ale respektuje stejný uložitelný filtr,
 	// řazení, workspace a hledání jako ostatní pohledy tohoto modulu.
 	const calTasks = useMemo(() => {
-		let list = calAll ?? [];
+		let list = allTasks ?? [];
 		if (wsFilter)
 			list = list.filter(
 				(x) => x.project_id && projMap.get(x.project_id)?.workspace_id === wsFilter,
 			);
 		return filterByQuery(sortTasks(filterTasks(list, tb, tbCtx), tb, tbCtx), searchQ);
-	}, [calAll, wsFilter, projMap, tb, tbCtx, searchQ]);
+	}, [allTasks, wsFilter, projMap, tb, tbCtx, searchQ]);
 
 	const view2 = useMemo(() => {
 		const tdy = todayISO();
@@ -214,18 +224,18 @@ export function Nadchazejici() {
 	const kbSel = useKbNav(flatList, view === "list");
 
 	const empty = view2.length === 0;
+	// Kalendář je strukturální plocha: po průchodu globálním SyncGate se má vyrenderovat
+	// okamžitě a lokální řádky se do něj doplní. Blokovat celou mřížku kvůli obnovující se
+	// subscription vytvářelo několikasekundový spinner i ve chvíli, kdy cache už byla použitelná.
 	if (
-		projectsLoading ||
-		tasksLoading ||
-		calendarLoading ||
-		overridesLoading ||
-		recurrencePrefixesLoading
+		view !== "calendar" &&
+		(projectsLoading || tasksLoading || overridesLoading || recurrencePrefixesLoading)
 	)
 		return <DataLoading />;
 
 	if (view === "calendar") {
 		return (
-			<div className="mx-auto max-w-[1080px] px-5 py-7">
+			<div className="w-full min-w-0 px-3 py-3 sm:px-5 sm:py-5">
 				<WorkspaceChips value={wsFilter} onChange={updateWorkspaceFilter} />
 				<TasksToolbar
 					state={tb}
