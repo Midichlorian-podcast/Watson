@@ -678,7 +678,7 @@ export function Calendar({
 			ref={rootRef}
 			data-testid="calendar-root"
 			className="flex min-h-0 flex-col"
-			style={{ height: rootH }}
+			style={{ height: rootH, overscrollBehaviorX: "none" }}
 			onWheel={onWheel}
 		>
 			{/* toolbar — lišta s border-b (prototyp ř. 491–503) */}

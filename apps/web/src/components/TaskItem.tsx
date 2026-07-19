@@ -207,9 +207,11 @@ export function TaskItem({
 		<div
 			{...swipe.handlers}
 			onContextMenu={(e) => cm.open(e, ctxItems)}
+			data-swipe-surface="task"
 			style={{
 				position: "relative",
 				touchAction: "pan-y",
+				overscrollBehaviorX: "none",
 				overflow: sw.dx !== 0 ? "hidden" : undefined,
 			}}
 		>

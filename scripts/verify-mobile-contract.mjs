@@ -20,6 +20,8 @@ if (taskCard.indexOf("{quickMenu && (") > taskCard.indexOf('<span className="w-t
 }
 
 for (const [needle, message] of [
+	["overscroll-behavior-x: none;", "CSS: viewport neblokuje horizontální Safari overscroll"],
+	["overflow-x: clip;", "CSS: dokument není horizontální scroll container"],
 	[".w-taskmain {", "CSS: chybí mobilní rozbalení hlavní oblasti karty"],
 	[".w-taskmeta {", "CSS: chybí samostatný řádek metadat"],
 	["order: 1;", "CSS: metadata nemají stabilní pořadí"],

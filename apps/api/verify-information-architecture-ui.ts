@@ -440,6 +440,37 @@ async function verifyCalendarNavigation(
 	);
 	const calendar = page.getByTestId("calendar-root");
 	await calendar.waitFor({ timeout: 30_000 });
+	const horizontalContainment = await page.evaluate(() => {
+		const html = getComputedStyle(document.documentElement);
+		const body = getComputedStyle(document.body);
+		const root = document.querySelector<HTMLElement>("#root");
+		const calendarRoot = document.querySelector<HTMLElement>('[data-testid="calendar-root"]');
+		return {
+			htmlOverscroll: html.overscrollBehaviorX,
+			bodyOverscroll: body.overscrollBehaviorX,
+			rootOverscroll: root ? getComputedStyle(root).overscrollBehaviorX : "missing",
+			calendarOverscroll: calendarRoot
+				? getComputedStyle(calendarRoot).overscrollBehaviorX
+				: "missing",
+			htmlOverflow: html.overflowX,
+			bodyOverflow: body.overflowX,
+			scrollWidth: document.documentElement.scrollWidth,
+			clientWidth: document.documentElement.clientWidth,
+		};
+	});
+	if (
+		horizontalContainment.htmlOverscroll !== "none" ||
+		horizontalContainment.bodyOverscroll !== "none" ||
+		horizontalContainment.rootOverscroll !== "none" ||
+		horizontalContainment.calendarOverscroll !== "none" ||
+		!(["clip", "hidden"] as string[]).includes(horizontalContainment.htmlOverflow) ||
+		!(["clip", "hidden"] as string[]).includes(horizontalContainment.bodyOverflow) ||
+		horizontalContainment.scrollWidth > horizontalContainment.clientWidth
+	) {
+		throw new Error(
+			`ia_ui_horizontal_gesture_not_contained_${browserName}:${JSON.stringify(horizontalContainment)}`,
+		);
+	}
 
 	await calendar.getByRole("button", { name: "Další", exact: true }).click();
 	await waitForState("week", "2026-07-20");
@@ -459,6 +490,9 @@ async function verifyCalendarNavigation(
 	await waitForState("day", "2026-07-23");
 	await calendar.dispatchEvent("wheel", { deltaX: -32, deltaY: 0 });
 	await waitForState("day", "2026-07-22");
+	if ((await page.evaluate(() => window.scrollX)) !== 0) {
+		throw new Error(`ia_ui_calendar_moved_viewport_${browserName}`);
+	}
 
 	const month = calendar.locator('[data-calendar-range="month"]');
 	await month.click();
@@ -485,7 +519,7 @@ async function verifyCalendarNavigation(
 	runtimeErrors.splice(runtimeErrorStart);
 
 	console.log(
-		`  ✓ ${browserName}: calendar buttons, range, keyboard and horizontal trackpad navigation`,
+		`  ✓ ${browserName}: calendar navigation stays inside the surface without viewport drift`,
 	);
 }
 
@@ -504,6 +538,18 @@ async function verifyMailCommunicationHierarchy(
 	await primaryReply.waitFor();
 	await editor.waitFor();
 	await preview.waitFor();
+	const swipeRows = page.locator('[data-swipe-surface="mail"]');
+	const swipeRowCount = await swipeRows.count();
+	if (swipeRowCount < 1) throw new Error(`ia_ui_mail_swipe_surface_missing_${browserName}`);
+	const swipeRow = swipeRows.nth(0);
+	if ((await swipeRow.evaluate((element) => getComputedStyle(element).overscrollBehaviorX)) !== "none") {
+		throw new Error(`ia_ui_mail_swipe_not_contained_${browserName}`);
+	}
+	await swipeRow.dispatchEvent("wheel", { deltaX: 24, deltaY: 0 });
+	await swipeRow.dispatchEvent("wheel", { deltaX: 0, deltaY: 32 });
+	if ((await page.evaluate(() => window.scrollX)) !== 0) {
+		throw new Error(`ia_ui_mail_swipe_moved_viewport_${browserName}`);
+	}
 	const suggestionBox = await suggestion.boundingBox();
 	if (!suggestionBox || suggestionBox.height > 130) {
 		throw new Error(`ia_ui_mail_ai_not_compact_${browserName}:${suggestionBox?.height ?? "missing"}`);

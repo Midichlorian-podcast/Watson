@@ -38,6 +38,17 @@ html,
 body,
 #root {
 	height: 100%;
+	max-width: 100%;
+	/* Horizontální gesto smí ovládat konkrétní povrch (kalendář, swipe řádku),
+	   nesmí ale pokračovat do viewportu a v Safari odtáhnout celou aplikaci. */
+	overscroll-behavior-x: none;
+}
+
+html,
+body {
+	/* `hidden` je fallback pro starší Safari; `clip` nevytváří další scroll container. */
+	overflow-x: hidden;
+	overflow-x: clip;
 }
 
 body {

@@ -481,9 +481,15 @@ function MailRow({
 			{...swipe.handlers}
 			data-tid={t.id}
 			data-mrow
+			data-swipe-surface="mail"
 			data-sel={m.sel === t.id || undefined}
 			data-unread={vm.unread || undefined}
-			style={{ touchAction: "pan-y", position: "relative", overflow: "hidden" }}
+			style={{
+				touchAction: "pan-y",
+				overscrollBehaviorX: "none",
+				position: "relative",
+				overflow: "hidden",
+			}}
 		>
 			{/* podklad swipe akcí (prototyp data-swu + pilulky, CSS ř. 76–86) */}
 			<div ref={swuRef} data-swu data-mag="none" data-act="none">
