@@ -158,8 +158,12 @@ async function run(browserName: "chromium" | "webkit") {
 		}
 		const googleConnect = mailDialog.getByRole("button", { name: "Pokračovat", exact: true });
 		if (await googleConnect.isDisabled()) throw new Error("mail_accounts_ui_google_not_configured");
-		if ((await mailDialog.getByText("Připravujeme", { exact: true }).count()) !== 2) {
+		if ((await mailDialog.getByText("Připravujeme", { exact: true }).count()) !== 1) {
 			throw new Error("mail_accounts_ui_unavailable_adapters_not_explicit");
+		}
+		const imapConnect = mailDialog.getByRole("button", { name: "Nastavit", exact: true });
+		if ((await imapConnect.count()) !== 1 || (await imapConnect.isDisabled())) {
+			throw new Error("mail_accounts_ui_imap_smtp_not_available");
 		}
 		await assertAxeClean(page, `${browserName}_mail_accounts_desktop`);
 		await mailDialog.getByRole("button", { name: "Zavřít", exact: true }).click();

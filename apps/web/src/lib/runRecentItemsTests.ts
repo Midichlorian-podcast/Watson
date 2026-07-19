@@ -1,4 +1,4 @@
-import { writePrivateJsonWith } from "./powersync/privateState";
+import { takePrivateJsonWith, writePrivateJsonWith } from "./powersync/privateState";
 import { mergeRecentEntities, type RecentEntity } from "./recentItems";
 
 let failed = 0;
@@ -77,6 +77,41 @@ for (const exists of [false, true]) {
 		calls.length === 1 && calls[0]?.startsWith(exists ? "UPDATE" : "INSERT") === true,
 		calls,
 	);
+}
+
+console.log("(e) atomické převzetí jednorázového private state");
+{
+	let stored: string | null = JSON.stringify({ subject: "Jen jednou" });
+	let transactions = 0;
+	const database = {
+		writeTransaction: async (
+			callback: (transaction: {
+				getOptional: () => Promise<{ value: string } | null>;
+				execute: () => Promise<void>;
+			}) => Promise<void>,
+		) => {
+			transactions += 1;
+			await callback({
+				getOptional: async () => (stored === null ? null : { value: stored }),
+				execute: async () => {
+					stored = null;
+				},
+			});
+		},
+	};
+	const first = await takePrivateJsonWith<{ subject: string } | null>(
+		database as never,
+		"compose",
+		null,
+	);
+	const second = await takePrivateJsonWith<{ subject: string } | null>(
+		database as never,
+		"compose",
+		null,
+	);
+	check("první okno návrh převezme", first?.subject === "Jen jednou", first);
+	check("druhé okno už dostane prázdný stav", second === null, second);
+	check("každé převzetí proběhne uvnitř DB transakce", transactions === 2, transactions);
 }
 
 if (failed) {

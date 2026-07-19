@@ -128,6 +128,9 @@ async function run(browserName: "chromium" | "webkit") {
     const context = await browser.newContext({
       locale: "cs-CZ",
       reducedMotion: "reduce",
+      // Tento verifier mockuje citlivé LuckyOS facade odpovědi přes page.route.
+      // Produkční service worker by ve WebKitu mohl request převzít dřív než mock.
+      serviceWorkers: "block",
       viewport: { width: 1280, height: 800 },
     });
     const page = await context.newPage();

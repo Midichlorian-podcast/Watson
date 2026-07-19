@@ -297,7 +297,7 @@ const reportyRoute = createRoute({
 	}),
 });
 
-/** Dočasné routy pro nav cíle (nahradí je reálné obrazovky v dalších úkolech). */
+/** Adresovatelné rychlé filtry ze sidebaru nad reálnými úkoly. */
 const oblP1Route = createRoute({
 	getParentRoute: () => rootRoute,
 	path: "/oblibene/p1",

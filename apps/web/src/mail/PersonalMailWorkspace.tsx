@@ -2,6 +2,11 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { PersonalMailComposer } from "./PersonalMailComposer";
+import {
+	PERSONAL_COMPOSE_INTENT_EVENT,
+	takePersonalComposeIntent,
+	type PersonalComposeIntent,
+} from "./personalComposeIntent";
 import { PersonalMailTaskDialog } from "./PersonalMailTaskDialog";
 import { SharedDraftsDialog } from "./SharedDraftsDialog";
 import { useMail } from "./state";
@@ -181,6 +186,7 @@ export function PersonalMailWorkspace({
 	const [taskDialogMessage, setTaskDialogMessage] = useState<PersonalMessageSummary | null>(null);
 	const [composerOpen, setComposerOpen] = useState(false);
 	const [composerReply, setComposerReply] = useState<PersonalMessageDetail | null>(null);
+	const [composerPrefill, setComposerPrefill] = useState<PersonalComposeIntent | null>(null);
 	const [sharedDraftsOpen, setSharedDraftsOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const [sort, setSort] = useState<PersonalMailView["sort"]>("newest");
@@ -232,6 +238,26 @@ export function PersonalMailWorkspace({
 		const timer = window.setTimeout(() => void tools.search(query, sort), 280);
 		return () => window.clearTimeout(timer);
 	}, [query, sort, tools.search]);
+	useEffect(() => {
+		let active = true;
+		const consume = () => {
+			void takePersonalComposeIntent().then((intent) => {
+				if (!active || !intent) return;
+				setComposerReply(null);
+				setComposerPrefill(intent);
+				setComposerOpen(true);
+			});
+		};
+		// Odklad je záměrný: vývojový React Strict Mode první efekt ihned uklidí
+		// a znovu připojí. Jednorázový návrh proto smí převzít až stabilní mount.
+		const timer = window.setTimeout(consume, 0);
+		window.addEventListener(PERSONAL_COMPOSE_INTENT_EVENT, consume);
+		return () => {
+			active = false;
+			window.clearTimeout(timer);
+			window.removeEventListener(PERSONAL_COMPOSE_INTENT_EVENT, consume);
+		};
+	}, []);
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {
 			if (event.metaKey || event.ctrlKey || event.altKey || document.querySelector("[data-esc-layer]")) return;
@@ -556,7 +582,7 @@ export function PersonalMailWorkspace({
 					onOpenTask={openTask}
 				/>
 			)}
-			{composerOpen && <PersonalMailComposer model={model} replyTo={composerReply} onClose={() => { setComposerOpen(false); setComposerReply(null); }} />}
+			{composerOpen && <PersonalMailComposer model={model} replyTo={composerReply} prefill={composerPrefill} onClose={() => { setComposerOpen(false); setComposerReply(null); setComposerPrefill(null); }} />}
 			<SharedDraftsDialog open={sharedDraftsOpen} accounts={model.accounts} onClose={() => setSharedDraftsOpen(false)} />
 		</section>
 	);

@@ -1,5 +1,6 @@
 import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
+import type { PersonalComposeIntent } from "./personalComposeIntent";
 import { useMailReplyAssistant } from "./useMailReplyAssistant";
 import type { PersonalMailModel, PersonalMessageDetail } from "./usePersonalMail";
 
@@ -47,10 +48,12 @@ export function PersonalMailComposer({
 	model,
 	onClose,
 	replyTo = null,
+	prefill = null,
 }: {
 	model: PersonalMailModel;
 	onClose: () => void;
 	replyTo?: PersonalMessageDetail | null;
+	prefill?: PersonalComposeIntent | null;
 }) {
 	const connected = model.accounts.filter((account) => account.status === "connected");
 	const [accountId, setAccountId] = useState(
@@ -58,11 +61,15 @@ export function PersonalMailComposer({
 			? model.accountFilter
 			: connected[0]?.id ?? ""),
 	);
-	const [to, setTo] = useState(() => replyTo ? replyAddress(replyTo.replyTo || replyTo.from) : "");
+	const [to, setTo] = useState(() =>
+		replyTo ? replyAddress(replyTo.replyTo || replyTo.from) : (prefill?.to ?? ""),
+	);
 	const [cc, setCc] = useState("");
 	const [bcc, setBcc] = useState("");
-	const [subject, setSubject] = useState(() => replyTo ? replySubject(replyTo.subject) : "");
-	const [textBody, setTextBody] = useState("");
+	const [subject, setSubject] = useState(() =>
+		replyTo ? replySubject(replyTo.subject) : (prefill?.subject ?? ""),
+	);
+	const [textBody, setTextBody] = useState(() => prefill?.body ?? "");
 	const [sendLater, setSendLater] = useState(false);
 	const [sendAt, setSendAt] = useState("");
 	const [showCopies, setShowCopies] = useState(false);

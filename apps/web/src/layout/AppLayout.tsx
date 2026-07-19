@@ -88,12 +88,12 @@ export function AppLayout() {
 					<RowMetaProvider>
 						<ViewModeProvider>
 							<ListSearchProvider>
-								<WatsonProvider>
-									<AddTaskProvider>
-										<TaskDetailProvider>
-											<ProjectDetailProvider>
-												<BulkSelectProvider>
-													<MailBridgeProvider>
+								<AddTaskProvider>
+									<TaskDetailProvider>
+										<ProjectDetailProvider>
+											<BulkSelectProvider>
+												<MailBridgeProvider>
+													<WatsonProvider>
 														<KeyboardProvider>
 															<ContextMenuProvider>
 																<div
@@ -147,12 +147,12 @@ export function AppLayout() {
 																</div>
 															</ContextMenuProvider>
 														</KeyboardProvider>
-													</MailBridgeProvider>
-												</BulkSelectProvider>
-											</ProjectDetailProvider>
-										</TaskDetailProvider>
-									</AddTaskProvider>
-								</WatsonProvider>
+													</WatsonProvider>
+												</MailBridgeProvider>
+											</BulkSelectProvider>
+										</ProjectDetailProvider>
+									</TaskDetailProvider>
+								</AddTaskProvider>
 							</ListSearchProvider>
 						</ViewModeProvider>
 					</RowMetaProvider>

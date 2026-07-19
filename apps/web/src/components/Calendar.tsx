@@ -323,31 +323,44 @@ export function Calendar({
 		if (m !== "day" && m !== "month") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
 		return d;
 	});
-	const applyingExternalNavigation = useRef(false);
+	const modeRef = useRef(mode);
+	const curRef = useRef(cur);
+	modeRef.current = mode;
+	curRef.current = cur;
+
+	// URL je zdroj pravdy pouze tehdy, když se jeho hodnota skutečně změní.
+	// Závislost na lokálním `mode`/`cur` by po interní navigaci znovu aplikovala
+	// ještě staré props a zrušila kliknutí, klávesu i gesto trackpadu.
 	useEffect(() => {
-		if (!range || range === mode) return;
-		applyingExternalNavigation.current = true;
-		setModeState(range);
-	}, [range, mode]);
+		if (!range) return;
+		modeRef.current = range;
+		setModeState((current) => (current === range ? current : range));
+	}, [range]);
 	useEffect(() => {
-		if (!anchorDate || isoOf(cur) === anchorDate) return;
-		applyingExternalNavigation.current = true;
-		setCur(fromISO(anchorDate));
-	}, [anchorDate, cur]);
-	useEffect(() => {
-		if (!onNavigationChange) return;
-		if (applyingExternalNavigation.current) {
-			applyingExternalNavigation.current = false;
-			return;
-		}
-		onNavigationChange({ range: mode, date: isoOf(cur) });
-	}, [mode, cur, onNavigationChange]);
+		if (!anchorDate) return;
+		const next = fromISO(anchorDate);
+		curRef.current = next;
+		setCur((current) => (isoOf(current) === anchorDate ? current : next));
+	}, [anchorDate]);
 	const PPM = PPMOPT[density];
 
-	const setMode = useCallback((m: Mode) => {
-		setModeState(m);
-		storageSet(MODE_LS, m);
-	}, []);
+	const commitNavigation = useCallback(
+		(nextMode: Mode, nextDate: Date) => {
+			modeRef.current = nextMode;
+			curRef.current = nextDate;
+			setModeState(nextMode);
+			setCur(nextDate);
+			onNavigationChange?.({ range: nextMode, date: isoOf(nextDate) });
+		},
+		[onNavigationChange],
+	);
+	const setMode = useCallback(
+		(m: Mode) => {
+			storageSet(MODE_LS, m);
+			commitNavigation(m, curRef.current);
+		},
+		[commitNavigation],
+	);
 	const setWeekView = (v: WeekView) => {
 		setWeekViewState(v);
 		storageSet(WEEKVIEW_LS, v);
@@ -372,27 +385,26 @@ export function Calendar({
 
 	const shiftCur = useCallback(
 		(dir: number) => {
-			setCur((c) => {
-				const d = new Date(c);
-				if (mode === "day") d.setDate(d.getDate() + dir);
-				else if (mode === "week") d.setDate(d.getDate() + dir * 7);
-				else d.setMonth(d.getMonth() + dir, 1);
-				return d;
-			});
+			const currentMode = modeRef.current;
+			const d = new Date(curRef.current);
+			if (currentMode === "day") d.setDate(d.getDate() + dir);
+			else if (currentMode === "week") d.setDate(d.getDate() + dir * 7);
+			else d.setMonth(d.getMonth() + dir, 1);
+			commitNavigation(currentMode, d);
 		},
-		[mode],
+		[commitNavigation],
 	);
 	const goToday = useCallback(() => {
 		const d = new Date(`${dateInTimeZone(userTimeZone)}T12:00:00`);
 		// Dnes v týdnu → snap kotvy na pondělí (prototyp calToday, ř. 2661).
-		if (mode === "week") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-		setCur(d);
+		if (modeRef.current === "week") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+		commitNavigation(modeRef.current, d);
 		const el = gridScrollRef.current;
 		if (el) {
 			const nowMin = minutesInTimeZone(new Date().toISOString(), userTimeZone) ?? 0;
 			el.scrollTop = Math.max(0, nowMin * PPM - 90);
 		}
-	}, [mode, PPM, userTimeZone]);
+	}, [commitNavigation, PPM, userTimeZone]);
 	const calendarLanguage = i18n.language;
 
 	/** Dny zobrazeného období. Popisky přes Intl(i18n.language) — CS genitivy měsíců i EN. */
@@ -478,24 +490,25 @@ export function Calendar({
 		return () => window.removeEventListener("keydown", h);
 	}, [shiftCur, goToday, setMode]);
 
-	// Horizontální wheel navigace (port calWheel, ř. 2671) — mimo měsíc roluje po 1 dni (shiftCur(dir)).
+	// Horizontální wheel navigace (port calWheel, ř. 2671) — mimo měsíc roluje po 1 dni.
 	const wheelAcc = useRef(0);
 	const onWheel = (e: React.WheelEvent) => {
 		if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
 		wheelAcc.current += e.deltaX;
 		let steps = 0;
+		let offset = 0;
 		while (Math.abs(wheelAcc.current) >= 32 && steps < 8) {
 			const dir = wheelAcc.current > 0 ? 1 : -1;
-			if (mode === "month") shiftCur(dir);
-			else
-				setCur((c) => {
-					const d = new Date(c);
-					d.setDate(d.getDate() + dir);
-					return d;
-				});
+			offset += dir;
 			wheelAcc.current -= dir * 32;
 			steps++;
 		}
+		if (!offset) return;
+		const currentMode = modeRef.current;
+		const next = new Date(curRef.current);
+		if (currentMode === "month") next.setMonth(next.getMonth() + offset, 1);
+		else next.setDate(next.getDate() + offset);
+		commitNavigation(currentMode, next);
 	};
 
 	const borderColorOf = (tk: TaskRow) =>
@@ -663,6 +676,7 @@ export function Calendar({
 	return (
 		<div
 			ref={rootRef}
+			data-testid="calendar-root"
 			className="flex min-h-0 flex-col"
 			style={{ height: rootH }}
 			onWheel={onWheel}
@@ -718,6 +732,8 @@ export function Calendar({
 							key={k}
 							type="button"
 							onClick={() => setMode(k)}
+							aria-pressed={mode === k}
+							data-calendar-range={k}
 							className="rounded-md font-display font-semibold"
 							style={{
 								fontSize: 12,
@@ -890,8 +906,8 @@ export function Calendar({
 							controlledBase={monthBase}
 							borderColorOf={borderColorOf}
 							onOpenDay={(d) => {
-								setCur(d);
-								setMode("day");
+								storageSet(MODE_LS, "day");
+								commitNavigation("day", d);
 							}}
 							onDropDay={(id, iso, min) => void moveTask(id, iso, min)}
 						/>
@@ -930,8 +946,8 @@ export function Calendar({
 							}
 							onMove={moveTask}
 							onOpenDay={(iso) => {
-								setCur(fromISO(iso));
-								setMode("day");
+								storageSet(MODE_LS, "day");
+								commitNavigation("day", fromISO(iso));
 							}}
 						/>
 					)}

@@ -129,7 +129,7 @@
 	--w-success-soft: rgba(46, 156, 110, 0.16);
 	--w-success-ink: #6fd2a6;
 	--w-info-ink: #8bb8ff;
-	--w-overdue: #e07365;
+	--w-overdue: #e98275; /* AA i na overdue-soft: 4,95:1 v tmavém motivu */
 	--w-overdue-soft: rgba(224, 115, 101, 0.17);
 	--w-avatar: #33455f;
 	--w-p1: #e0635a;

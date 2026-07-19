@@ -6,6 +6,7 @@
  * klíče se příkazová vrstva skryje (503) a zůstane jen odkaz na přehled.
  */
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useNavigate } from "@tanstack/react-router";
 import i18n from "@watson/i18n";
 import { type CSSProperties, useMemo, useState } from "react";
 import { logTaskActivity } from "../lib/activity";
@@ -17,6 +18,11 @@ import { powerSync } from "../lib/powersync/db";
 import { showToast } from "../lib/toast";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace } from "../lib/workspace";
+import {
+	PERSONAL_COMPOSE_INTENT_EVENT,
+	savePersonalComposeIntent,
+} from "../mail/personalComposeIntent";
+import { useMail } from "../mail/state";
 
 interface Action {
 	type: string;
@@ -56,6 +62,8 @@ const CARD: CSSProperties = {
 export function WatsonCard({ onClose }: { onClose: () => void }) {
 	const { activeWs } = useWorkspace();
 	const { data: session } = useSession();
+	const navigate = useNavigate();
+	const mail = useMail();
 	const trapRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	const { data: allProjects } = usePsQuery<ProjectRow>(
@@ -133,6 +141,7 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 		const uid = session.user.id;
 		setBusy(true);
 		let done = 0;
+		let composeIntent: { to: string; subject: string; body: string } | null = null;
 		try {
 			for (let i = 0; i < actions.length; i++) {
 				if (!keep[i]) continue;
@@ -203,10 +212,21 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 						body: JSON.stringify({ name: String(p.name ?? "").slice(0, 200), workspaceId: activeWs }),
 					});
 					if (r.ok) done++;
-				} else if (a.type === "draft_email" || a.type === "assign_email") {
-					// Mail je zatím z velké části demo — akci nabídneme, ale reálně neprovádíme.
-					showToast("Mailové akce přijdou v další etapě message sync/send.");
+				} else if (a.type === "draft_email" && !composeIntent) {
+					composeIntent = {
+						to: typeof p.to === "string" ? p.to : "",
+						subject: typeof p.subject === "string" ? p.subject : "",
+						body: typeof p.body === "string" ? p.body : "",
+					};
+					done++;
 				}
+			}
+			if (composeIntent) {
+				await savePersonalComposeIntent(composeIntent);
+				mail.setScr("mail");
+				mail.setFolder("osobni");
+				await navigate({ to: "/mail", search: {} });
+				window.dispatchEvent(new Event(PERSONAL_COMPOSE_INTENT_EVENT));
 			}
 			showToast(`Watson provedl ${done} ${done === 1 ? "akci" : "akcí"}.`);
 			onClose();

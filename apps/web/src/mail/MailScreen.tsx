@@ -74,11 +74,16 @@ export function MailScreen() {
 				messages[search.code ?? ""] ?? "Připojení se nepodařilo bezpečně dokončit. Zkus to znovu.",
 			);
 		}
-		const cleaned = new URL(window.location.href);
-		cleaned.searchParams.delete("mailConnection");
-		cleaned.searchParams.delete("code");
-		window.history.replaceState(window.history.state, "", cleaned);
-	}, [search.mailConnection, search.code]);
+		void navigate({
+			to: "/mail",
+			search: (current) => ({
+				...current,
+				mailConnection: undefined,
+				code: undefined,
+			}),
+			replace: true,
+		});
+	}, [navigate, search.mailConnection, search.code]);
 	useEffect(() => {
 		if (!search.mailAccount || !search.mailMessage) return;
 		const key = `${search.mailAccount}:${search.mailMessage}`;

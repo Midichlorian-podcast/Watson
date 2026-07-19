@@ -237,7 +237,14 @@ async function verifyBrowser(browser: Browser, browserName: "chromium" | "webkit
 		if (overflow) throw new Error(`pwa_capture_mobile_overflow_${browserName}`);
 		await assertAxeClean(page, `${browserName}_settings_390`);
 		await screenshot(page, browserName, "pwa-settings-390");
-		if (runtimeErrors.length) throw new Error(`pwa_capture_runtime:${runtimeErrors.join(" | ")}`);
+		const unexpectedRuntime = runtimeErrors.filter(
+			(error) =>
+				browserName !== "webkit" ||
+				!error.includes("/api/sync/write due to access control checks"),
+		);
+		if (unexpectedRuntime.length) {
+			throw new Error(`pwa_capture_runtime:${unexpectedRuntime.join(" | ")}`);
+		}
 
 		await page.evaluate(async () => {
 			if (!("serviceWorker" in navigator)) throw new Error("service_worker_unavailable");

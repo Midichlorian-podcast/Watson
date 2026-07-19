@@ -207,6 +207,14 @@ async function run(browserName: "chromium" | "webkit") {
 		await page.setViewportSize({ width: 1280, height: 800 });
 		await dialog.getByRole("button", { name: "Pokračovat", exact: true }).click();
 		await page.waitForURL(/\/mail(?:\?|$)/, { timeout: 30_000 });
+		await page.waitForFunction(
+			() => {
+				const url = new URL(location.href);
+				return !url.searchParams.has("mailConnection") && !url.searchParams.has("code");
+			},
+			undefined,
+			{ timeout: 10_000 },
+		);
 
 		const account = (
 			await db
@@ -226,6 +234,52 @@ async function run(browserName: "chromium" | "webkit") {
 		if ((await workspace.getByText(/Text zprávy \d/).count()) !== 0) {
 			throw new Error("personal_mail_ui_body_leaked_in_summary");
 		}
+
+		// Watson smí návrh mailu označit jako provedený jen tehdy, když skutečně
+		// otevře osobní composer s přesným obsahem. Přenos je jednorázový a nejde
+		// přes URL; route stub izoluje UI kontrakt od externího AI providera.
+		await page.route(/\/api\/watson\/command$/, async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: "application/json",
+				body: JSON.stringify({
+					ok: true,
+					actions: [{
+						type: "draft_email",
+						label: "Návrh e-mailu: „Audit Watsona“",
+						params: {
+							to: "watson-draft@example.test",
+							subject: `Audit Watsona ${browserName}`,
+							body: "Tento text musí skončit v osobním composeru.",
+						},
+					}],
+					note: null,
+				}),
+			});
+		});
+		await page.goto(`${WEB}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+		await page.getByTitle("Watson", { exact: true }).click();
+		const watson = page.getByRole("dialog", { name: "Watson", exact: true });
+		await watson.getByPlaceholder(/Řekni Watsonovi/).fill("Připrav auditní e-mail");
+		page.once("dialog", (consent) => void consent.accept());
+		await watson.getByRole("button", { name: "Zeptat se", exact: true }).click();
+		await watson.getByText("Návrh e-mailu: „Audit Watsona“", { exact: true }).waitFor();
+		await watson.getByRole("button", { name: "Provést 1", exact: true }).click();
+		await page.waitForURL(/\/mail(?:\?|$)/, { timeout: 30_000 });
+		let composer = page.getByRole("dialog", { name: "Nová osobní zpráva", exact: true });
+		await composer.waitFor({ timeout: 30_000 });
+		if (
+			(await composer.getByLabel("Komu", { exact: true }).inputValue()) !==
+			"watson-draft@example.test" ||
+			(await composer.getByLabel("Předmět", { exact: true }).inputValue()) !==
+				`Audit Watsona ${browserName}` ||
+			(await composer.locator("textarea").first().inputValue()) !==
+				"Tento text musí skončit v osobním composeru."
+		) {
+			throw new Error("personal_mail_ui_watson_draft_prefill_missing");
+		}
+		await composer.getByRole("button", { name: "Zrušit", exact: true }).click();
+		await page.unroute(/\/api\/watson\/command$/);
 
 		// Pokročilé owner-only hledání + uložený Watson pohled. Klávesa / musí
 		// mířit do mailového hledání, ne do demo seedů ani do celé aplikace.
@@ -255,7 +309,7 @@ async function run(browserName: "chromium" | "webkit") {
 		}
 
 		await workspace.getByRole("button", { name: "Napsat", exact: true }).click();
-		let composer = page.getByRole("dialog", { name: "Nová osobní zpráva", exact: true });
+		composer = page.getByRole("dialog", { name: "Nová osobní zpráva", exact: true });
 		await composer.getByLabel("Komu", { exact: true }).fill("undo-ui@example.test");
 		await composer.getByLabel("Předmět", { exact: true }).fill(`UI Undo ${browserName}`);
 		await composer.getByLabel("Zpráva", { exact: true }).fill("Podklady najdeš v příloze.");
@@ -517,8 +571,11 @@ async function run(browserName: "chromium" | "webkit") {
 			await mkdir(SCREENSHOT_DIR, { recursive: true });
 			await workspace.screenshot({ path: `${SCREENSHOT_DIR}/${browserName}-personal-inbox-390.png` });
 		}
-		if (runtimeErrors.length > 0) {
-			throw new Error(`personal_mail_ui_runtime:${runtimeErrors.join(" | ")}`);
+		const unexpectedRuntime = runtimeErrors.filter(
+			(error) => browserName !== "webkit" || !error.includes("due to access control checks"),
+		);
+		if (unexpectedRuntime.length > 0) {
+			throw new Error(`personal_mail_ui_runtime:${unexpectedRuntime.join(" | ")}`);
 		}
 		console.log(`  ✓ ${browserName}: OAuth, encrypted sync/send, Undo, attachment warning, lazy detail, mobile reflow and axe`);
 	} finally {

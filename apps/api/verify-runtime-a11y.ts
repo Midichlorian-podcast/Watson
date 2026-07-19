@@ -37,10 +37,14 @@ const ROUTES = [
 	"/projekty",
 	"/prijem-prace",
 	"/seznamy",
+	"/znalosti",
 	"/cile",
 	"/reporty",
 	"/velin",
 	"/postupy",
+	"/zamestnanec",
+	"/oblibene/p1",
+	"/oblibene/me",
 	"/nastaveni",
 ] as const;
 const WIDTHS = [390, 1440] as const;
@@ -147,18 +151,22 @@ async function navigate(page: Page, route: string) {
 		window.history.pushState({}, "", path);
 		window.dispatchEvent(new PopStateEvent("popstate"));
 	}, route);
-	await page.waitForFunction(
-		(path) => {
-			const target = new URL(path, location.origin);
-			return (
-				location.pathname === target.pathname &&
-				location.search === target.search &&
-				location.hash === target.hash
-			);
-		},
-		route,
-		{ timeout: 5_000 },
-	);
+	try {
+		await page.waitForFunction(
+			(path) => {
+				const target = new URL(path, location.origin);
+				return (
+					location.pathname === target.pathname &&
+					(!target.search || location.search === target.search) &&
+					(!target.hash || location.hash === target.hash)
+				);
+			},
+			route,
+			{ timeout: 5_000 },
+		);
+	} catch {
+		throw new Error(`runtime_navigation_timeout:${route}:${page.url()}`);
+	}
 	await page.waitForSelector("main", { timeout: 15_000 });
 	await page.waitForTimeout(700);
 }

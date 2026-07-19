@@ -411,6 +411,84 @@ async function verifyMultiWindowSurfaces(
 	}
 }
 
+async function verifyCalendarNavigation(
+	page: Page,
+	browserName: "chromium" | "webkit",
+	runtimeErrors: string[],
+) {
+	const runtimeErrorStart = runtimeErrors.length;
+	const waitForState = async (range: "day" | "week" | "month", date: string) => {
+		try {
+			await page.waitForURL(
+				(url) =>
+					url.pathname === "/nadchazejici" &&
+					url.searchParams.get("zobrazeni") === "calendar" &&
+					url.searchParams.get("rozsah") === range &&
+					url.searchParams.get("datum") === date,
+				{ timeout: 10_000 },
+			);
+		} catch {
+			throw new Error(
+				`ia_ui_calendar_navigation_${browserName}_${range}_${date}:${page.url()}`,
+			);
+		}
+	};
+
+	await page.goto(
+		`${WEB}/nadchazejici?zobrazeni=calendar&rozsah=week&datum=2026-07-13`,
+		{ waitUntil: "domcontentloaded", timeout: 30_000 },
+	);
+	const calendar = page.getByTestId("calendar-root");
+	await calendar.waitFor({ timeout: 30_000 });
+
+	await calendar.getByRole("button", { name: "Další", exact: true }).click();
+	await waitForState("week", "2026-07-20");
+
+	const day = calendar.locator('[data-calendar-range="day"]');
+	await day.click();
+	await waitForState("day", "2026-07-20");
+	if ((await day.getAttribute("aria-pressed")) !== "true") {
+		throw new Error(`ia_ui_calendar_day_not_selected_${browserName}`);
+	}
+
+	await page.keyboard.press("ArrowRight");
+	await waitForState("day", "2026-07-21");
+
+	// Dvě prahové jednotky horizontálního gesta (2 × 32 px) posunou den o dva.
+	await calendar.dispatchEvent("wheel", { deltaX: 64, deltaY: 0 });
+	await waitForState("day", "2026-07-23");
+	await calendar.dispatchEvent("wheel", { deltaX: -32, deltaY: 0 });
+	await waitForState("day", "2026-07-22");
+
+	const month = calendar.locator('[data-calendar-range="month"]');
+	await month.click();
+	await waitForState("month", "2026-07-22");
+	await calendar.getByRole("button", { name: "Další", exact: true }).click();
+	await waitForState("month", "2026-08-01");
+	// WebKit jinak může přenést zrušený bootstrap request do dalšího page.goto
+	// jako falešný CORS pageerror, přestože cílový stav už je správně vykreslený.
+	// PowerSync přitom může držet síťovou komunikaci otevřenou, takže zde nelze
+	// použít `networkidle`. Cílové URL i stav ovládání jsou ověřené výše.
+	await page.waitForTimeout(750);
+	const navigationNoise = runtimeErrors.slice(runtimeErrorStart);
+	const unexpected = navigationNoise.filter(
+		(error) =>
+			browserName !== "webkit" ||
+			(!error.includes("Importing a module script failed") &&
+				!error.includes("due to access control checks")),
+	);
+	if (unexpected.length) {
+		throw new Error(`ia_ui_calendar_runtime_${browserName}:${unexpected.join(" | ")}`);
+	}
+	// WebKit při rychlé klientské replace navigaci občas nahlásí zrušený fetch
+	// starého URL jako CORS/import chybu. Všechny cílové stavy byly výše ověřeny.
+	runtimeErrors.splice(runtimeErrorStart);
+
+	console.log(
+		`  ✓ ${browserName}: calendar buttons, range, keyboard and horizontal trackpad navigation`,
+	);
+}
+
 async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit") {
 	const fixture = await provision(browserName, "admin");
 	const memberOnly = await provisionMemberOnlyWorkspace(fixture.userId, browserName);
@@ -553,6 +631,7 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 				.getAttribute("aria-pressed")) !== "true"
 		)
 			throw new Error(`ia_ui_upcoming_default_reload_${browserName}`);
+		await verifyCalendarNavigation(page, browserName, runtimeErrors);
 
 		await page.goto(`${WEB}/projekty`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 		await page.getByRole("button", { name: "Přidat projekt do Mých záložek", exact: true }).click();

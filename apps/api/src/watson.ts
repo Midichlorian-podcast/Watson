@@ -1,8 +1,8 @@
 /**
  * Watson AI příkazová vrstva — `POST /api/watson/command`. Vezme příkaz v přirozené
  * řeči + kontext (projekty, lidé s oblastmi, otevřené úkoly) a přes Claude tool-use
- * vrátí NÁVRHY akcí (vytvořit úkol/seznam/projekt, posunout termín, draft mailu,
- * přiřadit mail). Server NIC neprovádí — mutace spustí klient až po SCHVÁLENÍ přes
+ * vrátí NÁVRHY akcí (vytvořit úkol/seznam/projekt, posunout termín, draft mailu).
+ * Server NIC neprovádí — mutace spustí klient až po SCHVÁLENÍ přes
  * write-path (human-in-the-loop). Příkaz i obsah jsou DATA, ne pokyny (anti-injection).
  * Bez ANTHROPIC_API_KEY vrací 503 → klient spadne zpět na deterministický Radar.
  */
@@ -104,18 +104,6 @@ const TOOLS: Anthropic.Tool[] = [
 			},
 		},
 	},
-	{
-		name: "assign_email",
-		description: "Přiřaď e-mailové vlákno člověku (thread z kontextu).",
-		input_schema: {
-			type: "object",
-			required: ["assignee_hint"],
-			properties: {
-				thread_hint: { type: "string", description: "Předmět/část vlákna z kontextu." },
-				assignee_hint: { type: "string", description: "Jméno člověka." },
-			},
-		},
-	},
 ];
 
 interface Action {
@@ -196,18 +184,6 @@ function toActions(
 					},
 				});
 				break;
-			case "assign_email": {
-				const assigneeId = matchId(p.assignee_hint as string, ctx.members);
-				const th = (ctx.mails ?? []).find((m) =>
-					(m.subject ?? "").toLowerCase().includes(String(p.thread_hint ?? "").toLowerCase()),
-				);
-				out.push({
-					type: "assign_email",
-					label: `Přiřadit mail ${th ? `„${th.subject}"` : ""} → ${p.assignee_hint}`,
-					params: { threadId: th?.id ?? null, assigneeUserId: assigneeId, assigneeHint: p.assignee_hint ?? null },
-				});
-				break;
-			}
 		}
 	}
 	return out;

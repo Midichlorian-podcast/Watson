@@ -59,6 +59,36 @@ export async function writePrivateJson(key: string, value: unknown): Promise<voi
 	await writePrivateJsonWith(powerSync as unknown as PrivateStateWriter, key, value);
 }
 
+/**
+ * Přečte a odstraní jednorázovou hodnotu v jedné DB transakci. Souběžná okna
+ * tak nemohou převzít stejný citlivý handoff dvakrát.
+ */
+export async function takePrivateJsonWith<T>(
+	database: PrivateStateWriter,
+	key: string,
+	fallback: T,
+): Promise<T> {
+	let serialized: string | null = null;
+	try {
+		await database.writeTransaction(async (transaction) => {
+			const row = await transaction.getOptional<{ value: string }>(
+				"SELECT value FROM local_private_state WHERE id = ?",
+				[key],
+			);
+			if (!row) return;
+			serialized = row.value;
+			await transaction.execute("DELETE FROM local_private_state WHERE id = ?", [key]);
+		});
+		return serialized === null ? fallback : (JSON.parse(serialized) as T);
+	} catch {
+		return fallback;
+	}
+}
+
+export async function takePrivateJson<T>(key: string, fallback: T): Promise<T> {
+	return takePrivateJsonWith(powerSync as unknown as PrivateStateWriter, key, fallback);
+}
+
 export async function removePrivateJson(key: string): Promise<void> {
 	await powerSync.execute("DELETE FROM local_private_state WHERE id = ?", [key]);
 }
