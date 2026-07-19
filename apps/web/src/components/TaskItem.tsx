@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { TaskCard } from "@watson/ui";
-import { type CSSProperties, useState } from "react";
+import { useState } from "react";
 import { logTaskActivity } from "../lib/activity";
 import { useSession } from "../lib/auth-client";
 import { useBulkSelect } from "../lib/bulkSelect";
@@ -14,7 +14,7 @@ import { useTaskDetail } from "../lib/taskDetail";
 import { deadlineLabel, rowDue, toggleTask } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { deleteTaskWithUndo, pushColumnUndo } from "../lib/undo";
-import { type SwipeMag, useSwipe } from "../lib/useSwipe";
+import { type SwipeMag, type SwipePhase, useSwipe } from "../lib/useSwipe";
 import { useWorkspaces } from "../lib/workspace";
 import { type CtxItem, useContextMenu } from "./ContextMenu";
 
@@ -68,9 +68,10 @@ export function TaskItem({
 	// provede PŘI PUŠTĚNÍ (žádná potvrzovací tlačítka — 6. kolo feedbacku).
 	// Akce jsou stavové (reverzní): hotový úkol → „Vrátit".
 	const doneTask = Boolean(task.completed_at);
-	const [sw, setSw] = useState<{ dx: number; mag: SwipeMag }>({
+	const [sw, setSw] = useState<{ dx: number; mag: SwipeMag; phase: SwipePhase }>({
 		dx: 0,
 		mag: "none",
+		phase: "settling",
 	});
 	// R4: přímý posun due_date u opakovaného úkolu by přepsal kotvu CELÉ řady bez dotazu
 	// tento/další/celá řada. Testujeme recurrence_rule (engine), ne jen recurrence (lidský
@@ -112,6 +113,16 @@ export function TaskItem({
 	const ctxItems: CtxItem[] = selectable
 		? [
 				{ label: t("ctx.open"), onClick: () => open(task.id) },
+				{
+					label: bulk.isSelected(task.id) ? t("bulk.deselect") : t("bulk.select"),
+					on: bulk.isSelected(task.id),
+					onClick: () =>
+						bulk.toggle(
+							task.id,
+							false,
+							navIds.filter((id) => !id.includes("@")),
+						),
+				},
 				{
 					label: doneTask ? t("swipe.revert") : t("bulk.done"),
 					onClick: () => void toggleTask(task, myId),
@@ -177,7 +188,7 @@ export function TaskItem({
 			];
 	const swipe = useSwipe({
 		disabled: !selectable,
-		onUpdate: (dx, mag) => setSw({ dx, mag }),
+		onUpdate: (dx, mag, phase) => setSw({ dx, mag, phase }),
 		onSwipe: (mag) => {
 			if (mag === "r1" || mag === "r2") {
 				rightActs[0]?.run();
@@ -193,12 +204,18 @@ export function TaskItem({
 	const dragAct = sw.dx > 0 ? rightActs[0] : sw.mag === "l2" ? leftActs[1] : leftActs[0];
 
 	return (
-		<li
+		// biome-ignore lint/a11y/noStaticElementInteractions: obal zpracovává pouze dotykové swipe gesto, všechny akce uvnitř zůstávají nativní ovládací prvky
+		<div
+			ref={swipe.surfaceRef}
 			{...swipe.handlers}
 			onContextMenu={(e) => cm.open(e, ctxItems)}
+			data-swipe-surface="task"
+			data-swipe-phase={sw.phase}
+			data-swipe-mag={sw.mag}
 			style={{
 				position: "relative",
 				touchAction: "pan-y",
+				overscrollBehaviorX: "none",
 				overflow: sw.dx !== 0 ? "hidden" : undefined,
 			}}
 		>
@@ -223,6 +240,7 @@ export function TaskItem({
 				>
 					{dragAct && (
 						<span
+							data-swipe-feedback
 							style={{
 								display: "flex",
 								alignItems: "center",
@@ -248,7 +266,12 @@ export function TaskItem({
 			<div
 				style={{
 					transform: `translateX(${sw.dx}px)`,
-					transition: sw.dx === 0 ? "transform .18s ease" : "none",
+					transition:
+						sw.phase === "tracking"
+							? "none"
+							: sw.phase === "committing"
+								? "transform 220ms cubic-bezier(.22,.72,.2,1)"
+								: "transform 210ms cubic-bezier(.2,.78,.24,1)",
 				}}
 			>
 				<TaskCard
@@ -294,6 +317,11 @@ export function TaskItem({
 					checklist={meta.checklist}
 					recurring={Boolean(task.recurrence)}
 					reminder={meta.reminder}
+					blockedBy={
+						meta.blockedBy
+							? t("dependencies.cardBlocked", { count: meta.blockedBy })
+							: undefined
+					}
 					comments={meta.comments}
 					assignAll={
 						meta.assignAll ? { ...meta.assignAll, label: t("today.assignAllPill") } : undefined
@@ -339,6 +367,20 @@ export function TaskItem({
 								}
 							: undefined
 					}
+					quickMenu={{
+						label: t("ctx.quickActions"),
+						onOpen: (event) => {
+							const rect = event.currentTarget.getBoundingClientRect();
+							cm.open(
+								{
+									clientX: rect.right,
+									clientY: rect.bottom,
+									preventDefault: () => event.preventDefault(),
+								},
+								ctxItems,
+							);
+						},
+					}}
 					onToggle={() => void toggleTask(task, myId)}
 					onOpen={() => {
 						// klik těsně po dokončeném tahu neotvírat detail
@@ -347,6 +389,6 @@ export function TaskItem({
 					}}
 				/>
 			</div>
-		</li>
+		</div>
 	);
 }

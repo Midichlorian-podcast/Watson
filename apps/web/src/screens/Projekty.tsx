@@ -1,25 +1,44 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
+import {
+	PROJECT_PRESET_DEFINITIONS,
+	PROJECT_PRESETS,
+	type ProjectKind,
+	type ProjectPreset,
+} from "@watson/shared";
 import { Icon } from "@watson/ui";
-import { type MouseEvent, useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useContextMenu } from "../components/ContextMenu";
+import { DataLoading } from "../components/Loading";
 import { patchProject } from "../components/ProjectDetailPanel";
 import { API_URL } from "../lib/api";
 import { USER_COLORS } from "../lib/colors";
+import { focusOnMount } from "../lib/focusOnMount";
 import { initials } from "../lib/format";
 import { inboxProjectIds } from "../lib/inbox";
+import { useNavigationPins } from "../lib/navigationPins";
 import type { ProjectRow } from "../lib/powersync/AppSchema";
 import { useProjectDetail } from "../lib/projectDetail";
-import { useProjects } from "../lib/projects";
-import { useWorkspace, useWorkspaces } from "../lib/workspace";
+import { useProjectsWithState } from "../lib/projects";
 import { NOT_MEETING } from "../lib/tasks";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
+import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
 
 type Counts = { open: number; done: number; total: number };
 const ZERO: Counts = { open: 0, done: 0, total: 0 };
+const PROJECT_PRESET_META: Record<ProjectPreset, { title: string; description: string }> = {
+	blank: { title: "projects.presetBlank", description: "projects.presetBlankDesc" },
+	team_pipeline: {
+		title: "projects.presetTeamPipeline",
+		description: "projects.presetTeamPipelineDesc",
+	},
+	delivery: { title: "projects.presetDelivery", description: "projects.presetDeliveryDesc" },
+	recurring: { title: "projects.presetRecurring", description: "projects.presetRecurringDesc" },
+};
 
 /**
  * Projekty — plochý grid karet (design handoff: auto-fill minmax 290px).
@@ -29,9 +48,14 @@ const ZERO: Counts = { open: 0, done: 0, total: 0 };
 export function Projekty() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const search = useSearch({ from: "/projekty" });
 	const cm = useContextMenu();
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { open } = useProjectDetail();
+	const { isPinned, setPinned } = useNavigationPins();
+	useEffect(() => {
+		if (search.projekt) open(search.projekt);
+	}, [search.projekt, open]);
 
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs } = useWorkspace();
@@ -40,7 +64,7 @@ export function Projekty() {
 	const [showArchived, setShowArchived] = useState(false);
 	// Archivované projekty (useProjects je odfiltruje) — vlastní dotaz, ať se k nim
 	// dá vůbec dostat a odarchivovat je přes detail (jinak jsou jednosměrná past).
-	const { data: archivedRows } = usePsQuery<ProjectRow>(
+	const { data: archivedRows, isLoading: archivedLoading } = usePsQuery<ProjectRow>(
 		"SELECT * FROM projects WHERE status = 'archive' ORDER BY name",
 	);
 	const activeShown = useMemo(
@@ -53,7 +77,7 @@ export function Projekty() {
 	);
 	const shown = showArchived ? archivedShown : activeShown;
 
-	const { data: taskRows } = usePsQuery<{
+	const { data: taskRows, isLoading: tasksLoading } = usePsQuery<{
 		project_id: string | null;
 		completed_at: string | null;
 		created_at: string | null;
@@ -63,7 +87,7 @@ export function Projekty() {
 		`SELECT project_id, completed_at, created_at, due_date, parent_id FROM tasks WHERE ${NOT_MEETING}`,
 	);
 	const inboxIds = useMemo(() => inboxProjectIds(projects), [projects]);
-	const { data: memberRows } = usePsQuery<{
+	const { data: memberRows, isLoading: membersLoading } = usePsQuery<{
 		project_id: string | null;
 		user_id: string | null;
 	}>("SELECT project_id, user_id FROM project_members");
@@ -198,7 +222,9 @@ export function Projekty() {
 				</button>
 			</header>
 
-			{shown.length === 0 ? (
+			{projectsLoading || archivedLoading || tasksLoading || membersLoading ? (
+				<DataLoading />
+			) : shown.length === 0 ? (
 				<p className="mt-6 rounded-xl border border-line border-dashed px-4 py-12 text-center text-ink-3 text-sm">
 					{showArchived ? t("projects.archivedEmpty") : t("projects.empty")}
 				</p>
@@ -219,17 +245,33 @@ export function Projekty() {
 								week={weekStats.get(p.id)}
 								members={memberCounts.get(p.id) ?? 0}
 								avatars={(membersByProject.get(p.id) ?? []).map((uid) => ({
+									id: uid,
 									name: nameById.get(uid) ?? "?",
 									isOwner: uid === p.owner_id,
 								}))}
-								onOpen={() => open(p.id)}
+								pinned={isPinned("project", p.id)}
+								onTogglePin={() => setPinned("project", p.id, !isPinned("project", p.id))}
+								onOpen={() =>
+									void navigate({ to: "/projekty", search: { projekt: p.id } })
+								}
 								onContextMenu={(e) =>
 									cm.open(e, [
 										{
 											label: t("projects.viewTasks"),
 											onClick: () => void navigate({ to: "/ukoly", search: { projekt: p.id } }),
 										},
-										{ label: t("projects.editProject"), onClick: () => open(p.id) },
+										{
+											label: t("projects.editProject"),
+											onClick: () =>
+												void navigate({ to: "/projekty", search: { projekt: p.id } }),
+										},
+										{
+											label: isPinned("project", p.id)
+												? t("navigationPins.removeProject")
+												: t("navigationPins.addProject"),
+											onClick: () =>
+												setPinned("project", p.id, !isPinned("project", p.id)),
+										},
 										{ sep: true },
 										{
 											label: isArchived
@@ -261,17 +303,13 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 	const { t } = useTranslation();
 	const [name, setName] = useState("");
 	const [color, setColor] = useState<string | null>(null);
-	const [kind, setKind] = useState("flow");
+	const [preset, setPreset] = useState<ProjectPreset>("blank");
+	const [kind, setKind] = useState<ProjectKind>("flow");
+	const [milestonesEnabled, setMilestonesEnabled] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [err, setErr] = useState<string | null>(null);
-
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
+	const projectId = useRef(crypto.randomUUID());
+	const modalRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	const create = async () => {
 		if (!name.trim() || busy) return;
@@ -281,7 +319,16 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 				method: "POST",
 				credentials: "include",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ name: name.trim(), workspaceId, color, kind }),
+				body: JSON.stringify({
+					id: projectId.current,
+					name: name.trim(),
+					workspaceId,
+					color,
+					kind,
+					preset,
+					milestonesEnabled,
+					defaultMilestoneTitle: t("projects.milestoneDefaultTitle"),
+				}),
 			});
 			if (r.ok) {
 				onClose();
@@ -304,17 +351,27 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 				aria-label={t("projects.newCancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.42)", zIndex: 50 }}
+				style={{ background: "rgba(10,14,20,.42)", zIndex: "var(--w-layer-modal)" }}
 			/>
 			<div
 				className="pointer-events-none fixed inset-0 flex items-start justify-center"
-				style={{ zIndex: 51, paddingTop: "14vh" }}
+				style={{
+					zIndex: "calc(var(--w-layer-modal) + 1)",
+					paddingTop: "max(16px, min(10vh, 96px))",
+				}}
 			>
 				<div
+					ref={modalRef}
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("projects.new")}
+					data-esc-layer
 					className="pointer-events-auto rounded-2xl border border-line bg-card"
 					style={{
 						width: 440,
 						maxWidth: "94vw",
+						maxHeight: "calc(100vh - 32px)",
+						overflowY: "auto",
 						boxShadow: "var(--w-shadow)",
 						padding: "18px 20px",
 					}}
@@ -327,14 +384,13 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 							type="button"
 							onClick={onClose}
 							aria-label={t("projects.newCancel")}
-							className="grid h-7 w-7 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
+							className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 						>
 							<Icon name="zavrit" size={15} />
 						</button>
 					</div>
 					<input
-						// biome-ignore lint/a11y/noAutofocus: create modal
-						autoFocus
+						ref={focusOnMount}
 						value={name}
 						onChange={(e) => setName(e.target.value)}
 						onKeyDown={(e) => e.key === "Enter" && void create()}
@@ -346,6 +402,41 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 						className="mt-3.5 mb-1.5 font-display font-bold text-ink-3 uppercase"
 						style={{ fontSize: 10.5, letterSpacing: ".05em" }}
 					>
+						{t("projects.newPreset")}
+					</div>
+					<div className="grid grid-cols-2 gap-2" data-project-presets>
+						{PROJECT_PRESETS.map((value) => {
+							const meta = PROJECT_PRESET_META[value];
+							const definition = PROJECT_PRESET_DEFINITIONS[value];
+							return (
+								<button
+									key={value}
+									type="button"
+									onClick={() => {
+										setPreset(value);
+										setKind(definition.kind);
+									}}
+									aria-pressed={preset === value}
+									className="min-h-16 rounded-xl border p-2.5 text-left"
+									style={{
+										borderColor: preset === value ? "var(--w-brass)" : "var(--w-line)",
+										background: preset === value ? "var(--w-brass-soft)" : "var(--w-panel-2)",
+									}}
+								>
+									<span className="block font-display font-bold text-ink" style={{ fontSize: 12.5 }}>
+										{t(meta.title)}
+									</span>
+									<span className="mt-0.5 block font-body text-ink-3" style={{ fontSize: 10.5, lineHeight: 1.3 }}>
+										{t(meta.description)}
+									</span>
+								</button>
+							);
+						})}
+					</div>
+					<div
+						className="mt-3.5 mb-1.5 font-display font-bold text-ink-3 uppercase"
+						style={{ fontSize: 10.5, letterSpacing: ".05em" }}
+					>
 						{t("projects.newColor")}
 					</div>
 					<div className="flex flex-wrap gap-1.5">
@@ -353,7 +444,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 							type="button"
 							onClick={() => setColor(null)}
 							aria-label="—"
-							className="h-6 w-6 rounded-full border border-line"
+							className="h-11 w-11 rounded-full border border-line"
 							style={{
 								outline: color === null ? "2px solid var(--w-avatar)" : "none",
 								outlineOffset: 1,
@@ -365,7 +456,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 								type="button"
 								onClick={() => setColor(c)}
 								aria-label={c}
-								className="h-6 w-6 rounded-full"
+								className="h-11 w-11 rounded-full"
 								style={{
 									background: c,
 									outline: color === c ? "2px solid var(--w-avatar)" : "none",
@@ -395,7 +486,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 								key={k}
 								type="button"
 								onClick={() => setKind(k)}
-								className="rounded-lg font-display font-semibold"
+								className="min-h-11 rounded-lg font-display font-semibold"
 								style={{
 									fontSize: 12.5,
 									padding: "6px 13px",
@@ -407,6 +498,22 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 							</button>
 						))}
 					</div>
+					<label className="mt-3 flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border border-line bg-panel-2 px-3 py-2.5">
+						<input
+							type="checkbox"
+							checked={milestonesEnabled}
+							onChange={(event) => setMilestonesEnabled(event.target.checked)}
+							className="mt-0.5 h-4 w-4 accent-[var(--w-brass)]"
+						/>
+						<span>
+							<span className="block font-display font-semibold text-ink text-sm">
+								{t("projects.newMilestone")}
+							</span>
+							<span className="mt-0.5 block text-ink-3 text-xs leading-snug">
+								{t("projects.newMilestoneHelp")}
+							</span>
+						</span>
+					</label>
 					{err && (
 						<p
 							className="mt-3 rounded-[9px] font-body"
@@ -424,7 +531,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 						<button
 							type="button"
 							onClick={onClose}
-							className="rounded-[9px] border border-line font-display font-semibold text-ink-2 hover:border-ink-3"
+							className="min-h-11 rounded-[9px] border border-line font-display font-semibold text-ink-2 hover:border-ink-3"
 							style={{ padding: "9px 15px", fontSize: 13 }}
 						>
 							{t("projects.newCancel")}
@@ -433,7 +540,7 @@ function NewProjectModal({ workspaceId, onClose }: { workspaceId: string; onClos
 							type="button"
 							onClick={() => void create()}
 							disabled={!name.trim() || busy}
-							className="rounded-[9px] font-display font-bold text-white hover:brightness-105 disabled:opacity-50"
+							className="min-h-11 rounded-[9px] font-display font-bold text-white hover:brightness-105 disabled:opacity-50"
 							style={{
 								background: "var(--w-brass)",
 								padding: "9px 17px",
@@ -455,6 +562,8 @@ function ProjectCard({
 	week,
 	members,
 	avatars,
+	pinned,
+	onTogglePin,
 	onOpen,
 	onContextMenu,
 }: {
@@ -463,7 +572,9 @@ function ProjectCard({
 	/** Týdenní aktivita (jen průběžné projekty — sparkline, prototyp ř. 717–723). */
 	week?: { weekDone: number; added: number; overdue: number; bars: number[] };
 	members: number;
-	avatars: { name: string; isOwner: boolean }[];
+	avatars: { id: string; name: string; isOwner: boolean }[];
+	pinned: boolean;
+	onTogglePin: () => void;
 	onOpen: () => void;
 	onContextMenu: (e: MouseEvent) => void;
 }) {
@@ -491,13 +602,19 @@ function ProjectCard({
 			: dueDays === 0
 				? t("projects.dueToday")
 				: t("projects.dueRemaining", { count: dueDays });
+	const weekBars = (week?.bars ?? []).map((value, index) => ({
+		key: `day-${index - 7}`,
+		value,
+		isToday: index === 7,
+	}));
 	return (
-		<button
-			type="button"
-			onClick={onOpen}
-			onContextMenu={onContextMenu}
-			className="flex flex-col rounded-2xl border border-line bg-card p-4 text-left shadow-[var(--w-shadow-sm)] transition hover:-translate-y-0.5 hover:shadow-[var(--w-shadow)]"
-		>
+		<article className="relative flex flex-col rounded-2xl border border-line bg-card p-4 shadow-[var(--w-shadow-sm)] transition hover:-translate-y-0.5 hover:shadow-[var(--w-shadow)]">
+			<button
+				type="button"
+				onClick={onOpen}
+				onContextMenu={onContextMenu}
+				className="flex w-full flex-1 flex-col text-left"
+			>
 			<div className="flex items-center gap-2">
 				<span
 					className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -507,6 +624,7 @@ function ProjectCard({
 					{project.name}
 				</span>
 				<StatusBadge status={status} t={t} />
+				<span aria-hidden className="w-7 shrink-0" />
 			</div>
 
 			<div className="mt-1.5 flex items-center gap-2">
@@ -542,14 +660,14 @@ function ProjectCard({
 				<>
 					{/* aktivita-sparkline 8 dní (prototyp tepNode, ř. 3181) */}
 					<div className="flex items-end" style={{ gap: 3, height: 30, marginTop: 12 }}>
-						{week.bars.map((v, i) => (
+						{weekBars.map((bar) => (
 							<span
-								key={`b-${i}`}
+								key={bar.key}
 								style={{
 									flex: 1,
 									borderRadius: 2,
-									height: Math.max(3, Math.round((v / 10) * 30)),
-									background: i === 7 ? "var(--w-brass)" : "var(--w-panel-2)",
+									height: Math.max(3, Math.round((bar.value / 10) * 30)),
+									background: bar.isToday ? "var(--w-brass)" : "var(--w-panel-2)",
 									border: "1px solid var(--w-line)",
 								}}
 							/>
@@ -597,7 +715,7 @@ function ProjectCard({
 				<div className="mt-3 flex items-center">
 					{avatars.slice(0, 4).map((a, i) => (
 						<span
-							key={`${a.name}-${i}`}
+							key={a.id}
 							title={a.name}
 							className="flex items-center justify-center rounded-full font-display font-semibold text-white"
 							style={{
@@ -620,7 +738,18 @@ function ProjectCard({
 					)}
 				</div>
 			)}
-		</button>
+			</button>
+			<button
+				type="button"
+				onClick={onTogglePin}
+				aria-pressed={pinned}
+				aria-label={pinned ? t("navigationPins.removeProject") : t("navigationPins.addProject")}
+				title={pinned ? t("navigationPins.removeProject") : t("navigationPins.addProject")}
+				className="absolute top-2.5 right-2.5 grid h-11 w-11 place-items-center rounded-lg text-lg text-ink-3 hover:bg-panel-2 hover:text-brass-text"
+			>
+				<span aria-hidden>{pinned ? "★" : "☆"}</span>
+			</button>
+		</article>
 	);
 }
 

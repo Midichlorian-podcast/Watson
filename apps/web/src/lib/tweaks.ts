@@ -1,3 +1,5 @@
+import { storageGet, storageSet } from "./storage";
+
 /**
  * Tweaks (#39) — hustota řádků + akcent projektů (prototyp data-w-density/data-w-accent, ř. 40-42/77).
  * Atributy na <html> + localStorage; CSS pravidla v index.css.
@@ -9,11 +11,11 @@ const D_LS = "watson.density";
 const A_LS = "watson.accent";
 
 export function getDensity(): Density {
-	const v = localStorage.getItem(D_LS);
+	const v = storageGet(D_LS);
 	return v === "vyvazene" || v === "kompaktni" ? v : "vzdusne"; // default Vzdušné (README ř. 111)
 }
 export function getAccent(): Accent {
-	return localStorage.getItem(A_LS) === "brass" ? "brass" : "multi";
+	return storageGet(A_LS) === "brass" ? "brass" : "multi";
 }
 
 export function applyTweaks(): void {
@@ -23,10 +25,10 @@ export function applyTweaks(): void {
 }
 
 export function setDensity(d: Density): void {
-	localStorage.setItem(D_LS, d);
+	storageSet(D_LS, d);
 	applyTweaks();
 }
 export function setAccent(a: Accent): void {
-	localStorage.setItem(A_LS, a);
+	storageSet(A_LS, a);
 	applyTweaks();
 }

@@ -42,6 +42,8 @@ export const tasks = pgTable(
 		name: varchar("name", { length: 500 }).notNull(),
 		/** Markdown (BEZ CRDT v MVP — §12), LWW přes PowerSync. */
 		description: text("description"),
+		/** Ručně zadaný, auditovatelný kontext relevance. Systémové signály se počítají v UI. */
+		whyNow: text("why_now"),
 		/** R6 — priorita P1–P4 (nebarevný odznak), nezávislá na barvě. */
 		priority: integer("priority").notNull().default(4),
 		/** R6 — uživatelský barevný akcent úkolu. */
@@ -51,6 +53,8 @@ export const tasks = pgTable(
 		 *  enginu (počítá s JS Date). Časový plán zůstává start_date (timestamptz). */
 		dueDate: date("due_date", { mode: "date" }),
 		startDate: timestamp("start_date", { withTimezone: true }),
+		/** IANA zóna, ve které uživatel zadal start_date (např. Europe/Prague). */
+		startTimezone: varchar("start_timezone", { length: 64 }),
 		/** R6/B2 — dokdy musí být hotovo (zobrazit zřetelně, červeně). DATE dle §15/7. */
 		deadline: date("deadline", { mode: "date" }),
 		/** B3 — odhad délky pro time-blocking (NE time tracking). */
@@ -94,8 +98,27 @@ export const tasks = pgTable(
 	},
 	(t) => [
 		check("tasks_priority_range", sql`${t.priority} between 1 and 4`),
+		check("tasks_why_now_length", sql`${t.whyNow} is null or char_length(${t.whyNow}) <= 1000`),
+		check("tasks_days_positive", sql`${t.days} is null or ${t.days} between 1 and 3650`),
+		check(
+			"tasks_duration_positive",
+			sql`${t.durationMin} is null or ${t.durationMin} between 1 and 10080`,
+		),
+		check(
+			"tasks_deadline_not_before_due",
+			sql`${t.deadline} is null or ${t.dueDate} is null or ${t.deadline} >= ${t.dueDate}`,
+		),
+		check(
+			"tasks_start_timezone_pair",
+			sql`(${t.startDate} is null) = (${t.startTimezone} is null)`,
+		),
+		check(
+			"tasks_start_timezone_format",
+			sql`${t.startTimezone} is null or ${t.startTimezone} ~ '^(UTC|[A-Za-z_]+(/[A-Za-z0-9_+.-]+)+)$'`,
+		),
 		// CC-P0-15 — kind je enum vynucený DB, ne jen UI filtrem (audit Meets Fáze 1).
 		check("tasks_kind_valid", sql`${t.kind} in ('task', 'meeting')`),
+		check("tasks_meeting_has_id", sql`${t.kind} <> 'meeting' or ${t.meetingId} is not null`),
 		index("tasks_project_idx").on(t.projectId),
 		index("tasks_parent_idx").on(t.parentId),
 		index("tasks_status_idx").on(t.statusId),
@@ -190,11 +213,112 @@ export const taskOccurrenceOverrides = pgTable(
 		occDate: varchar("occ_date", { length: 10 }).notNull(),
 		done: boolean("done").notNull().default(false),
 		skipped: boolean("skipped").notNull().default(false),
+		/** Přesun pouze tohoto výskytu; původní occ_date zůstává jeho stabilní identitou. */
+		overrideDueDate: date("override_due_date", { mode: "date" }),
+		/** Časovaný výskyt ukládá skutečný instant i původní IANA zónu. */
+		overrideStartDate: timestamp("override_start_date", { withTimezone: true }),
+		overrideStartTimezone: varchar("override_start_timezone", { length: 64 }),
+		/** Volitelná délka konkrétního výskytu; null dědí délku řady. */
+		overrideDurationMin: integer("override_duration_min"),
+		updatedBy: uuid("updated_by").references(() => users.id, {
+			onDelete: "set null",
+		}),
+		/** CAS verze plánovací výjimky; done/skipped ji nemusí měnit. */
+		version: integer("version").notNull().default(1),
 		createdAt: createdAt(),
+		updatedAt: updatedAt(),
 	},
 	(t) => [
+		check(
+			"task_occ_overrides_date_format",
+			sql`${t.occDate} ~ '^\\d{4}-\\d{2}-\\d{2}$'`,
+		),
+		check(
+			"task_occ_overrides_done_or_skipped",
+			sql`not (${t.done} and ${t.skipped})`,
+		),
+		check(
+			"task_occ_overrides_start_timezone_pair",
+			sql`(${t.overrideStartDate} is null) = (${t.overrideStartTimezone} is null)`,
+		),
+		check(
+			"task_occ_overrides_start_requires_due_date",
+			sql`${t.overrideStartDate} is null or ${t.overrideDueDate} is not null`,
+		),
+		check(
+			"task_occ_overrides_timezone_format",
+			sql`${t.overrideStartTimezone} is null or ${t.overrideStartTimezone} ~ '^(UTC|[A-Za-z_]+(/[A-Za-z0-9_+.-]+)+)$'`,
+		),
+		check(
+			"task_occ_overrides_duration_positive",
+			sql`${t.overrideDurationMin} is null or ${t.overrideDurationMin} between 1 and 10080`,
+		),
+		check("task_occ_overrides_version_positive", sql`${t.version} > 0`),
 		uniqueIndex("task_occ_overrides_uq").on(t.taskId, t.occDate),
 		index("task_occ_overrides_project_idx").on(t.projectId),
+		index("task_occ_overrides_target_date_idx").on(t.overrideDueDate),
+		foreignKey({
+			name: "task_occ_overrides_task_same_project_fk",
+			columns: [t.taskId, t.projectId],
+			foreignColumns: [tasks.id, tasks.projectId],
+		}).onDelete("cascade"),
+	],
+);
+
+/**
+ * Konečný prefix původní řady odložený při volbě „tento a další“.
+ * Aktivní task se může okamžitě přepnout na novou řadu, zatímco dřívější výskyty
+ * zůstávají kompaktně dohledatelné bez klonování tasku, komentářů nebo příloh.
+ */
+export const taskRecurrencePrefixes = pgTable(
+	"task_recurrence_prefixes",
+	{
+		id: pk(),
+		taskId: uuid("task_id")
+			.notNull()
+			.references(() => tasks.id, { onDelete: "cascade" }),
+		projectId: uuid("project_id")
+			.notNull()
+			.references(() => projects.id, { onDelete: "cascade" }),
+		anchorDate: date("anchor_date", { mode: "date" }).notNull(),
+		endDate: date("end_date", { mode: "date" }).notNull(),
+		recurrenceRule: text("recurrence_rule").notNull(),
+		startDate: timestamp("start_date", { withTimezone: true }),
+		startTimezone: varchar("start_timezone", { length: 64 }),
+		durationMin: integer("duration_min"),
+		createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+		version: integer("version").notNull().default(1),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check("task_recurrence_prefixes_range", sql`${t.anchorDate} <= ${t.endDate}`),
+		check(
+			"task_recurrence_prefixes_rule_object",
+			sql`jsonb_typeof(${t.recurrenceRule}::jsonb) = 'object'
+				and ${t.recurrenceRule}::jsonb ->> 'kind' in
+				('daily', 'weekly', 'biweekly', 'monthly', 'yearly', 'monthly-nth', 'monthly-day')`,
+		),
+		check(
+			"task_recurrence_prefixes_start_timezone_pair",
+			sql`(${t.startDate} is null) = (${t.startTimezone} is null)`,
+		),
+		check(
+			"task_recurrence_prefixes_timezone_format",
+			sql`${t.startTimezone} is null or ${t.startTimezone} ~ '^(UTC|[A-Za-z_]+(/[A-Za-z0-9_+.-]+)+)$'`,
+		),
+		check(
+			"task_recurrence_prefixes_duration_positive",
+			sql`${t.durationMin} is null or ${t.durationMin} between 1 and 10080`,
+		),
+		check("task_recurrence_prefixes_version_positive", sql`${t.version} > 0`),
+		index("task_recurrence_prefixes_task_range_idx").on(t.taskId, t.anchorDate, t.endDate),
+		index("task_recurrence_prefixes_project_idx").on(t.projectId),
+		foreignKey({
+			name: "task_recurrence_prefixes_task_same_project_fk",
+			columns: [t.taskId, t.projectId],
+			foreignColumns: [tasks.id, tasks.projectId],
+		}).onDelete("cascade"),
 	],
 );
 
@@ -252,6 +376,8 @@ export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type Assignment = typeof assignments.$inferSelect;
 export type TaskUserColor = typeof taskUserColors.$inferSelect;
+export type TaskOccurrenceOverride = typeof taskOccurrenceOverrides.$inferSelect;
+export type TaskRecurrencePrefix = typeof taskRecurrencePrefixes.$inferSelect;
 export type ChecklistItem = typeof checklistItems.$inferSelect;
 export type Label = typeof labels.$inferSelect;
 export type TaskLabel = typeof taskLabels.$inferSelect;

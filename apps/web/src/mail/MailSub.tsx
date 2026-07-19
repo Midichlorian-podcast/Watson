@@ -6,8 +6,9 @@
  * Dění/Administrace/Nastavení jsou vnitřní obrazovky (m.scr) — aktivní složka
  * se zvýrazňuje jen na obrazovce "mail".
  */
-import type { CSSProperties, ReactNode } from "react";
+
 import { useNavigate } from "@tanstack/react-router";
+import type { CSSProperties, ReactNode } from "react";
 import { MB } from "./data";
 import { useMail } from "./state";
 
@@ -29,23 +30,38 @@ function SRow({
 	onClick,
 	title,
 	children,
+	action,
 	pad,
 }: {
 	active: boolean;
 	onClick: () => void;
 	title?: string;
 	children: ReactNode;
+	action?: ReactNode;
 	pad?: string;
 }) {
 	return (
 		<div
 			data-srow
 			data-active={active || undefined}
-			onClick={onClick}
 			title={title}
 			style={{ ...rowStyle, padding: pad ?? rowStyle.padding }}
 		>
-			{children}
+			<button
+				type="button"
+				aria-label={title ?? "Otevřít položku"}
+				onClick={onClick}
+				style={{
+					position: "absolute",
+					inset: 0,
+					border: 0,
+					borderRadius: "inherit",
+					background: "transparent",
+					cursor: "pointer",
+				}}
+			/>
+			<div style={{ display: "contents", pointerEvents: "none" }}>{children}</div>
+			{action}
 		</div>
 	);
 }
@@ -96,16 +112,36 @@ export function MailSub({
 	onCloseDrawer,
 	sube,
 	onToggleSube,
+	onOpenWindow,
+	personalSummary,
 }: {
 	drawer: boolean;
 	onCloseDrawer: () => void;
 	/** Rozbalený panel složek; false = režim ikon 58 px (prototyp sube, CSS ≥1100 px). */
 	sube: boolean;
 	onToggleSube: () => void;
+	onOpenWindow: () => void;
+	personalSummary: {
+		accounts: Array<{ emailAddress: string }>;
+		unreadCount: number;
+		syncing: boolean;
+	};
 }) {
 	const m = useMail();
 	const navigate = useNavigate();
 	const un = m.unreadStats();
+	const personalLabel =
+		personalSummary.accounts.length === 0
+			? "Připojit osobní účet"
+			: personalSummary.accounts.length === 1
+				? (personalSummary.accounts[0]?.emailAddress ?? "Osobní účet")
+				: `${personalSummary.accounts.length} osobní účty`;
+	const personalSubtitle =
+		personalSummary.accounts.length === 0
+			? "zatím nepřipojeno"
+			: personalSummary.syncing
+				? "bezpečně synchronizuji…"
+				: "skutečný sjednocený inbox";
 
 	const team = m.threads.filter((t) => !t.personal);
 	const isDor = (t: (typeof team)[number]) => {
@@ -161,8 +197,31 @@ export function MailSub({
 					>
 						Doručené
 					</span>
+					<button
+						type="button"
+						data-rowbtn
+						onClick={onOpenWindow}
+						title="Otevřít Mail ve fokusovém okně"
+						aria-label="Otevřít Mail ve fokusovém okně"
+						style={{
+							border: "1px solid var(--line)",
+							background: "var(--panel)",
+							fontFamily: "var(--w-font-mono)",
+							fontSize: 11,
+						}}
+					>
+						↗
+					</button>
 					{/* přepínač sbalení panelu na ikony (prototyp subToggle, ř. 349) */}
 					<span
+						role="button"
+						tabIndex={0}
+						onKeyDown={(event) => {
+							if (event.key === "Enter" || event.key === " ") {
+								event.preventDefault();
+								event.currentTarget.click();
+							}
+						}}
 						data-rowbtn
 						onClick={onToggleSube}
 						title={sube ? "Sbalit složky na ikony" : "Rozbalit panel složek"}
@@ -467,6 +526,31 @@ export function MailSub({
 						onClick={() => m.setFolder(id)}
 						title={mb.short}
 						pad="6px 10px"
+						action={
+							mb.warn && !m.adm.fixed ? (
+								<button
+									type="button"
+									data-sublbl
+									title="Token vyprší za 12 dní — klikem otevřeš Administraci pošty"
+									aria-label="Token vyprší za 12 dní — otevřít Administraci pošty"
+									onClick={() => void navigate({ to: "/nastaveni", hash: "posta-admin" })}
+									style={{
+										position: "relative",
+										zIndex: 1,
+										cursor: "pointer",
+										width: 24,
+										height: 24,
+										display: "grid",
+										placeItems: "center",
+										flex: "none",
+										border: 0,
+										background: "transparent",
+									}}
+								>
+									<span data-health="warn" style={{ width: 7, height: 7, borderRadius: "50%" }} />
+								</button>
+							) : null
+						}
 					>
 						<span
 							data-mbdot={id}
@@ -514,24 +598,6 @@ export function MailSub({
 								AI×
 							</span>
 						)}
-						{mb.warn && !m.adm.fixed && (
-							<span
-								data-sublbl
-								data-health="warn"
-								title="Token vyprší za 12 dní — klikem otevřeš Administraci pošty"
-								onClick={(e) => {
-									e.stopPropagation();
-									void navigate({ to: "/nastaveni", hash: "posta-admin" });
-								}}
-								style={{
-									cursor: "pointer",
-									width: 7,
-									height: 7,
-									borderRadius: "50%",
-									flex: "none",
-								}}
-							/>
-						)}
 						<Badge>{un.per[id] ?? ""}</Badge>
 					</SRow>
 				))}
@@ -563,14 +629,16 @@ export function MailSub({
 				<SRow
 					active={isF("osobni")}
 					onClick={() => m.setFolder("osobni")}
-					title="kosir.adam@gmail.com — osobní sféra (demo), bez AI"
+					title={`${personalLabel} — owner-only osobní pošta`}
 					pad="6px 10px"
 				>
 					<span
 						data-mbdot="osobni"
 						style={{ width: 9, height: 9, borderRadius: "50%", flex: "none" }}
 					/>
-					<span data-mbini="osobni">KA</span>
+					<span data-mbini="osobni">
+						{personalSummary.accounts.length === 1 ? mbIni(personalLabel) : "OS"}
+					</span>
 					<div data-sublbl style={{ flex: 1, minWidth: 0 }}>
 						<div
 							style={{
@@ -582,20 +650,20 @@ export function MailSub({
 								whiteSpace: "nowrap",
 							}}
 						>
-							kosir.adam@gmail.com
+							{personalLabel}
 						</div>
 						<div
 							style={{
 								fontFamily: "var(--w-font-body)",
 								fontSize: 10,
-								color: "var(--mb-osobni)",
+								color: personalSummary.accounts.length ? "var(--success-ink)" : "var(--ink-3)",
 								marginTop: 1,
 							}}
 						>
-							demo · bez AI
+							{personalSubtitle}
 						</div>
 					</div>
-					<Badge>{un.pers || ""}</Badge>
+					<Badge>{personalSummary.unreadCount || ""}</Badge>
 				</SRow>
 
 				{/* Správa — vnitřní obrazovky Administrace + Nastavení (prototyp ř. 431–440) */}
@@ -634,7 +702,7 @@ export function MailSub({
 				</SRow>
 				<SRow
 					active={false}
-					onClick={() => void navigate({ to: "/nastaveni" })}
+					onClick={() => void navigate({ to: "/nastaveni", search: { sekce: "integrace" } })}
 					title="Nastavení pošty — teď v jednom Nastavení (sekce Pošta)"
 				>
 					<svg
@@ -683,6 +751,14 @@ export function MailSub({
 			</div>
 			{drawer && (
 				<div
+					role="button"
+					tabIndex={0}
+					onKeyDown={(event) => {
+						if (event.key === "Enter" || event.key === " ") {
+							event.preventDefault();
+							event.currentTarget.click();
+						}
+					}}
 					data-mscrim
 					onClick={onCloseDrawer}
 					style={{

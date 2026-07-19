@@ -15,147 +15,179 @@
 import {
 	and,
 	assignments,
+	auditEvents,
 	entityLinks,
 	eq,
 	getDb,
 	projectMembers,
 	projects,
+	sql,
 	statuses,
 	tasks,
 	workspaces,
 } from "@watson/db";
 import { type Context, Hono } from "hono";
 import { auth } from "./auth";
+import { readLuckyOsV1Identity, readLuckyOsV1Status } from "./employeeSelfService";
 import { env, luckyOsEnabled } from "./env";
+import {
+	employeeStatusSchema,
+	isLuckyOsRevoked,
+	type LuckyEmployeeStatus,
+	luckyFetch,
+	luckyIdentitySchema,
+	recordLuckyOsHealth,
+} from "./integrations";
 import { issueBridgeToken } from "./powersync";
 
 type Db = ReturnType<typeof getDb>;
+type DbTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-export const employeeRoutes = new Hono();
+export const employeeRoutes = new Hono<{ Variables: { requestId: string } }>();
 
-interface LuckyResult {
-	ok: boolean;
-	status: number;
-	data: unknown;
-	/** LuckyOS není nakonfigurován (chybí base URL i mock). */
-	notConfigured?: boolean;
+employeeRoutes.use("*", async (c, next) => {
+	await next();
+	c.header("Cache-Control", "private, no-store");
+});
+
+type JsonObject = Record<string, unknown>;
+
+function object(value: unknown): JsonObject {
+	return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {};
 }
+
+function text(value: unknown, max = 500): string | null {
+	return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
+}
+
+function finite(value: unknown, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY) {
+	return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max
+		? value
+		: null;
+}
+
+function relativeHref(value: unknown): string | null {
+	const href = text(value, 500);
+	return href?.startsWith("/") && !href.startsWith("//") ? href : null;
+}
+
+const readinessStates = new Set(["ready", "pending", "blocked"]);
+const deadlineSeverities = new Set(["info", "warning", "urgent", "overdue"]);
 
 /**
- * Zavolá LuckyOS employee API jménem přihlášeného (bridge-token v `Authorization`).
- * Dev bez reálného LuckyOS: `LUCKYOS_MOCK=1` → canned data, bez sítě i bez tokenu.
+ * Owner-only veřejná projekce provider stavu. LuckyOS může svůj interní payload
+ * rozšiřovat, ale Watson nikdy nevrací neznámá pole, interní identity ani provider metadata.
  */
-async function luckyFetch(
-	email: string,
-	personId: string | null,
-	path: string,
-	init?: RequestInit,
-): Promise<LuckyResult> {
-	if (env.luckyOs.mock && !env.luckyOs.baseUrl) {
-		return { ok: true, status: 200, data: mockLucky(email, path, init?.method ?? "GET") };
-	}
-	if (!env.luckyOs.baseUrl) {
-		return { ok: false, status: 503, data: null, notConfigured: true };
-	}
-	const token = await issueBridgeToken({ email, personId });
-	const res = await fetch(new URL(path, env.luckyOs.baseUrl), {
-		...init,
-		headers: {
-			"content-type": "application/json",
-			...(init?.headers ?? {}),
-			authorization: `Bearer ${token}`,
+export function publicEmployeeStatus(value: LuckyEmployeeStatus) {
+	const person = object(value.person);
+	const readiness = object(value.readiness);
+	const deadlines = object(value.deadlines);
+	const progress = object((value as JsonObject).dpp_progress);
+	const submissions = object((value as JsonObject).submissions);
+	const blockers = Array.isArray(readiness.blockers)
+		? readiness.blockers.slice(0, 100).map((entry) => {
+				const row = object(entry);
+				return {
+					type: text(row.type, 64) ?? "other",
+					explanation: text(row.explanation, 1_000) ?? "Vyžaduje doplnění.",
+					href: relativeHref(row.href),
+				};
+			})
+		: [];
+	const missingDocuments = Array.isArray(readiness.missing_documents)
+		? readiness.missing_documents
+				.map((entry) => text(entry, 120))
+				.filter((entry): entry is string => Boolean(entry))
+				.slice(0, 100)
+		: [];
+	const countdowns = Array.isArray(deadlines.computed_countdowns)
+		? deadlines.computed_countdowns.slice(0, 50).map((entry) => {
+				const row = object(entry);
+				const severity = text(row.severity, 20);
+				return {
+					key: text(row.key ?? row.type, 80) ?? "deadline",
+					label: text(row.label ?? row.title, 300) ?? "Termín",
+					due: text(row.due ?? row.due_date, 40),
+					daysRemaining: finite(row.days_remaining, -3_650, 3_650),
+					severity: severity && deadlineSeverities.has(severity) ? severity : "info",
+				};
+			})
+		: [];
+	const submissionKinds = [
+		"attendance",
+		"expenses",
+		"documents",
+		"profile_changes",
+		"small_numbers",
+	] as const;
+	const submissionSummary = Object.fromEntries(
+		submissionKinds.map((kind) => {
+			const rows = Array.isArray(submissions[kind]) ? submissions[kind] : [];
+			return [
+				kind,
+				rows.slice(0, 20).map((entry) => {
+					const row = object(entry);
+					return {
+						id: text(row.id, 128),
+						status: text(row.status ?? row.review_status, 40) ?? "unknown",
+						reviewerNote: text(row.reviewer_note, 1_000),
+						periodMonth: finite(row.period_month, 1, 12),
+						periodYear: finite(row.period_year, 2020, 2100),
+						updatedAt: text(row.updated_at ?? row.submitted_at ?? row.created_at, 50),
+					};
+				}),
+			];
+		}),
+	);
+	const rawStatus = text(readiness.status, 20);
+	return {
+		person: {
+			// Provider person ID je serverová identita a může být odvozené z e-mailu.
+			// Klient ho pro read-only Hub nepotřebuje a nesmí ho posílat zpět jako autoritu.
+			id: null,
+			fullName: text(person.full_name, 500),
+			personType: text(person.person_type, 100),
 		},
-	});
-	let data: unknown = null;
-	try {
-		data = await res.json();
-	} catch {
-		data = null;
-	}
-	return { ok: res.ok, status: res.status, data };
+		readiness: {
+			status: rawStatus && readinessStates.has(rawStatus) ? rawStatus : "pending",
+			blockers,
+			missingDocuments,
+			hasSubmittedAttendance: readiness.has_submitted_attendance === true,
+			parentContributionCompleted: readiness.parent_contribution_completed === true,
+		},
+		deadlines: {
+			attendanceDueDay: finite(deadlines.attendance_due_day, 1, 31),
+			payrollDay: finite(deadlines.payroll_day, 1, 31),
+			withholdingTaxDay: finite(deadlines.withholding_tax_day, 1, 31),
+			countdowns,
+		},
+		dppProgress: {
+			hoursUsed: finite(progress.hours_used, 0, 100_000),
+			hoursLimit: finite(progress.hours_limit, 0, 100_000),
+			monthlyHours: finite(progress.monthly_hours, 0, 10_000),
+			monthlyLimit: finite(progress.monthly_limit, 0, 10_000),
+		},
+		submissions: submissionSummary,
+		notifications: (value.notifications ?? []).map((notification) => ({
+			id: notification.id,
+			type: notification.type,
+			title: notification.title,
+			message: notification.message ?? null,
+			href: relativeHref(notification.href),
+			due: notification.due ?? null,
+			isRead: notification.is_read ?? false,
+		})),
+	};
 }
 
-/** Canned odpovědi pro dev bez LuckyOS (`LUCKYOS_MOCK=1`). */
-function mockLucky(email: string, path: string, method: string): unknown {
-	if (path.startsWith("/api/employee/me")) {
-		return {
-			user: { email, role: "employee" },
-			person: {
-				id: `mock-${email}`,
-				full_name: "Trenér (mock)",
-				person_type: "dpp",
-			},
-		};
-	}
-	if (path.startsWith("/api/employee/status")) {
-		return {
-			person: {
-				id: `mock-${email}`,
-				full_name: "Trenér (mock)",
-				person_type: "dpp",
-			},
-			readiness: {
-				status: "blocked",
-				blockers: [
-					{
-						type: "missing_bank_account",
-						explanation: "Doplň číslo účtu pro výplatu.",
-						href: "/employee/profile",
-					},
-				],
-				missing_documents: ["dpp_contract"],
-			},
-			deadlines: { attendance_due_day: 10, payroll_day: 15 },
-			notifications: [
-				{
-					id: "mock-att-2026-07",
-					type: "attendance_reminder",
-					title: "Odevzdej docházku za červenec",
-					message: "Uzávěrka do 10. 7.",
-					href: "/employee/attendance",
-					due: "2026-07-10",
-					is_read: false,
-				},
-				{
-					id: "mock-bank",
-					type: "missing_bank_account",
-					title: "Doplň číslo účtu",
-					message: "Bez čísla účtu nelze vyplatit mzdu.",
-					href: "/employee/profile",
-					is_read: false,
-				},
-				{
-					id: "mock-payroll-ready",
-					type: "payroll_ready",
-					title: "Výplata připravena",
-					message: "Červnová výplata je připravena k náhledu.",
-					href: "/employee/payroll",
-					is_read: false,
-				},
-			],
-		};
-	}
-	// Odevzdávací/čtecí routy (Fáze 2) — canned odpovědi ve tvaru LuckyOS.
-	if (path.startsWith("/api/employee/attendance")) {
-		return { ok: true, saved: 0, submission: { status: "submitted" } };
-	}
-	if (path.startsWith("/api/employee/expenses")) {
-		return method === "POST" ? { claim: { status: "submitted" } } : { claims: [] };
-	}
-	if (path.startsWith("/api/employee/documents")) {
-		return method === "POST"
-			? { document: { review_status: "pending" } }
-			: { documents: [] };
-	}
-	if (path.startsWith("/api/employee/profile-change")) {
-		return method === "POST" ? { request: { status: "pending" } } : { requests: [] };
-	}
-	if (path.startsWith("/api/employee/small-numbers")) {
-		return method === "POST"
-			? { entry: { status: "submitted" } }
-			: { choreographies: [], entries: [] };
-	}
-	return {};
+function publicEmployeeIdentity(data: unknown) {
+	const root = object(data);
+	const person = object(root.person);
+	return {
+		id: null,
+		fullName: text(person.full_name, 500),
+		personType: text(person.person_type, 100),
+	};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -179,25 +211,10 @@ const ACTIONABLE_NOTIF = new Set([
 	"contract_signature_required",
 ]);
 
-interface StatusNotif {
-	id: string;
-	type: string;
-	title: string;
-	message?: string;
-	href?: string;
-	/** Volitelný termín (ISO YYYY-MM-DD) — stane se termínem úkolu. */
-	due?: string | null;
-	is_read?: boolean;
-}
-export interface EmployeeStatus {
-	person?: { id?: string; full_name?: string; person_type?: string };
-	readiness?: unknown;
-	deadlines?: unknown;
-	notifications?: StatusNotif[];
-}
+export type EmployeeStatus = LuckyEmployeeStatus;
 
 /** Osobní workspace uživatele (R8). */
-async function personalWorkspaceId(db: Db, userId: string): Promise<string | null> {
+async function personalWorkspaceId(db: DbTx, userId: string): Promise<string | null> {
 	const rows = await db
 		.select({ id: workspaces.id })
 		.from(workspaces)
@@ -208,7 +225,7 @@ async function personalWorkspaceId(db: Db, userId: string): Promise<string | nul
 
 /** Dedikovaný osobní projekt „Zaměstnanec" (create-if-missing) + členství + výchozí statusy. */
 async function ensureEmployeeProject(
-	db: Db,
+	db: DbTx,
 	userId: string,
 	wsId: string,
 ): Promise<string> {
@@ -252,73 +269,88 @@ async function ensureEmployeeProject(
  * — opětovný pull nezaloží duplikát a EXISTUJÍCÍ úkol NEpřepisuje (respektuje uživatelovu kopii,
  * invariant „zpětné stavy = read-only zrcadlo"; živý stav se čte přes GET /api/employee/status).
  */
-export async function reconcileEmployeeTasks(userId: string, status: EmployeeStatus) {
+export async function reconcileEmployeeTasks(
+	userId: string,
+	status: EmployeeStatus,
+	requestId: string | null = null,
+) {
 	const db = getDb();
-	const wsId = await personalWorkspaceId(db, userId);
-	if (!wsId) return { created: 0, skipped: 0, projectId: null as string | null };
-	const projectId = await ensureEmployeeProject(db, userId, wsId);
+	return db.transaction(async (tx) => {
+		// Jeden reconcile daného uživatele v jeden okamžik. Chrání create-if-missing
+		// projektu i task/link aggregate proti dvěma současným API instancím.
+		await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`employee:${userId}`}, 0))`);
+		const wsId = await personalWorkspaceId(tx, userId);
+		if (!wsId) return { created: 0, skipped: 0, projectId: null as string | null };
+		const projectId = await ensureEmployeeProject(tx, userId, wsId);
 
-	let created = 0;
-	let skipped = 0;
-	for (const n of status.notifications ?? []) {
-		if (!ACTIONABLE_NOTIF.has(n.type)) continue;
-
-		const link = await db
-			.select({ taskId: entityLinks.fromId })
-			.from(entityLinks)
-			.where(
-				and(
-					eq(entityLinks.sourceSystem, "luckyos"),
-					eq(entityLinks.externalId, n.id),
-					eq(entityLinks.toType, "luckyos_notification"),
-				),
-			)
-			.limit(1);
-		if (link[0]) {
-			skipped++;
-			continue;
-		}
-
-		const due = n.due ? new Date(n.due) : null;
-		const desc =
-			[n.message, n.href ? `Zdroj: LuckyOS (${n.href})` : null]
-				.filter(Boolean)
-				.join("\n\n") || null;
-
-		const [task] = await db
-			.insert(tasks)
-			.values({
-				projectId,
-				name: n.title.slice(0, 500),
-				description: desc,
-				priority: 2,
-				dueDate: due,
-				assignmentMode: "single",
-				createdBy: userId,
-			})
-			.returning({ id: tasks.id });
-		if (!task) continue;
-
-		await db
-			.insert(assignments)
-			.values({ taskId: task.id, projectId, userId })
-			.onConflictDoNothing();
-		await db
-			.insert(entityLinks)
-			.values({
+		let created = 0;
+		let skipped = 0;
+		const createdTaskIds: string[] = [];
+		for (const notification of status.notifications ?? []) {
+			if (!ACTIONABLE_NOTIF.has(notification.type)) continue;
+			const link = await tx
+				.select({ taskId: entityLinks.fromId })
+				.from(entityLinks)
+				.where(
+					and(
+						eq(entityLinks.workspaceId, wsId),
+						eq(entityLinks.sourceSystem, "luckyos"),
+						eq(entityLinks.externalId, notification.id),
+						eq(entityLinks.toType, "luckyos_notification"),
+					),
+				)
+				.limit(1);
+			if (link[0]) {
+				skipped++;
+				continue;
+			}
+			const due = notification.due
+				? new Date(`${notification.due.slice(0, 10)}T00:00:00.000Z`)
+				: null;
+			const description =
+				[notification.message, notification.href ? `Zdroj: LuckyOS (${notification.href})` : null]
+					.filter(Boolean)
+					.join("\n\n") || null;
+			const [task] = await tx
+				.insert(tasks)
+				.values({
+					projectId,
+					name: notification.title.slice(0, 500),
+					description,
+					priority: 2,
+					dueDate: due,
+					assignmentMode: "single",
+					createdBy: userId,
+				})
+				.returning({ id: tasks.id });
+			if (!task) throw new Error("employee_task_insert_failed");
+			await tx.insert(assignments).values({ taskId: task.id, projectId, userId });
+			await tx.insert(entityLinks).values({
 				workspaceId: wsId,
 				fromType: "task",
 				fromId: task.id,
 				toType: "luckyos_notification",
-				toId: n.id,
+				toId: notification.id,
 				relation: "derived_from",
 				sourceSystem: "luckyos",
-				externalId: n.id,
-			})
-			.onConflictDoNothing();
-		created++;
-	}
-	return { created, skipped, projectId };
+				externalId: notification.id,
+			});
+			createdTaskIds.push(task.id);
+			created++;
+		}
+		if (created > 0) {
+			await tx.insert(auditEvents).values({
+				workspaceId: wsId,
+				actorType: "user",
+				actorUserId: userId,
+				entity: "employee_reconcile",
+				action: "create_tasks",
+				diff: { projectId, createdTaskIds, created, skipped },
+				requestId,
+			});
+		}
+		return { created, skipped, projectId };
+	});
 }
 
 /**
@@ -332,13 +364,32 @@ employeeRoutes.get("/api/employee/me", async (c) => {
 	if (!luckyOsEnabled) {
 		return c.json({ linked: false, reason: "luckyos_not_configured" });
 	}
+	if (env.luckyOs.protocol === "v1") {
+		const identity = await readLuckyOsV1Identity(session.user.id);
+		return c.json(identity, identity.linked ? 200 : identity.reason === "luckyos_contract_rejected" ? 502 : 200);
+	}
 	const email = session.user.email;
 	if (!email) return c.json({ linked: false, reason: "no_email" });
 
-	const res = await luckyFetch(email, null, "/api/employee/me");
-	if (!res.ok) return c.json({ linked: false, status: res.status });
-	const data = res.data as { user?: unknown; person?: unknown };
-	return c.json({ linked: true, user: data.user ?? null, person: data.person ?? null });
+	const res = await luckyFetch(session.user.id, email, null, "/api/employee/me");
+	if (!res.ok) {
+		return c.json({
+			linked: false,
+			...(res.revoked ? { status: 423 } : {}),
+			reason: res.revoked
+				? "luckyos_revoked"
+				: res.notConfigured
+					? "luckyos_not_configured"
+					: res.status === 404
+						? "luckyos_identity_not_linked"
+						: "luckyos_unavailable",
+		});
+	}
+	const parsed = luckyIdentitySchema.safeParse(res.data);
+	if (!parsed.success) {
+		return c.json({ linked: false, reason: "luckyos_contract_rejected" }, 502);
+	}
+	return c.json({ linked: true, person: publicEmployeeIdentity(parsed.data) });
 });
 
 /**
@@ -351,11 +402,52 @@ employeeRoutes.get("/api/employee/status", async (c) => {
 	if (!luckyOsEnabled) {
 		return c.json({ linked: false, reason: "luckyos_not_configured" });
 	}
+	if (env.luckyOs.protocol === "v1") {
+		const result = await readLuckyOsV1Status(session.user.id);
+		if (!result.ok) {
+			return c.json({
+				linked: false,
+				reason: result.revoked
+					? "luckyos_revoked"
+					: result.status === 403 || result.status === 404
+						? "luckyos_identity_not_linked"
+						: result.status === 422
+							? "luckyos_contract_rejected"
+							: "luckyos_unavailable",
+			});
+		}
+		const parsed = employeeStatusSchema.safeParse(result.data);
+		if (!parsed.success) return c.json({ linked: false, reason: "luckyos_contract_rejected" }, 502);
+		return c.json({
+			linked: true,
+			selfService: true,
+			status: publicEmployeeStatus(parsed.data),
+			fetchedAt: new Date().toISOString(),
+		});
+	}
 	const email = session.user.email;
 	if (!email) return c.json({ linked: false, reason: "no_email" });
-	const res = await luckyFetch(email, null, "/api/employee/status");
-	if (!res.ok) return c.json({ linked: false, status: res.status });
-	return c.json({ linked: true, status: res.data });
+	const res = await luckyFetch(session.user.id, email, null, "/api/employee/status");
+	if (!res.ok) {
+		return c.json({
+			linked: false,
+			reason: res.revoked
+				? "luckyos_revoked"
+				: res.notConfigured
+					? "luckyos_not_configured"
+					: res.status === 404
+						? "luckyos_identity_not_linked"
+						: "luckyos_unavailable",
+		});
+	}
+	const parsed = employeeStatusSchema.safeParse(res.data);
+	if (!parsed.success) return c.json({ linked: false, reason: "luckyos_contract_rejected" }, 502);
+	return c.json({
+		linked: true,
+		selfService: false,
+		status: publicEmployeeStatus(parsed.data),
+		fetchedAt: new Date().toISOString(),
+	});
 });
 
 /**
@@ -369,15 +461,32 @@ employeeRoutes.post("/api/employee/sync", async (c) => {
 	if (!luckyOsEnabled) {
 		return c.json({ linked: false, reason: "luckyos_not_configured" });
 	}
+	if (env.luckyOs.protocol === "v1") {
+		const result = await readLuckyOsV1Status(session.user.id);
+		if (result.revoked) return c.json({ linked: false, reason: "luckyos_revoked" }, 423);
+		if (!result.ok) return c.json({ linked: false, status: result.status }, 502);
+		const parsedStatus = employeeStatusSchema.safeParse(result.data);
+		if (!parsedStatus.success) return c.json({ error: "invalid_luckyos_status_payload" }, 502);
+		const summary = await reconcileEmployeeTasks(
+			session.user.id,
+			parsedStatus.data,
+			c.get("requestId") ?? null,
+		);
+		return c.json({ linked: true, ...summary, fetchedAt: new Date().toISOString() });
+	}
 	const email = session.user.email;
 	if (!email) return c.json({ linked: false, reason: "no_email" });
-	const res = await luckyFetch(email, null, "/api/employee/status");
+	const res = await luckyFetch(session.user.id, email, null, "/api/employee/status");
+	if (res.revoked) return c.json({ linked: false, reason: "luckyos_revoked" }, 423);
 	if (!res.ok) return c.json({ linked: false, status: res.status }, 502);
+	const parsedStatus = employeeStatusSchema.safeParse(res.data);
+	if (!parsedStatus.success) return c.json({ error: "invalid_luckyos_status_payload" }, 502);
 	const summary = await reconcileEmployeeTasks(
 		session.user.id,
-		res.data as EmployeeStatus,
+		parsedStatus.data,
+		c.get("requestId") ?? null,
 	);
-	return c.json({ linked: true, ...summary });
+	return c.json({ linked: true, ...summary, fetchedAt: new Date().toISOString() });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -422,7 +531,8 @@ async function forward(
 			? JSON.stringify(await c.req.json().catch(() => ({})))
 			: undefined;
 
-	const res = await luckyFetch(email, null, target, { method, body });
+	const res = await luckyFetch(session.user.id, email, null, target, { method, body });
+	if (res.revoked) return c.json({ linked: false, reason: "luckyos_revoked" }, 423);
 	return new Response(JSON.stringify(res.data ?? {}), {
 		status: res.ok ? 200 : res.status,
 		headers: { "content-type": "application/json" },
@@ -448,8 +558,12 @@ employeeRoutes.post("/api/employee/storage/drive", async (c) => {
 	if (!luckyOsEnabled) return c.json({ error: "luckyos_not_configured" }, 503);
 	const email = session.user.email;
 	if (!email) return c.json({ error: "no_email" }, 400);
+	if (await isLuckyOsRevoked(session.user.id)) {
+		return c.json({ error: "luckyos_revoked" }, 423);
+	}
 
 	if (env.luckyOs.mock && !env.luckyOs.baseUrl) {
+		await recordLuckyOsHealth(session.user.id, { ok: true, status: 200 });
 		return c.json({
 			file: {
 				storage_file_id: `mock-${crypto.randomUUID()}`,
@@ -462,14 +576,28 @@ employeeRoutes.post("/api/employee/storage/drive", async (c) => {
 
 	const form = await c.req.formData();
 	const token = await issueBridgeToken({ email, personId: null });
-	const res = await fetch(new URL("/api/storage/drive", env.luckyOs.baseUrl), {
-		method: "POST",
-		headers: {
-			authorization: `Bearer ${token}`,
-			"x-file-storage-mode": "auto",
-		},
-		body: form,
-	});
+	let res: Response;
+	try {
+		res = await fetch(new URL("/api/storage/drive", env.luckyOs.baseUrl), {
+			method: "POST",
+			signal: AbortSignal.timeout(60_000),
+			headers: {
+				authorization: `Bearer ${token}`,
+				"x-file-storage-mode": "auto",
+			},
+			body: form,
+		});
+	} catch (error) {
+		await recordLuckyOsHealth(session.user.id, {
+			ok: false,
+			status: error instanceof Error && error.name === "TimeoutError" ? 504 : 502,
+		});
+		return c.json(
+			{ error: error instanceof Error && error.name === "TimeoutError" ? "luckyos_timeout" : "luckyos_unavailable" },
+			error instanceof Error && error.name === "TimeoutError" ? 504 : 502,
+		);
+	}
+	await recordLuckyOsHealth(session.user.id, { ok: res.ok, status: res.status });
 	const text = await res.text();
 	return new Response(text, {
 		status: res.status,

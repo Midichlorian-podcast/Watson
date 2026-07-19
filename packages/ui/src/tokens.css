@@ -9,9 +9,9 @@
 	/* ── Brand ───────────────────────────────────────────────── */
 	--w-navy: #17283f;
 	--w-navy-2: #24395a;
-	--w-brass: #c68a3e; /* akcent / velké prvky */
-	--w-brass-text: #a8722e; /* tmavší pro text (kontrast) */
-	--w-brass-soft: rgba(198, 138, 62, 0.13);
+	--w-brass: #88551c; /* akcent i pozadí tlačítek: AA s bílým textem */
+	--w-brass-text: #7f4f1a; /* AA i na jemném akcentovém pozadí */
+	--w-brass-soft: rgba(136, 85, 28, 0.13);
 
 	/* ── Plochy ──────────────────────────────────────────────── */
 	--w-paper: #f5f4f0; /* pozadí appky (--bg) */
@@ -19,20 +19,22 @@
 	--w-panel-2: #faf9f6; /* jemně odlišený panel */
 	--w-ink: #16161a;
 	--w-ink-2: #55554f;
-	--w-ink-3: #8c8a82;
+	--w-ink-3: #5f5d57; /* sekundární text: AA i na jemně tónovaných světlých plochách */
 	--w-line: #e7e5df;
 
 	/* ── Sidebar (tmavě navy) ────────────────────────────────── */
 	--w-sidebar: #17283f;
 	--w-sidebar-ink: #ffffff;
-	--w-sidebar-ink-2: rgba(255, 255, 255, 0.62);
+	--w-sidebar-ink-2: rgba(255, 255, 255, 0.72);
+	--w-sidebar-accent: #f0c991;
 	--w-sidebar-line: rgba(255, 255, 255, 0.1);
 
 	/* ── Sémantické ──────────────────────────────────────────── */
 	--w-success: #2e9c6e;
 	--w-success-soft: #eaf6f0;
-	--w-success-ink: #1c7a52;
-	--w-overdue: #c2473c; /* po termínu */
+	--w-success-ink: #146a45;
+	--w-info-ink: #2058b3;
+	--w-overdue: #aa332c; /* po termínu: AA i na tónovaných kartách */
 	--w-overdue-soft: #fbedea;
 	--w-avatar: #17283f;
 
@@ -93,6 +95,17 @@
 	--w-shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.05);
 	--w-shadow:
 		0 1px 2px rgba(20, 20, 30, 0.04), 0 12px 32px rgba(23, 40, 63, 0.08);
+
+	/* ── Vrstvy UI ────────────────────────────────────────────── */
+	/* Jediná stupnice pro popovery, drawery a modaly. Vnitřní panel může použít
+	 * calc(token + 1), nikdy další náhodné globální číslo. */
+	--w-layer-popover: 30;
+	--w-layer-drawer: 40;
+	--w-layer-floating: 60;
+	--w-layer-modal: 70;
+	--w-layer-nested: 80;
+	--w-layer-critical: 100;
+	--w-layer-feedback: 110;
 }
 
 /* ── Tmavý režim — KOMPLETNÍ paleta (prototyp ř. 28–39) ───── */
@@ -102,19 +115,21 @@
 	--w-panel-2: #1e2832;
 	--w-sidebar: #0a1019;
 	--w-sidebar-ink: #eef1f4;
-	--w-sidebar-ink-2: rgba(232, 238, 244, 0.56);
+	--w-sidebar-ink-2: rgba(232, 238, 244, 0.68);
+	--w-sidebar-accent: #dcab68;
 	--w-sidebar-line: rgba(255, 255, 255, 0.08);
 	--w-ink: #eceef1;
 	--w-ink-2: #a6aeba;
-	--w-ink-3: #74808d;
+	--w-ink-3: #96a0ab;
 	--w-line: #28323e;
-	--w-brass: #d6a460;
+	--w-brass: #9a6426;
 	--w-brass-text: #dcab68;
 	--w-brass-soft: rgba(214, 164, 96, 0.16);
 	--w-success: #39ad7d;
 	--w-success-soft: rgba(46, 156, 110, 0.16);
 	--w-success-ink: #6fd2a6;
-	--w-overdue: #e07365;
+	--w-info-ink: #8bb8ff;
+	--w-overdue: #e98275; /* AA i na overdue-soft: 4,95:1 v tmavém motivu */
 	--w-overdue-soft: rgba(224, 115, 101, 0.17);
 	--w-avatar: #33455f;
 	--w-p1: #e0635a;

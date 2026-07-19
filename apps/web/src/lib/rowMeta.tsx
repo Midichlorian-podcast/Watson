@@ -13,11 +13,13 @@ export interface RowMeta {
 	checklist?: { done: number; total: number };
 	comments?: number;
 	reminder?: boolean;
-	avatars: { initials: string; brass?: boolean }[];
+	avatars: { id: string; initials: string; brass?: boolean }[];
 	/** User ids přiřazených (pro „Přišlo na tebe" apod.). */
 	assigneeIds: string[];
 	assignAll?: { done: number; total: number };
 	status?: { label: string; kind: "success" | "muted" };
+	/** Počet nehotových úkolů, které tento úkol blokují. */
+	blockedBy?: number;
 	/** Název rodiče (kontext vrstveného podúkolu v seznamech). */
 	parentName?: string;
 	/** R6 — vlastní barva úkolu přihlášeného uživatele (per-user overlay). */
@@ -49,6 +51,13 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 		"SELECT task_id, COUNT(*) AS n FROM comments GROUP BY task_id",
 	);
 	const { data: rem } = usePsQuery<{ task_id: string }>("SELECT DISTINCT task_id FROM reminders");
+	const { data: blocked } = usePsQuery<{ task_id: string; n: number }>(
+		`SELECT dependency.blocked_task_id AS task_id, COUNT(*) AS n
+		 FROM task_dependencies dependency
+		 JOIN tasks blocker ON blocker.id = dependency.blocking_task_id
+		 WHERE blocker.completed_at IS NULL
+		 GROUP BY dependency.blocked_task_id`,
+	);
 	const { data: asg } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
@@ -74,6 +83,7 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 		const chkMap = new Map((chk ?? []).map((x) => [x.task_id, x] as const));
 		const cmtMap = new Map((cmt ?? []).map((x) => [x.task_id, x.n] as const));
 		const remSet = new Set((rem ?? []).map((x) => x.task_id));
+		const blockedMap = new Map((blocked ?? []).map((x) => [x.task_id, x.n] as const));
 		const nameMap = new Map([...allMembers].map(([id, name]) => [id, initials(name)] as const));
 		const asgMap = new Map<string, { id: string; ini: string; done: boolean }[]>();
 		for (const a of asg ?? []) {
@@ -106,7 +116,9 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 				checklist: c && c.total > 0 ? { done: c.done, total: c.total } : undefined,
 				comments: cmtMap.get(task.id),
 				reminder: remSet.has(task.id) || undefined,
+				blockedBy: blockedMap.get(task.id),
 				avatars: people.slice(0, 3).map((p, i) => ({
+					id: p.id,
 					initials: p.ini,
 					brass: isAll && i === 0 ? true : undefined,
 				})),
@@ -138,7 +150,7 @@ export function RowMetaProvider({ children }: { children: ReactNode }) {
 				return meta;
 			},
 		};
-	}, [chk, cmt, rem, asg, sts, parents, userColors, allMembers]);
+	}, [chk, cmt, rem, blocked, asg, sts, parents, userColors, allMembers]);
 
 	return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

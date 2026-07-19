@@ -1,15 +1,18 @@
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 
 /** „?" tahák klávesových zkratek — 1:1 dle Cloud Design (4 sekce, klik mimo / Esc zavře). */
 export function Cheatsheet({ onClose }: { onClose: () => void }) {
 	const { t } = useTranslation();
+	const dialogRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	const sections: { title: string; rows: [string, string[]][] }[] = [
 		{
 			title: t("cheat.global"),
 			rows: [
 				[t("cheat.search"), ["/"]],
+				[t("cheat.quickCapture"), ["⌘ ⇧ Space"]],
 				[t("cheat.newTask"), ["Q"]],
 				[t("cheat.jump"), ["⌘ K"]],
 				[t("cheat.goto"), ["G", "D/U/K/P/C"]],
@@ -54,14 +57,18 @@ export function Cheatsheet({ onClose }: { onClose: () => void }) {
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.5)", zIndex: 70 }}
+				style={{ background: "rgba(10,14,20,.5)", zIndex: "var(--w-layer-modal)" }}
 			/>
 			<div
 				data-esc-layer
 				className="pointer-events-none fixed inset-0 flex items-center justify-center"
-				style={{ zIndex: 71, padding: 24 }}
+				style={{ zIndex: "calc(var(--w-layer-modal) + 1)", padding: 24 }}
 			>
 				<div
+					ref={dialogRef}
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("cheat.title")}
 					className="pointer-events-auto max-h-[84vh] overflow-auto rounded-2xl border border-line bg-card"
 					style={{
 						width: 640,

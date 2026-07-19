@@ -1,6 +1,6 @@
-import { useStatus } from "@powersync/react";
 import { useTranslation } from "@watson/i18n";
 import { type ReactNode, useEffect, useState } from "react";
+import { SyncUnavailable, useTrustState } from "./TrustState";
 
 /** Nenápadný brass spinner (SVG, respektuje prefers-reduced-motion přes CSS). */
 export function Spinner({ size = 22 }: { size?: number }) {
@@ -24,6 +24,19 @@ export function Spinner({ size = 22 }: { size?: number }) {
 	);
 }
 
+/** Stav konkrétního lokálního dotazu; brání falešným business empty/KPI stavům po SyncGate. */
+export function DataLoading() {
+	const { t } = useTranslation();
+	return (
+		<div role="status" className="flex items-center justify-center" style={{ gap: 10, padding: "48px 20px" }}>
+			<Spinner size={22} />
+			<span className="font-body text-ink-3" style={{ fontSize: 12.5 }}>
+				{t("shell.syncing")}
+			</span>
+		</div>
+	);
+}
+
 /**
  * Gate první synchronizace: dokud je klient připojený a NEMÁ za sebou první sync,
  * zobrazí spinner místo bliknutí prázdné obrazovky. Offline (nepřipojeno) NEblokuje —
@@ -31,7 +44,7 @@ export function Spinner({ size = 22 }: { size?: number }) {
  */
 export function SyncGate({ children }: { children: ReactNode }) {
 	const { t } = useTranslation();
-	const status = useStatus();
+	const { sync } = useTrustState();
 	// Krátká prodleva, ať spinner nebliká, když data dorazí z lokální cache okamžitě.
 	const [showAfterDelay, setShowAfterDelay] = useState(false);
 	useEffect(() => {
@@ -39,8 +52,10 @@ export function SyncGate({ children }: { children: ReactNode }) {
 		return () => clearTimeout(id);
 	}, []);
 
-	const firstSyncing = !!status?.connected && !status?.hasSynced;
-	if (firstSyncing && showAfterDelay) {
+	if (sync.dataUsable) return <>{children}</>;
+	if (!showAfterDelay) return <div className="min-h-full" aria-hidden />;
+	if (sync.kind === "offline_empty" || sync.kind === "sync_error") return <SyncUnavailable />;
+	if (showAfterDelay) {
 		return (
 			<div
 				className="grid min-h-full place-items-center"
@@ -55,5 +70,5 @@ export function SyncGate({ children }: { children: ReactNode }) {
 			</div>
 		);
 	}
-	return <>{children}</>;
+	return null;
 }

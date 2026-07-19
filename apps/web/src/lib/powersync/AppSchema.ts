@@ -1,5 +1,13 @@
 import { column, Schema, Table } from "@powersync/web";
 
+// P0-06: PATCH/DELETE musí nést snapshot řádku, který uživatel skutečně editoval.
+// Server jej porovná v téže transakci se současnou DB a stale zápis odmítne 409.
+const trackAllPrevious = { trackPrevious: true } as const;
+const tracked = <T extends Record<string, unknown>>(options: T) => ({
+	...options,
+	trackPrevious: true as const,
+});
+
 /**
  * Klientské zrcadlo (podmnožina) app tabulek.
  * PowerSync přidává textové `id` PK automaticky — neuvádí se.
@@ -12,10 +20,12 @@ const tasks = new Table(
 		parent_id: column.text,
 		name: column.text,
 		description: column.text,
+		why_now: column.text,
 		priority: column.integer,
 		color: column.text,
 		due_date: column.text,
 		start_date: column.text,
+		start_timezone: column.text,
 		deadline: column.text,
 		duration_min: column.integer,
 		days: column.integer,
@@ -47,25 +57,184 @@ const tasks = new Table(
 			by_status: ["status_id"],
 			by_meeting: ["meeting_id"],
 		},
+		trackPrevious: true,
 	},
 );
 
+const task_dependencies = new Table(
+	{
+		project_id: column.text,
+		blocking_task_id: column.text,
+		blocked_task_id: column.text,
+		created_by: column.text,
+		created_at: column.text,
+	},
+	tracked({ indexes: { by_blocking: ["blocking_task_id"], by_blocked: ["blocked_task_id"] } }),
+);
+
+/** Projektové definice vlastních polí; zápis jde přes validující API commandy. */
+const project_custom_fields = new Table(
+	{
+		project_id: column.text,
+		name: column.text,
+		field_type: column.text,
+		options: column.text,
+		position: column.integer,
+		created_by: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{ indexes: { by_project: ["project_id"] } },
+);
+
+/** Typovaná hodnota úkolu; JSON scalar validuje server i DB trigger. */
+const task_custom_field_values = new Table(
+	{
+		field_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		value: column.text,
+		updated_by: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: {
+			by_task: ["task_id"],
+			by_project: ["project_id"],
+		},
+		trackPrevious: true,
+	},
+);
+
+/** Vložitelné task ankety; definice a stav se mění přes auditovaný API command. */
+const task_polls = new Table(
+	{
+		task_id: column.text,
+		project_id: column.text,
+		question: column.text,
+		response_type: column.text,
+		options: column.text,
+		closed_at: column.text,
+		created_by: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{ indexes: { by_task: ["task_id"], by_project: ["project_id"] } },
+);
+
+/** Jedna typovaná odpověď člena na anketu; server drží identitu i validaci. */
+const task_poll_responses = new Table(
+	{
+		poll_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		respondent_id: column.text,
+		value: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: {
+			by_poll: ["poll_id"],
+			by_task: ["task_id"],
+			by_respondent: ["respondent_id"],
+		},
+	},
+);
+
+/** Projektové milníky; splnění se odvozuje lokálně i serverově z úkolů. */
+const project_milestones = new Table(
+	{
+		project_id: column.text,
+		title: column.text,
+		condition_type: column.text,
+		task_id: column.text,
+		target_count: column.integer,
+		due_date: column.text,
+		position: column.integer,
+		created_by: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{ indexes: { by_project: ["project_id"], by_task: ["task_id"] } },
+);
+
 /** Projekt (barva = tělo karet úkolů, R6); kind=flow|goal|cycle, status 4-stavový. */
-const projects = new Table({
-	workspace_id: column.text,
-	name: column.text,
-	color: column.text,
-	icon: column.text,
-	default_layout: column.text,
-	visibility: column.text,
-	kind: column.text,
-	owner_id: column.text,
-	status: column.text,
-	delivery_date: column.text,
-	definition_of_done: column.text,
-	archived_at: column.text,
-	created_at: column.text,
-});
+const projects = new Table(
+	{
+		workspace_id: column.text,
+		name: column.text,
+		color: column.text,
+		icon: column.text,
+		default_layout: column.text,
+		visibility: column.text,
+		kind: column.text,
+		owner_id: column.text,
+		status: column.text,
+		delivery_date: column.text,
+		definition_of_done: column.text,
+		milestones_enabled: column.integer,
+		urgent_acceptance_enabled: column.integer,
+		urgent_acceptance_priority: column.integer,
+		archived_at: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	trackAllPrevious,
+);
+
+const workspaces = new Table(
+	{
+		name: column.text,
+		is_personal: column.integer,
+		task_conflict_policy: column.text,
+	},
+	trackAllPrevious,
+);
+
+/** Týmově viditelný rozvrh a stav snooze; mutace jsou pouze auditovaným API commandem. */
+const availability_profiles = new Table(
+	{
+		workspace_id: column.text,
+		user_id: column.text,
+		working_hours: column.text,
+		quiet_hours: column.text,
+		manual_snooze_started_at: column.text,
+		manual_snooze_until: column.text,
+		version: column.integer,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{ indexes: { by_workspace_user: ["workspace_id", "user_id"], by_user: ["user_id"] } },
+);
+
+/** Focus/absence/unavailable/holiday jako samostatná netasková kalendářní vrstva. */
+const availability_blocks = new Table(
+	{
+		workspace_id: column.text,
+		user_id: column.text,
+		kind: column.text,
+		starts_at: column.text,
+		ends_at: column.text,
+		timezone: column.text,
+		visibility: column.text,
+		source: column.text,
+		approval_status: column.text,
+		external_id: column.text,
+		created_by: column.text,
+		cancelled_at: column.text,
+		version: column.integer,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: {
+			by_workspace_time: ["workspace_id", "starts_at", "ends_at"],
+			by_user_time: ["user_id", "starts_at", "ends_at"],
+		},
+	},
+);
 
 const sections = new Table(
 	{
@@ -74,7 +243,7 @@ const sections = new Table(
 		position: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_project: ["project_id"] } },
+	tracked({ indexes: { by_project: ["project_id"] } }),
 );
 
 /** Stavy úkolů per projekt; is_done (0/1) provázané se zaškrtnutím úkolu (R9). */
@@ -89,7 +258,7 @@ const statuses = new Table(
 		is_done: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_project: ["project_id"] } },
+	tracked({ indexes: { by_project: ["project_id"] } }),
 );
 
 const project_members = new Table(
@@ -117,6 +286,29 @@ const assignments = new Table(
 			by_project: ["project_id"],
 			by_user: ["user_id"], // Sidebar „Přiřazeno mně" / rowMeta agregace
 		},
+		trackPrevious: true,
+	},
+);
+
+/** Rozhodnutí řešitele o převzetí urgentního úkolu; zapisuje se jen auditovaným API commandem. */
+const task_acceptances = new Table(
+	{
+		task_id: column.text,
+		project_id: column.text,
+		assignee_id: column.text,
+		requested_by: column.text,
+		status: column.text,
+		note: column.text,
+		requested_at: column.text,
+		responded_at: column.text,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: {
+			by_task: ["task_id"],
+			by_assignee_status: ["assignee_id", "status"],
+		},
 	},
 );
 
@@ -124,14 +316,130 @@ const comments = new Table(
 	{
 		task_id: column.text,
 		project_id: column.text,
+		parent_id: column.text,
 		author_id: column.text,
 		body: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_task: ["task_id"] } },
+	tracked({ indexes: { by_task: ["task_id"] } }),
 );
 
-/** R4 — per-výskyt výjimky opakování (done/skip jednoho výskytu). */
+/**
+ * Přílohy — do offline cache patří jen bezpečná metadata. Binární obsah se čte
+ * autorizovanou API route a klient do této tabulky nikdy nezapisuje přímo.
+ */
+const attachments = new Table(
+	{
+		task_id: column.text,
+		project_id: column.text,
+		comment_id: column.text,
+		url: column.text,
+		file_name: column.text,
+		sha256: column.text,
+		version: column.integer,
+		mime: column.text,
+		size_bytes: column.integer,
+		uploaded_by: column.text,
+		created_at: column.text,
+	},
+	{
+		indexes: {
+			by_task: ["task_id"],
+			by_project: ["project_id"],
+			by_comment: ["comment_id"],
+		},
+	},
+);
+
+const mentions = new Table(
+	{
+		comment_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		user_id: column.text,
+		created_by: column.text,
+		created_at: column.text,
+	},
+	tracked({
+		indexes: {
+			by_comment: ["comment_id"],
+			by_task: ["task_id"],
+			by_user: ["user_id"],
+		},
+	}),
+);
+
+const comment_reactions = new Table(
+	{
+		comment_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		user_id: column.text,
+		emoji: column.text,
+		created_at: column.text,
+	},
+	tracked({ indexes: { by_comment: ["comment_id"], by_task: ["task_id"] } }),
+);
+
+const comment_decisions = new Table(
+	{
+		comment_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		marked_by: column.text,
+		created_at: column.text,
+	},
+	tracked({
+		indexes: {
+			by_comment: ["comment_id"],
+			by_task: ["task_id"],
+			by_project: ["project_id"],
+		},
+	}),
+);
+
+/** F6 — kanonický Decision Log z ručních zápisů, komentářů a porad. Zápis pouze přes API. */
+const decisions = new Table(
+	{
+		workspace_id: column.text,
+		project_id: column.text,
+		source_type: column.text,
+		source_object_id: column.text,
+		source_key: column.text,
+		title: column.text,
+		rationale: column.text,
+		owner_user_id: column.text,
+		decided_at: column.text,
+		effective_at: column.text,
+		review_at: column.text,
+		status: column.text,
+		supersedes_id: column.text,
+		created_by: column.text,
+		version: column.integer,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: {
+			by_project_status: ["project_id", "status"],
+			by_owner_status: ["owner_user_id", "status"],
+			by_source: ["source_type", "source_object_id"],
+		},
+	},
+);
+
+/** Volitelné vazby rozhodnutí na úkoly stejného projektu. */
+const decision_task_links = new Table(
+	{
+		decision_id: column.text,
+		task_id: column.text,
+		project_id: column.text,
+		created_at: column.text,
+	},
+	{ indexes: { by_decision: ["decision_id"], by_task: ["task_id"] } },
+);
+
+/** R4 — per-výskyt výjimky opakování (done/skip i auditovaný přesun jednoho výskytu). */
 const task_occurrence_overrides = new Table(
 	{
 		task_id: column.text,
@@ -139,9 +447,44 @@ const task_occurrence_overrides = new Table(
 		occ_date: column.text,
 		done: column.integer,
 		skipped: column.integer,
+		override_due_date: column.text,
+		override_start_date: column.text,
+		override_start_timezone: column.text,
+		override_duration_min: column.integer,
+		updated_by: column.text,
+		version: column.integer,
 		created_at: column.text,
+		updated_at: column.text,
 	},
-	{ indexes: { by_task: ["task_id"], by_project: ["project_id"] } },
+	tracked({
+		indexes: {
+			by_task: ["task_id"],
+			by_project: ["project_id"],
+			by_target_date: ["override_due_date"],
+		},
+	}),
+);
+
+/** Historické/pending prefixy řady; vytváří je pouze atomický recurrence command. */
+const task_recurrence_prefixes = new Table(
+	{
+		task_id: column.text,
+		project_id: column.text,
+		anchor_date: column.text,
+		end_date: column.text,
+		recurrence_rule: column.text,
+		start_date: column.text,
+		start_timezone: column.text,
+		duration_min: column.integer,
+		created_by: column.text,
+		version: column.integer,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{
+		indexes: { by_task_range: ["task_id", "anchor_date", "end_date"], by_project: ["project_id"] },
+		trackPrevious: true,
+	},
 );
 
 /** R6 — per-uživatelská barva úkolu (syncuje se jen vlastní barva). */
@@ -153,7 +496,7 @@ const task_user_colors = new Table(
 		color: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_task: ["task_id"] } },
+	tracked({ indexes: { by_task: ["task_id"] } }),
 );
 
 const reminders = new Table(
@@ -167,7 +510,7 @@ const reminders = new Table(
 		channel: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_task: ["task_id"] } },
+	tracked({ indexes: { by_task: ["task_id"] } }),
 );
 
 /**
@@ -204,7 +547,7 @@ const chains = new Table(
 		completed_at: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_project: ["project_id"] } },
+	tracked({ indexes: { by_project: ["project_id"] } }),
 );
 
 const chain_steps = new Table(
@@ -220,7 +563,7 @@ const chain_steps = new Table(
 		activated_at: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_chain: ["chain_id"], by_project: ["project_id"] } },
+	tracked({ indexes: { by_chain: ["chain_id"], by_project: ["project_id"] } }),
 );
 
 /** Cíle (workspace-scoped). */
@@ -244,11 +587,11 @@ const goals = new Table(
 		created_by: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_workspace: ["workspace_id"] } },
+	tracked({ indexes: { by_workspace: ["workspace_id"] } }),
 );
 const goal_projects = new Table(
 	{ goal_id: column.text, project_id: column.text, workspace_id: column.text },
-	{ indexes: { by_goal: ["goal_id"] } },
+	tracked({ indexes: { by_goal: ["goal_id"] } }),
 );
 const goal_milestones = new Table(
 	{
@@ -259,7 +602,7 @@ const goal_milestones = new Table(
 		position: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_goal: ["goal_id"] } },
+	tracked({ indexes: { by_goal: ["goal_id"] } }),
 );
 
 // Seznamy — checklisty na akce (handoff 2026-07-10; šablona → instance).
@@ -275,7 +618,7 @@ const lists = new Table(
 		created_by: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_workspace: ["workspace_id"] } },
+	tracked({ indexes: { by_workspace: ["workspace_id"] } }),
 );
 const list_sections = new Table(
 	{
@@ -285,7 +628,7 @@ const list_sections = new Table(
 		position: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_list: ["list_id"] } },
+	tracked({ indexes: { by_list: ["list_id"] } }),
 );
 const list_items = new Table(
 	{
@@ -299,7 +642,7 @@ const list_items = new Table(
 		position: column.integer,
 		created_at: column.text,
 	},
-	{ indexes: { by_list: ["list_id"], by_section: ["section_id"] } },
+	tracked({ indexes: { by_list: ["list_id"], by_section: ["section_id"] } }),
 );
 const list_templates = new Table(
 	{
@@ -311,7 +654,7 @@ const list_templates = new Table(
 		created_by: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_workspace: ["workspace_id"] } },
+	tracked({ indexes: { by_workspace: ["workspace_id"] } }),
 );
 
 const contacts = new Table(
@@ -326,7 +669,7 @@ const contacts = new Table(
 		created_by: column.text,
 		created_at: column.text,
 	},
-	{ indexes: { by_workspace: ["workspace_id"] } },
+	tracked({ indexes: { by_workspace: ["workspace_id"] } }),
 );
 
 /** Polymorfní vazby (mail↔úkol, LuckyOS↔úkol) — dedup + proklik. Workspace-scoped. */
@@ -363,6 +706,7 @@ const meetings = new Table(
 	},
 	{
 		indexes: { by_workspace: ["workspace_id"], by_hub: ["hub_task_id"], by_series: ["series_id"] },
+		trackPrevious: true,
 	},
 );
 
@@ -375,6 +719,10 @@ const meetings = new Table(
 const local_rejected_ops = new Table(
 	{
 		created_at: column.text,
+		last_attempt_at: column.text,
+		attempt_count: column.integer,
+		client_id: column.text,
+		operation_id: column.text,
 		table_name: column.text,
 		/** PUT | PATCH | DELETE */
 		op: column.text,
@@ -387,23 +735,71 @@ const local_rejected_ops = new Table(
 		server_code: column.text,
 		/** korelace se serverovým logem (X-Request-Id) */
 		request_id: column.text,
-		/** open | discarded */
+		/** open | retrying | resolved | discarded */
 		status: column.text,
 	},
 	{ localOnly: true },
 );
 
+/**
+ * Citlivý stav, který má zůstat jen na zařízení (rozepsané demo e-maily,
+ * vlastní podpisy apod.). Tabulka žije uvnitř šifrované per-user SQLite DB;
+ * nikdy se neuploaduje do PowerSync služby.
+ */
+const local_private_state = new Table(
+	{
+		value: column.text,
+		updated_at: column.text,
+	},
+	{ localOnly: true },
+);
+
+/** Strukturované osobní a týmové pohledy Úkolů/Nadcházejících; zápis přes CAS API. */
+const filters = new Table(
+	{
+		owner_scope: column.text,
+		user_id: column.text,
+		workspace_id: column.text,
+		name: column.text,
+		query: column.text,
+		surface: column.text,
+		config: column.text,
+		version: column.integer,
+		created_at: column.text,
+		updated_at: column.text,
+	},
+	{ trackPrevious: true },
+);
+
 export const AppSchema = new Schema({
 	tasks,
+	task_dependencies,
+	project_custom_fields,
+	task_custom_field_values,
+	task_polls,
+	task_poll_responses,
+	project_milestones,
+	workspaces,
+	availability_profiles,
+	availability_blocks,
 	projects,
 	sections,
 	statuses,
 	project_members,
 	assignments,
+	task_acceptances,
 	comments,
+	attachments,
+	comment_decisions,
+	decisions,
+	decision_task_links,
+	mentions,
+	comment_reactions,
 	task_occurrence_overrides,
+	task_recurrence_prefixes,
 	task_user_colors,
 	local_rejected_ops,
+	local_private_state,
 	reminders,
 	task_activity,
 	chains,
@@ -418,18 +814,35 @@ export const AppSchema = new Schema({
 	contacts,
 	entity_links,
 	meetings,
+	filters,
 });
 
 export type Database = (typeof AppSchema)["types"];
 export type TaskRow = Database["tasks"];
+export type TaskDependencyRow = Database["task_dependencies"];
+export type ProjectCustomFieldRow = Database["project_custom_fields"];
+export type TaskCustomFieldValueRow = Database["task_custom_field_values"];
+export type TaskPollRow = Database["task_polls"];
+export type TaskPollResponseRow = Database["task_poll_responses"];
+export type ProjectMilestoneRow = Database["project_milestones"];
+export type WorkspaceRow = Database["workspaces"];
+export type AvailabilityProfileRow = Database["availability_profiles"];
+export type AvailabilityBlockRow = Database["availability_blocks"];
 export type ProjectRow = Database["projects"];
 export type SectionRow = Database["sections"];
 export type StatusRow = Database["statuses"];
 export type ProjectMemberRow = Database["project_members"];
 export type AssignmentRow = Database["assignments"];
+export type TaskAcceptanceRow = Database["task_acceptances"];
 export type CommentRow = Database["comments"];
+export type AttachmentRow = Database["attachments"];
+export type DecisionRow = Database["decisions"];
+export type DecisionTaskLinkRow = Database["decision_task_links"];
+export type MentionRow = Database["mentions"];
+export type CommentReactionRow = Database["comment_reactions"];
 export type ReminderRow = Database["reminders"];
 export type TaskUserColorRow = Database["task_user_colors"];
+export type TaskRecurrencePrefixRow = Database["task_recurrence_prefixes"];
 export type TaskActivityRow = Database["task_activity"];
 export type ChainRow = Database["chains"];
 export type ChainStepRow = Database["chain_steps"];
@@ -443,3 +856,5 @@ export type ContactRow = Database["contacts"];
 export type ListTemplateRow = Database["list_templates"];
 export type EntityLinkRow = Database["entity_links"];
 export type RejectedOpRow = Database["local_rejected_ops"];
+export type LocalPrivateStateRow = Database["local_private_state"];
+export type FilterRow = Database["filters"];

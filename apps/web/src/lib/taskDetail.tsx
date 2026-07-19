@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useContext, useState } from "react";
+import { trackRecentEntity } from "./recentItems";
 
 interface TaskDetailCtx {
 	openId: string | null;
@@ -25,7 +26,10 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
 		<Ctx.Provider
 			value={{
 				openId,
-				open: setOpenId,
+				open: (id) => {
+					setOpenId(id);
+					trackRecentEntity("task", id);
+				},
 				close: () => setOpenId(null),
 				navIds,
 				setNavIds,

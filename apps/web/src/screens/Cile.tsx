@@ -1,10 +1,14 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { API_URL } from "../lib/api";
+import { CopyLinkButton } from "../components/CopyLinkButton";
+import { DataLoading } from "../components/Loading";
 import { initials } from "../lib/format";
+import { focusOnMount } from "../lib/focusOnMount";
 import {
 	type GoalStatusKind,
 	GSTAT,
@@ -15,11 +19,12 @@ import {
 } from "../lib/goals";
 import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
-import { showToast } from "../lib/toast";
-import { useWorkspace, useWorkspaces } from "../lib/workspace";
 import { NOT_MEETING } from "../lib/tasks";
+import { showToast } from "../lib/toast";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
+import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string; image: string | null };
 type MilestoneRow = {
@@ -125,30 +130,33 @@ const SCOPE_LABEL_KEY: Record<string, string> = {
 /** Cíle — taby dle scope, karty s progresem z reálných úkolů, builder + detail (1:1 dle Cloud Design). */
 export function Cile() {
 	const { t } = useTranslation();
-	const projects = useProjects();
+	const navigate = useNavigate();
+	const search = useSearch({ from: "/cile" });
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs } = useWorkspace();
-	const wsP = workspaces?.find((w) => w.id === activeWs)?.isPersonal ?? false;
+	const activeWorkspace = workspaces?.find((workspace) => workspace.id === activeWs);
+	const wsP = activeWorkspace?.isPersonal ?? false;
+	const canManageGoals = activeWorkspace?.capabilities?.manageGoals === true;
 
 	const [tab, setTab] = useState<string | null>(null);
 	const [modalOpen, setModalOpen] = useState(false);
-	const [selectedId, setSelectedId] = useState<string | null>(null);
 
-	const { data: goals } = usePsQuery<GoalRow>(
+	const { data: goals, isLoading: goalsLoading } = usePsQuery<GoalRow>(
 		"SELECT * FROM goals WHERE workspace_id = ? ORDER BY created_at",
 		[activeWs ?? ""],
 	);
-	const { data: goalProjects } = usePsQuery<{
+	const { data: goalProjects, isLoading: goalProjectsLoading } = usePsQuery<{
 		goal_id: string | null;
 		project_id: string | null;
 	}>("SELECT goal_id, project_id FROM goal_projects");
-	const { data: milestones } = usePsQuery<MilestoneRow>(
+	const { data: milestones, isLoading: milestonesLoading } = usePsQuery<MilestoneRow>(
 		"SELECT id, goal_id, label, done, position FROM goal_milestones ORDER BY position, created_at",
 	);
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		`SELECT id, name, project_id, completed_at, due_date FROM tasks WHERE ${NOT_MEETING}`,
 	);
-	const { data: assignments } = usePsQuery<{
+	const { data: assignments, isLoading: assignmentsLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
@@ -164,6 +172,13 @@ export function Cile() {
 		},
 	});
 	const members = team ?? [];
+	const dataLoading =
+		projectsLoading ||
+		goalsLoading ||
+		goalProjectsLoading ||
+		milestonesLoading ||
+		tasksLoading ||
+		assignmentsLoading;
 	const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "";
 
 	const wsProjectIds = useMemo(
@@ -267,7 +282,7 @@ export function Cile() {
 	const tabCount = (k: string) =>
 		wsP ? view.length : view.filter((v) => (v.g.scope ?? "team") === k).length;
 
-	const selected = view.find((v) => v.g.id === selectedId) ?? null;
+	const selected = view.find((v) => v.g.id === search.cil) ?? null;
 
 	return (
 		<div className="mx-auto max-w-[1080px]" style={{ padding: "20px 22px 90px" }}>
@@ -283,7 +298,7 @@ export function Cile() {
 							type="button"
 							onClick={() => {
 								setTab(k);
-								setSelectedId(null);
+								void navigate({ to: "/cile", search: {} });
 							}}
 							className="inline-flex items-center gap-1.5 rounded-[7px] font-display font-semibold"
 							style={{
@@ -300,26 +315,30 @@ export function Cile() {
 						</button>
 					))}
 				</div>
-				<button
-					type="button"
-					onClick={() => setModalOpen(true)}
-					className="ml-auto inline-flex items-center gap-1.5 rounded-[10px] font-display font-semibold text-white hover:brightness-105"
-					style={{
-						background: "var(--w-brass)",
-						padding: "9px 15px",
-						fontSize: 13,
-					}}
-				>
-					<span style={{ fontSize: 16, lineHeight: 1 }}>+</span> {t("goals.newGoal")}
-				</button>
+				{canManageGoals && (
+					<button
+						type="button"
+						onClick={() => setModalOpen(true)}
+						className="ml-auto inline-flex items-center gap-1.5 rounded-[10px] font-display font-semibold text-white hover:brightness-105"
+						style={{
+							background: "var(--w-brass)",
+							padding: "9px 15px",
+							fontSize: 13,
+						}}
+					>
+						<span style={{ fontSize: 16, lineHeight: 1 }}>+</span> {t("goals.newGoal")}
+					</button>
+				)}
 			</div>
 
-			{shown.length === 0 ? (
+			{dataLoading ? (
+				<DataLoading />
+			) : shown.length === 0 ? (
 				<div className="text-center" style={{ padding: "60px 20px" }}>
 					<div className="font-body text-ink-3" style={{ fontSize: 14 }}>
 						{t("goals.empty")}
 					</div>
-					<button
+					{canManageGoals && <button
 						type="button"
 						onClick={() => setModalOpen(true)}
 						className="mt-3.5 rounded-[10px] font-display font-bold text-white hover:brightness-105"
@@ -330,7 +349,7 @@ export function Cile() {
 						}}
 					>
 						+ {t("goals.newGoal")}
-					</button>
+					</button>}
 				</div>
 			) : (
 				<div
@@ -343,7 +362,7 @@ export function Cile() {
 						<button
 							key={g.id}
 							type="button"
-							onClick={() => setSelectedId(g.id)}
+							onClick={() => void navigate({ to: "/cile", search: { cil: g.id } })}
 							className="flex flex-col rounded-2xl border border-line bg-card text-left transition-shadow hover:shadow-md"
 							style={{ padding: 18, boxShadow: "var(--w-shadow-sm)" }}
 						>
@@ -429,7 +448,7 @@ export function Cile() {
 				</div>
 			)}
 
-			{modalOpen && activeWs && (
+			{modalOpen && activeWs && canManageGoals && (
 				<GoalModal
 					workspaceId={activeWs}
 					personal={wsP}
@@ -448,7 +467,8 @@ export function Cile() {
 					ownerName={memberName(selected.g.owner_id)}
 					filterPersonName={memberName(selected.g.filter_person_id)}
 					sampleTasks={goalTasks(selected.g)}
-					onClose={() => setSelectedId(null)}
+					canEdit={canManageGoals}
+					onClose={() => void navigate({ to: "/cile", search: {} })}
 				/>
 			)}
 		</div>
@@ -498,6 +518,7 @@ function GoalModal({
 	const [due, setDue] = useState("");
 	const [periodic, setPeriodic] = useState("none");
 	const [tpl, setTpl] = useState<string | null>(null);
+	const modalRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	/** Předvyplnění ze šablony (prototyp pickGoalTemplate, ř. 2344). */
 	const pickTemplate = (tp: (typeof GOAL_TEMPLATES)[number]) => {
@@ -513,14 +534,7 @@ function GoalModal({
 		if (!personal) setScope(tp.scope === "personal" ? "person" : tp.scope);
 	};
 
-	// Esc zavře builder; vlastník se dosadí, jakmile dorazí členové prostoru.
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
+	// Vlastník se dosadí, jakmile dorazí členové prostoru.
 	useEffect(() => {
 		if (!ownerId && members[0]) setOwnerId(members[0].id);
 	}, [members, ownerId]);
@@ -589,13 +603,18 @@ function GoalModal({
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.42)", zIndex: 50 }}
+				style={{ background: "rgba(10,14,20,.42)", zIndex: "var(--w-layer-modal)" }}
 			/>
 			<div
 				className="pointer-events-none fixed inset-0 flex items-start justify-center"
-				style={{ zIndex: 51, paddingTop: "9vh" }}
+				style={{ zIndex: "calc(var(--w-layer-modal) + 1)", paddingTop: "9vh" }}
 			>
 				<div
+					ref={modalRef}
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("goals.newGoal")}
+					data-esc-layer
 					className="pointer-events-auto max-h-[84vh] overflow-auto rounded-2xl border border-line bg-card"
 					style={{
 						width: 560,
@@ -619,8 +638,7 @@ function GoalModal({
 					</div>
 
 					<input
-						// biome-ignore lint/a11y/noAutofocus: builder modal
-						autoFocus
+						ref={focusOnMount}
 						value={name}
 						onChange={(e) => setName(e.target.value)}
 						placeholder={t("goals.namePlaceholder")}
@@ -923,6 +941,7 @@ function GoalDetail({
 	ownerName,
 	filterPersonName,
 	sampleTasks,
+	canEdit,
 	onClose,
 }: {
 	data: {
@@ -938,9 +957,11 @@ function GoalDetail({
 	filterPersonName: string;
 	/** Úkoly v hledáčku cíle (prototyp sampleTasks, ř. 3204). */
 	sampleTasks: TaskRow[];
+	canEdit: boolean;
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
+	const panelRef = useOverlayLayer<HTMLElement>(true, onClose);
 	const taskDetail = useTaskDetail();
 	const { g, pr, st, elapsed, links } = data;
 	const [msText, setMsText] = useState("");
@@ -961,6 +982,7 @@ function GoalDetail({
 
 	// Zápis až na blur (ne per-znak): míň sync-ops a užší okno pro přepsání souběžné editace.
 	const commitName = () => {
+		if (!canEdit) return;
 		const v = nameDraft.trim();
 		if (!v) {
 			// Prázdný/mezerový název je neplatný → vrať draft na uloženou hodnotu (žádné tiché rozejití UI a DB).
@@ -972,6 +994,7 @@ function GoalDetail({
 	};
 	/** Obnova období: posun period_start na dnešek → hotové úkoly před ním se přestanou počítat (prototyp resetGoalPeriod, ř. 2346). */
 	const resetPeriod = () => {
+		if (!canEdit) return;
 		void powerSync.execute("UPDATE goals SET period_start = ? WHERE id = ?", [
 			new Date().toISOString(),
 			g.id,
@@ -980,6 +1003,7 @@ function GoalDetail({
 	};
 	// Krok a strop dle metriky (prototyp adjGoalTarget, ř. 2352: count ±5 / % ±1; max 100000 / 100).
 	const adjTarget = (dir: number) => {
+		if (!canEdit) return;
 		const step = metric === "count" ? 5 : 1;
 		const max = metric === "count" ? 100000 : 100;
 		// Počítej z aktuální DB hodnoty v SQL, ne z props (jinak rychlé kliky před re-renderem ztrácejí kroky).
@@ -999,6 +1023,7 @@ function GoalDetail({
 					: t("goals.paceTrack");
 
 	const addMilestone = async () => {
+		if (!canEdit) return;
 		if (!msText.trim() || !g.workspace_id) return;
 		await powerSync.execute(
 			"INSERT INTO goal_milestones (id, goal_id, workspace_id, label, done, position, created_at) VALUES (uuid(), ?, ?, ?, 0, ?, ?)",
@@ -1006,12 +1031,15 @@ function GoalDetail({
 		);
 		setMsText("");
 	};
-	const toggleMs = (m: MilestoneRow) =>
+	const toggleMs = (m: MilestoneRow) => {
+		if (!canEdit) return;
 		void powerSync.execute("UPDATE goal_milestones SET done = ? WHERE id = ?", [
 			m.done ? 0 : 1,
 			m.id,
 		]);
+	};
 	const remove = async () => {
+		if (!canEdit) return;
 		await powerSync.execute("DELETE FROM goal_milestones WHERE goal_id = ?", [g.id]);
 		await powerSync.execute("DELETE FROM goal_projects WHERE goal_id = ?", [g.id]);
 		await powerSync.execute("DELETE FROM goals WHERE id = ?", [g.id]);
@@ -1024,11 +1052,20 @@ function GoalDetail({
 				type="button"
 				aria-label={t("common.cancel")}
 				onClick={onClose}
-				className="fixed inset-0 z-30 bg-navy/20"
+				className="fixed inset-0 bg-navy/20"
+				style={{ zIndex: "var(--w-layer-drawer)" }}
 			/>
 			<aside
-				className="fixed top-0 right-0 z-40 flex h-full w-full max-w-md flex-col overflow-y-auto bg-card"
-				style={{ boxShadow: "var(--w-shadow)" }}
+				ref={panelRef}
+				role="dialog"
+				aria-modal="true"
+				aria-label={g.name ?? t("goals.title")}
+				data-esc-layer
+				className="fixed top-0 right-0 flex h-full w-full max-w-md flex-col overflow-y-auto bg-card"
+				style={{
+					boxShadow: "var(--w-shadow)",
+					zIndex: "calc(var(--w-layer-drawer) + 1)",
+				}}
 			>
 				{/* Hlavička se scope labelem (prototyp ř. 1294–1297) */}
 				<div
@@ -1041,11 +1078,12 @@ function GoalDetail({
 					>
 						{t(SCOPE_LABEL_KEY[g.scope ?? "team"] ?? "goals.scopeLabelTeam")}
 					</span>
+					<CopyLinkButton entity="goal" id={g.id} workspaceId={g.workspace_id} />
 					<button
 						type="button"
 						onClick={onClose}
 						aria-label={t("common.cancel")}
-						className="grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
+						className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 					>
 						<Icon name="zavrit" size={16} />
 					</button>
@@ -1055,8 +1093,9 @@ function GoalDetail({
 					{/* Editovatelný název bez rámečku (prototyp ř. 1299 + onGoalName ř. 2354) */}
 					<input
 						value={nameDraft}
-						onChange={(e) => setNameDraft(e.target.value)}
+						onChange={(e) => canEdit && setNameDraft(e.target.value)}
 						onBlur={commitName}
+						readOnly={!canEdit}
 						onKeyDown={(e) => {
 							if (e.key === "Enter") e.currentTarget.blur();
 						}}
@@ -1129,7 +1168,7 @@ function GoalDetail({
 							>
 								{metricLabel}
 							</span>
-							{canTarget && (
+							{canTarget && canEdit && (
 								<span className="inline-flex items-center" style={{ gap: 4 }}>
 									<button
 										type="button"
@@ -1308,14 +1347,14 @@ function GoalDetail({
 									{t("goals.renewsSub")}
 								</div>
 							</div>
-							<button
+							{canEdit && <button
 								type="button"
 								onClick={resetPeriod}
 								className="flex-none whitespace-nowrap rounded-[8px] border border-line font-display font-semibold text-brass-text hover:bg-card"
 								style={{ fontSize: 12, padding: "6px 11px" }}
 							>
 								{t("goals.resetPeriod")}
-							</button>
+							</button>}
 						</div>
 					)}
 
@@ -1412,6 +1451,7 @@ function GoalDetail({
 									<button
 										type="button"
 										onClick={() => toggleMs(m)}
+										disabled={!canEdit}
 										className="grid h-4 w-4 shrink-0 place-items-center rounded-[4px] border text-[9px] text-white"
 										style={{
 											borderColor: m.done ? "var(--w-success)" : "var(--w-line)",
@@ -1426,17 +1466,17 @@ function GoalDetail({
 								</li>
 							))}
 						</ul>
-						<input
+						{canEdit && <input
 							value={msText}
 							onChange={(e) => setMsText(e.target.value)}
 							onKeyDown={(e) => e.key === "Enter" && void addMilestone()}
 							placeholder={t("goals.addMilestone")}
 							className="mt-2 w-full rounded-lg border border-line border-dashed bg-transparent px-3 py-1.5 text-sm outline-none focus:border-brass"
-						/>
+						/>}
 					</div>
 				</div>
 
-				<div className="border-line border-t px-4 py-3">
+				{canEdit && <div className="border-line border-t px-4 py-3">
 					{confirmDelete ? (
 						<div className="flex items-center" style={{ gap: 8 }}>
 							<span className="flex-1 font-body text-ink-2" style={{ fontSize: 12.5 }}>
@@ -1473,7 +1513,7 @@ function GoalDetail({
 							{t("goals.delete")}
 						</button>
 					)}
-				</div>
+				</div>}
 			</aside>
 		</>
 	);

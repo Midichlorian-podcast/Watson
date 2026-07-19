@@ -2,6 +2,7 @@
  * Notifikační centrum aplikace (feedback 2026-07-11: „zásadní část aplikace")
  * — jedna ucelená karta pod zvonkem v hlavičce, agreguje VŠECHNY signály:
  *   · štafeta — kroky postupů, které čekají na mě
+ *   · akceptace — urgentní úkoly čekající na moje rozhodnutí
  *   · po termínu — nejstarší zpožděné úkoly (klik = detail)
  *   · pošta — běžící SLA P1/P2, zmínky v interní diskusi, nedoručené, Gatekeeper
  * Klik položku vyřídí NA MÍSTĚ (detail úkolu / mail peek), „viděno" se drží
@@ -11,14 +12,15 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { useFocusTrap } from "../lib/focusTrap";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { P, SLA } from "../mail/data";
 import { useMail } from "../mail/state";
 import { useSession } from "../lib/auth-client";
 import { useTaskDetail } from "../lib/taskDetail";
-import { NOT_MEETING, todayISO } from "../lib/tasks";
+import { NOT_MEETING, startMinOf, todayISO } from "../lib/tasks";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
+import { storageGet, storageSet } from "../lib/storage";
 import { PeekPanel, type PeekTarget } from "./PeekPanel";
 
 /** Zítřek YYYY-MM-DD (lokálně) — pro okno „porada dnes/zítra". */
@@ -33,7 +35,7 @@ const tomorrowISO = () => {
 const SEEN_KEY = "watson.notifSeen";
 let seenCache: Record<string, number> = (() => {
 	try {
-		return JSON.parse(localStorage.getItem(SEEN_KEY) ?? "{}");
+		return JSON.parse(storageGet(SEEN_KEY) ?? "{}");
 	} catch {
 		return {};
 	}
@@ -59,11 +61,7 @@ function writeSeen(next: Record<string, number>) {
 	seenCache = next;
 	// Quota/soukromý režim (QuotaExceeded/SecurityError) nesmí shodit onClick
 	// handler notifikace — držíme aspoň in-memory stav a UI běží dál.
-	try {
-		localStorage.setItem(SEEN_KEY, JSON.stringify(next));
-	} catch {
-		/* localStorage nedostupný — pokračujeme jen s in-memory cache */
-	}
+	storageSet(SEEN_KEY, JSON.stringify(next));
 	for (const fn of seenSubs) fn();
 }
 export function markSeen(keys: string[]) {
@@ -121,6 +119,20 @@ export function useNotifItems(): { items: NotifItem[]; unseen: number } {
 		 ORDER BY due_date, priority LIMIT 3`,
 		[todayISO()],
 	);
+	const { data: pendingAcceptances } = usePsQuery<{
+		id: string;
+		task_id: string;
+		name: string | null;
+		priority: number | null;
+		requested_at: string | null;
+	}>(
+		`SELECT acceptance.id, acceptance.task_id, task.name, task.priority, acceptance.requested_at
+		 FROM task_acceptances acceptance
+		 JOIN tasks task ON task.id = acceptance.task_id AND task.completed_at IS NULL
+		 WHERE acceptance.assignee_id = ? AND acceptance.status = 'pending'
+		 ORDER BY task.priority, acceptance.requested_at`,
+		[myId],
+	);
 
 	// Nadcházející porady, kde jsem účastník (dnes/zítra) — „termín se ukáže lidem"
 	// (Meets Fáze 3). Řízeno malou tabulkou meetings, ne skenem tasks dle kind.
@@ -129,8 +141,9 @@ export function useNotifItems(): { items: NotifItem[]; unseen: number } {
 		name: string | null;
 		due_date: string | null;
 		start_date: string | null;
+		start_timezone: string | null;
 	}>(
-		`SELECT t.id, t.name, t.due_date, t.start_date
+		`SELECT t.id, t.name, t.due_date, t.start_date, t.start_timezone
 		 FROM meetings m
 		 JOIN tasks t ON t.id = m.hub_task_id AND t.completed_at IS NULL
 		 JOIN assignments a ON a.task_id = t.id AND a.user_id = ?
@@ -142,7 +155,11 @@ export function useNotifItems(): { items: NotifItem[]; unseen: number } {
 	const items: NotifItem[] = [];
 	for (const mt of meets ?? []) {
 		const day = (mt.due_date ?? "").slice(0, 10);
-		const hm = mt.start_date && mt.start_date.length >= 16 ? mt.start_date.slice(11, 16) : "";
+		const startMin = startMinOf(mt);
+		const hm =
+			startMin === null
+				? ""
+				: `${String(Math.floor(startMin / 60)).padStart(2, "0")}:${String(startMin % 60).padStart(2, "0")}`;
 		items.push({
 			key: `meet:${mt.id}:${day}`,
 			kind: "meet",
@@ -158,6 +175,15 @@ export function useNotifItems(): { items: NotifItem[]; unseen: number } {
 			title: h.task_name ?? "",
 			sub: `${t("shell.notifWaiting")} · ${h.chain_name ?? ""}`,
 			action: { type: "flow", chainId: h.chain_id },
+		});
+	}
+	for (const acceptance of pendingAcceptances ?? []) {
+		items.push({
+			key: `acceptance:${acceptance.id}:${acceptance.requested_at ?? ""}`,
+			kind: "task",
+			title: acceptance.name ?? "",
+			sub: t("notif.acceptancePending", { priority: acceptance.priority ?? 1 }),
+			action: { type: "task", taskId: acceptance.task_id },
 		});
 	}
 	for (const tk of overdue ?? []) {
@@ -240,19 +266,6 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 	// mail položky se odbavují NA MÍSTĚ přes mail peek (plný workspace)
 	const [peek, setPeek] = useState<PeekTarget | null>(null);
 
-	useEffect(() => {
-		if (!open || peek || openId) return;
-		const h = (e: globalThis.KeyboardEvent) => {
-			if (e.key !== "Escape") return;
-			// Vyšší vrstva (⌘K paleta / tahák) má vlastní data-esc-layer a musí se
-			// zavřít dřív — jinak by jeden Esc sundal i notifikace pod ní.
-			if (document.querySelector("[data-esc-layer]:not([data-notif-layer])")) return;
-			onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [open, peek, openId, onClose]);
-
 	/** Klik na TITULEK = rychlá karta na místě (detail úkolu / mail peek). */
 	const quickAct = useCallback(
 		(n: NotifItem) => {
@@ -323,8 +336,7 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 	);
 
 	// P1-08: past na fokus + návrat fokusu na zvonek — hooks PŘED early returnem
-	const panelRef = useRef<HTMLDivElement | null>(null);
-	useFocusTrap(open, panelRef);
+	const panelRef = useOverlayLayer<HTMLDivElement>(open, onClose);
 
 	if (!open) return null;
 
@@ -336,11 +348,20 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 	return createPortal(
 		<>
 			{/* průhledný scrim — klik mimo zavírá; panel je ucelená karta pod zvonkem */}
-			<div
+			<button
+				type="button"
+				aria-label={t("common.close")}
 				onClick={onClose}
+				data-focus-trap-companion
 				data-esc-layer={escLayer}
 				data-notif-layer={escLayer}
-				style={{ position: "fixed", inset: 0, zIndex: 64 }}
+				style={{
+					position: "fixed",
+					inset: 0,
+					zIndex: "var(--w-layer-floating)",
+					border: 0,
+					background: "transparent",
+				}}
 			/>
 			<div
 				ref={panelRef}
@@ -354,7 +375,7 @@ export function NotifCenter({ open, onClose }: { open: boolean; onClose: () => v
 					position: "fixed",
 					top: 54,
 					right: 12,
-					zIndex: 65,
+					zIndex: "calc(var(--w-layer-floating) + 1)",
 					width: "min(380px, 94vw)",
 					maxHeight: "min(560px, 78vh)",
 					display: "flex",

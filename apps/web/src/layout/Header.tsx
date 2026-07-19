@@ -2,18 +2,21 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate, useRouterState, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useMemo, useState } from "react";
+import { AvailabilityQuickToggle } from "../components/AvailabilityQuickToggle";
 import { NotifCenter, useNotifItems } from "../components/NotifCenter";
 import { useAddTask } from "../lib/addTask";
+import { focusOnMount } from "../lib/focusOnMount";
 import { INBOX_NAMES } from "../lib/inbox";
 import { useListSearch } from "../lib/listSearch";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useViewMode, type ViewMode } from "../lib/viewMode";
 import { useWatson } from "../lib/watson";
+import { openWatsonWindow, windowSurfaceForPath } from "../lib/windowSurfaces";
 import { ALL_NAV } from "./nav";
 import { useTheme } from "./useTheme";
 
 const ICON_BASE =
-	"grid h-[34px] w-[34px] place-items-center rounded-[9px] border border-line bg-panel-2 text-ink-2";
+	"grid h-11 w-11 place-items-center rounded-[9px] border border-line bg-panel-2 text-ink-2 md:h-[34px] md:w-[34px]";
 // Hover dle prototypu ř. 298–301: lupa jen okraj, zvonek/motiv jen barva textu.
 const ICON_BTN_BORDER = `${ICON_BASE} hover:border-brass`;
 const ICON_BTN_TEXT = `${ICON_BASE} hover:text-brass-text`;
@@ -22,11 +25,14 @@ const ICON_BTN_TEXT = `${ICON_BASE} hover:text-brass-text`;
 export function Header() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const navigateUpcoming = useNavigate({ from: "/nadchazejici" });
+	const navigateTasks = useNavigate({ from: "/ukoly" });
 	const { openAdd } = useAddTask();
 	const { toggleWatson } = useWatson();
 	const path = useRouterState({ select: (s) => s.location.pathname });
 	const active = ALL_NAV.find((n) => (n.to === "/" ? path === "/" : path.startsWith(n.to)));
 	const title = active ? t(active.labelKey) : t("app.name");
+	const windowSurface = windowSurfaceForPath(path);
 	const { theme, toggle } = useTheme();
 	const isDark = theme === "dark";
 	// Mobil: header nesmí přetékat 375px. Redundantní ovládání skryto (Watson = spodní lišta,
@@ -56,9 +62,15 @@ export function Header() {
 		"SELECT id, name FROM projects",
 	);
 	// Sloučený modul Úkoly (Dnes/Vše/Zásobník žijí pod „/" i „/ukoly") — záložka z URL.
-	const search = useSearch({ strict: false }) as { tab?: string; projekt?: string };
-	const inTaskModule = path === "/" || path.startsWith("/ukoly");
-	const activeTab = search.tab ?? (path === "/" ? "dnes" : "vse");
+	const search = useSearch({ strict: false }) as {
+		tab?: string;
+		projekt?: string;
+		zobrazeni?: ViewMode;
+	};
+	const inTaskModule = path === "/" || path.startsWith("/ukoly") || path.startsWith("/schranka");
+	const activeTab = path.startsWith("/schranka")
+		? "prichozi"
+		: (search.tab ?? (path === "/" ? "dnes" : "vse"));
 	const isWorkspace =
 		inTaskModule || path.startsWith("/nadchazejici") || path.startsWith("/oblibene");
 	const subtitle = useMemo(() => {
@@ -71,9 +83,11 @@ export function Header() {
 		);
 		// Domovská „/" = záložka Dnes (dnešní + zpožděné, BEZ nedatovaných — ty jsou v Zásobníku).
 		const dnesView = path === "/" && activeTab === "dnes";
+		const incomingView = inTaskModule && activeTab === "prichozi";
 		const backlogView = inTaskModule && activeTab === "zasobnik";
 		const src = (openRows ?? []).filter((r) => {
 			const d = r.due_date ? r.due_date.slice(0, 10) : null;
+			if (incomingView) return !r.parent_id && !d && !!r.project_id && inboxIds.has(r.project_id);
 			if (!d && r.project_id && inboxIds.has(r.project_id)) return false;
 			if (dnesView)
 				// jen s termínem dnes/zpožděné (nedatované už nepatří do Dnes);
@@ -93,12 +107,17 @@ export function Header() {
 			count: src.length,
 			timeLabel: h > 0 ? `${String(h).replace(".", ",")} h` : null,
 		};
-	}, [openRows, projRows, path, isWorkspace]);
+	}, [openRows, projRows, path, isWorkspace, activeTab, inTaskModule]);
 
 	const { q, setQ, open: searchOpen, setOpen: setSearchOpen } = useListSearch();
 
 	// Přepínač pohledů Seznam|Nástěnka|Kalendář v headeru (prototyp ř. 277–287; ne Dnes/Schránka).
-	const { view, setView, locked, toggleLock } = useViewMode();
+	const viewSurface = path.startsWith("/nadchazejici")
+		? "upcoming"
+		: path.startsWith("/oblibene")
+			? "favorites"
+			: "tasks";
+	const { view, setView, locked, defaultView, toggleLock } = useViewMode(viewSurface);
 	// Přepínač pohledů dává smysl jen tam, kde víc pohledů existuje: záložka „Vše"
 	// sloučeného modulu (ne Dnes/Zásobník), Nadcházející a Oblíbené.
 	const showViewSwitcher =
@@ -117,10 +136,30 @@ export function Header() {
 		board: t("toolbar.board"),
 		calendar: t("calendar.viewCalendar"),
 	};
+	const selectedView =
+		path.startsWith("/nadchazejici") || path.startsWith("/ukoly")
+			? (search.zobrazeni ?? view)
+			: view;
+	const selectView = (nextView: ViewMode) => {
+		setView(nextView);
+		if (path.startsWith("/nadchazejici")) {
+			void navigateUpcoming({
+				to: "/nadchazejici",
+				search: (current) => ({ ...current, zobrazeni: nextView }),
+				replace: true,
+			});
+		} else if (path.startsWith("/ukoly")) {
+			void navigateTasks({
+				to: "/ukoly",
+				search: (current) => ({ ...current, zobrazeni: nextView }),
+				replace: true,
+			});
+		}
+	};
 
 	return (
 		<header
-			className="flex items-center gap-3 overflow-x-auto border-line border-b bg-card px-4"
+			className={`flex items-center gap-3 border-line border-b bg-card px-4 ${isMobile ? "flex-wrap overflow-visible" : "overflow-x-auto"}`}
 			style={{ padding: "11px 16px", flex: "none" }}
 		>
 			<div style={{ flex: "none", minWidth: 0, maxWidth: isMobile ? "40vw" : "34vw" }}>
@@ -141,7 +180,7 @@ export function Header() {
 				)}
 			</div>
 
-			{showViewSwitcher && (
+			{showViewSwitcher && !isMobile && (
 				<>
 					<div
 						className="flex border border-line bg-panel-2"
@@ -156,14 +195,15 @@ export function Header() {
 							<button
 								key={v}
 								type="button"
-								onClick={() => setView(v)}
+								onClick={() => selectView(v)}
+								aria-pressed={selectedView === v}
 								className="cursor-pointer font-display font-semibold"
 								style={{
 									fontSize: 12.5,
 									padding: "5px 12px",
 									borderRadius: 7,
-									background: view === v ? "var(--w-card)" : "transparent",
-									color: view === v ? "var(--w-ink)" : "var(--w-ink-3)",
+									background: selectedView === v ? "var(--w-card)" : "transparent",
+									color: selectedView === v ? "var(--w-ink)" : "var(--w-ink-3)",
 								}}
 							>
 								{viewLabels[v]}
@@ -175,6 +215,8 @@ export function Header() {
 							type="button"
 							onClick={toggleLock}
 							title={t("shell.lockView")}
+							aria-label={t("shell.lockView")}
+							aria-pressed={locked}
 							className="flex shrink-0 cursor-pointer items-center justify-center hover:border-brass"
 							style={{
 								width: 32,
@@ -223,7 +265,7 @@ export function Header() {
 							)}
 						</button>
 					)}
-					{!isMobile && locked && (
+					{!isMobile && locked && defaultView && (
 						<span
 							className="inline-flex shrink-0 items-center font-display font-semibold"
 							style={{
@@ -237,7 +279,7 @@ export function Header() {
 							}}
 							title={t("shell.lockView")}
 						>
-							{t("shell.defaultView")}: {viewLabels[view]}
+							{t("shell.defaultView")}: {viewLabels[defaultView]}
 						</span>
 					)}
 				</>
@@ -275,9 +317,8 @@ export function Header() {
 								strokeLinecap="round"
 							/>
 						</svg>
-						{/* biome-ignore lint/a11y/noAutofocus: `/` fokusuje inline hledání */}
 						<input
-							autoFocus
+							ref={focusOnMount}
 							value={q}
 							onChange={(e) => setQ(e.target.value)}
 							onKeyDown={(e) => {
@@ -287,6 +328,7 @@ export function Header() {
 								}
 							}}
 							placeholder={t("shell.searchInline")}
+							aria-label={t("shell.searchInline")}
 							className="w-full border-none bg-transparent font-body text-ink outline-none"
 							style={{ fontSize: 13 }}
 						/>
@@ -325,6 +367,58 @@ export function Header() {
 						>
 							<circle cx="10.5" cy="10.5" r="6" />
 							<line x1="15" y1="15" x2="20" y2="20" />
+						</svg>
+					</button>
+				)}
+
+				<AvailabilityQuickToggle isMobile={isMobile} />
+
+				{!isMobile && (
+					<button
+						type="button"
+						onClick={() =>
+							openWatsonWindow(window.location.href, windowSurface?.focus ? "focus" : "app")
+						}
+						title={windowSurface?.focus ? t("shell.openFocusedWindow") : t("shell.openNewWindow")}
+						aria-label={
+							windowSurface?.focus ? t("shell.openFocusedWindow") : t("shell.openNewWindow")
+						}
+						className={ICON_BTN_BORDER}
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.3"
+							aria-hidden
+						>
+							<rect x="2" y="4.5" width="8.5" height="8.5" rx="1.5" />
+							<path d="M6 2.5h6.5c.55 0 1 .45 1 1V10" />
+							<path d="m9.5 6.5 4-4m-3.5 0h3.5V6" />
+						</svg>
+					</button>
+				)}
+				{!isMobile && windowSurface?.wallboard && (
+					<button
+						type="button"
+						onClick={() => openWatsonWindow(window.location.href, "wallboard")}
+						title={t("shell.openWallboard")}
+						aria-label={t("shell.openWallboard")}
+						className={ICON_BTN_BORDER}
+					>
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.3"
+							aria-hidden
+						>
+							<rect x="2" y="2.5" width="12" height="9" rx="1.5" />
+							<path d="M6 14h4M8 11.5V14" />
 						</svg>
 					</button>
 				)}
@@ -438,7 +532,7 @@ export function Header() {
 					type="button"
 					onClick={() => openAdd()}
 					aria-label={t("shell.addTask")}
-					className="flex h-[34px] items-center rounded-[9px] font-display font-bold text-white hover:brightness-105"
+					className="flex h-11 items-center rounded-[9px] font-display font-bold text-white hover:brightness-105 md:h-[34px]"
 					style={{
 						gap: 6,
 						background: "var(--w-brass)",
@@ -469,6 +563,36 @@ export function Header() {
 					{!isMobile && t("shell.newTask")}
 				</button>
 			</div>
+
+			{showViewSwitcher && isMobile && (
+				<div
+					className="flex w-full items-center border-line border-t"
+					style={{
+						gap: 4,
+						margin: "0 -16px -11px",
+						padding: "6px 14px",
+						width: "calc(100% + 32px)",
+					}}
+				>
+					{viewOptions.map((v) => (
+						<button
+							key={v}
+							type="button"
+							onClick={() => selectView(v)}
+							aria-pressed={selectedView === v}
+							className="min-h-11 flex-1 rounded-lg font-display font-semibold"
+							style={{
+								fontSize: 12.5,
+								background: selectedView === v ? "var(--w-brass-soft)" : "transparent",
+								color:
+									selectedView === v ? "var(--w-brass-text)" : "var(--w-ink-3)",
+							}}
+						>
+							{viewLabels[v]}
+						</button>
+					))}
+				</div>
+			)}
 		</header>
 	);
 }

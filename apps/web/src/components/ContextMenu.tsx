@@ -6,6 +6,7 @@
  */
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { usePopoverLayer } from "../lib/usePopoverLayer";
 
 export interface CtxItem {
 	/** oddělovač: `{ sep: true }` */
@@ -51,6 +52,7 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
 		setState(null);
 		setSub(null);
 	}, []);
+	const menuRef = usePopoverLayer<HTMLDivElement>(Boolean(state), close);
 
 	const open = useCallback<Ctx["open"]>((e, items) => {
 		e.preventDefault();
@@ -61,21 +63,13 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
 		setSub(null);
 	}, []);
 
-	// klik mimo / Esc / scroll / resize zavře (listenery jen dokud je otevřeno)
+	// Scroll / resize zavře; click-catch řeší klik mimo a popover primitive Escape.
 	useEffect(() => {
 		if (!state) return;
-		const onKey = (ev: KeyboardEvent) => {
-			if (ev.key === "Escape") {
-				ev.stopPropagation();
-				close();
-			}
-		};
 		const onScroll = () => close();
-		document.addEventListener("keydown", onKey, true);
 		window.addEventListener("scroll", onScroll, true);
 		window.addEventListener("resize", onScroll);
 		return () => {
-			document.removeEventListener("keydown", onKey, true);
 			window.removeEventListener("scroll", onScroll, true);
 			window.removeEventListener("resize", onScroll);
 		};
@@ -99,6 +93,7 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
 			<button
 				key={it.label ?? i}
 				type="button"
+				role="menuitem"
 				disabled={it.disabled}
 				onClick={() => run(it, i, isSub)}
 				onMouseEnter={() =>
@@ -137,15 +132,26 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
 				createPortal(
 					<div
 						data-esc-layer
-						onClick={close}
-						onContextMenu={(e) => {
-							e.preventDefault();
-							close();
+						style={{
+							position: "fixed",
+							inset: 0,
+							zIndex: "var(--w-layer-popover)",
 						}}
-						style={{ position: "fixed", inset: 0, zIndex: 85 }}
 					>
+						<button
+							type="button"
+							aria-label="Zavřít kontextovou nabídku"
+							onClick={close}
+							onContextMenu={(e) => {
+								e.preventDefault();
+								close();
+							}}
+							style={{ position: "absolute", inset: 0, border: 0, background: "transparent" }}
+						/>
 						<div
-							onClick={(e) => e.stopPropagation()}
+							ref={menuRef}
+							role="menu"
+							aria-label="Kontextová nabídka"
 							className="rounded-xl border border-line bg-card p-1 shadow-lg"
 							style={{
 								position: "fixed",
@@ -171,7 +177,8 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
 								);
 								return (
 									<div
-										onClick={(e) => e.stopPropagation()}
+										role="menu"
+										aria-label="Podnabídka"
 										className="rounded-xl border border-line bg-card p-1"
 										style={{
 											position: "fixed",

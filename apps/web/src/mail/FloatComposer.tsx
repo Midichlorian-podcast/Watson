@@ -91,7 +91,7 @@ export function FloatComposer() {
 							strokeLinejoin="round"
 						/>
 					</svg>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						onClick={() => m.setFloat({ id: ch.id, min: false })}
 						title="Otevřít rozepsaný koncept v plovoucím okně"
 						style={{
@@ -109,7 +109,7 @@ export function FloatComposer() {
 					>
 						{ch.label}
 					</span>
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						onClick={() => m.setDraft(ch.id, "")}
 						title="Zahodit koncept"
 						style={{
@@ -158,7 +158,7 @@ export function FloatComposer() {
 							data-mbdot={fcThread.mb ?? "osobni"}
 							style={{ width: 8, height: 8, borderRadius: "50%", flex: "none" }}
 						/>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => {
 								m.openThread(fcThread.id);
 								m.setFloat(null);
@@ -179,7 +179,7 @@ export function FloatComposer() {
 						>
 							{fcThread.subj}
 						</span>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => m.setFloat({ id: fcThread.id, min: true })}
 							title="Minimalizovat — koncept zůstane po ruce"
 							data-rowbtn
@@ -196,7 +196,7 @@ export function FloatComposer() {
 								/>
 							</svg>
 						</span>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => m.setFloat(null)}
 							title="Zavřít okno — koncept se uloží k vláknu"
 							data-rowbtn
@@ -303,7 +303,7 @@ export function FloatComposer() {
 							padding: "9px 13px 12px",
 						}}
 					>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => {
 								// zavři okno JEN po skutečném odeslání (audit MED FloatComposer.tsx:218)
 								if (m.checkSend(fcThread, false)) m.setFloat(null);
@@ -313,7 +313,7 @@ export function FloatComposer() {
 						>
 							Odeslat
 						</span>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => m.attach(fcThread.id, "Podklady.pdf")}
 							data-ghost
 							title="Přiložit soubor"

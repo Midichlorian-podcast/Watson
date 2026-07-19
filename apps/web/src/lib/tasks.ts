@@ -1,11 +1,66 @@
 import i18n from "@watson/i18n";
 import { logTaskActivity } from "./activity";
 import { advanceChainForTask } from "./chainAdvance";
+import {
+	dependencyCompletionDecision,
+	unresolvedDependencyState,
+} from "./dependencies";
 import { expandOccurrences, parseOccId, recurrenceKind } from "./occurrences";
 import type { TaskRow } from "./powersync/AppSchema";
 import { powerSync } from "./powersync/db";
+import {
+	minutesInTimeZone,
+	nextValidZonedDateTimeToIso,
+	wallTimeFromInstant,
+} from "./timeZone";
 import { showToast } from "./toast";
 import { pushUndo } from "./undo";
+
+const dependencyAcknowledgements = new Map<string, number>();
+
+async function dependencyAllowsCompletion(taskId: string): Promise<boolean> {
+	const state = await unresolvedDependencyState(taskId);
+	const now = Date.now();
+	const decision = dependencyCompletionDecision(state, dependencyAcknowledgements.get(taskId), now);
+	if (decision === "allow") {
+		dependencyAcknowledgements.delete(taskId);
+		return true;
+	}
+	const names = state.blockers
+		.slice(0, 2)
+		.map((blocker) => blocker.name)
+		.join(", ");
+	if (decision === "deny") {
+		showToast(i18n.t("dependencies.strictBlocked", { count: state.blockers.length, names }));
+		return false;
+	}
+	dependencyAcknowledgements.set(taskId, now);
+	showToast(i18n.t("dependencies.warningBlocked", { count: state.blockers.length, names }));
+	return false;
+}
+
+/** UX preflight stejného invariantního pravidla, které autoritativně hlídá PostgreSQL trigger. */
+async function acceptanceAllowsCompletion(taskId: string, onlyUserId?: string | null) {
+	const rows = await powerSync.getAll<{ user_id: string; status: string | null }>(
+		`SELECT assignment.user_id, acceptance.status
+		 FROM tasks task
+		 JOIN projects project ON project.id = task.project_id
+		 JOIN assignments assignment ON assignment.task_id = task.id
+		 LEFT JOIN task_acceptances acceptance
+		   ON acceptance.task_id = task.id AND acceptance.assignee_id = assignment.user_id
+		 WHERE task.id = ?
+		   AND project.urgent_acceptance_enabled = 1
+		   AND task.kind = 'task'
+		   AND task.priority <= COALESCE(project.urgent_acceptance_priority, 1)
+		   AND (task.created_by IS NULL OR task.created_by <> assignment.user_id)
+		   AND (? = '' OR assignment.user_id = ?)`,
+		[taskId, onlyUserId ?? "", onlyUserId ?? ""],
+	);
+	const unresolved = rows.filter((row) => row.status !== "accepted");
+	if (unresolved.length === 0) return true;
+	showToast(i18n.t("detail.acceptanceCompletionBlocked", { count: unresolved.length }));
+	return false;
+}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 export const todayISO = () => {
@@ -29,9 +84,13 @@ export const NOT_MEETING = "kind IS NOT 'meeting'";
  * `new Date()` by po sync round-tripu timestamptz „+00" posunul čas o zónu — P1-06).
  * Konvence: 00:00 = bez času (kalendář kreslí all-day). Sdílí řádek, kalendář i měsíc.
  */
-export const startMinOf = (t: Pick<TaskRow, "start_date">): number | null => {
+export const startMinOf = (
+	t: Pick<TaskRow, "start_date"> & Partial<Pick<TaskRow, "start_timezone">>,
+): number | null => {
 	const s = t.start_date;
 	if (!s || s.length < 16) return null;
+	const zoned = minutesInTimeZone(s, t.start_timezone);
+	if (zoned !== null) return zoned === 0 ? null : zoned;
 	const h = +s.slice(11, 13);
 	const m = +s.slice(14, 16);
 	if (Number.isNaN(h) || Number.isNaN(m)) return null;
@@ -50,6 +109,15 @@ export async function setOccurrenceOverride(
 	iso: string,
 	patch: { done?: boolean; skipped?: boolean },
 ) {
+	const nextState = (done: boolean, skipped: boolean) => {
+		const next = {
+			done: patch.done ?? done,
+			skipped: patch.skipped ?? skipped,
+		};
+		if (patch.done === true) next.skipped = false;
+		if (patch.skipped === true) next.done = false;
+		return { done: next.done ? 1 : 0, skipped: next.skipped ? 1 : 0 };
+	};
 	const rows = await powerSync.getAll<{
 		id: string;
 		done: number | null;
@@ -61,10 +129,7 @@ export async function setOccurrenceOverride(
 	const ex = rows[0];
 	if (ex) {
 		const prev = { done: ex.done ? 1 : 0, skipped: ex.skipped ? 1 : 0 };
-		const next = {
-			done: (patch.done ?? !!ex.done) ? 1 : 0,
-			skipped: (patch.skipped ?? !!ex.skipped) ? 1 : 0,
-		};
+		const next = nextState(!!ex.done, !!ex.skipped);
 		const apply = async (v: { done: number; skipped: number }) => {
 			await powerSync.execute(
 				"UPDATE task_occurrence_overrides SET done = ?, skipped = ? WHERE id = ?",
@@ -75,27 +140,34 @@ export async function setOccurrenceOverride(
 		pushUndo({ undo: () => apply(prev), redo: () => apply(next) });
 	} else {
 		const nid = crypto.randomUUID();
-		const insert = async () => {
+		const next = nextState(false, false);
+		const apply = async (state: { done: number; skipped: number }) => {
+			const current = await powerSync.getAll<{ id: string }>(
+				"SELECT id FROM task_occurrence_overrides WHERE task_id = ? AND occ_date = ? LIMIT 1",
+				[taskId, iso],
+			);
+			if (current[0]) {
+				await powerSync.execute(
+					"UPDATE task_occurrence_overrides SET done = ?, skipped = ? WHERE id = ?",
+					[state.done, state.skipped, current[0].id],
+				);
+				return;
+			}
 			await powerSync.execute(
 				`INSERT INTO task_occurrence_overrides (id, task_id, project_id, occ_date, done, skipped, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				[
-					nid,
-					taskId,
-					projectId,
-					iso,
-					patch.done ? 1 : 0,
-					patch.skipped ? 1 : 0,
-					new Date().toISOString(),
-				],
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				[nid, taskId, projectId, iso, state.done, state.skipped, new Date().toISOString()],
 			);
 		};
-		await insert();
+		await apply(next);
 		pushUndo({
 			undo: async () => {
-				await powerSync.execute("DELETE FROM task_occurrence_overrides WHERE id = ?", [nid]);
+				await apply({ done: 0, skipped: 0 });
+				// Prázdný řádek záměrně nemažeme: mezi serverovým recurrence commandem a
+				// downsyncem ještě lokálně nemusí být vidět jeho plánovací sloupce. DELETE
+				// by pak mohl přes CAS projít a smazat novější přesun. Dvě nuly jsou bezpečný no-op.
 			},
-			redo: insert,
+			redo: () => apply(next),
 		});
 	}
 }
@@ -147,6 +219,8 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 	const occ = parseOccId(task.id);
 	if (occ) {
 		const nowDone = !task.completed_at;
+		if (nowDone && !(await acceptanceAllowsCompletion(occ.taskId, actorId))) return;
+		if (nowDone && !(await dependencyAllowsCompletion(occ.taskId))) return;
 		await setOccurrenceOverride(occ.taskId, task.project_id, occ.iso, {
 			done: nowDone,
 		});
@@ -170,6 +244,8 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 		// a tasks.completed_at nastavit jen ODVOZENĚ; un-toggle symetricky vše zruší.
 		if (asg.length > 0 && !mine) {
 			const nowDone = !task.completed_at;
+			if (nowDone && !(await acceptanceAllowsCompletion(task.id))) return;
+			if (nowDone && !(await dependencyAllowsCompletion(task.id))) return;
 			// R4 — u opakovaného úkolu je dokončení posunem řady (+ reset per-osoba účastí),
 			// ne trvalé nastavení completed_at všem.
 			if (nowDone && (await advanceRecurrence(task, asg))) return;
@@ -223,6 +299,8 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 		// obecná větev nastavila jen tasks.completed_at a mou účast nechala null.
 		if (asg.length >= 1 && mine) {
 			const nowMineDone = !mine.completed_at;
+			if (nowMineDone && !(await acceptanceAllowsCompletion(task.id, actorId))) return;
+			if (nowMineDone && !(await dependencyAllowsCompletion(task.id))) return;
 			const allDone = asg.every((a) => (a.id === mine.id ? nowMineDone : !!a.completed_at));
 			// R4 — pokud mou účastí spadli všichni a úkol se opakuje, posuň řadu + reset účastí.
 			if (nowMineDone && allDone && (await advanceRecurrence(task, asg))) return;
@@ -264,6 +342,8 @@ export async function toggleTask(task: TaskRow, actorId?: string) {
 	}
 
 	const nowDone = !task.completed_at;
+	if (nowDone && !(await acceptanceAllowsCompletion(task.id))) return;
+	if (nowDone && !(await dependencyAllowsCompletion(task.id))) return;
 	// R4 — dokončení opakovaného úkolu = posun řady na další výskyt (ne trvalé dokončení).
 	if (nowDone && (await advanceRecurrence(task))) return;
 	// R9: zaškrtnutí ⇄ stav „Hotovo" — synchronizovat i status sloupec (prototyp toggleDone).
@@ -332,7 +412,20 @@ async function advanceRecurrence(
 	const pastUntil =
 		endKind === "until" && typeof rule.until === "string" && next && next > rule.until;
 	if (!next || reachedCount || pastUntil) return false;
-	const nextStart = task.start_date ? `${next}T${task.start_date.slice(11)}` : null;
+	const wallTime =
+		task.start_date && task.start_timezone
+			? wallTimeFromInstant(task.start_date, task.start_timezone)
+			: null;
+	const nextStart =
+		task.start_date && task.start_timezone && wallTime
+			? nextValidZonedDateTimeToIso(next, wallTime, task.start_timezone)
+			: task.start_date
+				? `${next}T${task.start_date.slice(11)}`
+				: null;
+	if (task.start_date && !nextStart) {
+		showToast(i18n.t("addmodal.invalidLocalTime"));
+		return false;
+	}
 	const prev = {
 		due_date: task.due_date,
 		start_date: task.start_date,
@@ -380,6 +473,10 @@ export async function toggleAssignmentDone(task: TaskRow, assignmentId: string) 
 	const target = asg.find((a) => a.id === assignmentId);
 	if (!target) return;
 	const nowDone = !target.completed_at;
+	// Detail umožňuje přepnout konkrétní účast mimo hlavní checkbox. Musí projít
+	// stejnou závislostní branou, jinak by tento povrch obešel warning/strict UX.
+	if (nowDone && !(await acceptanceAllowsCompletion(task.id, target.user_id))) return;
+	if (nowDone && !(await dependencyAllowsCompletion(task.id))) return;
 	const allDone = asg.every((a) => (a.id === assignmentId ? nowDone : !!a.completed_at));
 	// R4 — poslední dokončení u opakovaného úkolu = posun řady + reset účastí.
 	if (nowDone && allDone && (await advanceRecurrence(task, asg))) return;

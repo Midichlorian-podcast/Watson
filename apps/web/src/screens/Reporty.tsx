@@ -3,17 +3,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { CopyLinkButton } from "../components/CopyLinkButton";
+import { KpiCard } from "../components/KpiCard";
+import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
 import { GSTAT, goalElapsed, goalProgress, goalStatus } from "../lib/goals";
 import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
-import { useFocusTrap } from "../lib/useFocusTrap";
-import { useWorkspace, useWorkspaces } from "../lib/workspace";
 import { NOT_MEETING } from "../lib/tasks";
+import { deviceTimeZone } from "../lib/timeZone";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
+import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = {
 	id: string;
@@ -46,8 +50,8 @@ const wdLabels = (lang: string): string[] =>
 	);
 
 /** ISO data aktuálního týdne Po–Ne. */
-function weekDays(): string[] {
-	const now = new Date();
+function weekDays(today: string): string[] {
+	const now = new Date(`${today}T12:00:00`);
 	const mon = new Date(now);
 	mon.setDate(now.getDate() - ((now.getDay() + 6) % 7));
 	return Array.from({ length: 7 }, (_, i) => {
@@ -63,7 +67,7 @@ export function Reporty() {
 	const WD_LABELS = wdLabels(i18n.language);
 	const navigate = useNavigate();
 	const search = useSearch({ from: "/reporty" });
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const taskDetail = useTaskDetail();
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs } = useWorkspace();
@@ -75,24 +79,24 @@ export function Reporty() {
 	const setSearch = (next: { tab?: string; clen?: string }) =>
 		void navigate({ to: "/reporty", search: next });
 
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		`SELECT id, name, project_id, priority, due_date, completed_at, assignment_mode FROM tasks WHERE ${NOT_MEETING}`,
 	);
 	// completed_at účasti — u shared_all je dokončení PER-OSOBA (task.completed_at je odvozené až po všech).
-	const { data: assignments } = usePsQuery<{
+	const { data: assignments, isLoading: assignmentsLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 		completed_at: string | null;
 	}>("SELECT task_id, user_id, completed_at FROM assignments");
-	const { data: goals } = usePsQuery<GoalRow>(
+	const { data: goals, isLoading: goalsLoading } = usePsQuery<GoalRow>(
 		"SELECT * FROM goals WHERE workspace_id = ? ORDER BY created_at",
 		[activeWs ?? ""],
 	);
-	const { data: goalProjects } = usePsQuery<{
+	const { data: goalProjects, isLoading: goalProjectsLoading } = usePsQuery<{
 		goal_id: string | null;
 		project_id: string | null;
 	}>("SELECT goal_id, project_id FROM goal_projects");
-	const { data: team } = useQuery({
+	const { data: team, isPending: teamLoading } = useQuery({
 		queryKey: ["wsMembersFull", activeWs],
 		enabled: !!activeWs,
 		queryFn: async () => {
@@ -104,6 +108,8 @@ export function Reporty() {
 		},
 	});
 	const members = team ?? [];
+	const dataLoading =
+		projectsLoading || tasksLoading || assignmentsLoading || goalsLoading || goalProjectsLoading || teamLoading;
 
 	const wsProjects = useMemo(
 		() => projects.filter((p) => p.workspace_id === activeWs),
@@ -128,7 +134,20 @@ export function Reporty() {
 
 	// ── Přehled ────────────────────────────────────────────────────────────────
 	// Závislost na dnešku, aby graf po přechodu týdne (kiosk/otevřený tab) nezůstal na minulém týdnu.
-	const days = useMemo(weekDays, [todayISO()]);
+	const reportDay = todayISO();
+	const days = useMemo(() => weekDays(reportDay), [reportDay]);
+	const metricTimeZone = useMemo(deviceTimeZone, []);
+	const metricDate = useMemo(() => {
+		const formatter = new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" });
+		return {
+			from: formatter.format(new Date(`${days[0]}T12:00:00`)),
+			to: formatter.format(new Date(`${days[6]}T12:00:00`)),
+			today: formatter.format(new Date(`${reportDay}T12:00:00`)),
+		};
+	}, [days, reportDay, i18n.language]);
+	const metricScope = t("metrics.scopeWorkspace", { workspace: ws?.name ?? "—" });
+	const weekPeriod = t("reports.weekPeriod", metricDate);
+	const currentPeriod = t("metrics.currentState", { date: metricDate.today });
 	const overview = useMemo(() => {
 		const tdy = todayISO();
 		const perDay = days.map(
@@ -200,7 +219,7 @@ export function Reporty() {
 			const st = goalStatus(pr.pct, goalElapsed(g.created_at, g.due_date, tdy), overdue, false);
 			return { g, pr, st };
 		};
-	}, [wsTasks, linksByGoal, assigneesByTask]);
+	}, [wsTasks, linksByGoal, assigneesByTask, t]);
 	const { data: session } = useSession();
 	const meId = session?.user?.id;
 	const reportGoals = useMemo(() => {
@@ -289,21 +308,51 @@ export function Reporty() {
 				)}
 			</div>
 
-			{tab === "prehled" ? (
+			{dataLoading ? (
+				<DataLoading />
+			) : tab === "prehled" ? (
 				<>
 					{/* KPI */}
-					<div className="mb-4 flex gap-3.5">
-						<Kpi
+					<div
+						className="mb-4 grid gap-3.5"
+						style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))" }}
+					>
+						<KpiCard
 							value={String(overview.weekDone)}
 							label={t("reports.kpiWeek")}
 							color="var(--w-ink)"
+							definition={{
+								scope: metricScope,
+								period: weekPeriod,
+								timeZone: metricTimeZone,
+								exclusions: t("reports.excludeWeek"),
+								formula: t("reports.formulaWeek"),
+							}}
 						/>
-						<Kpi
+						<KpiCard
 							value={String(overview.overdue)}
 							label={t("reports.kpiOverdue")}
 							color="var(--w-overdue)"
+							definition={{
+								scope: metricScope,
+								period: currentPeriod,
+								timeZone: metricTimeZone,
+								exclusions: t("reports.excludeOverdue"),
+								formula: t("reports.formulaOverdue"),
+							}}
 						/>
-						<Kpi value={overview.avg} label={t("reports.kpiAvg")} color="var(--w-brass-text)" />
+						<KpiCard
+							value={overview.avg}
+							label={t("reports.kpiAvg")}
+							color="var(--w-brass-text)"
+							definition={{
+								scope: metricScope,
+								period: weekPeriod,
+								timeZone: metricTimeZone,
+								exclusions: t("reports.excludeWeek"),
+								formula: t("reports.formulaAvg"),
+							}}
+						/>
 					</div>
 
 					<div className="grid grid-cols-2 gap-4">
@@ -385,7 +434,7 @@ export function Reporty() {
 							<button
 								type="button"
 								onClick={() => void navigate({ to: "/cile" })}
-								className="font-display font-semibold text-brass-text hover:underline"
+								className="min-h-11 rounded-md px-2 font-display font-semibold text-brass-text hover:bg-panel-2 hover:underline"
 								style={{ fontSize: 12 }}
 							>
 								{t("reports.allGoals")}
@@ -437,7 +486,7 @@ export function Reporty() {
 						</span>
 						<button
 							type="button"
-							onClick={() => void navigate({ to: "/nastaveni" })}
+							onClick={() => void navigate({ to: "/nastaveni", search: { sekce: "tym" } })}
 							className="ml-auto inline-flex items-center gap-1.5 rounded-[9px] border border-line font-display font-semibold text-ink-2 hover:border-brass"
 							style={{ padding: "7px 12px", fontSize: 12.5 }}
 						>
@@ -535,19 +584,6 @@ export function Reporty() {
 	);
 }
 
-function Kpi({ value, label, color }: { value: string; label: string; color: string }) {
-	return (
-		<div className="flex-1 rounded-[13px] border border-line bg-card" style={{ padding: 16 }}>
-			<div className="font-mono" style={{ fontSize: 28, color }}>
-				{value}
-			</div>
-			<div className="mt-0.5 font-body text-ink-3" style={{ fontSize: 12.5 }}>
-				{label}
-			</div>
-		</div>
-	);
-}
-
 /** Member detail — pravý panel (efektivita, staty, role segmenty, úkoly, rozpad, cíle). */
 function MemberDetail({
 	member,
@@ -582,15 +618,7 @@ function MemberDetail({
 	const { t } = useTranslation();
 	const qc = useQueryClient();
 	const tdy = todayISO();
-	const trapRef = useFocusTrap<HTMLElement>(true);
-	// Esc zavře panel — konzistentně se sourozeneckými overlaye (NotifCenter/TaskDetailPanel/PeekPanel).
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", h);
-		return () => document.removeEventListener("keydown", h);
-	}, [onClose]);
+	const trapRef = useOverlayLayer<HTMLElement>(true, onClose);
 
 	// Optimistický highlight role, dokud PATCH nedoběhne — jinak není žádná okamžitá odezva.
 	const [pendingRole, setPendingRole] = useState<string | null>(null);
@@ -630,7 +658,7 @@ function MemberDetail({
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.34)", zIndex: 40 }}
+				style={{ background: "rgba(10,14,20,.34)", zIndex: "var(--w-layer-drawer)" }}
 			/>
 			<aside
 				ref={trapRef}
@@ -639,7 +667,7 @@ function MemberDetail({
 					width: 440,
 					maxWidth: "94vw",
 					boxShadow: "var(--w-shadow)",
-					zIndex: 41,
+					zIndex: "calc(var(--w-layer-drawer) + 1)",
 				}}
 			>
 				<div
@@ -649,11 +677,12 @@ function MemberDetail({
 					<span className="flex-1 font-display font-bold text-ink-2" style={{ fontSize: 14 }}>
 						{t("reports.memberPanel")}
 					</span>
+					<CopyLinkButton entity="person" id={member.id} workspaceId={workspaceId} />
 					<button
 						type="button"
 						onClick={onClose}
 						aria-label={t("common.cancel")}
-						className="flex text-ink-3 hover:text-ink"
+						className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 					>
 						<Icon name="zavrit" size={16} />
 					</button>
@@ -818,7 +847,7 @@ function MemberDetail({
 						<button
 							type="button"
 							onClick={onOpenTasks}
-							className="mt-2 font-display font-semibold text-brass-text hover:underline"
+							className="mt-2 min-h-11 rounded-md px-2 font-display font-semibold text-brass-text hover:bg-panel-2 hover:underline"
 							style={{ fontSize: 12 }}
 						>
 							{t("reports.moreTasks", { count: stats.open.length - 10 })}

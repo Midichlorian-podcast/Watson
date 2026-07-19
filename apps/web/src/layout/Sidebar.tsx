@@ -1,16 +1,30 @@
-import { useQuery as usePsQuery, useStatus } from "@powersync/react";
+import { useQuery as usePsQuery } from "@powersync/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { type CSSProperties, Fragment, useMemo } from "react";
+import {
+	type CSSProperties,
+	Fragment,
+	type MouseEvent as ReactMouseEvent,
+	useMemo,
+	useState,
+} from "react";
+import { type CtxItem, useContextMenu } from "../components/ContextMenu";
+import { SidebarTrustState } from "../components/TrustState";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
+import { useEmployeeHub } from "../lib/employee";
 import { initials } from "../lib/format";
 import { inboxProjectIds } from "../lib/inbox";
+import { useNavigationPins } from "../lib/navigationPins";
+import { useNavigationMode } from "../lib/navigationPreferences";
+import type { FilterRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
+import { openWatsonWindow, windowSurfaceForPath } from "../lib/windowSurfaces";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
-import { MAIN_NAV, type NavItem, VELIN_NAV } from "./nav";
+import { MAIL_COMPOSE_EVENT } from "../mail/events";
+import { CORE_NAV, EMPLOYEE_NAV, type NavItem, TOOL_NAV, VELIN_NAV } from "./nav";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const todayIso = () => {
@@ -32,7 +46,6 @@ const NAV_BASE: CSSProperties = {
 const BADGE: CSSProperties = {
 	fontFamily: "var(--w-font-mono, ui-monospace, monospace)",
 	fontSize: 11,
-	opacity: 0.7,
 };
 
 function NavRow({
@@ -43,6 +56,7 @@ function NavRow({
 	marker,
 	badge,
 	title,
+	onContextMenu,
 }: {
 	item: NavItem;
 	active: boolean;
@@ -52,17 +66,15 @@ function NavRow({
 	/** Textový odznak místo počtu (Velín → „VEDENÍ", prototyp ř. 255). */
 	badge?: string;
 	title?: string;
+	onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
 }) {
 	const { t } = useTranslation();
 	return (
 		<Link
 			to={item.to}
 			title={title ?? (collapsed ? t(item.labelKey) : undefined)}
-			className={`font-display ${
-				active
-					? "text-[var(--w-sidebar-ink)]"
-					: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
-			}`}
+			className={`font-display ${active ? "text-[var(--w-sidebar-ink)]" : "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"}`}
+			onContextMenu={onContextMenu}
 			style={{
 				...NAV_BASE,
 				justifyContent: collapsed ? "center" : undefined,
@@ -84,11 +96,10 @@ function NavRow({
 					style={{
 						fontSize: 9,
 						letterSpacing: ".05em",
-						color: "var(--w-brass)",
-						border: "1px solid var(--w-brass)",
+						color: "var(--w-sidebar-accent)",
+						border: "1px solid var(--w-sidebar-accent)",
 						borderRadius: 5,
 						padding: "0 4px",
-						opacity: 0.85,
 					}}
 				>
 					{badge}
@@ -98,23 +109,90 @@ function NavRow({
 	);
 }
 
+function PinnedRow({
+	label,
+	onClick,
+	active,
+	marker,
+	icon = "nastaveni",
+	onContextMenu,
+}: {
+	label: string;
+	onClick: () => void;
+	active: boolean;
+	marker?: CSSProperties;
+	icon?: NavItem["icon"];
+	onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className={`w-full text-left font-display ${active ? "text-[var(--w-sidebar-ink)]" : "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"}`}
+			onContextMenu={onContextMenu}
+			style={{
+				...NAV_BASE,
+				background: active ? "rgba(255,255,255,.09)" : "transparent",
+				borderLeftColor: active ? "var(--w-brass)" : "transparent",
+			}}
+		>
+			{marker ? (
+				<span style={{ width: 9, height: 9, flex: "none", ...marker }} />
+			) : (
+				<Icon name={icon} size={16} />
+			)}
+			<span className="min-w-0 flex-1 truncate">{label}</span>
+		</button>
+	);
+}
+
 /** Levý sidebar — 1:1 dle Cloud Design (brass „Přidat úkol", počty, aktivní brass okraj, footer). */
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const cm = useContextMenu();
 	const { openAdd } = useAddTask();
 	const { data: session } = useSession();
-	const status = useStatus();
 	const path = useRouterState({ select: (s) => s.location.pathname });
+	const onMail = path.startsWith("/mail");
+	const navigationMode = useNavigationMode();
+	const [toolsOpen, setToolsOpen] = useState(false);
 	// Aktivní projektový filtr (?projekt=) — zvýraznění řádku projektu (prototyp data-projrow).
 	const activeProjekt = useRouterState({
 		select: (s) => (s.location.search as { projekt?: string }).projekt,
 	});
-	// Aktivní záložka sloučeného modulu Úkoly (?tab=) — zvýraznění zanořených řádků.
-	const searchTab = useRouterState({
-		select: (s) => (s.location.search as { tab?: string }).tab,
+	const activePohled = useRouterState({
+		select: (s) => (s.location.search as { pohled?: string }).pohled,
 	});
 	const projects = useProjects();
+	const { pins } = useNavigationPins();
+	const { data: savedViewRows } = usePsQuery<FilterRow>(
+		"SELECT * FROM filters WHERE query IN ('tasks:v1', 'upcoming:v1') ORDER BY lower(name)",
+	);
+	const pinnedProjects = pins
+		.filter((pin) => pin.kind === "project")
+		.map((pin) => projects.find((project) => project.id === pin.id))
+		.filter((project): project is NonNullable<typeof project> => !!project);
+	const pinnedViews = pins
+		.filter((pin) => pin.kind === "saved_view")
+		.map((pin) => {
+			const synced = (savedViewRows ?? []).find((view) => view.id === pin.id);
+			if (synced)
+				return {
+					id: synced.id,
+					name: synced.name,
+					surface: synced.surface,
+					workspaceId: synced.workspace_id,
+				};
+			if (!pin.label) return null;
+			return {
+				id: pin.id,
+				name: pin.label,
+				surface: pin.surface ?? "tasks",
+				workspaceId: pin.workspaceId ?? null,
+			};
+		})
+		.filter((view): view is NonNullable<typeof view> => !!view);
 	const userId = session?.user?.id;
 
 	const { data: openTasks } = usePsQuery<{
@@ -140,6 +218,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 	);
 	// Mail — badge = per-osoba nepřečtené v týmových schránkách (unreadFor součet).
 	const mailUnread = useMailUnread();
+	const employeeHub = useEmployeeHub();
+	const employeeLinked = employeeHub.data?.linked === true;
 
 	const { data: workspaces } = useWorkspaces();
 	const { activeWs, setActiveWs, isCollapsed, toggleCollapse } = useWorkspace();
@@ -197,29 +277,92 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 			"/seznamy": (activeLists ?? []).length,
 			"/mail": mailUnread,
 		};
-	}, [openTasks, myAssignments, projects, userId, activeLists, mailUnread]);
+	}, [openTasks, myAssignments, projects, activeLists, mailUnread]);
 
-	const isActive = (to: string) => (to === "/" ? path === "/" : path.startsWith(to));
+	const isActive = (to: string) => {
+		if (to === "/") return path === "/";
+		if (to === "/prehled") return path.startsWith(to);
+		return path.startsWith(to);
+	};
 	const userName = session?.user?.name ?? "";
-
-	// Sloučený modul Úkoly: „/" = Dnes, „/ukoly" = Vše (i drill-down projektu), „?tab=zasobnik" = Zásobník.
-	const effTab = path === "/" ? "dnes" : activeProjekt ? "vse" : (searchTab ?? "vse");
-	const dnesActive = path === "/";
-	const vseActive = path.startsWith("/ukoly") && effTab === "vse";
-	const zasobnikActive = path.startsWith("/ukoly") && effTab === "zasobnik";
-	// Styl zanořené záložky (Dnes/Zásobník) pod „Úkoly" — indent jako projekty.
-	const subRow = (active: boolean): CSSProperties => ({
-		display: "flex",
-		alignItems: "center",
-		gap: 11,
-		padding: "6px 10px 6px 27px",
-		borderRadius: 9,
-		borderLeft: "3px solid transparent",
-		borderLeftColor: active ? "var(--w-brass)" : "transparent",
-		background: active ? "rgba(255,255,255,.09)" : "transparent",
-		fontWeight: 600,
-		fontSize: 13,
-	});
+	const taskModuleActive =
+		path === "/" || path.startsWith("/ukoly") || path.startsWith("/schranka");
+	const leadership = isLeadership(workspaces);
+	const toolRouteActive =
+		TOOL_NAV.some((item) => path.startsWith(item.to)) || path.startsWith("/velin");
+	const showTools = collapsed || navigationMode === "advanced" || toolsOpen || toolRouteActive;
+	const windowMenu = (href: string): CtxItem[] => {
+		const surface = windowSurfaceForPath(new URL(href, window.location.origin).pathname);
+		return [
+			{
+				label: t("shell.openNewWindow"),
+				onClick: () => openWatsonWindow(href, "app"),
+			},
+			...(surface?.focus
+				? [
+						{
+							label: t("shell.openFocusedWindow"),
+							onClick: () => openWatsonWindow(href, "focus"),
+						} satisfies CtxItem,
+					]
+				: []),
+			...(surface?.wallboard
+				? [
+						{
+							label: t("shell.openWallboard"),
+							onClick: () => openWatsonWindow(href, "wallboard"),
+						} satisfies CtxItem,
+					]
+				: []),
+		];
+	};
+	const openWindowMenu = (event: ReactMouseEvent<HTMLElement>, href: string) =>
+		cm.open(event, windowMenu(href));
+	const renderNavItem = (item: NavItem) => {
+		// Úkoly jsou v sidebaru jediný modul. Dnes/Příchozí/Vše/Zásobník jsou jeho
+		// záložky uvnitř obsahu, takže zde nevznikají čtyři konkurenční vstupy.
+		if (item.to === "/ukoly") {
+			return (
+				<NavRow
+					key={item.to}
+					item={{ ...item, to: "/" }}
+					active={taskModuleActive}
+					collapsed={collapsed}
+					count={counts["/"]}
+					onContextMenu={(event) => openWindowMenu(event, "/")}
+				/>
+			);
+		}
+		return (
+			<Fragment key={item.to}>
+				<NavRow
+					item={item}
+					active={isActive(item.to)}
+					collapsed={collapsed}
+					count={item.count ? counts[item.to] : undefined}
+					onContextMenu={(event) => openWindowMenu(event, item.to)}
+				/>
+				{item.to === "/mail" && employeeLinked && (
+					<NavRow
+						item={EMPLOYEE_NAV}
+						active={isActive(EMPLOYEE_NAV.to)}
+						collapsed={collapsed}
+						onContextMenu={(event) => openWindowMenu(event, EMPLOYEE_NAV.to)}
+					/>
+				)}
+				{item.to === "/reporty" && leadership && (
+					<NavRow
+						item={VELIN_NAV}
+						active={isActive("/velin")}
+						collapsed={collapsed}
+						badge={t("velin.badge")}
+						title={t("velin.navTitle")}
+						onContextMenu={(event) => openWindowMenu(event, VELIN_NAV.to)}
+					/>
+				)}
+			</Fragment>
+		);
+	};
 
 	return (
 		<aside
@@ -242,29 +385,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 					padding: "2px 4px 14px",
 				}}
 			>
-				<span
-					title={status?.connected ? t("shell.synced") : t("shell.offline")}
-					style={{
-						width: 9,
-						height: 9,
-						borderRadius: "50%",
-						flex: "none",
-						background: status?.connected ? "var(--w-brass)" : "var(--w-sidebar-ink-2)",
-					}}
-				/>
-				{!collapsed && (
-					<span
-						className="font-display"
-						style={{
-							fontWeight: 800,
-							fontSize: 18,
-							color: "var(--w-sidebar-ink)",
-							flex: 1,
-						}}
-					>
-						{t("app.name")}
-					</span>
-				)}
+				<SidebarTrustState collapsed={collapsed} appName={t("app.name")} />
 				<button
 					type="button"
 					onClick={onToggle}
@@ -296,11 +417,14 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 				</button>
 			</div>
 
-			{/* + Přidat úkol */}
+			{/* Primární akce odpovídá právě otevřenému pracovnímu kontextu. */}
 			<button
 				type="button"
-				onClick={() => openAdd()}
-				title={t("shell.newTask")}
+				onClick={() => {
+					if (onMail) window.dispatchEvent(new Event(MAIL_COMPOSE_EVENT));
+					else openAdd();
+				}}
+				title={onMail ? "Napsat nový e-mail" : t("shell.newTask")}
 				className="font-display hover:brightness-105"
 				style={{
 					display: "flex",
@@ -319,7 +443,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 				}}
 			>
 				<Icon name="pridat" size={collapsed ? 16 : 14} />
-				{!collapsed && t("shell.addTask")}
+				{!collapsed && (onMail ? "Napsat e-mail" : t("shell.addTask"))}
 			</button>
 
 			{/* nav */}
@@ -331,86 +455,27 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 					padding: "0 4px",
 				}}
 			>
-				{MAIN_NAV.map((item) => {
-					// Sloučený modul Úkoly = jedna položka „Úkoly" (→ Vše) se zanořenými
-					// záložkami Dnes/Zásobník (ne dvě samostatné ploché položky).
-					if (item.to === "/ukoly") {
-						return (
-							<Fragment key={item.to}>
-								<NavRow item={item} active={vseActive} collapsed={collapsed} />
-								{!collapsed && (
-									<>
-										<Link
-											to="/"
-											search={{}}
-											className={`font-display ${
-												dnesActive
-													? "text-[var(--w-sidebar-ink)]"
-													: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
-											}`}
-											style={subRow(dnesActive)}
-										>
-											<span
-												style={{
-													width: 8,
-													height: 8,
-													borderRadius: "50%",
-													flex: "none",
-													background: "var(--w-brass)",
-												}}
-											/>
-											<span style={{ flex: 1, minWidth: 0 }}>{t("nav.today")}</span>
-											{counts["/"] != null && <span style={BADGE}>{counts["/"]}</span>}
-										</Link>
-										<Link
-											to="/ukoly"
-											search={{ tab: "zasobnik" }}
-											className={`font-display ${
-												zasobnikActive
-													? "text-[var(--w-sidebar-ink)]"
-													: "text-[var(--w-sidebar-ink-2)] hover:text-[var(--w-sidebar-ink)]"
-											}`}
-											style={subRow(zasobnikActive)}
-										>
-											<span
-												style={{
-													width: 8,
-													height: 8,
-													borderRadius: 2,
-													flex: "none",
-													background: "var(--w-sidebar-ink-2)",
-												}}
-											/>
-											<span style={{ flex: 1, minWidth: 0 }}>{t("tasks.tabBacklog")}</span>
-											{counts.zasobnik != null && <span style={BADGE}>{counts.zasobnik}</span>}
-										</Link>
-									</>
-								)}
-							</Fragment>
-						);
-					}
-					return (
-						<Fragment key={item.to}>
-							<NavRow
-								item={item}
-								active={isActive(item.to)}
-								collapsed={collapsed}
-								count={item.count ? counts[item.to] : undefined}
-							/>
-							{/* Velín mezi Reporty a Postupy (prototyp ř. 251–257) — jen pro
-							    vedení (Vlastník/Admin), odznak VEDENÍ */}
-							{item.to === "/reporty" && isLeadership(workspaces) && (
-								<NavRow
-									item={VELIN_NAV}
-									active={isActive("/velin")}
-									collapsed={collapsed}
-									badge={t("velin.badge")}
-									title={t("velin.navTitle")}
-								/>
-							)}
-						</Fragment>
-					);
-				})}
+				{CORE_NAV.map(renderNavItem)}
+				{!collapsed && navigationMode === "guided" && (
+					<button
+						type="button"
+						onClick={() => setToolsOpen((open) => !open)}
+						aria-expanded={showTools}
+						className="mt-1 flex min-h-11 w-full items-center rounded-lg px-2.5 font-display text-[12px] font-semibold text-[var(--w-sidebar-ink-2)] hover:bg-white/5 hover:text-[var(--w-sidebar-ink)]"
+					>
+						<Icon name="pridat" size={15} />
+						<span className="ml-2 flex-1 text-left">{t("nav.allTools")}</span>
+						<span aria-hidden style={{ transform: showTools ? "rotate(45deg)" : undefined }}>
+							+
+						</span>
+					</button>
+				)}
+				{!collapsed && navigationMode === "advanced" && (
+					<div className="px-2 pt-3 pb-1 font-display text-[10px] font-bold uppercase tracking-[.07em] text-[var(--w-sidebar-ink-2)]">
+						{t("nav.allTools")}
+					</div>
+				)}
+				{showTools && TOOL_NAV.map(renderNavItem)}
 
 				{!collapsed && (
 					<>
@@ -425,7 +490,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 								padding: "16px 10px 6px",
 							}}
 						>
-							{t("nav.favorites")}
+							{t("navigationPins.title")}
 						</div>
 						<NavRow
 							item={{
@@ -437,6 +502,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 							collapsed={false}
 							count={counts["/oblibene/p1"]}
 							marker={{ borderRadius: 2, background: "var(--w-brass)" }}
+							onContextMenu={(event) => openWindowMenu(event, "/oblibene/p1")}
 						/>
 						<NavRow
 							item={{
@@ -448,7 +514,50 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 							collapsed={false}
 							count={counts["/oblibene/me"]}
 							marker={{ borderRadius: "50%", background: "#2a6fdb" }}
+							onContextMenu={(event) => openWindowMenu(event, "/oblibene/me")}
 						/>
+						{pinnedProjects.map((project) => (
+							<PinnedRow
+								key={`project:${project.id}`}
+								label={project.name ?? t("nav.projects")}
+								active={activeProjekt === project.id}
+								marker={{
+									borderRadius: "50%",
+									background: project.color ?? "var(--w-sidebar-ink-2)",
+								}}
+								onClick={() => {
+									if (project.workspace_id) setActiveWs(project.workspace_id);
+									void navigate({ to: "/ukoly", search: { projekt: project.id } });
+								}}
+								onContextMenu={(event) => {
+									const search = new URLSearchParams({ projekt: project.id });
+									if (project.workspace_id) search.set("prostor", project.workspace_id);
+									openWindowMenu(event, `/ukoly?${search}`);
+								}}
+							/>
+						))}
+						{pinnedViews.map((savedView) => (
+							<PinnedRow
+								key={`saved-view:${savedView.id}`}
+								label={savedView.name ?? t("savedViews.button")}
+								active={activePohled === savedView.id}
+								onClick={() => {
+									if (savedView.workspaceId) setActiveWs(savedView.workspaceId);
+									void navigate({
+										to: savedView.surface === "upcoming" ? "/nadchazejici" : "/ukoly",
+										search: { pohled: savedView.id },
+									});
+								}}
+								onContextMenu={(event) => {
+									const search = new URLSearchParams({ pohled: savedView.id });
+									if (savedView.workspaceId) search.set("prostor", savedView.workspaceId);
+									openWindowMenu(
+										event,
+										`${savedView.surface === "upcoming" ? "/nadchazejici" : "/ukoly"}?${search}`,
+									);
+								}}
+							/>
+						))}
 
 						{/* Pracovní prostory — přepínač + projekty (1:1 dle Cloud Design) */}
 						<div
@@ -466,7 +575,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 						</div>
 						{(workspaces ?? []).map((ws) => {
 							const wsProjects = projects.filter((p) => p.workspace_id === ws.id);
-							const wsCollapsed = isCollapsed(ws.id);
+							const wsCollapsed = ws.isPersonal ? false : isCollapsed(ws.id);
 							const wsActive = ws.id === activeWs;
 							return (
 								<div key={ws.id}>
@@ -528,6 +637,9 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 												setActiveWs(ws.id);
 												void navigate({ to: "/projekty" });
 											}}
+											onContextMenu={(event) =>
+												openWindowMenu(event, `/projekty?prostor=${encodeURIComponent(ws.id)}`)
+											}
 											className="truncate text-left font-display hover:text-[var(--w-sidebar-ink)]"
 											style={{
 												flex: 1,
@@ -545,7 +657,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 											style={{
 												fontSize: 10.5,
 												color: "var(--w-sidebar-ink-2)",
-												opacity: 0.7,
 											}}
 										>
 											{wsProjects.length}
@@ -562,6 +673,13 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 														search: { projekt: p.id },
 													})
 												}
+												onContextMenu={(event) => {
+													const search = new URLSearchParams({
+														projekt: p.id,
+														prostor: ws.id,
+													});
+													openWindowMenu(event, `/ukoly?${search}`);
+												}}
 												className="flex w-full items-center text-left font-display hover:text-[var(--w-sidebar-ink)]"
 												style={{
 													gap: 11,
@@ -588,7 +706,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 												<span className="truncate" style={{ flex: 1 }}>
 													{p.name}
 												</span>
-												<span className="font-mono" style={{ fontSize: 11, opacity: 0.7 }}>
+												<span className="font-mono" style={{ fontSize: 11 }}>
 													{projOpen[p.id] ?? 0}
 												</span>
 											</button>
@@ -603,6 +721,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 			{/* footer — uživatel → Nastavení */}
 			<Link
 				to="/nastaveni"
+				onContextMenu={(event) => openWindowMenu(event, "/nastaveni")}
 				style={{
 					display: "flex",
 					alignItems: "center",

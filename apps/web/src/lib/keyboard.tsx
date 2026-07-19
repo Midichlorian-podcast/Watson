@@ -49,8 +49,9 @@ const G_ROUTES: Record<
  */
 export function KeyboardProvider({ children }: { children: ReactNode }) {
 	const navigate = useNavigate();
-	const { openAdd } = useAddTask();
-	const { setView, locked } = useViewMode();
+	const { openAdd, openCapture } = useAddTask();
+	const { setView: setTaskView, locked: taskViewLocked } = useViewMode("tasks");
+	const { setView: setUpcomingView, locked: upcomingViewLocked } = useViewMode("upcoming");
 	const { setOpen: setSearchOpen } = useListSearch();
 	const { openId } = useTaskDetail();
 	const [cheatOpen, setCheatOpen] = useState(false);
@@ -89,6 +90,16 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 				setPaletteOpen((o) => !o);
 				return;
 			}
+			// Globální Quick Capture funguje na každé obrazovce včetně Mailu. Modifikovaná
+			// zkratka nekoliduje s psaním ani s mailovými single-key akcemi.
+			if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "Space") {
+				if (document.querySelector("[data-esc-layer]")) return;
+				e.preventDefault();
+				setCheatOpen(false);
+				setPaletteOpen(false);
+				openCapture();
+				return;
+			}
 			if (onMailRef.current) return;
 			// Otevřená vrstva (detail úkolu / tahák / ⌘K / modal) blokuje globální
 			// zkratky (q, /, ?, g-nav, ⌘Z), ať neprosáknou na obsah pod vrstvou —
@@ -116,8 +127,8 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 				if (dest) {
 					e.preventDefault();
 					// Zamčený výchozí pohled g-zkratky nepřepínají (prototyp goTo + viewLock).
-					if (key === "k" && !locked) setView("calendar");
-					else if (key === "u" && !locked) setView("list");
+					if (key === "k" && !upcomingViewLocked) setUpcomingView("calendar");
+					else if (key === "u" && !taskViewLocked) setTaskView("list");
 					void navigate({ to: dest });
 					return;
 				}
@@ -152,7 +163,19 @@ export function KeyboardProvider({ children }: { children: ReactNode }) {
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-	}, [cheatOpen, paletteOpen, navigate, openAdd, setView, locked, setSearchOpen, openId]);
+	}, [
+		cheatOpen,
+		paletteOpen,
+		navigate,
+		openAdd,
+		openCapture,
+		setTaskView,
+		taskViewLocked,
+		setUpcomingView,
+		upcomingViewLocked,
+		setSearchOpen,
+		openId,
+	]);
 
 	return (
 		<>

@@ -36,6 +36,7 @@ export class WatsonConnector implements PowerSyncBackendConnector {
 	async uploadData(database: AbstractPowerSyncDatabase): Promise<void> {
 		const tx = await database.getNextCrudTransaction();
 		if (!tx) return;
+		const clientId = await database.getClientId();
 
 		// Každou op řešíme samostatně: TRVALE odmítnutou přeskočíme (a upozorníme), ale ve smyčce
 		// pokračujeme — jinak by jedna vadná op zahodila i ostatní NEODESLANÉ zápisy z téže
@@ -48,22 +49,22 @@ export class WatsonConnector implements PowerSyncBackendConnector {
 					: op.op === UpdateType.PATCH
 						? "PATCH"
 						: "DELETE";
-			let res: Response;
-			try {
-				res = await fetch(`${API_URL}/api/sync/write`, {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					credentials: "include",
-					body: JSON.stringify({
-						op: method,
-						table: op.table,
-						id: op.id,
-						data: op.opData,
-					}),
-				});
-			} catch (netErr) {
-				throw netErr; // síťová chyba = přechodná → retry celé transakce
-			}
+			const envelope = {
+				op: method,
+				table: op.table,
+				id: op.id,
+				data: op.opData,
+				previous: op.previousValues,
+				clientId,
+				operationId: String(op.clientId),
+			};
+			// Síťovou výjimku necháme probublat: PowerSync zachová a zopakuje celou tx.
+			const res = await fetch(`${API_URL}/api/sync/write`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				credentials: "include",
+				body: JSON.stringify(envelope),
+			});
 			if (res.ok) continue;
 			const code = String(res.status);
 			if (isPermanent(code)) {
@@ -76,25 +77,40 @@ export class WatsonConnector implements PowerSyncBackendConnector {
 				} catch {
 					/* prázdné/textové tělo */
 				}
-				console.error("[powersync] trvale odmítnutá operace", op, code, server);
+				console.error("[powersync] trvale odmítnutá operace", {
+					table: op.table,
+					rowId: op.id,
+					code,
+					serverCode: server.code ?? server.error ?? null,
+					requestId: server.requestId ?? null,
+				});
 				try {
 					await database.execute(
-						`INSERT INTO local_rejected_ops
-						 (id, created_at, table_name, op, row_id, payload, http_code, server_code, request_id, status)
-						 VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, 'open')`,
+						`INSERT OR IGNORE INTO local_rejected_ops
+						 (id, created_at, last_attempt_at, attempt_count, client_id, operation_id,
+						  table_name, op, row_id, payload, http_code, server_code, request_id, status)
+						 VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')`,
 						[
+							`${clientId}:${op.clientId}`,
 							new Date().toISOString(),
+							new Date().toISOString(),
+							clientId,
+							String(op.clientId),
 							op.table,
-							String(op.op),
+							method,
 							op.id,
-							JSON.stringify(op.opData ?? {}),
+							JSON.stringify(envelope),
 							res.status,
 							server.code ?? server.error ?? null,
 							server.requestId ?? null,
 						],
 					);
 				} catch (recErr) {
-					console.error("[powersync] zápis do local_rejected_ops selhal", recErr);
+					console.error("[powersync] zápis do local_rejected_ops selhal", {
+						name: recErr instanceof Error ? recErr.name : "UnknownError",
+					});
+					// Bez durable recovery záznamu se upload fronta nesmí potvrdit.
+					throw new Error("rejected_operation_recovery_failed", { cause: recErr });
 				}
 				// S3 — op se zahodí (další sync vrátí lokální optimistickou změnu); upozorni uživatele.
 				if (typeof window !== "undefined") {

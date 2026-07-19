@@ -1,0 +1,2 @@
+ALTER TABLE "mail_messages" ADD COLUMN "last_seen_sync_generation" uuid NOT NULL;--> statement-breakpoint
+ALTER TABLE "mail_sync_states" ADD COLUMN "full_sync_generation" uuid DEFAULT gen_random_uuid() NOT NULL;

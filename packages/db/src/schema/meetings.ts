@@ -6,9 +6,11 @@
  * write-path (human-in-the-loop). Workspace-scoped (sféra = workspaces.isPersonal).
  * Feedback 2026-07-12: „modul Mítingy — přepis → AI úkoly, přiřazení, priority".
  */
-import { index, jsonb, pgTable, text, uuid, varchar } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { check, foreignKey, index, jsonb, pgTable, text, uuid, varchar } from "drizzle-orm/pg-core";
 import { createdAt, pk, updatedAt } from "./_helpers";
 import { users } from "./auth";
+import { tasks } from "./task";
 import { workspaces } from "./workspace";
 
 export const meetings = pgTable(
@@ -31,10 +33,10 @@ export const meetings = pgTable(
 		 * Meets — kotevní (hub) úkol porady: tasks.kind='meeting', drží termín (start_date+čas),
 		 * účastníky (assignments) a přípravu (podúkoly). Soft odkaz (bez FK, řízený appkou).
 		 */
-		hubTaskId: uuid("hub_task_id"),
+		hubTaskId: uuid("hub_task_id").references(() => tasks.id, { onDelete: "cascade" }),
 		/** Seskupení řady opakovaných porad (weekly/1:1/…) — společné series_id. */
 		seriesId: uuid("series_id"),
-		/** Předchozí porada v řadě (příprava→navazující meet). Self-odkaz, soft (bez FK). */
+		/** Předchozí porada v řadě; DB ji při smazání předchůdce atomicky odpojí. */
 		prevMeetingId: uuid("prev_meeting_id"),
 		/**
 		 * NÁVRH úkolů od AI (jsonb) — pole položek { title, note?, assigneeHint?,
@@ -50,9 +52,20 @@ export const meetings = pgTable(
 		updatedAt: updatedAt(),
 	},
 	(t) => [
+		check(
+			"meetings_status_valid",
+			sql`${t.status} in ('new', 'scheduled', 'transcribed', 'extracted', 'committed', 'cancelled')`,
+		),
 		index("meetings_workspace_idx").on(t.workspaceId),
 		index("meetings_hub_task_idx").on(t.hubTaskId),
 		index("meetings_series_idx").on(t.seriesId),
+		foreignKey({
+			name: "meetings_prev_meeting_id_meetings_id_fk",
+			columns: [t.prevMeetingId],
+			foreignColumns: [t.id],
+		})
+			.onDelete("set null")
+			.onUpdate("no action"),
 	],
 );
 

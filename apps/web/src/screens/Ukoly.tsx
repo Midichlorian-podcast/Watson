@@ -1,9 +1,10 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "../components/Board";
 import { Calendar } from "../components/CalendarLazy";
+import { DataLoading } from "../components/Loading";
 import { RescheduleMenu } from "../components/RescheduleMenu";
 import { TaskItem } from "../components/TaskItem";
 import {
@@ -22,12 +23,12 @@ import { filterByQuery, useListSearch } from "../lib/listSearch";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjectDetail } from "../lib/projectDetail";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
+import { NOT_MEETING } from "../lib/tasks";
 import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
 import { useViewMode } from "../lib/viewMode";
-import { NOT_MEETING } from "../lib/tasks";
 
 /**
  * Vše — záložka sloučeného modulu Úkoly: inventář top-level úkolů po projektech.
@@ -41,16 +42,54 @@ import { NOT_MEETING } from "../lib/tasks";
  */
 export function VseTab() {
 	const { t } = useTranslation();
+	const navigate = useNavigate({ from: "/ukoly" });
 	const search = useSearch({ strict: false }) as {
 		projekt?: string;
 		ukol?: string;
+		zobrazeni?: "list" | "board" | "calendar";
+		rozsah?: "day" | "week" | "month";
+		datum?: string;
 	};
 	const projektId = search.projekt;
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { open } = useTaskDetail();
 	const projDetail = useProjectDetail();
 	const { openAdd } = useAddTask();
-	const { view: rawView } = useViewMode();
+	const { view: rawView, setView } = useViewMode("tasks");
+	const externalView = useRef(search.zobrazeni ?? null);
+	useEffect(() => {
+		if (!search.zobrazeni) return;
+		externalView.current = search.zobrazeni;
+		setView(search.zobrazeni);
+	}, [search.zobrazeni, setView]);
+	useEffect(() => {
+		if (!projektId) return;
+		if (externalView.current) {
+			if (externalView.current === rawView) externalView.current = null;
+			return;
+		}
+		if (search.zobrazeni === rawView) return;
+		void navigate({
+			to: "/ukoly",
+			search: (current) => ({ ...current, zobrazeni: rawView }),
+			replace: true,
+		});
+	}, [navigate, projektId, rawView, search.zobrazeni]);
+	const updateCalendarNavigation = useCallback(
+		(next: { range: "day" | "week" | "month"; date: string }) => {
+			void navigate({
+				to: "/ukoly",
+				search: (current) => ({
+					...current,
+					zobrazeni: "calendar",
+					rozsah: next.range,
+					datum: next.date,
+				}),
+				replace: true,
+			});
+		},
+		[navigate],
+	);
 	// Globální „Vše": kalendář není pohled (fallback na seznam). Projekt: všechny 3 pohledy.
 	const view = projektId ? rawView : rawView === "calendar" ? "list" : rawView;
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
@@ -58,7 +97,7 @@ export function VseTab() {
 
 	// Výkon: bez „Dokončené" filtruj hotové rovnou v SQL (méně řádků přes WASM bridge na každou změnu).
 	// NOT_MEETING — pracovní seznam úkolů; porady mají modul Meets + kalendář
-	const { data: allTasks } = usePsQuery<TaskRow>(
+	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		tb.showDone
 			? `SELECT * FROM tasks WHERE ${NOT_MEETING} ORDER BY priority, due_date IS NULL, due_date`
 			: `SELECT * FROM tasks WHERE completed_at IS NULL AND ${NOT_MEETING} ORDER BY priority, due_date IS NULL, due_date`,
@@ -93,24 +132,56 @@ export function VseTab() {
 	const groups = useMemo(() => {
 		const m = new Map<string, TaskRow[]>();
 		for (const tk of shown) {
-			const k = tk.project_id ?? "—";
+			const k =
+				tb.groupBy === "none"
+					? "__all__"
+					: tb.groupBy === "priority"
+						? `p${tk.priority ?? 4}`
+						: tb.groupBy === "status"
+							? `s:${tbCtx.statusKeyOf(tk)}`
+							: (tk.project_id ?? "—");
 			const arr = m.get(k);
 			if (arr) arr.push(tk);
 			else m.set(k, [tk]);
 		}
 		// Stabilní pořadí sekcí = pořadí projektů, ne pořadí seřazených úkolů (prototyp ř. 3040).
-		const order = new Map(projects.map((p, i) => [p.id, i] as const));
+		const projectOrder = new Map(projects.map((p, i) => [p.id, i] as const));
+		const statusOrder = new Map(
+			["probiha", "kontrola", "", "hotovo"].map((key, i) => [`s:${key}`, i]),
+		);
+		const rank = (key: string) =>
+			tb.groupBy === "priority"
+				? Number(key.slice(1))
+				: tb.groupBy === "status"
+					? (statusOrder.get(key) ?? 99)
+					: (projectOrder.get(key) ?? 999);
 		return (
 			[...m.entries()]
-				.sort(([a], [b]) => (order.get(a) ?? 999) - (order.get(b) ?? 999))
+				.sort(([a], [b]) => rank(a) - rank(b))
 				// total = počet aktuálně zobrazených položek sekce (respektuje Dokončené/filtry/hledání),
 				// ať číslo v hlavičce sedí s vypsanými řádky (dřív se počítalo z nefiltrovaného základu).
 				.map(([pid, list]) => ({ pid, list, total: list.length }))
 		);
-	}, [shown, projects]);
+	}, [shown, projects, tb.groupBy, tbCtx]);
 
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 	const projName = (id: string) => projMap.get(id)?.name ?? "—";
+	const groupName = (key: string) => {
+		if (tb.groupBy === "priority") return `P${key.slice(1)}`;
+		if (tb.groupBy === "status") {
+			const status = key.slice(2);
+			return t(
+				status === "probiha"
+					? "toolbar.stProbiha"
+					: status === "kontrola"
+						? "toolbar.stKontrola"
+						: status === "hotovo"
+							? "toolbar.stHotovo"
+							: "toolbar.stNezahajeno",
+			);
+		}
+		return projName(key);
+	};
 	const activeProject = projektId ? projMap.get(projektId) : undefined;
 
 	// Výkon: „Úkoly" je jediná obrazovka renderující VŠECHNY otevřené úkoly najednou. Nad prahem
@@ -120,6 +191,7 @@ export function VseTab() {
 	const [showAllRows, setShowAllRows] = useState(false);
 	// „Zobrazit vše" nesmí přežít přechod mezi projekty — jinak by cap znovu nezabral (perf regrese).
 	useEffect(() => {
+		void projektId;
 		setShowAllRows(false);
 	}, [projektId]);
 	const capped = !showAllRows && shown.length > CAP;
@@ -148,8 +220,8 @@ export function VseTab() {
 	// (capped) seznam = přesně to, co je vykreslené v DOM, aby j/k a Space/⌫ nemířily
 	// na neviditelné řádky nad capem.
 	const visualList = useMemo(
-		() => (projektId ? shownCapped : groupsCapped.flatMap((g) => g.list)),
-		[projektId, shownCapped, groupsCapped],
+		() => (projektId || tb.groupBy === "none" ? shownCapped : groupsCapped.flatMap((g) => g.list)),
+		[projektId, tb.groupBy, shownCapped, groupsCapped],
 	);
 	const { setNavIds } = useTaskDetail();
 	useEffect(() => {
@@ -192,10 +264,25 @@ export function VseTab() {
 				</div>
 			)}
 
-			{view !== "calendar" && <TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />}
+			{view !== "calendar" && (
+				<TasksToolbar
+					state={tb}
+					onChange={setTb}
+					ctx={tbCtx}
+					allowGrouping={view === "list" && !projektId}
+					showSavedViews={!projektId}
+				/>
+			)}
 
-			{view === "calendar" ? (
-				<Calendar tasks={scoped} />
+			{projectsLoading || tasksLoading ? (
+				<DataLoading />
+			) : view === "calendar" ? (
+				<Calendar
+					tasks={scoped}
+					range={search.rozsah}
+					anchorDate={search.datum}
+					onNavigationChange={updateCalendarNavigation}
+				/>
 			) : view === "board" ? (
 				// Cap platí i pro Nástěnku (jinak by velký workspace vykreslil desetitisíce karet);
 				// projectId → „+ Přidat" ve sloupci zakládá do filtrovaného projektu, ne do Schránky.
@@ -222,14 +309,26 @@ export function VseTab() {
 								</button>
 							</div>
 						) : (
-							<p
-								className="text-center font-body text-ink-3"
-								style={{ padding: "80px 20px", fontSize: 13.5 }}
-							>
-								{t("today.emptyClean")}
-							</p>
+							<div className="text-center" style={{ padding: "80px 20px" }}>
+								<p className="font-body text-ink-3" style={{ fontSize: 13.5 }}>
+									{t("today.emptyClean")}
+								</p>
+								<button
+									type="button"
+									onClick={() => openAdd()}
+									className="mt-3 rounded-[9px] font-display font-bold text-white hover:brightness-105"
+									style={{
+										minHeight: 44,
+										background: "var(--w-brass)",
+										padding: "8px 14px",
+										fontSize: 12.5,
+									}}
+								>
+									+ {t("today.addTask")}
+								</button>
+							</div>
 						))}
-					{projektId ? (
+					{projektId || tb.groupBy === "none" ? (
 						<ul>
 							{shownCapped.map((tk) => (
 								<KbRow key={tk.id} selected={kbSel === tk.id}>
@@ -249,7 +348,7 @@ export function VseTab() {
 									style={{ margin: "18px 0 2px", padding: "0 4px" }}
 								>
 									<span className="font-display font-bold text-ink" style={{ fontSize: 13 }}>
-										{projName(pid)}
+										{groupName(pid)}
 									</span>
 									<span className="font-mono text-ink-3" style={{ fontSize: 11.5 }}>
 										{total}
@@ -288,13 +387,13 @@ export function VseTab() {
 /** Obal řádku se zvýrazněním klávesového výběru (kbSel ring). */
 function KbRow({ selected, children }: { selected: boolean; children: ReactNode }) {
 	return (
-		<div
+		<li
 			data-kbsel={selected || undefined}
 			className="rounded-xl"
 			style={selected ? { outline: "2px solid var(--w-brass)", outlineOffset: -1 } : undefined}
 		>
 			{children}
-		</div>
+		</li>
 	);
 }
 
@@ -306,12 +405,12 @@ function KbRow({ selected, children }: { selected: boolean; children: ReactNode 
  */
 export function ZasobnikTab() {
 	const { t } = useTranslation();
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const flowSteps = useFlowSteps();
 	const { setNavIds } = useTaskDetail();
 	const { q: searchQ } = useListSearch();
 
-	const { data: allTasks } = usePsQuery<TaskRow>(
+	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		`SELECT * FROM tasks WHERE due_date IS NULL AND completed_at IS NULL AND ${NOT_MEETING} ORDER BY priority, created_at`,
 	);
 
@@ -363,7 +462,9 @@ export function ZasobnikTab() {
 			<p className="font-body text-ink-3" style={{ padding: "6px 4px 10px", fontSize: 12.5 }}>
 				{t("zasobnik.intro")}
 			</p>
-			{shown.length === 0 ? (
+			{projectsLoading || tasksLoading ? (
+				<DataLoading />
+			) : shown.length === 0 ? (
 				<p
 					className="text-center font-body text-ink-3"
 					style={{ padding: "80px 20px", fontSize: 13.5 }}
@@ -386,7 +487,7 @@ export function ZasobnikTab() {
 						</div>
 						<ul>
 							{list.map((tk) => (
-								<div key={tk.id} className="flex items-center" style={{ gap: 8 }}>
+								<li key={tk.id} className="flex items-center" style={{ gap: 8 }}>
 									<div
 										data-kbsel={kbSel === tk.id || undefined}
 										className="min-w-0 flex-1 rounded-xl"
@@ -408,7 +509,7 @@ export function ZasobnikTab() {
 											onPick={(iso) => void schedule(tk, iso)}
 										/>
 									</div>
-								</div>
+								</li>
 							))}
 						</ul>
 					</section>

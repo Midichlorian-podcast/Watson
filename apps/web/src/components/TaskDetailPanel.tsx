@@ -1,34 +1,125 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import { useAddTask } from "../lib/addTask";
 import { API_URL } from "../lib/api";
+import {
+	ATTACHMENT_MAX_BYTES,
+	ATTACHMENT_MAX_SELECTION,
+	attachmentContentUrl,
+	attachmentSizeLabel,
+	deleteAttachment,
+	finalizeAttachment,
+	isAttachmentPreviewable,
+	rememberAttachmentFinalization,
+	stageAttachment,
+} from "../lib/attachments";
 import { useSession } from "../lib/auth-client";
 import { USER_COLORS } from "../lib/colors";
+import { focusOnMount } from "../lib/focusOnMount";
 import { initials } from "../lib/format";
+import {
+	type OccurrenceOverrideRow,
+	prefixContainsOccurrence,
+	projectOccurrence,
+	projectPrefixOccurrence,
+	recurrenceBaseDate,
+} from "../lib/occurrenceProjection";
 import { parseOccId, recurrenceKind } from "../lib/occurrences";
+import type {
+	AttachmentRow,
+	TaskRecurrencePrefixRow,
+	TaskRow,
+} from "../lib/powersync/AppSchema";
 import { rescheduleDate } from "../lib/reschedule";
-import type { TaskRow } from "../lib/powersync/AppSchema";
+import { CommentComposer } from "./CommentComposer";
 
-/** Řádek historie z API /api/tasks/:id/activity (task_activity se nesyncuje). */
-type ActivityEntry = {
+const CustomFieldsSection = lazy(() =>
+	import("./CustomFieldsSection").then((module) => ({ default: module.CustomFieldsSection })),
+);
+const PollsSection = lazy(() =>
+	import("./PollsSection").then((module) => ({ default: module.PollsSection })),
+);
+const TaskAcceptanceSection = lazy(() => import("./TaskAcceptanceSection"));
+
+type TimelineKind =
+	| "task_created"
+	| "task_imported"
+	| "task_updated"
+	| "task_rescheduled"
+	| "task_completed"
+	| "task_reopened"
+	| "task_deleted"
+	| "task_restored"
+	| "comment_added"
+	| "comment_updated"
+	| "comment_deleted"
+	| "decision_marked"
+	| "decision_unmarked"
+	| "assignment_added"
+	| "assignment_updated"
+	| "assignment_removed"
+	| "acceptance_requested"
+	| "acceptance_accepted"
+	| "acceptance_declined"
+	| "acceptance_cancelled"
+	| "reminder_added"
+	| "reminder_updated"
+	| "reminder_removed"
+	| "attachment_added"
+	| "attachment_removed"
+	| "custom_field_updated"
+	| "poll_created"
+	| "poll_updated"
+	| "poll_closed"
+	| "poll_reopened"
+	| "poll_deleted"
+	| "poll_response_updated"
+	| "dependency_added"
+	| "dependency_removed"
+	| "occurrence_updated"
+	| "availability_override"
+	| "meeting_updated"
+	| "integration_created";
+type TimelineEvent = {
 	id: string;
-	field: string | null;
-	old_value: string | null;
-	new_value: string | null;
-	user_id: string | null;
-	created_at: string | null;
-	user_name?: string | null;
+	source: "audit" | "legacy";
+	kind: TimelineKind;
+	actorType: "user" | "ai" | "system";
+	actorUserId: string | null;
+	actorName: string | null;
+	createdAt: string;
+	changedFields: string[];
+	changes: { field: string; oldValue?: string | null; newValue?: string | null }[];
+	commentId?: string;
+	excerpt?: string;
+	relatedTaskId?: string;
+	relatedUserId?: string;
+	direction?: "blocked_by" | "blocks";
 };
+type TimelinePage = { events: TimelineEvent[]; nextCursor: string | null };
+type TimelineFilter = "all" | "changes" | "decisions";
+
+import { logTaskActivity } from "../lib/activity";
+import { copyDeepLink } from "../lib/deepLink";
+import { wouldCreateDependencyCycle } from "../lib/dependencies";
 import { powerSync } from "../lib/powersync/db";
-import { enablePush, notificationPermission } from "../lib/push";
 import { useProject } from "../lib/projects";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { enablePush, notificationPermission } from "../lib/push";
+import {
+	hasEquivalentReminder,
+	type ReminderCandidate,
+	reminderCandidateFireAt,
+	reminderCandidateKey,
+	reminderFireAt,
+	sortReminders,
+} from "../lib/reminders";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
+import { taskProgress } from "../lib/taskProgress";
 import {
 	occLabel,
 	rowDue,
@@ -37,14 +128,72 @@ import {
 	toggleAssignmentDone,
 	toggleTask,
 } from "../lib/tasks";
+import {
+	dateInTimeZone,
+	deviceTimeZone,
+	wallTimeFromInstant,
+	zonedDateTimeToIso,
+} from "../lib/timeZone";
 import { showToast } from "../lib/toast";
-import { logTaskActivity } from "../lib/activity";
 import { deleteTaskWithUndo } from "../lib/undo";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
+import { WHY_NOW_MAX_LENGTH, type WhyNowSignal, whyNowSignals } from "../lib/whyNow";
 import { useOpenMailThread } from "../mail/state";
 
 type Pri = 1 | 2 | 3 | 4;
-type Member = { id: string; name: string; email: string; image: string | null };
+type Member = {
+	id: string;
+	name: string;
+	email: string;
+	image: string | null;
+	role: "commenter" | "editor" | "manager";
+};
 type AssignMode = "single" | "shared_any" | "shared_all";
+type CommentEntry = {
+	id: string;
+	body: string | null;
+	parent_id: string | null;
+	author_id: string | null;
+	created_at: string | null;
+};
+const COMMENT_REACTIONS = ["👍", "❤️", "🎉", "👀"] as const;
+
+function commentBody(
+	body: string,
+	mentionUserIds: string[],
+	members: Member[],
+): ReactNode[] {
+	const tokens = mentionUserIds
+		.map((id) => members.find((member) => member.id === id))
+		.filter((member): member is Member => Boolean(member))
+		.map((member) => `@${member.name}`)
+		.sort((left, right) => right.length - left.length);
+	if (tokens.length === 0) return [body];
+	const output: ReactNode[] = [];
+	let cursor = 0;
+	let key = 0;
+	while (cursor < body.length) {
+		let next: { at: number; token: string } | null = null;
+		for (const token of tokens) {
+			const at = body.indexOf(token, cursor);
+			if (at >= 0 && (!next || at < next.at || (at === next.at && token.length > next.token.length))) {
+				next = { at, token };
+			}
+		}
+		if (!next) {
+			output.push(body.slice(cursor));
+			break;
+		}
+		if (next.at > cursor) output.push(body.slice(cursor, next.at));
+		output.push(
+			<span key={`mention-${key++}`} className="font-semibold text-brass-text">
+				{next.token}
+			</span>,
+		);
+		cursor = next.at + next.token.length;
+	}
+	return output;
+}
 
 /** Relativní čas komentáře („dnes 8:05" / „12. 6."). */
 function whenLabel(iso: string | null, t: (k: string) => string) {
@@ -60,26 +209,94 @@ function whenLabel(iso: string | null, t: (k: string) => string) {
 const ACT_FIELD_KEY: Record<string, string> = {
 	name: "detail.actName",
 	description: "detail.actDesc",
+	why_now: "detail.actWhyNow",
 	due_date: "detail.actDue",
 	start_date: "detail.actTime",
+	start_timezone: "detail.actTime",
 	duration_min: "detail.actTime",
+	days: "detail.actDuration",
 	deadline: "detail.actDeadline",
 	priority: "detail.actPriority",
+	color: "detail.actColor",
+	recurrence: "detail.actRecurrence",
+	recurrence_rule: "detail.actRecurrence",
 	assignment_mode: "detail.actAssign",
 	status_id: "detail.actStatus",
 	project_id: "detail.actProject",
+	parent_id: "detail.actParent",
 	completed: "detail.actCompleted",
+	completed_at: "detail.actCompleted",
 	created: "detail.actCreated",
 };
 function actFieldLabel(field: string, t: (k: string) => string) {
 	return t(ACT_FIELD_KEY[field] ?? "detail.actField");
 }
+
+const TIMELINE_KIND_KEY: Record<TimelineKind, string> = {
+	task_created: "detail.timelineTaskCreated",
+	task_imported: "detail.timelineTaskImported",
+	task_updated: "detail.timelineTaskUpdated",
+	task_rescheduled: "detail.timelineTaskRescheduled",
+	task_completed: "detail.actMarkedDone",
+	task_reopened: "detail.actMarkedUndone",
+	task_deleted: "detail.timelineTaskDeleted",
+	task_restored: "detail.timelineTaskRestored",
+	comment_added: "detail.timelineCommentAdded",
+	comment_updated: "detail.timelineCommentUpdated",
+	comment_deleted: "detail.timelineCommentDeleted",
+	decision_marked: "detail.actMarkedDecision",
+	decision_unmarked: "detail.actUnmarkedDecision",
+	assignment_added: "detail.timelineAssignmentAdded",
+	assignment_updated: "detail.timelineAssignmentUpdated",
+	assignment_removed: "detail.timelineAssignmentRemoved",
+	acceptance_requested: "detail.timelineAcceptanceRequested",
+	acceptance_accepted: "detail.timelineAcceptanceAccepted",
+	acceptance_declined: "detail.timelineAcceptanceDeclined",
+	acceptance_cancelled: "detail.timelineAcceptanceCancelled",
+	reminder_added: "detail.timelineReminderAdded",
+	reminder_updated: "detail.timelineReminderUpdated",
+	reminder_removed: "detail.timelineReminderRemoved",
+	attachment_added: "detail.timelineAttachmentAdded",
+	attachment_removed: "detail.timelineAttachmentRemoved",
+	custom_field_updated: "detail.timelineCustomFieldUpdated",
+	poll_created: "detail.timelinePollCreated",
+	poll_updated: "detail.timelinePollUpdated",
+	poll_closed: "detail.timelinePollClosed",
+	poll_reopened: "detail.timelinePollReopened",
+	poll_deleted: "detail.timelinePollDeleted",
+	poll_response_updated: "detail.timelinePollResponseUpdated",
+	dependency_added: "detail.timelineDependencyAdded",
+	dependency_removed: "detail.timelineDependencyRemoved",
+	occurrence_updated: "detail.timelineOccurrenceUpdated",
+	availability_override: "detail.timelineAvailabilityOverride",
+	meeting_updated: "detail.timelineMeetingUpdated",
+	integration_created: "detail.timelineIntegrationCreated",
+};
+
+const isDecisionTimelineEvent = (event: TimelineEvent) => event.kind.startsWith("decision_");
+const isChangeTimelineEvent = (event: TimelineEvent) =>
+	!event.kind.startsWith("comment_") && !event.kind.startsWith("decision_");
+
+const WHY_NOW_SIGNAL_KEY: Record<WhyNowSignal, string> = {
+	due_overdue: "detail.whyNowDueOverdue",
+	due_today: "detail.whyNowDueToday",
+	deadline_overdue: "detail.whyNowDeadlineOverdue",
+	deadline_today: "detail.whyNowDeadlineToday",
+	deadline_soon: "detail.whyNowDeadlineSoon",
+	starts_today: "detail.whyNowStartsToday",
+	priority_one: "detail.whyNowPriorityOne",
+};
 /** Lidsky čitelná hodnota pole pro log (priorita → P2, datum → 8.7. 14:00…). */
 function fmtActVal(field: string, val: unknown): string | null {
 	if (val == null || val === "") return null;
 	if (field === "priority") return `P${val}`;
 	if (field === "duration_min") return `${val} min`;
-	if (field === "due_date" || field === "start_date" || field === "deadline") {
+	if (field === "due_date" || field === "deadline") {
+		const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(val));
+		if (dateOnly) return `${Number(dateOnly[3])}. ${Number(dateOnly[2])}.`;
+		return String(val);
+	}
+	if (field === "start_date") {
 		const d = new Date(String(val));
 		if (Number.isNaN(d.getTime())) return String(val);
 		const date = `${d.getDate()}. ${d.getMonth() + 1}.`;
@@ -90,6 +307,16 @@ function fmtActVal(field: string, val: unknown): string | null {
 		return date + hm;
 	}
 	return String(val);
+}
+
+function fmtTimelineActVal(field: string, val: unknown, t: (key: string) => string): string | null {
+	if (
+		field === "assignment_mode" &&
+		(val === "single" || val === "shared_any" || val === "shared_all")
+	) {
+		return t(`assignment.${val}`);
+	}
+	return fmtActVal(field, val);
 }
 
 /** Patch sloupců úkolu lokálně (PowerSync upload → generický write-path). */
@@ -112,6 +339,50 @@ function SectionLabel({ children }: { children: ReactNode }) {
 		>
 			{children}
 		</div>
+	);
+}
+
+/** CSP záměrně nepovoluje cizí image origin. Obsah proto načteme autorizovaně a
+ * obrázek zobrazíme jen z krátkodobého device-local blob URL. */
+function AttachmentImagePreview({ path }: { path: string }) {
+	const [blobUrl, setBlobUrl] = useState<string | null>(null);
+	const [failed, setFailed] = useState(false);
+	useEffect(() => {
+		let active = true;
+		let localUrl: string | null = null;
+		setBlobUrl(null);
+		setFailed(false);
+		void fetch(attachmentContentUrl(path), { credentials: "include" })
+			.then((response) => {
+				if (!response.ok) throw new Error("attachment_preview");
+				return response.blob();
+			})
+			.then((blob) => {
+				if (!active) return;
+				localUrl = URL.createObjectURL(blob);
+				setBlobUrl(localUrl);
+			})
+			.catch(() => {
+				if (active) setFailed(true);
+			});
+		return () => {
+			active = false;
+			if (localUrl) URL.revokeObjectURL(localUrl);
+		};
+	}, [path]);
+	if (!blobUrl || failed) {
+		return (
+			<span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-line bg-card font-display font-bold text-ink-3 text-[10px]">
+				{failed ? "IMG" : "…"}
+			</span>
+		);
+	}
+	return (
+		<img
+			src={blobUrl}
+			alt=""
+			className="h-12 w-12 shrink-0 rounded-lg border border-line bg-card object-cover"
+		/>
 	);
 }
 
@@ -141,26 +412,30 @@ function BrassCheck({
 				e.stopPropagation();
 				onClick();
 			}}
-			className="grid shrink-0 place-items-center hover:border-brass"
-			style={{
-				width: size,
-				height: size,
-				borderRadius: round ? "50%" : 5,
-				border: done ? "none" : "2px solid var(--w-line)",
-				background: done ? "var(--w-brass)" : "transparent",
-			}}
+			className="grid h-11 w-11 shrink-0 place-items-center rounded-lg"
 		>
-			{done && (
-				<svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden>
-					<path
-						d="M2 5.7 L4.3 8 L9 2.7"
-						stroke="#fff"
-						strokeWidth="1.7"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					/>
-				</svg>
-			)}
+			<span
+				className="grid place-items-center hover:border-brass"
+				style={{
+					width: size,
+					height: size,
+					borderRadius: round ? "50%" : 5,
+					border: done ? "none" : "2px solid var(--w-line)",
+					background: done ? "var(--w-brass)" : "transparent",
+				}}
+			>
+				{done && (
+					<svg width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden>
+						<path
+							d="M2 5.7 L4.3 8 L9 2.7"
+							stroke="#fff"
+							strokeWidth="1.7"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					</svg>
+				)}
+			</span>
 		</button>
 	);
 }
@@ -186,15 +461,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	// Výskyt řady: virtuální id `base@ISO` → base úkol + banner + per-výskyt akce.
 	const occ = parseOccId(id);
 	const realId = occ?.taskId ?? id;
+	const [histOpen, setHistOpen] = useState(false);
+	const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
 
-	// Esc zavře detail (jen když nad ním není vyšší vrstva); ↑/↓ (j/k) přepíná úkoly.
+	// ↑/↓ (j/k) přepíná úkoly. Escape zpracovává sdílená overlay vrstva.
 	useEffect(() => {
 		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") {
-				if (document.querySelector("[data-esc-layer]")) return;
-				onClose();
-				return;
-			}
 			const el = document.activeElement as HTMLElement | null;
 			const typing =
 				!!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
@@ -215,12 +487,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-	}, [onClose, navIds, id, open]);
+	}, [navIds, id, open]);
 
 	const { data: rows } = usePsQuery<TaskRow>("SELECT * FROM tasks WHERE id = ? LIMIT 1", [realId]);
 	const task = rows?.[0];
 	// Přístupnost: uzamkni fokus do modalu, dokud je otevřený; vrať fokus po zavření.
-	const trapRef = useFocusTrap<HTMLDivElement>(!!task);
+	const trapRef = useOverlayLayer<HTMLDivElement>(!!task, onClose);
 	// R6 — vlastní barva úkolu (per-user overlay; syncuje se jen moje barva).
 	const { data: colorRows } = usePsQuery<{ id: string; color: string | null }>(
 		"SELECT id, color FROM task_user_colors WHERE task_id = ? LIMIT 1",
@@ -267,14 +539,33 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const depth = depthRows?.[0]?.depth ?? 1;
 
 	const project = useProject(task?.project_id ?? undefined);
-	const { data: comments } = usePsQuery<{
+	const { data: comments } = usePsQuery<CommentEntry>(
+		"SELECT id, body, parent_id, author_id, created_at FROM comments WHERE task_id = ? ORDER BY created_at",
+		[realId],
+	);
+	const { data: attachments } = usePsQuery<AttachmentRow>(
+		"SELECT * FROM attachments WHERE task_id = ? ORDER BY created_at, id",
+		[realId],
+	);
+	const { data: commentDecisions } = usePsQuery<{
 		id: string;
-		body: string | null;
-		author_id: string | null;
+		comment_id: string;
+		marked_by: string | null;
 		created_at: string | null;
-	}>("SELECT id, body, author_id, created_at FROM comments WHERE task_id = ? ORDER BY created_at", [
-		realId,
-	]);
+	}>(
+		"SELECT id, comment_id, marked_by, created_at FROM comment_decisions WHERE task_id = ? ORDER BY created_at",
+		[realId],
+	);
+	const { data: commentMentions } = usePsQuery<{
+		comment_id: string;
+		user_id: string;
+	}>("SELECT comment_id, user_id FROM mentions WHERE task_id = ?", [realId]);
+	const { data: commentReactions } = usePsQuery<{
+		id: string;
+		comment_id: string;
+		user_id: string;
+		emoji: string;
+	}>("SELECT id, comment_id, user_id, emoji FROM comment_reactions WHERE task_id = ?", [realId]);
 	const { data: assignRows } = usePsQuery<{
 		id: string;
 		user_id: string | null;
@@ -290,17 +581,71 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		"SELECT id, type, remind_at, offset_min, channel FROM reminders WHERE task_id = ? AND user_id = ? ORDER BY created_at",
 		[realId, session?.user?.id ?? ""],
 	);
-	// Historie úprav (audit log) — čte se z API (task_activity je insert-only, nesyncuje se).
-	const { data: activity } = useQuery({
-		queryKey: ["taskActivity", realId],
-		enabled: !!realId,
+	const [reminderBusyKey, setReminderBusyKey] = useState<string | null>(null);
+	const [reminderChannel, setReminderChannel] = useState<"push" | "email">("push");
+	const reminderCapabilities = useQuery({
+		queryKey: ["reminder-capabilities", session?.user?.id],
+		enabled: Boolean(session?.user?.id),
+		staleTime: 60_000,
 		queryFn: async () => {
-			const r = await fetch(`${API_URL}/api/tasks/${realId}/activity`, {
+			const response = await fetch(`${API_URL}/api/reminders/capabilities`, {
 				credentials: "include",
 			});
-			if (!r.ok) return [] as ActivityEntry[];
-			return ((await r.json()).activity ?? []) as ActivityEntry[];
+			if (!response.ok) throw new Error("reminder_capabilities_failed");
+			return (await response.json()) as {
+				push: { enabled: boolean };
+				email: { enabled: boolean; reason: string | null };
+			};
 		},
+	});
+	const [attachmentBusy, setAttachmentBusy] = useState(false);
+	const [attachmentDeleteConfirm, setAttachmentDeleteConfirm] = useState<string | null>(null);
+	const { data: incomingDependencies } = usePsQuery<{
+		id: string;
+		task_id: string;
+		name: string | null;
+		completed_at: string | null;
+	}>(
+		`SELECT d.id, blocker.id AS task_id, blocker.name, blocker.completed_at
+		 FROM task_dependencies d JOIN tasks blocker ON blocker.id = d.blocking_task_id
+		 WHERE d.blocked_task_id = ? ORDER BY blocker.completed_at IS NOT NULL, blocker.name`,
+		[realId],
+	);
+	const { data: outgoingDependencies } = usePsQuery<{
+		id: string;
+		task_id: string;
+		name: string | null;
+		completed_at: string | null;
+	}>(
+		`SELECT d.id, blocked.id AS task_id, blocked.name, blocked.completed_at
+		 FROM task_dependencies d JOIN tasks blocked ON blocked.id = d.blocked_task_id
+		 WHERE d.blocking_task_id = ? ORDER BY blocked.completed_at IS NOT NULL, blocked.name`,
+		[realId],
+	);
+	const { data: dependencyCandidates } = usePsQuery<{
+		id: string;
+		name: string | null;
+		completed_at: string | null;
+	}>(
+		"SELECT id, name, completed_at FROM tasks WHERE project_id = ? AND id <> ? AND kind = 'task' ORDER BY completed_at IS NOT NULL, name LIMIT 500",
+		[task?.project_id ?? "", realId],
+	);
+	// Jedna autoritativní časová osa: audit_events + deduplikovaná legacy historie.
+	const timelineQuery = useInfiniteQuery({
+		queryKey: ["taskTimeline", realId],
+		enabled: !!realId,
+		initialPageParam: null as string | null,
+		queryFn: async ({ pageParam }): Promise<TimelinePage> => {
+			const params = new URLSearchParams({ limit: "50" });
+			if (pageParam) params.set("cursor", pageParam);
+			const response = await fetch(`${API_URL}/api/tasks/${realId}/timeline?${params}`, {
+				credentials: "include",
+			});
+			if (!response.ok) throw new Error("task_timeline");
+			return (await response.json()) as TimelinePage;
+		},
+		getNextPageParam: (page) => page.nextCursor ?? undefined,
+		refetchInterval: histOpen ? 5_000 : false,
 	});
 	const { data: statusRows } = usePsQuery<{
 		name: string | null;
@@ -310,15 +655,31 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		"SELECT s.name, s.is_done, s.position FROM statuses s JOIN tasks tk ON tk.status_id = s.id WHERE tk.id = ? LIMIT 1",
 		[realId],
 	);
-	const { data: occRows } = usePsQuery<{
-		id: string;
-		done: number | null;
-		skipped: number | null;
-	}>(
-		"SELECT id, done, skipped FROM task_occurrence_overrides WHERE task_id = ? AND occ_date = ? LIMIT 1",
-		[realId, occ?.iso ?? ""],
+	const occurrenceIdentityDate =
+		occ?.iso ?? (task?.recurrence_rule ? recurrenceBaseDate(task) : null);
+	const { data: occRows } = usePsQuery<OccurrenceOverrideRow>(
+		`SELECT id, task_id, occ_date, done, skipped, override_due_date,
+		        override_start_date, override_start_timezone, override_duration_min, updated_at
+		 FROM task_occurrence_overrides WHERE task_id = ? AND occ_date = ? LIMIT 1`,
+		[realId, occurrenceIdentityDate ?? ""],
 	);
-	const occOverride = occ ? occRows?.[0] : undefined;
+	const occOverride = occurrenceIdentityDate ? occRows?.[0] : undefined;
+	const { data: prefixRows } = usePsQuery<TaskRecurrencePrefixRow>(
+		`SELECT id, task_id, project_id, anchor_date, end_date, recurrence_rule,
+		        start_date, start_timezone, duration_min, created_by, version, created_at, updated_at
+		 FROM task_recurrence_prefixes WHERE task_id = ? ORDER BY anchor_date`,
+		[realId],
+	);
+	const occurrencePrefix =
+		occurrenceIdentityDate && occ
+			? prefixRows?.find((prefix) => prefixContainsOccurrence(prefix, occurrenceIdentityDate))
+			: undefined;
+	const presentedTask =
+		task && occurrenceIdentityDate
+			? occurrencePrefix
+				? projectPrefixOccurrence(task, occurrencePrefix, occurrenceIdentityDate, occOverride)
+				: projectOccurrence(task, occurrenceIdentityDate, occOverride, Boolean(occ))
+			: task;
 
 	/** Popisek offsetu připomínky (10 min / 1 h / 1 den). */
 	const fmtOffset = (min: number) =>
@@ -328,31 +689,144 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 				? `${min / 60} ${t("quickadd.unitHour")}`
 				: `${min} ${t("quickadd.unitMin")}`;
 
-	const addReminder = async (opts: {
-		type: "relative" | "time";
-		offsetMin?: number;
-		remindAt?: string;
-	}) => {
+	const reminderTiming = {
+		startDate: task?.start_date ?? null,
+		dueDate: task?.due_date ?? null,
+	};
+	const channelAvailable =
+		reminderChannel === "push"
+			? reminderCapabilities.data?.push.enabled === true
+			: reminderCapabilities.data?.email.enabled === true;
+	useEffect(() => {
+		if (
+			reminderCapabilities.data &&
+			!reminderCapabilities.data.push.enabled &&
+			reminderCapabilities.data.email.enabled
+		) {
+			setReminderChannel("email");
+		}
+	}, [reminderCapabilities.data]);
+	const orderedReminders = sortReminders(reminders ?? [], reminderTiming);
+	const relativeBase = task?.start_date ? "start" : task?.due_date ? "due" : null;
+	const relativeLabel = (offsetMin: number) => {
+		if (offsetMin === 0) {
+			return t(relativeBase === "start" ? "detail.remAtStart" : "detail.remAtDue");
+		}
+		return `${fmtOffset(offsetMin)} ${t(
+			relativeBase === "start" ? "detail.remBeforeStart" : "detail.remBeforeDue",
+		)}`;
+	};
+	const reminderDateLabel = (reminder: (typeof orderedReminders)[number]) => {
+		const timestamp = reminderFireAt(reminder, reminderTiming);
+		if (timestamp == null) return null;
+		return new Intl.DateTimeFormat(i18n.language, {
+			dateStyle: "medium",
+			timeStyle: "short",
+		}).format(timestamp);
+	};
+
+	const addReminder = async (candidate: ReminderCandidate) => {
 		if (!task) return;
 		const uid = session?.user?.id;
 		if (!uid) return;
-		await powerSync.execute(
-			"INSERT INTO reminders (id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, 'push', ?)",
-			[
-				realId,
-				task.project_id,
-				uid,
-				opts.type,
-				opts.remindAt ?? null,
-				opts.offsetMin ?? null,
-				new Date().toISOString(),
-			],
+		const candidateFireAt = reminderCandidateFireAt(candidate, reminderTiming);
+		if (candidateFireAt == null || candidateFireAt <= Date.now()) {
+			showToast(t("detail.remPast"));
+			return;
+		}
+		const sameChannelReminders = (reminders ?? []).filter(
+			(reminder) => reminder.channel === reminderChannel,
 		);
-		void enablePush(); // vyžádá povolení notifikací v momentě záměru
+		if (hasEquivalentReminder(sameChannelReminders, candidate)) {
+			showToast(t("detail.remDuplicate"));
+			return;
+		}
+		const busyKey = `${reminderChannel}:${reminderCandidateKey(candidate)}`;
+		if (reminderBusyKey === busyKey) return;
+		setReminderBusyKey(busyKey);
+		try {
+			await powerSync.execute(
+				"INSERT INTO reminders (id, task_id, project_id, user_id, type, remind_at, offset_min, channel, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?)",
+				[
+					realId,
+					task.project_id,
+					uid,
+					candidate.type,
+					candidate.type === "time" ? candidate.remindAt : null,
+					candidate.type === "relative" ? candidate.offsetMin : null,
+					reminderChannel,
+					new Date().toISOString(),
+				],
+			);
+			showToast(t("detail.remAdded"));
+			if (reminderChannel === "push") void enablePush(); // vyžádá povolení v momentě záměru
+		} catch {
+			showToast(t("detail.remAddFailed"));
+		} finally {
+			setReminderBusyKey(null);
+		}
 	};
 
-	const removeReminder = (rid: string) =>
-		powerSync.execute("DELETE FROM reminders WHERE id = ?", [rid]);
+	const removeReminder = async (rid: string) => {
+		try {
+			await powerSync.execute("DELETE FROM reminders WHERE id = ?", [rid]);
+			showToast(t("detail.remRemoved"));
+		} catch {
+			showToast(t("detail.remRemoveFailed"));
+		}
+	};
+
+	const uploadTaskAttachments = async (selected: File[]) => {
+		if (!task || attachmentBusy || selected.length === 0) return;
+		if (!navigator.onLine) {
+			showToast(t("detail.attachmentOffline"));
+			return;
+		}
+		const valid = selected
+			.filter((file) => file.size > 0 && file.size <= ATTACHMENT_MAX_BYTES)
+			.slice(0, ATTACHMENT_MAX_SELECTION);
+		if (valid.length !== selected.length) showToast(t("detail.attachmentInvalidSize"));
+		if (valid.length === 0) return;
+		setAttachmentBusy(true);
+		let completed = 0;
+		try {
+			for (const file of valid) {
+				const staged = await stageAttachment(realId, task.project_id ?? "", file);
+				try {
+					await finalizeAttachment(staged.stageId);
+					completed += 1;
+				} catch {
+					await rememberAttachmentFinalization(staged.stageId, realId);
+					completed += 1;
+				}
+			}
+			showToast(t("detail.attachmentUploaded", { count: completed }));
+			void qc.invalidateQueries({ queryKey: ["taskTimeline", realId] });
+		} catch {
+			showToast(t("detail.attachmentUploadFailed"));
+		} finally {
+			setAttachmentBusy(false);
+		}
+	};
+
+	const removeAttachment = async (attachmentId: string) => {
+		if (attachmentDeleteConfirm !== attachmentId) {
+			setAttachmentDeleteConfirm(attachmentId);
+			showToast(t("detail.attachmentDeleteConfirm"));
+			return;
+		}
+		setAttachmentBusy(true);
+		try {
+			await deleteAttachment(attachmentId);
+			setAttachmentDeleteConfirm(null);
+			showToast(t("detail.attachmentDeleted"));
+			void qc.invalidateQueries({ queryKey: ["taskTimeline", realId] });
+		} catch {
+			showToast(t("detail.attachmentDeleteFailed"));
+		} finally {
+			setAttachmentBusy(false);
+		}
+	};
 
 	const projectId = task?.project_id ?? undefined;
 	const { data: team } = useQuery({
@@ -370,14 +844,21 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const [name, setName] = useState("");
 	const [desc, setDesc] = useState("");
 	const [descOpen, setDescOpen] = useState(false);
+	const [whyNow, setWhyNow] = useState("");
+	const [whyNowOpen, setWhyNowOpen] = useState(false);
 	const [subText, setSubText] = useState("");
 	const [cmtText, setCmtText] = useState("");
+	const [replyTo, setReplyTo] = useState<string | null>(null);
+	const [replyText, setReplyText] = useState("");
+	const [reactionPicker, setReactionPicker] = useState<string | null>(null);
+	const [reactionBusy, setReactionBusy] = useState<string | null>(null);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [assignOpen, setAssignOpen] = useState(false);
+	const [selectedBlockerId, setSelectedBlockerId] = useState("");
+	const [dependencyBusy, setDependencyBusy] = useState(false);
 	// Vlastnosti (priorita/termín/deadline/čas/trvání/barva) rovnou viditelné —
 	// kompletní přehledné menu i pro podúkoly (dřív schované za klikem na chip).
 	const [editOpen, setEditOpen] = useState(true);
-	const [histOpen, setHistOpen] = useState(false);
 	// V3 save-UX: čas posledního uložení (zpětná vazba „Uloženo ✓ HH:MM").
 	const [savedAt, setSavedAt] = useState<number | null>(null);
 	const nameRef = useRef<HTMLInputElement>(null);
@@ -392,6 +873,9 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		if (task) {
 			setName(task.name ?? "");
 			setDesc(task.description ?? "");
+			setWhyNow(task.why_now ?? "");
+			setWhyNowOpen(false);
+			setSelectedBlockerId("");
 		}
 	}, [task?.id]);
 
@@ -401,7 +885,54 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const asg = assignRows ?? [];
 	const members = team ?? [];
 	const memberOf = (uid: string | null) => members.find((m) => m.id === uid);
-	const acts = activity ?? [];
+	const myProjectRole = members.find((m) => m.id === session?.user?.id)?.role;
+	const canDecide = myProjectRole === "editor" || myProjectRole === "manager";
+	const canEditCustomFields = myProjectRole === "editor" || myProjectRole === "manager";
+	const canManagePolls = myProjectRole === "editor" || myProjectRole === "manager";
+	const canDeleteAnyAttachment = myProjectRole === "editor" || myProjectRole === "manager";
+	const decisionsByComment = new Map((commentDecisions ?? []).map((d) => [d.comment_id, d]));
+	const mentionIdsByComment = new Map<string, string[]>();
+	for (const mention of commentMentions ?? []) {
+		const ids = mentionIdsByComment.get(mention.comment_id) ?? [];
+		ids.push(mention.user_id);
+		mentionIdsByComment.set(mention.comment_id, ids);
+	}
+	const reactionsByComment = new Map<string, { emoji: string; count: number; mineId: string | null }[]>();
+	for (const reaction of commentReactions ?? []) {
+		const groups = reactionsByComment.get(reaction.comment_id) ?? [];
+		let group = groups.find((candidate) => candidate.emoji === reaction.emoji);
+		if (!group) {
+			group = { emoji: reaction.emoji, count: 0, mineId: null };
+			groups.push(group);
+		}
+		group.count += 1;
+		if (reaction.user_id === session?.user?.id) group.mineId = reaction.id;
+		reactionsByComment.set(reaction.comment_id, groups);
+	}
+	const commentIds = new Set(cmts.map((comment) => comment.id));
+	const rootComments = cmts.filter((comment) => !comment.parent_id || !commentIds.has(comment.parent_id));
+	const repliesByComment = new Map<string, CommentEntry[]>();
+	for (const comment of cmts) {
+		if (!comment.parent_id || !commentIds.has(comment.parent_id)) continue;
+		const replies = repliesByComment.get(comment.parent_id) ?? [];
+		replies.push(comment);
+		repliesByComment.set(comment.parent_id, replies);
+	}
+	const timelineEvents = Array.from(
+		new Map(
+			(timelineQuery.data?.pages ?? [])
+				.flatMap((page) => page.events)
+				.map((event) => [event.id, event] as const),
+		).values(),
+	);
+	const filteredTimeline = timelineEvents.filter((event) =>
+		timelineFilter === "decisions"
+			? isDecisionTimelineEvent(event)
+			: timelineFilter === "changes"
+				? isChangeTimelineEvent(event)
+				: true,
+	);
+	const relevanceSignals = whyNowSignals(task, { deviceTimeZone: deviceTimeZone() });
 
 	// Zápis jednoho záznamu do historie úprav.
 	const logActivity = async (field: string, oldVal: string | null, newVal: string | null) => {
@@ -409,8 +940,26 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		if (!task || !uid) return;
 		// sdílený zapisovač (lib/activity) — stejná historie i pro create/bulk/toggle
 		await logTaskActivity(realId, task.project_id, uid, field, oldVal, newVal);
-		// task_activity se nesyncuje (insert-only) → po zápisu refetchni historii z API.
-		void qc.invalidateQueries({ queryKey: ["taskActivity", realId] });
+		// API timeline si po uploadu vezme autoritativní audit a legacy řádek deduplikuje.
+		void qc.invalidateQueries({ queryKey: ["taskTimeline", realId] });
+	};
+
+	/** Rozhodnutí je samostatný auditovatelný objekt; text komentáře zůstává nedotčený. */
+	const toggleCommentDecision = async (commentId: string) => {
+		if (!canDecide || !session?.user?.id) return;
+		const existing = decisionsByComment.get(commentId);
+		if (existing) {
+			await powerSync.execute("DELETE FROM comment_decisions WHERE id = ?", [existing.id]);
+			await logActivity("comment_decision", commentId, null);
+			showToast(t("detail.decisionUnmarked"));
+			return;
+		}
+		await powerSync.execute(
+			"INSERT INTO comment_decisions (id, comment_id, task_id, project_id, marked_by, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
+			[commentId, realId, task.project_id, session.user.id, new Date().toISOString()],
+		);
+		await logActivity("comment_decision", null, commentId);
+		showToast(t("detail.decisionMarked"));
 	};
 
 	// V3: patch úkolu + zápis do historie + „Uloženo ✓" + cílené Zpět (revert bez logu).
@@ -438,8 +987,8 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 	const status = statusRows?.[0];
 	// „Po termínu": u výskytu z ISO výskytu (prototyp makeOcc ř. 2652), jinak z base due_date
 	const overdue = occ
-		? !done && occ.iso.slice(0, 10) < todayISO()
-		: !done && !!task.due_date && task.due_date.slice(0, 10) < todayISO();
+		? !done && !!presentedTask?.due_date && presentedTask.due_date.slice(0, 10) < todayISO()
+		: !done && !!presentedTask?.due_date && presentedTask.due_date.slice(0, 10) < todayISO();
 
 	const toggleDone = async () => {
 		if (occ) {
@@ -501,23 +1050,67 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			addingSub.current = false;
 		}
 	};
-	const addCmt = async () => {
-		if (!cmtText.trim() || addingCmt.current) return;
+	const addCmt = async (body: string, parentId: string | null, mentionUserIds: string[]) => {
+		const uid = session?.user?.id;
+		if (!body.trim() || !uid || addingCmt.current) return;
 		addingCmt.current = true;
 		try {
-			await powerSync.execute(
-				"INSERT INTO comments (id, task_id, project_id, author_id, body, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
-				[
-					realId,
-					task.project_id,
-					session?.user?.id ?? null,
-					cmtText.trim(),
-					new Date().toISOString(),
-				],
-			);
-			setCmtText("");
+			const commentId = crypto.randomUUID();
+			const createdAt = new Date().toISOString();
+			await powerSync.writeTransaction(async (tx) => {
+				await tx.execute(
+					"INSERT INTO comments (id, task_id, project_id, parent_id, author_id, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+					[commentId, realId, task.project_id, parentId, uid, body.trim(), createdAt],
+				);
+				for (const mentionedUserId of new Set(mentionUserIds)) {
+					await tx.execute(
+						"INSERT INTO mentions (id, comment_id, task_id, project_id, user_id, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+						[
+							crypto.randomUUID(),
+							commentId,
+							realId,
+							task.project_id,
+							mentionedUserId,
+							uid,
+							createdAt,
+						],
+					);
+				}
+			});
+			if (parentId) {
+				setReplyText("");
+				setReplyTo(null);
+			} else {
+				setCmtText("");
+			}
+		} catch {
+			showToast(t("detail.commentAddFailed"));
 		} finally {
 			addingCmt.current = false;
+		}
+	};
+	const toggleReaction = async (commentId: string, emoji: string) => {
+		const uid = session?.user?.id;
+		const busyKey = `${commentId}:${emoji}`;
+		if (!uid || reactionBusy) return;
+		setReactionBusy(busyKey);
+		try {
+			const mine = reactionsByComment
+				.get(commentId)
+				?.find((group) => group.emoji === emoji)?.mineId;
+			if (mine) {
+				await powerSync.execute("DELETE FROM comment_reactions WHERE id = ?", [mine]);
+			} else {
+				await powerSync.execute(
+					"INSERT INTO comment_reactions (id, comment_id, task_id, project_id, user_id, emoji, created_at) VALUES (uuid(), ?, ?, ?, ?, ?, ?)",
+					[commentId, realId, task.project_id, uid, emoji, new Date().toISOString()],
+				);
+			}
+			setReactionPicker(null);
+		} catch {
+			showToast(t("detail.reactionFailed"));
+		} finally {
+			setReactionBusy(null);
 		}
 	};
 
@@ -527,11 +1120,11 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		const copyOne = async (srcId: string, newParentId: string | null, suffix: string) => {
 			const nid = crypto.randomUUID();
 			await powerSync.execute(
-				`INSERT INTO tasks (id, project_id, section_id, parent_id, name, description, priority, color,
-          due_date, start_date, deadline, duration_min, days, recurrence, recurrence_rule,
+				`INSERT INTO tasks (id, project_id, section_id, parent_id, name, description, why_now, priority, color,
+          due_date, start_date, start_timezone, deadline, duration_min, days, recurrence, recurrence_rule,
           recurrence_basis, assignment_mode, created_at)
-         SELECT ?, project_id, section_id, ?, name || ?, description, priority, color,
-          due_date, start_date, deadline, duration_min, days, recurrence, recurrence_rule,
+         SELECT ?, project_id, section_id, ?, name || ?, description, why_now, priority, color,
+          due_date, start_date, start_timezone, deadline, duration_min, days, recurrence, recurrence_rule,
           recurrence_basis, assignment_mode, ? FROM tasks WHERE id = ?`,
 				[nid, newParentId, suffix, now, srcId],
 			);
@@ -551,10 +1144,70 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 		setMenuOpen(false);
 		open(nid);
 	};
-	const copyLink = () => {
-		void navigator.clipboard.writeText(`${location.origin}/ukoly?ukol=${realId}`);
+	const copyLink = async () => {
+		const copied = await copyDeepLink("task", realId, project?.workspace_id);
 		setMenuOpen(false);
-		showToast(t("detail.linkCopied"));
+		showToast(t(copied ? "deepLink.copied" : "deepLink.copyFailed"));
+	};
+	const detachFromParent = async () => {
+		const parentId = task.parent_id;
+		if (!parentId) return;
+		const parentLabel = parent?.name ?? parentId;
+		const standaloneLabel = t("detail.standaloneTask");
+		await logActivity("parent_id", parentLabel, standaloneLabel);
+		await patch(realId, { parent_id: null });
+		setMenuOpen(false);
+		showToast(t("detail.detachedFromParent"), {
+			label: t("detail.undo"),
+			onClick: () => {
+				void (async () => {
+					await logTaskActivity(
+						realId,
+						task.project_id,
+						session?.user?.id,
+						"parent_id",
+						standaloneLabel,
+						parentLabel,
+					);
+					await patch(realId, { parent_id: parentId });
+					void qc.invalidateQueries({ queryKey: ["taskActivity", realId] });
+				})();
+			},
+		});
+	};
+	const addDependency = async () => {
+		if (!selectedBlockerId || dependencyBusy) return;
+		setDependencyBusy(true);
+		try {
+			if (await wouldCreateDependencyCycle(selectedBlockerId, realId)) {
+				showToast(t("detail.dependencyCycle"));
+				return;
+			}
+			await powerSync.execute(
+				"INSERT INTO task_dependencies (id, project_id, blocking_task_id, blocked_task_id, created_by, created_at) VALUES (uuid(), ?, ?, ?, ?, ?)",
+				[
+					task.project_id,
+					selectedBlockerId,
+					realId,
+					session?.user?.id ?? null,
+					new Date().toISOString(),
+				],
+			);
+			setSelectedBlockerId("");
+			showToast(t("detail.dependencyAdded"));
+		} catch {
+			showToast(t("detail.dependencyAddFailed"));
+		} finally {
+			setDependencyBusy(false);
+		}
+	};
+	const removeDependency = async (dependencyId: string) => {
+		try {
+			await powerSync.execute("DELETE FROM task_dependencies WHERE id = ?", [dependencyId]);
+			showToast(t("detail.dependencyRemoved"));
+		} catch {
+			showToast(t("detail.dependencyRemoveFailed"));
+		}
 	};
 	const del = () => {
 		void deleteTaskWithUndo(realId); // mazání s undo (⌘Z)
@@ -568,7 +1221,17 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			? t("detail.hintAll")
 			: t("detail.hintAny");
 
-	const due = rowDue(task, t);
+	const due = rowDue(presentedTask ?? task, t);
+	const subtaskProgress = taskProgress(subs ?? []);
+	const incomingDependencyIds = new Set(
+		(incomingDependencies ?? []).map((dependency) => dependency.task_id),
+	);
+	const availableDependencyCandidates = (dependencyCandidates ?? []).filter(
+		(candidate) => !incomingDependencyIds.has(candidate.id),
+	);
+	const unresolvedDependencyCount = (incomingDependencies ?? []).filter(
+		(dependency) => !dependency.completed_at,
+	).length;
 	// Text opakování (prototyp seriesRepeat ř. 2933): rich label z parseru přednostně,
 	// krátký výběrový label („Denně") mapovat přes recurrence_rule.kind na „Opakuje se …".
 	const repKind = recurrenceKind(task.recurrence_rule);
@@ -594,6 +1257,141 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 			: repKind
 				? repeatByKind[repKind]
 				: null) ?? t("detail.recurringTask");
+	const renderCommentCard = (cm: CommentEntry, isReply = false) => {
+		const author = memberOf(cm.author_id);
+		const decision = decisionsByComment.get(cm.id);
+		const reactionGroups = reactionsByComment.get(cm.id) ?? [];
+		return (
+			<div
+				key={cm.id}
+				data-comment-id={cm.id}
+				className={isReply ? "ml-7 border-line border-l pl-3" : ""}
+				style={{ marginBottom: 8 }}
+			>
+				<div className="flex" style={{ gap: 9 }}>
+					<span
+						className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full font-display font-semibold text-white"
+						style={{ fontSize: 10, background: "var(--w-avatar)" }}
+					>
+						{initials(author?.name ?? "?")}
+					</span>
+					<div className="min-w-0 flex-1">
+						<div className="flex flex-wrap items-center font-display font-semibold text-ink" style={{ fontSize: 12.5, gap: "4px 8px" }}>
+							<span>
+								{author?.name ?? t("detail.timelineUnknownUser")} {" "}
+								<span className="font-body text-ink-3" style={{ fontSize: 11 }}>
+									· {whenLabel(cm.created_at, t)}
+								</span>
+							</span>
+							{decision && !canDecide && (
+								<span className="rounded-full bg-brass-soft px-2 py-1 text-brass-text" style={{ fontSize: 10.5 }}>
+									{t("detail.decision")}
+								</span>
+							)}
+						</div>
+						<div className="mt-0.5 whitespace-pre-wrap break-words font-body text-ink-2" style={{ fontSize: 13 }}>
+							{commentBody(cm.body ?? "", mentionIdsByComment.get(cm.id) ?? [], members)}
+						</div>
+						<div className="mt-1 flex flex-wrap items-center gap-1.5">
+							{reactionGroups.map((group) => (
+								<button
+									key={group.emoji}
+									type="button"
+									aria-pressed={Boolean(group.mineId)}
+									disabled={reactionBusy === `${cm.id}:${group.emoji}`}
+									onClick={() => void toggleReaction(cm.id, group.emoji)}
+									className="min-h-11 min-w-11 rounded-full border px-2 font-display font-semibold hover:border-brass"
+									style={{
+										fontSize: 11,
+										borderColor: group.mineId ? "var(--w-brass)" : "var(--w-line)",
+										background: group.mineId ? "var(--w-brass-soft)" : "transparent",
+									}}
+								>
+									{group.emoji} {group.count}
+								</button>
+							))}
+							<button
+								type="button"
+								aria-expanded={reactionPicker === cm.id}
+								onClick={() => setReactionPicker((current) => (current === cm.id ? null : cm.id))}
+								className="min-h-11 rounded-lg px-2 font-display font-semibold text-ink-3 hover:bg-panel-2 hover:text-ink"
+								style={{ fontSize: 11 }}
+							>
+								{t("detail.react")}
+							</button>
+							{!isReply && (
+								<button
+									type="button"
+									onClick={() => {
+										setReplyTo((current) => (current === cm.id ? null : cm.id));
+										setReplyText("");
+									}}
+									className="min-h-11 rounded-lg px-2 font-display font-semibold text-ink-3 hover:bg-panel-2 hover:text-ink"
+									style={{ fontSize: 11 }}
+								>
+									{t("detail.reply")}
+								</button>
+							)}
+							{canDecide && (
+								<button
+									type="button"
+									aria-pressed={Boolean(decision)}
+									onClick={() => void toggleCommentDecision(cm.id)}
+									className="w-comment-decision min-h-11 rounded-lg border px-2 font-display font-semibold hover:border-brass"
+									style={{
+										fontSize: 10.5,
+										borderColor: decision ? "var(--w-brass)" : "var(--w-line)",
+										background: decision ? "var(--w-brass-soft)" : "transparent",
+										color: decision ? "var(--w-brass-text)" : "var(--w-ink-3)",
+									}}
+								>
+									{decision ? t("detail.decision") : `+ ${t("detail.decision")}`}
+								</button>
+							)}
+						</div>
+						{reactionPicker === cm.id && (
+							<div className="mt-1 flex flex-wrap gap-1.5 rounded-lg border border-line bg-panel-2 p-1.5">
+								{COMMENT_REACTIONS.map((emoji) => (
+									<button
+										key={emoji}
+										type="button"
+										aria-label={t("detail.reactWith", { emoji })}
+										disabled={Boolean(reactionBusy)}
+										onClick={() => void toggleReaction(cm.id, emoji)}
+										className="min-h-11 min-w-11 rounded-lg text-lg hover:bg-card"
+									>
+										{emoji}
+									</button>
+								))}
+							</div>
+						)}
+					</div>
+				</div>
+				{!isReply && (repliesByComment.get(cm.id)?.length ?? 0) > 0 && (
+					<div className="mt-2">
+						{repliesByComment.get(cm.id)?.map((reply) => renderCommentCard(reply, true))}
+					</div>
+				)}
+				{!isReply && replyTo === cm.id && (
+					<div className="mt-2 ml-7 border-line border-l pl-3">
+						<CommentComposer
+							autoFocus
+							value={replyText}
+							onChange={setReplyText}
+							members={members}
+							placeholder={t("detail.replyPlaceholder")}
+							submitLabel={t("detail.replySend")}
+							onCancel={() => {
+								setReplyTo(null);
+								setReplyText("");
+							}}
+							onSubmit={(body, mentionUserIds) => addCmt(body, cm.id, mentionUserIds)}
+						/>
+					</div>
+				)}
+			</div>
+		);
+	};
 
 	return (
 		<>
@@ -602,18 +1400,22 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 				type="button"
 				aria-label={t("common.cancel")}
 				onClick={onClose}
-				className="fixed inset-0 z-[70]"
-				style={{ background: "rgba(10,14,20,.42)" }}
+				className="fixed inset-0"
+				style={{ background: "rgba(10,14,20,.42)", zIndex: "var(--w-layer-modal)" }}
 			/>
 			<div
-				className="pointer-events-none fixed inset-0 z-[71] flex items-start justify-center"
-				style={{ paddingTop: "6vh" }}
+				className="pointer-events-none fixed inset-0 flex items-start justify-center"
+				style={{
+					paddingTop: "6vh",
+					zIndex: "calc(var(--w-layer-modal) + 1)",
+				}}
 			>
 				<div
 					ref={trapRef}
 					tabIndex={-1}
 					role="dialog"
 					aria-modal="true"
+					aria-label={t("detail.dialogLabel")}
 					className="pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-line bg-card outline-none"
 					style={{
 						width: 560,
@@ -660,7 +1462,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								type="button"
 								onClick={() => setMenuOpen((o) => !o)}
 								aria-label={t("detail.moreActions")}
-								className="grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
+								className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 							>
 								<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
 									<circle cx="8" cy="3.5" r="1.4" />
@@ -672,7 +1474,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								<div
 									className="absolute border border-line bg-card"
 									style={{
-										top: 32,
+										top: 44,
 										right: 0,
 										width: 210,
 										borderRadius: 11,
@@ -685,9 +1487,14 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									<MenuItem icon="duplikovat" onClick={() => void duplicate()}>
 										{t("detail.duplicate")}
 									</MenuItem>
-									<MenuItem icon="odkaz" onClick={copyLink}>
-										{t("detail.copyLink")}
+								<MenuItem icon="odkaz" onClick={copyLink}>
+									{t("detail.copyLink")}
+								</MenuItem>
+								{task.parent_id && (
+									<MenuItem icon="ukoly" onClick={() => void detachFromParent()}>
+										{t("detail.detachFromParent")}
 									</MenuItem>
+								)}
 									{/* U výskytu řady „Smazat" skryto — mazalo by CELOU řadu (base úkol),
 									    ne jeden výskyt. Odebrání výskytu = tlačítko „Přeskočit" v patičce. */}
 									{!occ && (
@@ -711,7 +1518,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							type="button"
 							onClick={onClose}
 							aria-label={t("common.cancel")}
-							className="grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
+							className="grid h-11 w-11 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 						>
 							<Icon name="zavrit" size={16} />
 						</button>
@@ -737,29 +1544,31 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								type="button"
 								onClick={toggleDone}
 								aria-label={done ? t("today.doneSection") : t("common.done")}
-								className="grid shrink-0 place-items-center rounded-full hover:border-brass"
-								style={{
-									width: 22,
-									height: 22,
-									marginTop: 2,
-									border: done ? "none" : "2px solid var(--w-line)",
-									background: done ? "var(--w-brass)" : "transparent",
-								}}
+								className="grid h-11 w-11 shrink-0 place-items-center rounded-lg"
 							>
-								{done && (
-									<svg width="12" height="12" viewBox="0 0 11 11" fill="none" aria-hidden>
-										<path
-											d="M2 5.7 L4.3 8 L9 2.7"
-											stroke="#fff"
-											strokeWidth="1.7"
-											strokeLinecap="round"
-											strokeLinejoin="round"
-										/>
-									</svg>
-								)}
+								<span
+									className="grid h-[22px] w-[22px] place-items-center rounded-full hover:border-brass"
+									style={{
+										border: done ? "none" : "2px solid var(--w-line)",
+										background: done ? "var(--w-brass)" : "transparent",
+									}}
+								>
+									{done && (
+										<svg width="12" height="12" viewBox="0 0 11 11" fill="none" aria-hidden>
+											<path
+												d="M2 5.7 L4.3 8 L9 2.7"
+												stroke="#fff"
+												strokeWidth="1.7"
+												strokeLinecap="round"
+												strokeLinejoin="round"
+											/>
+										</svg>
+									)}
+								</span>
 							</button>
 							<input
 								ref={nameRef}
+								aria-label={t("detail.nameLabel")}
 								value={name}
 								onChange={(e) => setName(e.target.value)}
 								onBlur={() =>
@@ -792,9 +1601,15 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										↻ {t("detail.occSeries")}
 									</span>
 									<span className="font-mono" style={{ fontSize: 12, color: "var(--w-ink-2)" }}>
-										{occLabel(occ.iso)}
-									</span>
-								</div>
+									{due?.label ?? occLabel(occ.iso)}
+								</span>
+							</div>
+							{occOverride?.override_due_date &&
+								occOverride.override_due_date.slice(0, 10) !== occ.iso && (
+									<div className="mt-1 font-mono text-ink-3 text-xs">
+										{t("detail.occMovedFrom", { date: occLabel(occ.iso) })}
+									</div>
+								)}
 								<div
 									className="font-body text-ink-3"
 									style={{ fontSize: 12, marginTop: 5, lineHeight: 1.5 }}
@@ -848,7 +1663,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										color: (occ ? overdue : due.overdue) ? "var(--w-overdue)" : "var(--w-ink-2)",
 									}}
 								>
-									{occ ? occLabel(occ.iso) : due.label}
+									{due.label}
 								</button>
 							)}
 							{status?.name && (status.position ?? 0) > 0 && (
@@ -894,7 +1709,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										color: "var(--w-ink-2)",
 									}}
 								>
-									{t("detail.reminder")}
+									{t("detail.remindersCount", { count: reminders?.length ?? 0 })}
 								</span>
 							)}
 							{/* propojení Mail ↔ úkol — mosazný chip „Z mailu · … → otevřít vlákno"
@@ -903,9 +1718,18 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								<button
 									type="button"
 									onClick={() => {
-										openMailThread?.(task.mail_th ?? "");
+										const source = task.mail_th ?? "";
+										const personal = /^personal:([0-9a-f-]{36}):([0-9a-f-]{36})$/i.exec(source);
 										onClose();
-										void navigate({ to: "/mail" });
+										if (personal?.[1] && personal[2]) {
+											void navigate({
+												to: "/mail",
+												search: { mailAccount: personal[1], mailMessage: personal[2] },
+											});
+										} else {
+											openMailThread?.(source);
+											void navigate({ to: "/mail", search: {} });
+										}
 									}}
 									className="cursor-pointer font-display font-semibold hover:brightness-105"
 									style={{
@@ -995,18 +1819,29 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											</span>
 											<input
 												type="time"
-												value={
-													task.start_date && task.start_date.length >= 16
-														? task.start_date.slice(11, 16)
-														: ""
-												}
-												onChange={(e) => {
-													const _n = new Date();
-													const base =
-														task.due_date?.slice(0, 10) ??
-														`${_n.getFullYear()}-${String(_n.getMonth() + 1).padStart(2, "0")}-${String(_n.getDate()).padStart(2, "0")}`;
-													void patchLog({
-														start_date: e.target.value ? `${base}T${e.target.value}:00` : null,
+											value={
+												task.start_date && task.start_timezone
+													? (wallTimeFromInstant(
+															task.start_date,
+															task.start_timezone,
+														)?.slice(0, 5) ?? "")
+													: task.start_date?.slice(11, 16) ?? ""
+											}
+										onChange={(e) => {
+											const zone = task.start_timezone ?? session?.user?.timezone ?? deviceTimeZone();
+											const base =
+												task.due_date?.slice(0, 10) ??
+												dateInTimeZone(zone);
+											const start = e.target.value
+												? zonedDateTimeToIso(base, `${e.target.value}:00`, zone)
+												: null;
+											if (e.target.value && !start) {
+												showToast(t("addmodal.invalidLocalTime"));
+												return;
+											}
+											void patchLog({
+												start_date: start,
+												start_timezone: start ? zone : null,
 														// čas bez termínu → nastavit i termín (jinak by blok neměl den)
 														...(e.target.value && !task.due_date ? { due_date: base } : {}),
 													});
@@ -1265,6 +2100,39 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							)}
 						</div>
 
+						<Suspense
+							fallback={
+								<div
+									aria-busy="true"
+									className="mt-4 min-h-11 rounded-lg border border-line border-dashed bg-panel-2 px-3 py-3 font-display font-semibold text-ink-3"
+									style={{ fontSize: 11 }}
+								>
+									{t("detail.acceptanceTitle")}…
+								</div>
+							}
+						>
+							<TaskAcceptanceSection
+								taskId={realId}
+								required={
+									task.kind === "task" &&
+									Boolean(project?.urgent_acceptance_enabled) &&
+									(task.priority ?? 4) <= (project?.urgent_acceptance_priority === 2 ? 2 : 1)
+								}
+								creatorId={task.created_by ?? null}
+								assignees={asg.flatMap((assignment) => {
+									if (!assignment.user_id) return [];
+									return [
+										{
+											userId: assignment.user_id,
+											name: memberOf(assignment.user_id)?.name ?? "—",
+										},
+									];
+								})}
+								currentUserId={session?.user?.id ?? null}
+								taskCompleted={Boolean(task.completed_at)}
+							/>
+						</Suspense>
+
 						{/* Watson hint (ř. 1018–1021) */}
 						<div
 							className="flex items-start"
@@ -1307,8 +2175,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 								<SectionLabel>{t("detail.description")}</SectionLabel>
 								{descOpen ? (
 									<textarea
-										// biome-ignore lint/a11y/noAutofocus: přepnutí do editace popisu
-										autoFocus
+										ref={focusOnMount}
 										value={desc}
 										onChange={(e) => setDesc(e.target.value)}
 										onBlur={() => {
@@ -1345,24 +2212,146 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							</button>
 						)}
 
+						{/* PROČ TEĎ — vlastní kontext + výhradně vysvětlitelné systémové signály. */}
+						<SectionLabel>{t("detail.whyNow")}</SectionLabel>
+						<div
+							className="border border-line bg-panel-2"
+							style={{ borderRadius: 11, padding: "12px 13px" }}
+						>
+							{whyNowOpen ? (
+								<div>
+									<label
+										htmlFor={`why-now-${realId}`}
+										className="mb-1 block font-display font-semibold text-ink-2"
+										style={{ fontSize: 12 }}
+									>
+										{t("detail.whyNowOwnReason")}
+									</label>
+									<textarea
+										id={`why-now-${realId}`}
+										ref={focusOnMount}
+										value={whyNow}
+										onChange={(event) => setWhyNow(event.target.value)}
+										maxLength={WHY_NOW_MAX_LENGTH}
+										rows={3}
+										placeholder={t("detail.whyNowPlaceholder")}
+										className="w-full resize-y rounded-lg border border-line bg-card px-3 py-2 text-ink text-sm outline-none focus:border-brass"
+									/>
+									<div
+										className="mt-2 flex flex-wrap items-center justify-between"
+										style={{ gap: 8 }}
+									>
+										<span className="font-mono text-ink-3" style={{ fontSize: 10.5 }}>
+											{whyNow.length}/{WHY_NOW_MAX_LENGTH}
+										</span>
+										<div className="flex items-center" style={{ gap: 7 }}>
+											<button
+												type="button"
+												onClick={() => {
+													setWhyNow(task.why_now ?? "");
+													setWhyNowOpen(false);
+												}}
+												className="min-h-11 rounded-lg px-3 font-display font-semibold text-ink-2 hover:bg-panel"
+												style={{ fontSize: 12 }}
+											>
+												{t("common.cancel")}
+											</button>
+											<button
+												type="button"
+												onClick={() => {
+													const normalized = whyNow.trim();
+													setWhyNow(normalized);
+													setWhyNowOpen(false);
+													void patchLog({ why_now: normalized || null });
+												}}
+												className="min-h-11 rounded-lg bg-brass px-3 font-display font-bold text-white hover:brightness-105"
+												style={{ fontSize: 12 }}
+											>
+												{t("common.save")}
+											</button>
+										</div>
+									</div>
+								</div>
+							) : (
+								<div className="flex items-start justify-between" style={{ gap: 12 }}>
+									<p className="font-body text-ink-2" style={{ fontSize: 13, lineHeight: 1.5 }}>
+										{task.why_now || t("detail.whyNowEmpty")}
+									</p>
+									<button
+										type="button"
+										onClick={() => setWhyNowOpen(true)}
+										className="min-h-11 shrink-0 rounded-lg border border-line bg-card px-3 font-display font-semibold text-ink-2 hover:border-brass hover:text-brass-text"
+										style={{ fontSize: 11.5 }}
+									>
+										{task.why_now ? t("common.edit") : t("detail.whyNowAdd")}
+									</button>
+								</div>
+							)}
+							{relevanceSignals.length > 0 && (
+								<div className="mt-3 border-line border-t pt-3">
+									<p className="mb-2 font-body text-ink-3" style={{ fontSize: 11.5 }}>
+										{t("detail.whyNowSystemSignals")}
+									</p>
+									<div className="flex flex-wrap" style={{ gap: 6 }}>
+										{relevanceSignals.map((signal) => (
+											<span
+												key={signal}
+												className="rounded-full border border-line bg-card font-display font-semibold text-ink-2"
+												style={{ fontSize: 10.5, padding: "4px 8px" }}
+											>
+												{t(WHY_NOW_SIGNAL_KEY[signal])}
+											</span>
+										))}
+									</div>
+								</div>
+							)}
+						</div>
+
 						{/* PODÚKOLY — reálné úkoly vrstvené na sebe (rozhodnutí 2026-07-02): plnohodnotný
               řádek s prioritním okrajem, počty vlastních podúkolů a klikem do vlastního detailu. */}
 						<SectionLabel>
 							{t("detail.subtasks")}
-							{(subs?.length ?? 0) > 0 &&
-								` · ${(subs ?? []).filter((s) => s.completed_at).length}/${subs?.length}`}
+							{subtaskProgress.total > 0 && ` · ${subtaskProgress.done}/${subtaskProgress.total}`}
 						</SectionLabel>
+						{subtaskProgress.total > 0 && (
+							<div className="mb-2 rounded-lg bg-panel-2 p-3">
+								<div className="mb-2 flex items-center justify-between" style={{ gap: 8 }}>
+									<span className="font-body text-ink-2" style={{ fontSize: 12 }}>
+										{t("detail.subtaskProgress")}
+									</span>
+									<strong className="font-mono text-ink" style={{ fontSize: 12 }}>
+										{subtaskProgress.percent}%
+									</strong>
+								</div>
+								<div
+									role="progressbar"
+									aria-label={t("detail.subtaskProgress")}
+									aria-valuemin={0}
+									aria-valuemax={100}
+									aria-valuenow={subtaskProgress.percent}
+									className="h-2 overflow-hidden rounded-full bg-card"
+								>
+									<div
+										className="h-full rounded-full bg-brass transition-[width] duration-200"
+										style={{ width: `${subtaskProgress.percent}%` }}
+									/>
+								</div>
+								{subtaskProgress.isComplete && !done && (
+									<p className="mt-2 font-body text-ink-3" style={{ fontSize: 11.5 }}>
+										{t("detail.subtasksCompleteParentOpen")}
+									</p>
+								)}
+							</div>
+						)}
 						<ul>
 							{(subs ?? []).map((s) => {
 								const sd = Boolean(s.completed_at);
 								const sMeta = metaOf(s);
 								const sDue = rowDue(s, t);
 								return (
-									// biome-ignore lint/a11y/useKeyWithClickEvents: klik = otevřít detail podúkolu
 									<li
 										key={s.id}
-										onClick={() => open(s.id)}
-										className="flex cursor-pointer items-center border-line border-b hover:bg-panel-2"
+										className="flex items-center border-line border-b hover:bg-panel-2"
 										style={{
 											gap: 10,
 											padding: "8px 4px 8px 9px",
@@ -1380,6 +2369,12 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 											// toggleTask = jednotná sémantika R9/advance/opakování (ne přímý patch)
 											onClick={() => void toggleTask(s)}
 										/>
+										<button
+											type="button"
+											onClick={() => open(s.id)}
+											className="flex min-w-0 flex-1 items-center text-left"
+											style={{ gap: 10 }}
+										>
 										<span
 											className="min-w-0 flex-1 truncate font-display font-semibold"
 											style={{
@@ -1409,6 +2404,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										<span className="shrink-0 text-ink-3" style={{ fontSize: 12 }}>
 											›
 										</span>
+										</button>
 									</li>
 								);
 							})}
@@ -1421,7 +2417,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									onChange={(e) => setSubText(e.target.value)}
 									onKeyDown={(e) => e.key === "Enter" && void addSub()}
 									placeholder={t("detail.addSubtask")}
-									className="min-w-0 flex-1 rounded-lg border border-line border-dashed bg-transparent px-3 py-1.5 text-sm outline-none focus:border-brass"
+									className="min-h-11 min-w-0 flex-1 rounded-lg border border-line border-dashed bg-transparent px-3 py-2 text-sm outline-none focus:border-brass"
 								/>
 								{/* plné přidání s atributy — otevře modal s parent_id (termín/deadline/…) */}
 								<button
@@ -1435,7 +2431,7 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									}
 									title={t("detail.addSubtaskFull")}
 									aria-label={t("detail.addSubtaskFull")}
-									className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line text-ink-3 hover:border-brass hover:text-brass-text"
+									className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-line text-ink-3 hover:border-brass hover:text-brass-text"
 								>
 									<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
 										<path
@@ -1451,37 +2447,182 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 							<p className="mt-2 text-ink-3 text-xs">{t("detail.maxDepth")}</p>
 						)}
 
+						<SectionLabel>
+							{t("detail.dependencies")}
+							{unresolvedDependencyCount > 0 && ` · ${unresolvedDependencyCount}`}
+						</SectionLabel>
+						{unresolvedDependencyCount > 0 && (
+							<div
+								className="mb-2 rounded-lg border border-overdue bg-overdue-soft px-3 py-2 text-overdue"
+								role="status"
+							>
+								<strong className="font-display" style={{ fontSize: 12.5 }}>
+									{t("detail.blockedByCount", { count: unresolvedDependencyCount })}
+								</strong>
+								<p className="mt-1 font-body" style={{ fontSize: 11.5 }}>
+									{t("detail.blockedCompletionHint")}
+								</p>
+							</div>
+						)}
+						{(incomingDependencies ?? []).length > 0 && (
+							<div className="mb-2">
+								<p className="mb-1 font-display font-semibold text-ink-3" style={{ fontSize: 11.5 }}>
+									{t("detail.blockedBy")}
+								</p>
+								{(incomingDependencies ?? []).map((dependency) => (
+									<div
+										key={dependency.id}
+										className="flex min-h-11 items-center rounded-lg hover:bg-panel-2"
+										style={{ gap: 6 }}
+									>
+										<span aria-hidden>{dependency.completed_at ? "✓" : "⛔"}</span>
+										<button
+											type="button"
+											onClick={() => open(dependency.task_id)}
+											className={`min-h-11 min-w-0 flex-1 truncate text-left font-display font-semibold ${dependency.completed_at ? "text-ink-3 line-through" : "text-ink"}`}
+											style={{ fontSize: 12.5 }}
+										>
+											{dependency.name}
+										</button>
+										<button
+											type="button"
+											onClick={() => void removeDependency(dependency.id)}
+											aria-label={t("detail.dependencyRemove")}
+											className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-3 hover:bg-card hover:text-overdue"
+										>
+											✕
+										</button>
+									</div>
+								))}
+							</div>
+						)}
+						{(outgoingDependencies ?? []).length > 0 && (
+							<div className="mb-2 rounded-lg bg-panel-2 px-3 py-2">
+								<p className="mb-1 font-display font-semibold text-ink-3" style={{ fontSize: 11.5 }}>
+									{t("detail.blocks")}
+								</p>
+								{(outgoingDependencies ?? []).map((dependency) => (
+									<div key={dependency.id} className="flex min-h-11 items-center" style={{ gap: 4 }}>
+										<button
+											type="button"
+											onClick={() => open(dependency.task_id)}
+											className="min-h-11 min-w-0 flex-1 truncate text-left font-display font-semibold text-ink-2 hover:text-brass-text"
+											style={{ fontSize: 12.5 }}
+										>
+											→ {dependency.name}
+										</button>
+										<button
+											type="button"
+											onClick={() => void removeDependency(dependency.id)}
+											aria-label={t("detail.dependencyRemove")}
+											className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-3 hover:bg-card hover:text-overdue"
+										>
+											✕
+										</button>
+									</div>
+								))}
+							</div>
+						)}
+						<div className="flex items-center" style={{ gap: 8 }}>
+							<select
+								value={selectedBlockerId}
+								onChange={(event) => setSelectedBlockerId(event.target.value)}
+								aria-label={t("detail.dependencySelect")}
+								className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-card px-3 font-body text-ink outline-none focus:border-brass"
+								style={{ fontSize: 12.5 }}
+							>
+								<option value="">{t("detail.dependencySelect")}</option>
+								{availableDependencyCandidates.map((candidate) => (
+									<option key={candidate.id} value={candidate.id}>
+										{candidate.completed_at ? `✓ ${candidate.name}` : candidate.name}
+									</option>
+								))}
+							</select>
+							<button
+								type="button"
+								disabled={!selectedBlockerId || dependencyBusy}
+								onClick={() => void addDependency()}
+								className="min-h-11 shrink-0 rounded-lg border border-brass bg-brass-soft px-3 font-display font-semibold text-brass-text disabled:cursor-not-allowed disabled:opacity-50"
+								style={{ fontSize: 12 }}
+							>
+								{dependencyBusy ? t("detail.dependencyAdding") : t("detail.dependencyAdd")}
+							</button>
+						</div>
+
 						{/* PŘIPOMÍNKY — relativní (před termínem) / absolutní; doručení Web Push. */}
-						<SectionLabel>{t("detail.reminders")}</SectionLabel>
-						<div style={{ marginBottom: 4 }}>
-							{(reminders ?? []).map((r) => (
+							<SectionLabel>
+								{t("detail.remindersCount", { count: reminders?.length ?? 0 })}
+							</SectionLabel>
+							<div style={{ marginBottom: 4 }}>
 								<div
+									className="mb-2 grid grid-cols-2 rounded-lg border border-line bg-panel-2 p-1"
+									role="group"
+									aria-label={t("detail.remChannel")}
+								>
+									{(["push", "email"] as const).map((channel) => {
+										const available =
+											channel === "push"
+												? reminderCapabilities.data?.push.enabled === true
+												: reminderCapabilities.data?.email.enabled === true;
+										return (
+											<button
+												key={channel}
+												type="button"
+												disabled={!available}
+												aria-pressed={reminderChannel === channel}
+												onClick={() => setReminderChannel(channel)}
+												className={`min-h-11 rounded-md px-3 font-display text-xs font-semibold ${
+													reminderChannel === channel
+														? "bg-card text-ink shadow-sm"
+														: "text-ink-3"
+												}`}
+											>
+												{t(`detail.remChannel${channel === "push" ? "Push" : "Email"}`)}
+											</button>
+										);
+									})}
+								</div>
+								{orderedReminders.map((r) => {
+								const dateLabel = reminderDateLabel(r);
+								return (
+									<div
 									key={r.id}
 									className="flex items-center justify-between"
-									style={{ padding: "4px 0", fontSize: 12.5 }}
+									style={{ minHeight: 44, padding: "4px 0", fontSize: 12.5, gap: 8 }}
 								>
-									<span
-										className="inline-flex items-center"
-										style={{ gap: 6, color: "var(--w-ink-2)" }}
-									>
-										<span aria-hidden>🔔</span>
-										{r.type === "relative" && r.offset_min != null
-											? `${fmtOffset(r.offset_min)} ${t("detail.remBefore")}`
-											: r.remind_at
-												? `${t("detail.remAt")} ${new Date(r.remind_at).toLocaleString()}`
-												: t("detail.reminder")}
-									</span>
+									<div className="flex min-w-0 items-center" style={{ gap: 8 }}>
+											<span aria-hidden>{r.channel === "email" ? "✉" : "🔔"}</span>
+										<span className="min-w-0" style={{ color: "var(--w-ink-2)" }}>
+											<span className="block font-display font-semibold">
+												{r.type === "relative" && r.offset_min != null
+													? relativeLabel(r.offset_min)
+													: t("detail.remCustom")}
+											</span>
+												{dateLabel && (
+												<span className="block text-ink-3" style={{ fontSize: 11.5 }}>
+													{dateLabel}
+												</span>
+												)}
+												<span className="block text-ink-3" style={{ fontSize: 11.5 }}>
+													{t(`detail.remChannel${r.channel === "email" ? "Email" : "Push"}`)}
+												</span>
+										</span>
+									</div>
 									<button
 										type="button"
 										onClick={() => void removeReminder(r.id)}
-										aria-label={t("common.cancel")}
-										className="text-ink-3 hover:text-overdue"
+										aria-label={t("detail.remRemove")}
+										className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-ink-3 hover:bg-panel-2 hover:text-overdue"
 										style={{ fontSize: 13 }}
 									>
 										✕
 									</button>
-								</div>
-							))}
+									</div>
+								);
+							})}
+							<p className="text-ink-3" style={{ fontSize: 11.5, margin: "2px 0 8px" }}>
+								{t("detail.remOptionalHint")}
+							</p>
 							<div
 								className="flex flex-wrap items-center"
 								style={{
@@ -1489,31 +2630,56 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 									marginTop: (reminders?.length ?? 0) > 0 ? 6 : 2,
 								}}
 							>
-								{[10, 30, 60, 1440].map((min) => {
-									const noBase = !task.due_date && !task.start_date;
+								{[0, 10, 30, 60, 1440].map((min) => {
+									const noBase = !relativeBase;
+									const candidate = { type: "relative", offsetMin: min } as const;
+									const duplicate = hasEquivalentReminder(
+										(reminders ?? []).filter((reminder) => reminder.channel === reminderChannel),
+										candidate,
+									);
+									const candidateTime = reminderCandidateFireAt(candidate, reminderTiming);
+									const past = candidateTime != null && candidateTime <= Date.now();
+									const busy =
+										reminderBusyKey === `${reminderChannel}:${reminderCandidateKey(candidate)}`;
 									return (
 										<button
 											key={min}
 											type="button"
-											disabled={noBase}
-											onClick={() => void addReminder({ type: "relative", offsetMin: min })}
-											title={noBase ? t("detail.remNoDue") : undefined}
+											disabled={!channelAvailable || noBase || duplicate || past || busy}
+											onClick={() => void addReminder(candidate)}
+											title={
+												noBase
+													? t("detail.remNoDue")
+													: duplicate
+														? t("detail.remDuplicate")
+														: past
+															? t("detail.remPast")
+															: undefined
+											}
 											className="font-display font-semibold text-ink-2 hover:border-brass hover:text-brass-text"
 											style={{
 												fontSize: 11.5,
-												padding: "5px 9px",
+												minHeight: 44,
+												padding: "7px 10px",
 												borderRadius: 8,
 												border: "1px solid var(--w-line)",
-												opacity: noBase ? 0.45 : 1,
-												cursor: noBase ? "not-allowed" : "pointer",
+												opacity: !channelAvailable || noBase || duplicate || past ? 0.45 : 1,
+												cursor:
+													!channelAvailable || noBase || duplicate || past
+														? "not-allowed"
+														: "pointer",
 											}}
 										>
-											{fmtOffset(min)} {t("detail.remBefore")}
+											{relativeLabel(min)}
 										</button>
 									);
 								})}
 								<input
 									type="datetime-local"
+									disabled={!channelAvailable}
+									min={new Date(Date.now() - new Date().getTimezoneOffset() * 60_000)
+										.toISOString()
+										.slice(0, 16)}
 									onChange={(e) => {
 										if (e.target.value)
 											void addReminder({
@@ -1523,150 +2689,350 @@ function Panel({ id, onClose }: { id: string; onClose: () => void }) {
 										e.target.value = "";
 									}}
 									aria-label={t("detail.remAt")}
-									className="rounded-[7px] border border-line bg-panel-2 font-mono text-ink outline-none"
-									style={{ fontSize: 11, padding: "4px 6px" }}
+									className="min-h-11 rounded-[7px] border border-line bg-panel-2 font-mono text-ink outline-none focus:border-brass"
+									style={{ fontSize: 12, padding: "7px 9px" }}
 								/>
 							</div>
-							{notificationPermission() === "denied" && (
+							{reminderCapabilities.isError && (
+								<div className="font-body text-overdue" style={{ fontSize: 11, marginTop: 6 }}>
+									{t("detail.remCapabilitiesError")}
+								</div>
+							)}
+							{reminderCapabilities.isLoading && (
+								<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 6 }} role="status">
+									{t("detail.remCapabilitiesLoading")}
+								</div>
+							)}
+							{reminderChannel === "email" && reminderCapabilities.data?.email.enabled !== true && (
+								<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 6 }}>
+									{t("detail.remEmailUnavailable")}
+								</div>
+							)}
+							{reminderChannel === "push" &&
+								reminderCapabilities.data &&
+								!reminderCapabilities.data.push.enabled && (
+									<div className="font-body text-ink-3" style={{ fontSize: 11, marginTop: 6 }}>
+										{t("detail.remPushUnavailable")}
+									</div>
+								)}
+							{reminderChannel === "push" && notificationPermission() === "denied" && (
 								<div className="font-body text-overdue" style={{ fontSize: 11, marginTop: 6 }}>
 									{t("detail.remPushDenied")}
 								</div>
 							)}
 						</div>
 
+						<Suspense
+							fallback={
+								<div
+									aria-busy="true"
+									className="mt-4 min-h-11 rounded-lg border border-line border-dashed bg-panel-2 px-3 py-3 font-display font-semibold text-ink-3"
+									style={{ fontSize: 11 }}
+								>
+									{t("detail.customFields")}…
+								</div>
+							}
+						>
+							<CustomFieldsSection
+								taskId={realId}
+								projectId={task.project_id ?? ""}
+								members={members}
+								canEdit={canEditCustomFields}
+							/>
+						</Suspense>
+
+						<Suspense
+							fallback={
+								<div
+									aria-busy="true"
+									className="mt-4 min-h-11 rounded-lg border border-line border-dashed bg-panel-2 px-3 py-3 font-display font-semibold text-ink-3"
+									style={{ fontSize: 11 }}
+								>
+									{t("detail.polls")}…
+								</div>
+							}
+						>
+							<PollsSection
+								taskId={realId}
+								members={members}
+								currentUserId={session?.user?.id ?? null}
+								canManage={canManagePolls}
+								isManager={myProjectRole === "manager"}
+							/>
+						</Suspense>
+
+						{/* PŘÍLOHY — metadata offline, obsah přes autorizovanou serverovou route. */}
+						<SectionLabel>
+							{t("detail.attachments")} · {attachments?.length ?? 0}
+						</SectionLabel>
+						<div className="space-y-2">
+							{(attachments ?? []).map((attachment) => {
+								const mime = attachment.mime ?? "application/octet-stream";
+								const previewable = isAttachmentPreviewable(mime);
+								const image = mime.startsWith("image/") && previewable;
+								const mayDelete =
+									canDeleteAnyAttachment || attachment.uploaded_by === session?.user?.id;
+								return (
+									<div
+										key={attachment.id}
+										className="flex min-h-14 items-center rounded-xl border border-line bg-panel-2 p-2"
+										style={{ gap: 10 }}
+									>
+										{image ? (
+											<AttachmentImagePreview path={attachment.url ?? ""} />
+										) : (
+											<span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg border border-line bg-card font-display font-bold text-ink-3 text-xs">
+												{mime === "application/pdf" ? "PDF" : mime.startsWith("text/") ? "TXT" : "FILE"}
+											</span>
+										)}
+										<div className="min-w-0 flex-1">
+											<p className="truncate font-display font-semibold text-ink" style={{ fontSize: 12.5 }}>
+												{attachment.file_name}
+											</p>
+											<p className="font-mono text-ink-3" style={{ fontSize: 10.5 }}>
+												{attachmentSizeLabel(Number(attachment.size_bytes ?? 0))}
+											</p>
+										</div>
+										<a
+											href={attachmentContentUrl(attachment.url ?? "", !previewable)}
+											target={previewable ? "_blank" : undefined}
+											rel={previewable ? "noopener noreferrer" : undefined}
+											className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 font-display font-semibold text-brass-text hover:bg-card"
+											style={{ fontSize: 11.5 }}
+										>
+											{t(previewable ? "detail.attachmentPreview" : "detail.attachmentDownload")}
+										</a>
+										{mayDelete && (
+											<button
+												type="button"
+												disabled={attachmentBusy}
+												onClick={() => void removeAttachment(attachment.id)}
+												aria-label={t("detail.attachmentDelete")}
+												className={`grid h-11 shrink-0 place-items-center rounded-lg px-2 ${attachmentDeleteConfirm === attachment.id ? "bg-overdue-soft text-overdue" : "text-ink-3 hover:bg-card hover:text-overdue"}`}
+											>
+												{attachmentDeleteConfirm === attachment.id ? t("detail.attachmentDelete") : "✕"}
+											</button>
+										)}
+									</div>
+								);
+							})}
+							<label
+								className={`flex min-h-11 w-full items-center justify-center rounded-xl border border-line border-dashed px-3 font-display font-semibold ${attachmentBusy ? "cursor-wait opacity-60" : "cursor-pointer text-ink-2 hover:border-brass hover:text-brass-text"}`}
+								style={{ fontSize: 12, gap: 7 }}
+							>
+								<Icon name="priloha" size={16} />
+								{attachmentBusy ? t("detail.attachmentUploading") : t("detail.attachmentAdd")}
+								<input
+									type="file"
+									multiple
+									disabled={attachmentBusy}
+									className="sr-only"
+									onChange={(event) => {
+										void uploadTaskAttachments(Array.from(event.target.files ?? []));
+										event.target.value = "";
+									}}
+								/>
+							</label>
+							<p className="font-body text-ink-3" style={{ fontSize: 11 }}>
+								{t("detail.attachmentHint")}
+							</p>
+						</div>
+
 						{/* KOMENTÁŘE · N (ř. 1062–1071) */}
 						<SectionLabel>
 							{t("detail.comments")} · {cmts.length}
 						</SectionLabel>
-						{cmts.map((cm) => {
-							const m = memberOf(cm.author_id);
-							return (
-								<div key={cm.id} className="flex" style={{ gap: 9, marginBottom: 11 }}>
-									<span
-										className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
-										style={{
-											width: 26,
-											height: 26,
-											fontSize: 10,
-											color: "#fff",
-											background: "var(--w-avatar)",
-										}}
-									>
-										{initials(m?.name ?? "?")}
-									</span>
-									<div className="min-w-0">
-										<div
-											className="font-display font-semibold"
-											style={{ fontSize: 12.5, color: "var(--w-ink)" }}
-										>
-											{m?.name ?? "—"}{" "}
-											<span className="font-body" style={{ fontSize: 11, color: "var(--w-ink-3)" }}>
-												· {whenLabel(cm.created_at, t)}
-											</span>
-										</div>
-										<div
-											className="font-body"
-											style={{
-												fontSize: 13,
-												color: "var(--w-ink-2)",
-												marginTop: 2,
-											}}
-										>
-											{cm.body}
-										</div>
-									</div>
-								</div>
-							);
-						})}
-						<input
+						{rootComments.map((comment) => renderCommentCard(comment))}
+						<CommentComposer
 							value={cmtText}
-							onChange={(e) => setCmtText(e.target.value)}
-							onKeyDown={(e) => e.key === "Enter" && void addCmt()}
+							onChange={setCmtText}
+							members={members}
 							placeholder={t("detail.addComment")}
-							className="w-full border border-line bg-panel-2 font-body text-ink outline-none focus:border-brass"
-							style={{ borderRadius: 9, padding: "8px 11px", fontSize: 13 }}
+							submitLabel={t("detail.commentSend")}
+							onSubmit={(body, mentionUserIds) => addCmt(body, null, mentionUserIds)}
 						/>
-						{/* HISTORIE ÚPRAV · N — sbalitelné, nenápadné, na rozkliknutí (audit) */}
-						{acts.length > 0 && (
-							<div style={{ marginTop: 22 }}>
-								<button
-									type="button"
-									onClick={() => setHistOpen((o) => !o)}
-									className="flex w-full items-center font-display font-bold text-ink-3 uppercase hover:text-ink-2"
-									style={{ fontSize: 11, letterSpacing: ".06em", gap: 6 }}
+						{/* JEDNOTNÁ ČASOVÁ OSA — serverový audit + rozhodnutí + legacy historie bez duplicit. */}
+						<div style={{ marginTop: 22 }}>
+							<button
+								type="button"
+								onClick={() => setHistOpen((open) => !open)}
+								aria-expanded={histOpen}
+								className="flex min-h-11 w-full items-center font-display font-bold text-ink-3 uppercase hover:text-ink-2"
+								style={{ fontSize: 11, letterSpacing: ".06em", gap: 6 }}
+							>
+								<span
+									aria-hidden
+									style={{
+										display: "inline-block",
+										transform: histOpen ? "rotate(90deg)" : "none",
+										transition: "transform .15s",
+									}}
 								>
-									<span
-										style={{
-											display: "inline-block",
-											transform: histOpen ? "rotate(90deg)" : "none",
-											transition: "transform .15s",
-										}}
-									>
-										›
-									</span>
-									{t("detail.history")} · {acts.length}
-								</button>
-								{histOpen && (
-									<div style={{ marginTop: 11 }}>
-										{acts.map((a) => {
-											const m = memberOf(a.user_id);
-											const field = a.field ?? "";
-											const verb =
-												field === "completed"
-													? a.new_value
-														? t("detail.actMarkedDone")
-														: t("detail.actMarkedUndone")
-													: `${t("detail.actChanged")} ${actFieldLabel(field, t)}`;
-											const diff =
-												field !== "completed" && a.new_value
-													? a.old_value
-														? `${a.old_value} → ${a.new_value}`
-														: `→ ${a.new_value}`
-													: null;
+									›
+								</span>
+								{t("detail.timeline")} · {timelineEvents.length}
+								{timelineQuery.hasNextPage ? "+" : ""}
+							</button>
+							{histOpen && (
+								<div style={{ marginTop: 8 }}>
+									<div className="mb-3 flex rounded-lg border border-line bg-panel-2 p-[3px]">
+										{(["all", "changes", "decisions"] as const).map((filter) => (
+											<button
+												key={filter}
+												type="button"
+												onClick={() => setTimelineFilter(filter)}
+												aria-pressed={timelineFilter === filter}
+												className="min-h-11 flex-1 rounded-md px-2 font-display font-semibold"
+												style={{
+													fontSize: 11,
+													background: timelineFilter === filter ? "var(--w-card)" : "transparent",
+													color: timelineFilter === filter ? "var(--w-ink)" : "var(--w-ink-3)",
+												}}
+											>
+												{t(`detail.timelineFilter${filter[0]?.toUpperCase()}${filter.slice(1)}`)}
+											</button>
+										))}
+									</div>
+
+									{timelineQuery.isLoading && (
+										<p className="py-3 text-center font-body text-ink-3 text-xs" role="status">
+											{t("detail.timelineLoading")}
+										</p>
+									)}
+									{timelineQuery.isError && (
+										<div className="rounded-lg border border-line bg-panel-2 p-3 text-ink-3 text-xs">
+											{t("detail.timelineError")}
+											<button
+												type="button"
+												onClick={() => void timelineQuery.refetch()}
+												className="ml-2 min-h-11 font-display font-semibold text-brass-text"
+											>
+												{t("detail.timelineRetry")}
+											</button>
+										</div>
+									)}
+									{!timelineQuery.isLoading && !timelineQuery.isError && filteredTimeline.length === 0 && (
+										<p className="py-3 text-center font-body text-ink-3 text-xs">
+											{t("detail.timelineEmpty")}
+										</p>
+									)}
+									<div className="relative">
+										{filteredTimeline.map((event, index) => {
+											const actorName =
+												event.actorName ??
+												memberOf(event.actorUserId)?.name ??
+												(event.actorType === "ai"
+													? t("detail.timelineAi")
+													: event.actorType === "user"
+														? t("detail.timelineUnknownUser")
+														: t("detail.timelineSystem"));
+											const commentText =
+												event.excerpt ??
+												cmts.find((comment) => comment.id === event.commentId)?.body ??
+												null;
+											const relatedTaskName = event.relatedTaskId
+												? dependencyCandidates?.find((candidate) => candidate.id === event.relatedTaskId)?.name
+												: null;
+											const relatedUserName = event.relatedUserId
+												? memberOf(event.relatedUserId)?.name
+												: null;
+											const fieldLabels = event.changedFields
+												.filter(
+													(field) =>
+														field !== "completed_at" &&
+														!event.changes.some(
+															(change) =>
+																change.field === field &&
+																Boolean(
+																	fmtTimelineActVal(change.field, change.oldValue, t) ??
+																		fmtTimelineActVal(change.field, change.newValue, t),
+																),
+														),
+												)
+												.map((field) => actFieldLabel(field, t));
 											return (
-												<div key={a.id} className="flex" style={{ gap: 8, marginBottom: 10 }}>
+												<div key={event.id} className="relative flex pb-4" style={{ gap: 9 }}>
+													{index < filteredTimeline.length - 1 && (
+														<span
+															aria-hidden
+															className="absolute bg-line"
+															style={{ left: 13, top: 28, bottom: 0, width: 1 }}
+														/>
+													)}
 													<span
-														className="flex shrink-0 items-center justify-center rounded-full font-display font-semibold"
+														className="relative z-[1] flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-display font-semibold"
 														style={{
-															width: 21,
-															height: 21,
-															fontSize: 8.5,
+															fontSize: 9,
 															color: "#fff",
-															background: "var(--w-avatar)",
+															background: isDecisionTimelineEvent(event)
+																? "var(--w-brass)"
+																: "var(--w-avatar)",
 														}}
 													>
-														{initials(m?.name ?? "?")}
+														{event.actorType === "ai" ? "AI" : initials(actorName)}
 													</span>
-													<div className="min-w-0" style={{ fontSize: 12 }}>
-														<span
-															className="font-display font-semibold text-ink"
-															style={{ fontSize: 12 }}
-														>
-															{m?.name ?? "—"}
-														</span>{" "}
-														<span className="font-body text-ink-2" style={{ fontSize: 12 }}>
-															{verb}
-														</span>
-														<span className="font-body text-ink-3" style={{ fontSize: 11 }}>
-															{" · "}
-															{whenLabel(a.created_at, t)}
-														</span>
-														{diff && (
-															<div
-																className="truncate font-mono text-ink-3"
-																style={{ fontSize: 11, marginTop: 1 }}
-															>
-																{diff}
-															</div>
+													<div className="min-w-0 flex-1 pt-1" style={{ fontSize: 12 }}>
+														<div>
+															<span className="font-display font-semibold text-ink">{actorName}</span>{" "}
+															<span className="font-body text-ink-2">{t(TIMELINE_KIND_KEY[event.kind])}</span>
+															<span className="font-body text-ink-3" style={{ fontSize: 11 }}>
+																{" · "}
+																{whenLabel(event.createdAt, t)}
+															</span>
+														</div>
+														{fieldLabels.length > 0 && (
+															<p className="mt-0.5 truncate font-body text-ink-3" style={{ fontSize: 11 }}>
+																{fieldLabels.join(" · ")}
+															</p>
+														)}
+														{event.changes.map((change) => {
+															const oldValue = fmtTimelineActVal(change.field, change.oldValue, t);
+															const newValue = fmtTimelineActVal(change.field, change.newValue, t);
+															if (!oldValue && !newValue) return null;
+															return (
+																<p key={change.field} className="mt-0.5 truncate font-mono text-ink-3" style={{ fontSize: 11 }}>
+																	{actFieldLabel(change.field, t)}: {" "}
+																	{oldValue ? `${oldValue} → ` : "→ "}
+																	{newValue ?? "—"}
+																</p>
+															);
+														})}
+														{commentText && (
+															<p className="mt-1 line-clamp-2 rounded-md bg-panel-2 px-2 py-1.5 font-body text-ink-2" style={{ fontSize: 11.5 }}>
+																{commentText}
+															</p>
+														)}
+														{relatedTaskName && (
+															<p className="mt-0.5 truncate font-body text-ink-3" style={{ fontSize: 11 }}>
+																{event.direction === "blocked_by" ? "←" : "→"} {relatedTaskName}
+															</p>
+														)}
+														{relatedUserName && (
+															<p className="mt-0.5 font-body text-ink-3" style={{ fontSize: 11 }}>
+																{relatedUserName}
+															</p>
 														)}
 													</div>
 												</div>
 											);
 										})}
 									</div>
-								)}
-							</div>
-						)}
+									{timelineQuery.hasNextPage && timelineFilter === "all" && (
+										<button
+											type="button"
+											disabled={timelineQuery.isFetchingNextPage}
+											onClick={() => void timelineQuery.fetchNextPage()}
+											className="min-h-11 w-full rounded-lg border border-line bg-panel-2 font-display font-semibold text-ink-2 hover:border-brass disabled:opacity-60"
+											style={{ fontSize: 11.5 }}
+										>
+											{timelineQuery.isFetchingNextPage
+												? t("detail.timelineLoading")
+												: t("detail.timelineOlder")}
+										</button>
+									)}
+								</div>
+							)}
+						</div>
 					</div>
 
 					{/* footer akce (ř. 1073–1077) */}
@@ -1716,7 +3082,7 @@ function MenuItem({
 	onClick,
 	children,
 }: {
-	icon: "duplikovat" | "odkaz" | "smazat";
+	icon: "duplikovat" | "odkaz" | "smazat" | "ukoly";
 	danger?: boolean;
 	onClick: () => void;
 	children: ReactNode;
@@ -1731,7 +3097,8 @@ function MenuItem({
 			}`}
 			style={{
 				gap: 9,
-				padding: "8px 10px",
+				minHeight: 44,
+				padding: "10px",
 				fontSize: 13,
 				color: danger ? "var(--w-overdue)" : "var(--w-ink)",
 			}}

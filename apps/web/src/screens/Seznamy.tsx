@@ -11,6 +11,8 @@ import {
 	useState,
 } from "react";
 import { type CtxItem, useContextMenu } from "../components/ContextMenu";
+import { CopyLinkButton } from "../components/CopyLinkButton";
+import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
 import { initials } from "../lib/format";
@@ -22,6 +24,7 @@ import type {
 } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { showToast } from "../lib/toast";
+import { storageGet, storageSet } from "../lib/storage";
 import { pushUndo } from "../lib/undo";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
@@ -115,16 +118,16 @@ export function Seznamy() {
 	const { activeWs } = useWorkspace();
 	const { data: workspaces } = useWorkspaces();
 
-	const { data: lists } = usePsQuery<ListRow>("SELECT * FROM lists ORDER BY created_at DESC");
+	const { data: lists, isLoading: listsLoading } = usePsQuery<ListRow>("SELECT * FROM lists ORDER BY created_at DESC");
 	// tiebreaker id: položky šablony sdílejí created_at → bez něj se pořadí
 	// remízových řádků po UPDATE (odškrtnutí) měnilo o pár míst (feedback)
-	const { data: sections } = usePsQuery<ListSectionRow>(
+	const { data: sections, isLoading: sectionsLoading } = usePsQuery<ListSectionRow>(
 		"SELECT * FROM list_sections ORDER BY position, created_at, id",
 	);
-	const { data: items } = usePsQuery<ListItemRow>(
+	const { data: items, isLoading: itemsLoading } = usePsQuery<ListItemRow>(
 		"SELECT * FROM list_items ORDER BY position, created_at, id",
 	);
-	const { data: templates } = usePsQuery<ListTemplateRow>(
+	const { data: templates, isLoading: templatesLoading } = usePsQuery<ListTemplateRow>(
 		"SELECT * FROM list_templates ORDER BY created_at",
 	);
 
@@ -226,6 +229,10 @@ export function Seznamy() {
 		void navigate({ to: "/seznamy", search: { seznam: listId } });
 	};
 
+	if (listsLoading || sectionsLoading || itemsLoading || templatesLoading) {
+		return <DataLoading />;
+	}
+
 	if (selected) {
 		return (
 			<ListDetail
@@ -275,7 +282,7 @@ export function Seznamy() {
 		const st = statsOf.list(l.id);
 		const complete = st.total > 0 && st.done >= st.total;
 		return (
-			<div
+			<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 				key={l.id}
 				onClick={() => void navigate({ to: "/seznamy", search: { seznam: l.id } })}
 				onContextMenu={(e) => cm.open(e, listCardCtx(l))}
@@ -388,7 +395,7 @@ export function Seznamy() {
 				{(templates ?? []).map((tpl) => {
 					const count = parseTplSections(tpl.sections).reduce((n, s) => n + s.items.length, 0);
 					return (
-						<div
+						<div role="region"
 							key={tpl.id}
 							onContextMenu={(e) =>
 								cm.open(e, [
@@ -442,7 +449,7 @@ export function Seznamy() {
 						{archived.map((l) => {
 							const st = statsOf.list(l.id);
 							return (
-								<div
+								<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									key={l.id}
 									onClick={() => void navigate({ to: "/seznamy", search: { seznam: l.id } })}
 									onContextMenu={(e) => cm.open(e, listCardCtx(l))}
@@ -529,17 +536,21 @@ function ListDetail({
 	// řazení odškrtnutých (feedback): dolů v sekci × zůstat na místě — per seznam,
 	// per uživatel (jen zobrazení, pozice v DB se nemění)
 	const [doneDown, setDoneDown] = useState(
-		() => localStorage.getItem(`watson.listDoneSort.${list.id}`) === "1",
+		() => storageGet(`watson.listDoneSort.${list.id}`) === "1",
 	);
+	const currentListRef = useRef(list);
+	currentListRef.current = list;
+	const listId = list.id;
 	// Přepnutí na jiný seznam (list.id) — tvrdý reset polí i dirty příznaků.
 	useEffect(() => {
+		const current = currentListRef.current;
 		nameDirty.current = false;
 		eventDirty.current = false;
-		setName(list.name ?? "");
-		setEvent(list.event ?? "");
-		setDoneDown(localStorage.getItem(`watson.listDoneSort.${list.id}`) === "1");
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [list.id]);
+		setName(current.name ?? "");
+		setEvent(current.event ?? "");
+		setDoneDown(storageGet(`watson.listDoneSort.${current.id}`) === "1");
+		void listId;
+	}, [listId]);
 	// Příchozí sync téhož seznamu — přepiš pole jen když ho uživatel právě needituje.
 	useEffect(() => {
 		if (!nameDirty.current) setName(list.name ?? "");
@@ -550,7 +561,7 @@ function ListDetail({
 	const toggleDoneSort = () =>
 		setDoneDown((v) => {
 			const n = !v;
-			localStorage.setItem(`watson.listDoneSort.${list.id}`, n ? "1" : "0");
+			storageSet(`watson.listDoneSort.${list.id}`, n ? "1" : "0");
 			return n;
 		});
 
@@ -754,6 +765,7 @@ function ListDetail({
 					{t("nav.lists")}
 				</button>
 				<div className="flex-1" />
+				<CopyLinkButton entity="list" id={list.id} workspaceId={list.workspace_id} />
 				<button
 					type="button"
 					onClick={toggleDoneSort}
@@ -914,7 +926,7 @@ function ListDetail({
 							const who = (team ?? []).find((m) => m.id === it.who_id);
 							const key = it.id;
 							return (
-								<div
+								<div role="region"
 									key={it.id}
 									onContextMenu={(e) =>
 										cm.open(e, [
@@ -1031,7 +1043,8 @@ function ListDetail({
 									</button>
 									{assignOpen === key && (
 										<div
-											onClick={(e) => e.stopPropagation()}
+											role="group"
+											aria-label={t("lists.assign")}
 											className="absolute z-40 flex rounded-[11px] border border-line bg-card"
 											style={{
 												right: 12,
@@ -1044,7 +1057,10 @@ function ListDetail({
 											<button
 												type="button"
 												title={t("lists.assignNone")}
-												onClick={() => setWho(it, null)}
+												onClick={(event) => {
+													event.stopPropagation();
+													setWho(it, null);
+												}}
 												className="flex items-center justify-center rounded-full border border-line bg-panel-2 font-display font-bold text-ink-2 hover:border-brass"
 												style={{ width: 28, height: 28, fontSize: 9.5 }}
 											>
@@ -1055,7 +1071,10 @@ function ListDetail({
 													key={m.id}
 													type="button"
 													title={m.name}
-													onClick={() => setWho(it, m.id)}
+													onClick={(event) => {
+														event.stopPropagation();
+														setWho(it, m.id);
+													}}
 													className="flex items-center justify-center rounded-full border font-display font-bold hover:border-brass"
 													style={{
 														width: 28,

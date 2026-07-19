@@ -1,5 +1,7 @@
 /**
- * Regresní test CC-P0-08: Mail je demo a nesmí tvrdit neověřený stav.
+ * Regresní test CC-P0-08: obsah a akce Mailu jsou demo a nesmí tvrdit
+ * neověřený stav. Account lifecycle a owner-only read/send M1 mají explicitní
+ * allowlist claimů, které dokládá API E2E + mail static contract.
  *
  * 1) Žádný UI text v src/mail nesmí tvrdit „odesláno / doručeno / připojeno /
  *    (za)šifrováno" bez explicitního demo/simulace kontextu NA STEJNÉM řádku.
@@ -8,7 +10,7 @@
  *
  * Spuštění: pnpm --filter @watson/web test (tsx src/mail/runClaimsTest.ts)
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const MAIL_DIR = join(import.meta.dirname, ".");
@@ -17,6 +19,22 @@ const FORBIDDEN =
 // Stemy kvůli českému skloňování (demo/demu, simulace/simulaci). „993" povoluje
 // faktické popisy IMAP protokolu (993 = šifrovaný port), ne stav dat.
 const ALLOWED = /(dem[ou]|simulac|nešifrov|neopustil|993)/i;
+const VERIFIED_ACCOUNT_CLAIMS: Record<string, RegExp[]> = {
+	"AdminScreen.tsx": [/Pošta přes skutečný OAuth a šifrovaný vault/],
+	"NastaveniScreen.tsx": [/Google účet připojíš přes OAuth; heslo Watson nikdy nevidí a credential ukládá šifrovaně/],
+	"MailSub.tsx": [/zatím nepřipojeno/],
+	"MailboxWizard.tsx": [
+		/Schránka je ověřená\. Šifrovaná synchronizace IMAP a odesílání přes SMTP běží na pozadí/,
+		/Credential i synchronizovaný obsah jsou šifrované a odesílání má desetisekundové Zpět/,
+	],
+	"PersonalMailWorkspace.tsx": [
+		/Watson zprávy synchronizuje šifrovaně\. Heslo nevidí a obsah zpřístupní jen vlastníkovi účtu/,
+		/Skutečný šifrovaný příjem, odesílání, hledání a Watson pohledy/,
+	],
+	"PersonalMailComposer.tsx": [
+		/Watson bezpečně zachová mailové vlákno.*Skutečné odeslání přes připojený účet.*obsah je ve frontě šifrovaný/,
+	],
+};
 
 let failed = 0;
 const fail = (msg: string) => {
@@ -34,6 +52,7 @@ for (const f of readdirSync(MAIL_DIR).filter((x) => x.endsWith(".tsx"))) {
 		if (ALLOWED.test(raw)) return;
 		// řádkový komentář za kódem nesmí schovat nález v kódu, ale sám o sobě nevadí
 		const code = raw.replace(/\/\/.*$/, "");
+		if (VERIFIED_ACCOUNT_CLAIMS[f]?.some((claim) => claim.test(code))) return;
 		if (FORBIDDEN.test(code)) {
 			fail(`${f}:${i + 1} tvrdí neověřený stav bez demo/simulace: ${trimmed.slice(0, 90)}`);
 		}
@@ -47,6 +66,7 @@ const mustHaveBanner: [string, number][] = [
 	["NewMessage.tsx", 1],
 	["FloatComposer.tsx", 1],
 	["../screens/Nastaveni.tsx", 2],
+	["../components/PeekPanel.tsx", 1],
 ];
 for (const [rel, min] of mustHaveBanner) {
 	const src = readFileSync(join(MAIL_DIR, rel), "utf8");

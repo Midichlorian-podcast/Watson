@@ -1,1263 +1,1018 @@
-# Watson — závazná specifikace a implementační plán pro Claude Code
+# Watson — závazný re-audit a implementační plán pro Claude Code
 
-> **CLAUDE CODE: PŘEČTI TENTO SOUBOR CELÝ PŘED PRVNÍ ZMĚNOU.** Toto je jediný závazný implementační dokument pro aktuální stabilizaci Watsonu. Nezačínej „vylepšovat architekturu“ podle vlastního odhadu, dokud neprokážeš konkrétní invariant testem. Nález není opravený tím, že zmizí tlačítko nebo chyba přestane být vidět v UI.
+> Stav dokumentu: 2026-07-18 po stabilizaci, průběžných produktových dávkách do F8b / migrace 0081 a víceokenním shellu.
+>
+> CLAUDE CODE: přečti celý soubor před první změnou. Toto je jediný aktuální řídicí dokument. Staré audity, handoffy a plány ve `files/` jsou historické podklady. Pokud odporují tomuto souboru nebo současnému schématu, nemají autoritu.
 
-## 0. Provozní kontrakt pro Claude Code
+## 0. Výkonný kontrakt
 
-### 0.1 Autorita a řešení rozporů
+### 0.1 Co znamená „opraveno"
 
-Pořadí autority je:
+Nález je opravený pouze tehdy, když platí současně:
 
-1. explicitní rozhodnutí v kapitole **15** tohoto souboru;
-2. bezpečnostní a datové invarianty tohoto souboru;
-3. akceptační kritéria konkrétní issue card v kapitole **4A**;
-4. aktuální databázové schéma a serverová politika;
-5. současné UI chování pouze tehdy, pokud není v tomto dokumentu označeno jako chyba nebo demo.
+1. oprava pokrývá celou vertikálu, kterou chyba zasahuje: DB, API, sync, lokální cache, UI, recovery a audit;
+2. autorita je na serveru nebo v DB, ne pouze ve skrytém tlačítku;
+3. zápis je atomický a retry je idempotentní, pokud může být opakován;
+4. chyba se uživateli nezmění na tichý no-op ani falešný úspěch;
+5. existuje automatický důkaz přiměřený riziku;
+6. proběhl typecheck, lint bez warnings, relevantní testy a produkční build;
+7. zbytkové riziko je explicitně uvedeno.
 
-Starý `files/CLAUDE.md`, audity v `files/AUDIT*`, starší master plány, designové handoffy a komentáře typu „později“ jsou **historické podklady, ne autorita**. Nekombinuj jejich rozporné požadavky s tímto souborem. Pokud tento dokument neřeší produktovou volbu, nezakóduj ji natrvalo: použij feature flag nebo zastav práci a vyžádej rozhodnutí.
+Komentář, toast, `catch {}`, odstranění ovladače, změna copy nebo zelený happy-path unit test samy o sobě opravu nedokazují.
 
-### 0.2 Potvrzené mantinely
+### 0.2 Potvrzená produktová rozhodnutí
 
-- Realizaci řídí jeden vývojář/zakladatel. **WIP limit je jedna epika a jeden naléhavý fix.**
-- První release je interní pilot do 20 lidí, nikoli veřejná produkce.
-- Mail zůstává viditelný jako demo, ale nesmí tvrdit skutečné připojení, šifrování, odeslání ani doručení.
-- Transcript smí offline dostat jen účastník nebo explicitně pozvaný uživatel. Pro pilot je povolen plaintext v per-user DB; jde o vědomě přijaté riziko s povinnou revokací a cleanupem.
-- Projektové členství mění project manager nebo workspace admin/owner; editor nikdy.
-- Offline konflikt používá version check, field diff a Conflict Inbox. Obecné LWW není řešení.
-- Termín bez času je `DATE`; časový plán je `TIMESTAMPTZ` plus IANA timezone.
-- AI je per workspace/mailbox výchozím stavem vypnutá. Osobní a HR data jsou výchozím stavem mimo AI.
-- AI používá model routing a denní budget. STT provider musí být vyměnitelný a projít EU/DPA gate.
-- Pilot musí prokázat RPO 15 minut a RTO 2 hodiny.
+Tato rozhodnutí jsou závazná a nesmí být změněna bez výslovného souhlasu zakladatele:
 
-### 0.3 Jak pracovat na každé chybě
+1. První release je interní pilot do 20 lidí.
+2. Hlavní Mail UI a jeho akce zůstávají viditelně demo, dokud se nepřepojí na ověřený provider read/send model. Gmail account lifecycle, šifrovaný inbound sync a owner-only read API už skutečné jsou.
+3. Přepis porady smí číst účastník nebo explicitně pozvaný člověk; workspace admin nemá automatický přístup.
+4. Offline přepis je v první verzi povolen, ale pouze v per-user šifrované lokální DB s revokací a cleanupem.
+5. Projektové členství mění project manager nebo workspace admin/owner; editor nikdy.
+6. Konflikty používají optimistic version/CAS, field diff a Centrum problémů; obecné LWW není přijatelné.
+7. Kalendářní den je `DATE`; časovaný začátek je `TIMESTAMPTZ` plus IANA `start_timezone`.
+8. AI je per workspace/capability výchozím stavem vypnutá.
+9. AI potřebuje model routing, denní budget, explicitní souhlas a audit bez vstupního obsahu.
+10. STT provider musí být vyměnitelný a projít EU/DPA gate.
+11. Cílové DR parametry pilotu jsou RPO 15 minut a RTO 2 hodiny.
+12. Implementaci řídí jeden člověk; WIP limit je jedna epika plus jeden naléhavý fix.
+13. Samostatná okna nejsou samostatné systémy: Mail, Úkoly, Nadcházející/Kalendář,
+    Seznamy, Přehled a Velín sdílejí jednu datovou a oprávněnostní autoritu Watsonu;
+    focus/wallboard mění pouze shell a izolovaný URL kontext. Na enginech bez bezpečné
+    PowerSync multi-tab capability se stejný povrch otevře v aktuálním okně.
 
-Claude Code musí pro každou issue postupovat v tomto pořadí:
+### 0.3 Zakázané zkratky
 
-1. znovu otevřít všechny uvedené soubory; řádky v dokumentu jsou snapshot k 2026-07-14 a po změnách se mohou posunout;
-2. reprodukovat chybu nebo napsat failing test dokazující porušený invariant;
-3. popsat hranici důvěry: kdo ovládá vstup, která autorita rozhoduje a co se stane offline/retry/concurrent;
-4. navrhnout nejmenší kompletní opravu včetně DB, API, sync rules, klienta a recovery, pokud jsou dotčené;
-5. implementovat jednu vertikální změnu; nezakrývat serverovou chybu klientskou podmínkou;
-6. přidat unit/integration/e2e test odpovídající riziku;
-7. spustit relevantní testy, celý typecheck a při změně webu produkční build;
-8. zkontrolovat migraci dopředu i rollback/roll-forward cestu;
-9. aktualizovat status issue pouze tehdy, když projdou všechna akceptační kritéria;
-10. předat stručný důkaz: změněné soubory, testy, známá zbytková rizika a ruční ověření.
+- Nepřidávej `localStorage` pro doménová nebo citlivá data.
+- Nevracej raw chybu, stack, SQL, název constraintu, token, klíč ani obsah AI promptu.
+- Nepoužívej `INSERT ... ON CONFLICT DO UPDATE` jako univerzální CREATE.
+- Neoznačuj reminder, mail, upload, integraci nebo zálohu jako úspěšnou před autoritativním potvrzením.
+- Neřeš RBAC pouze v UI.
+- Nezahazuj permanentně odmítnutou sync operaci.
+- Nevypínej constraint, CSP, rate limit, lint, typecheck nebo test kvůli průchodu CI.
+- Neměň aplikovanou migraci 0000–0039. Další změna je forward migrace 0040+.
+- Nepouštěj mock data v produkci. `NODE_ENV=production` musí být fail-closed.
+- Nepřidávej AI před policy, consentem, redakcí, kvótou, auditem a lidským potvrzením.
+- Nepřepisuj nesouvisející změny v dirty worktree.
+- Neříkej „hotovo“, pokud jsi neprovedl uvedené důkazy nebo přesně neoznačil externí blokaci.
 
-### 0.4 Co je zakázáno
+### 0.4 Povinný pracovní postup
 
-- Neprováděj rozsáhlý refactor současně s bezpečnostní opravou.
-- Neměň více domén v jednom change-setu jen proto, že sdílejí utilitu.
-- Neřeš RBAC skrytím ovladače. Oprávnění musí být vynuceno serverem a pokud možno DB invariantem.
-- Neřeš sync chybu toastem, `catch {}`, retry smyčkou bez idempotence ani automatickým zahozením operace.
-- Nevracej klientovi `String(err)`, SQL text, stack, názvy constraintů nebo tajné hodnoty.
-- Nepřidávej nový `localStorage` store pro doménová nebo citlivá data.
-- Neoznačuj operaci jako úspěšnou před potvrzením autoritativního systému.
-- Nepoužívej `INSERT ... ON CONFLICT DO UPDATE` jako univerzální náhradu CREATE.
-- Nevypínej test, constraint, rate limit, CSP nebo typecheck kvůli průchodu buildu.
-- Neměň již aplikovanou migraci; vytvoř novou forward migraci.
-- Neprováděj nevratný backfill bez předchozího reportu, zálohy a dry-run dotazu.
-- Nepřidávej AI/autonomii před policy, consentem, limitem, auditem a undo.
-- Nepřepisuj nesouvisející rozpracované změny. Worktree může být záměrně dirty.
-- Nevydávej tvrzení „hotovo“, pokud jsi nespustil uvedené testy nebo jasně nepopsal, proč je nebylo možné spustit.
+Pro každou issue:
 
-### 0.5 Minimální důkaz kvality
+1. reprodukuj porušení nebo napiš failing test;
+2. určete trust boundary, tenant, oprávnění, retry a offline scénář;
+3. změň nejmenší úplnou vertikálu;
+4. přidej negativní test, nejen happy path;
+5. proveď forward migraci a ověř backfill/invariant na PostgreSQL;
+6. spusť minimální quality gate;
+7. u UI proveď klávesnici, focus, 320/390/768/1440 px a axe/browser test;
+8. zapiš důkaz, rollback/roll-forward a zbytkové riziko.
 
-Každý change-set musí projít minimálně:
+Minimální automatický gate:
 
 ```bash
+pnpm lint
 pnpm typecheck
 pnpm test
 pnpm --filter @watson/web test:corpus
 pnpm build
+git diff --check
 ```
 
-Aktuální `pnpm lint` je falešná kontrola (`echo "(lint: TODO)"`) a **nesmí být uváděna jako důkaz lint čistoty**. Dokud nebude F1, proveď cílenou statickou kontrolu změněných souborů a napiš, že plnohodnotný lint chybí. U DB/API/RBAC změn jsou navíc povinné integrační testy proti PostgreSQL. U sync změn jsou povinné dvě identity, dva workspace, offline fronta, retry a reconnect. U UI změn jsou povinné viewporty 320, 360, 390, 768, 1024 a 1440 px, klávesnice a axe.
+Pro DB/API/RBAC/sync/auth změny navíc:
 
-### 0.6 Formát pracovního reportu
-
-Po každé issue vrať:
-
-```text
-ISSUE: P0-xx
-STAV: opraveno | částečně | blokováno
-DŮKAZ PŘED: reprodukce nebo failing test
-ZMĚNY: soubory a stručný důvod
-MIGRACE/ROLLBACK: ano/ne + postup
-TESTY: přesné příkazy a výsledky
-ZBYTKOVÉ RIZIKO: konkrétní, ne „žádné"
-DALŠÍ POVOLENÝ KROK: právě jedna issue
+```bash
+pnpm --filter @watson/db db:migrate
+bash scripts/ci-api-integration.sh
 ```
 
-### 0.7 Snapshot repozitáře a technologií
-
-- Monorepo: pnpm 11 + Turborepo, Node 22+, TypeScript strict.
-- Web: React 19, Vite, TanStack Router/Query, PowerSync Web/SQLite WASM, PWA.
-- API: Hono/Node, Better Auth, Drizzle ORM.
-- Data: PostgreSQL + PowerSync.
-- Integrace: Anthropic, Web Push a rozpracovaný LuckyOS broker; Mail je seed/localStorage demo.
-- Lokální výchozí porty: web 5173, API 8787, PowerSync 8080.
-- Produkční deployment, readiness, observabilita, DR a incident proces nejsou hotové.
-
-- **Datum auditu:** 2026-07-13
-- **Revize rozhodnutí a sólo roadmapy:** 2026-07-14
-- **Stav:** produktová rozhodnutí jsou potvrzena; implementace ještě nezačala
-- **Rozsah:** sjednocuje dosavadní audit ve vláknu, audit aktuálního kódu, runtime kontrolu desktopu/mobilu, skutečné PostgreSQL schéma a dosavadní plány Mail, Meets, Watson AI/hlas a Zaměstnanec/LuckyOS.
-  **Nahrazuje jako zdroj priority:** všechny starší master plány, audity a doménové handoffy. Tento soubor je self-contained; pro rozhodnutí, pořadí a akceptaci není nutné otevírat jiný dokument. Odkazy v issue cards míří pouze na implementační kód, který musí Claude před změnou ověřit.
-
-**Potvrzený realizační rámec:** jeden full-stack vývojář/zakladatel, bez paralelního QA, designu, security a DevOps týmu. Prvních 90 dní proto cílí na bezpečný interní pilot jádra, ne na realizaci všech kapitol tohoto dokumentu.
-
----
+`pnpm audit --prod` je povinný v CI nebo v prostředí s povoleným npm registry. Bez skutečného výsledku nikdy netvrď, že nejsou advisories.
 
 ## 1. Verdikt bez obalu
 
-Watson už má neobvykle široký a vizuálně slibný produktový základ, ale dnes je to **pokročilý prototyp, ne bezpečný produkční systém**. Největší riziko není nedostatek funkcí. Je jím rozdíl mezi tím, co rozhraní tvrdí, a tím, co systém skutečně garantuje.
-
-- **Šíře produktu:** 8/10
-- **Desktopová použitelnost:** 5/10
-- **Mobilní použitelnost:** 3/10; na šířce 320 px je hlavní obsah úkolů široký 443 px a metadata jsou překrytá či uříznutá.
-- **Přístupnost:** 2/10
-- **Datová důvěryhodnost:** 1/10
-- **Bezpečnostní připravenost:** 2/10
-- **Provozní připravenost:** 1/10
-- **Připravenost na veřejnou produkci:** **stop-ship**
-
-Než se přidají další „wow“ funkce, musí Watson umět pět základních věcí:
-
-1. nikdy potichu neztratit nebo nepřepsat změnu;
-2. nikdy ukázat nulu, úspěch, doručení, šifrování či připojení, pokud to není ověřený stav;
-3. spolehlivě oddělit data uživatelů, workspace a projektů;
-4. umět obnovit data a vysvětlit, co se změnilo a kdo to udělal;
-5. mít automatické testy a telemetrii kritických cest.
-
-Teprve nad tím má smysl stavět reálný Mail, rozšířený Meets, Zaměstnance, Radar, AI a hlas.
+Claude udělal proti prvnímu auditu velký a převážně správný posun. Watson už není jen vizuálně bohatý prototyp s tenkou bezpečnostní vrstvou. Kritické operace mají autoritativní serverové commandy, databázové invarianty, CAS/idempotenci, audit, recovery a rozsáhlé integrační důkazy. Přístupnost, ochrana lokálních dat, auth, sync recovery a backup/restore se zlepšily zásadně.
+
+Před druhým auditem však některé změny končily o jednu vrstvu dřív, než bylo bezpečné:
+
+- časované úkoly dál ukládaly wall-clock řetězec bez zóny;
+- několik míst po sync round-tripu četlo UTC text jako lokální čas;
+- produkční mock režimy nebyly fail-closed;
+- CI actions nebyly immutably připnuté;
+- build neměl rozpočet a PWA precachovala přibližně dvojnásobek nutného objemu;
+- zůstaly přímé přístupy k Web Storage;
+- externí provider cally neměly úplný timeout kontrakt;
+- regenerace 2FA recovery kódů chyběla v UI;
+- nepodporovaný drag jednoho recurring occurrence byl tichý no-op.
+
+Tyto konkrétní nálezy byly v tomto průchodu opraveny a automaticky ověřeny. Reprodukovatelný Chromium + WebKit runtime/axe/keyboard/reflow důkaz, čerstvý dependency advisory scan i kritické browser cesty task/offline recovery, 2FA, meeting commit a šifrovaný backup/restore jsou zelené. Nelze však poctivě vydat produkční go-live verdikt bez reprodukovaného CI advisory artifactu a reálných produkčních provider/DR zkoušek. To nejsou skryté vady; jsou evidované jako release blokátory v kapitole 8.
+
+### Skóre po opravách
+
+| Oblast | Stav | Přísné hodnocení |
+|---|---|---:|
+| Datová integrita | DB constraints, transakční commandy, rollback testy | 9/10 |
+| Autorizace | server + DB scope, meeting content ACL, role invariants | 9/10 |
+| Offline/sync | per-user DB, CAS, dead-letter recovery, idempotence | 8.5/10 |
+| Auth | invite-only, magic link, heslo, 2FA, recovery rotace | 8.5/10 |
+| Lokální bezpečnost | per-user šifrovaná SQLite, oddělené keyringy | 8/10 |
+| Backup/restore | signed, scoped, encrypted wrapper, restore testy | 8/10 |
+| Přístupnost | 0 lint warnings, 105 TSX kontrakt, Chromium + WebKit axe/keyboard/reflow matrix | 9/10 |
+| Výkon | lazy routes, PWA rozpočet, bundle gate | 7.5/10 |
+| Produktová praktičnost | silné task/meeting jádro, složitější IA | 7/10 |
+| Produkční připravenost | kritické browser cesty jsou zelené; chybí CI advisory artifact, produkční provider a DR drill | 7/10 |
+
+## 2. Co Watson skutečně nabízí
+
+### 2.1 Funkční jádro
+
+- Offline-first úkoly, podúkoly do tří úrovní, priority, termíny, deadline, odhady,
+  vícedennost, opakování, statusy a per-user barvy. Opakování lze bezpečně přesunout
+  v rozsahu „jen tento“, „tento a další“ i „celá aktivní řada“ s preview, DST politikou,
+  kontrolou dostupnosti, zachováním dřívější historie a serverovým undo.
+- Rychlé přidání přirozenou češtinou: datum, čas, délka, recurrence, projekt a lidé; parser má corpus 321/321.
+- Seznam, board, den/týden/měsíc kalendář, drag/resize, Dnes, Nadcházející, Oblíbené a Inbox.
+- Projekty, projektové role, členové, cíle, seznamy/checklisty, postupy/řetězy, komentáře a audit aktivity.
+- Per-workspace dostupnost: pracovní doba, IANA časová zóna, tiché hodiny, ruční Nerušit,
+  Focus Time, absence a nedostupnost jako samostatná kalendářní vrstva. Focus Time je
+  autoritativní blok plánování s odůvodněnou, auditovanou nouzovou výjimkou.
+- Skutečné task přílohy do 20 MB: bezpečný staging při offline-first vytvoření, serverový binární obsah, PowerSync metadata, autorizovaný náhled/download, audit a delete/undo včetně blobu.
+- Přehled, Velín, Reporty, globální hledání a command palette.
+- Meets: atomické plánování, účastníci, přepis, explicitní content ACL, AI návrhy s revizí, commit action items, follow-up a carryover.
+- Interní rezervace nad kalendářem: manager nabízí konkrétní termíny s pevnými
+  účastníky, rezervující zaměstnanec se přidá automaticky a teprve potvrzení atomicky
+  vytvoří skutečný meet. Rezervace respektuje Focus, dostupnost i obsazený kalendář;
+  zrušení bezpečně otevře slot a zachová auditní historii.
+- Workspace pozvánky, role a profilové metadata.
+- Web Push a volitelné e-mailové remindery sdílejí lease/retry/hold state machine; e-mail
+  dostane `sent` až po provider ACK, stabilní idempotency key a message ID.
+- Osobní Gmail account lifecycle M1: oddělený serverový OAuth klient, PKCE, jednorázový
+  user-bound state, šifrovaný refresh credential, owner-only list a provider-first revoke.
+  Full + Gmail history sync běží přes distribuovaný lease, obsah zpráv je v odděleném
+  AES-GCM envelope a owner-only API nikdy nevrací surové HTML. Osobní Execution Inbox M2
+  umí z konkrétní zprávy atomicky vytvořit osobní úkol a trvale drží obousměrnou provenance.
+  Textový composer odesílá skutečně přes Gmail, s desetisekundovým Undo Send, Send Later,
+  encrypted frontou a konečným `uncertain` stavem místo rizikového duplicitního retry.
+- LuckyOS broker s odděleným bridge keyringem, tenant dedup a transakční reconciliation; reálný provider je externí prerequisite.
+- Export/restore s ACL scope, checksumem, HMAC, schema verzí, dry-run, conflict módem a lokálním AES-GCM obalem.
+- PWA/offline shell, šifrovaná per-user PowerSync SQLite a Centrum problémů pro odmítnuté zápisy.
+
+### 2.2 Záměrně demo nebo nedostupné
+
+- Mail je částečně skutečný a částečně demo. Permanentní `MailDemoBanner` je povinný na všech vstupních plochách, dokud nejsou hotové týmové cesty. Gmail OAuth, credential vault, šifrovaný inbound sync, osobní inbox a textový send jsou skutečné; týmové schránky stále používají seed a IMAP, odchozí přílohy i týmové odesílání ještě produkční nejsou.
+- AI meeting extraction bez klíče je dostupná pouze v non-production ukázkovém režimu a musí být označena `mock`. Produkce bez klíče vrací 503.
+- LuckyOS canned data lze zapnout pouze mimo produkci. Produkce bez base URL vrací 503.
+- E-mail reminder není totéž co produkční Mail M1: provider potvrzuje přijetí k odeslání,
+  ne doručení do cílové schránky. Bez konfigurace nebo po osobním revoke write path fail-closed odmítá.
+
+### 2.3 Technická architektura
+
+| Vrstva | Technologie | Autorita |
+|---|---|---|
+| Web | React 19, TypeScript, Vite, TanStack, i18next | prezentační a lokální optimistic stav |
+| Offline DB | PowerSync + šifrovaná per-user wa-sqlite | cache/outbox, nikdy finální RBAC autorita |
+| API | Hono + Better Auth + Zod | auth, policy, command orchestrace |
+| Databáze | PostgreSQL + Drizzle | tenant, constrainty, transakce, audit |
+| Sync | PowerSync buckets + strict write registry | distribuce dat a upload envelope |
+| AI | Anthropic přes server policy | default-deny, explicitní consent |
+| Notifikace | Web Push/Resend adapter + DB leases/state | provider potvrzuje push doručení nebo přijetí e-mailu |
+
+Klíčové adresáře:
+
+- `apps/web/src/lib/powersync/` — lokální schema, connector, per-user DB a recovery.
+- `apps/api/src/powersync.ts` — write registry, CAS, RBAC, audit a reference validation.
+- `apps/api/src/meetings.ts` — meeting commandy a content ACL.
+- `apps/api/src/taskCommands.ts` — atomický delete/restore.
+- `apps/api/src/export.ts` — export/restore kontrakt.
+- `packages/db/src/schema/` a `packages/db/drizzle/` — skutečné invarianty a forward migrace.
+- `scripts/ci-api-integration.sh` — autoritativní lokální integrační gate.
+
+## 3. Diferenciální re-audit: co se změnilo a zda je to lepší
+
+| Původní stop-ship nález | Stav 2026-07-15 | Důkaz / přísná poznámka |
+|---|---|---|
+| P0-01 falešné prázdné stavy při loadingu | Opraveno | jednotný trust-state model, readiness gates a browser důkaz cold/offline/reconnect stavů |
+| P0-02 Quick Add zahazoval recurrence/days | Opraveno | insert builder test + 321/321 corpus |
+| P0-03 identity sdílely jednu lokální DB | Opraveno | per-user encrypted DB, account cleanup a key endpoint test |
+| P0-04 odmítnuté sync operace mizely | Opraveno | dead-letter + retry/open/resolved test; complete až po persistence |
+| P0-05 slabé RBAC | Opraveno | project/workspace policy, last-admin/manager invarianty, integrační sada |
+| P0-06 PUT přepisoval existující řádek | Opraveno | CREATE conflict 409, idempotency receipt, stale PATCH 409 |
+| P0-07 neatomické multiwrites | Opraveno pro kritické toky | meeting, task delete/restore, LuckyOS, manual gate, invite commandy |
+| P0-08 Mail klamal | Opraveno jako demo kontrakt | permanentní banner + claims regression; reálný Mail stále program |
+| P0-09 reminder lhal o doručení | Opraveno | pending/retry/dead state machine; e-mail fail-closed |
+| P0-10 audit byl best-effort | Opraveno | audit ve stejné transakci, before/diff/requestId |
+| P0-11 auth nebyla produkční | Výrazně opraveno | invite-only, real mailer gate, TOTP, recovery rotation, privileged 2FA |
+| P0-12 lokální data/klíče slabé | Opraveno pro pilot | encrypted SQLite, AES-GCM export, oddělené rotující keyringy 0600 |
+| P0-13 transcript ACL příliš široká | Opraveno | participant/invite ACL; admin bez pozvání 403 |
+| P0-14 záloha bez restore | Opraveno aplikačně | signed export, dry-run/apply, encrypted wrapper, restore drill test |
+| P0-15 DB nevynucovala invarianty | Opraveno | migrace 0030–0039 a negativní DB testy |
+| P0-16 perimeter/supply chain | Opraveno z velké části | CSP, safe errors, rate limits, SHA-pinned CI, Dependabot; aktuální registry audit čistý |
+| P0-17 320 px a a11y | Opraveno pro Chrome matrix | 0 lint warnings, 105 TSX kontrakt; 90 light + 30 dark axe průchodů, keyboard a 200% zoom |
+| P0-18 chyběly testy/observabilita | Opraveno | request ID, timing, readiness, rozsáhlé DB/API testy |
 
----
+### 3.1 Nové nálezy druhého auditu — všechny implementované
 
-## 2. Co aplikace dnes nabízí
+#### A2-01 — čas bez IANA zóny a DST drift
 
-### Funkční nebo částečně funkční jádro
+Před opravou se například `2026-07-15 09:30` posílalo jako text bez offsetu. PostgreSQL ho mohl uložit jako UTC a UI pak po syncu četlo prvních pět znaků času, takže skutečný okamžik a zobrazený čas nebyly stejná veličina. Stejná chyba byla v Quick Add, Add Task, detailu, kalendářovém move/resize, recurrence projekci, duplikaci a follow-up meetingu.
 
-- úkoly, podúkoly, projekty, sekce, stavy, priority, termíny, deadliny, odhady a více denní úkoly;
-- pohledy Dnes, Vše, Zásobník, Nadcházející, oblíbené, board a kalendář;
-- rychlé přidání v přirozené češtině, přiřazování a opakování;
-- osobní a týmové workspace, projektová členství a základní role;
-- komentáře, připomínky, push notifikace a částečná historie změn;
-- cíle, reporty, vedení/Velín, seznamy a postupy/štafety;
-- PowerSync offline-first lokální SQLite a synchronizace do PostgreSQL;
-- PWA, světlý/tmavý motiv, čeština/angličtina a desktop/mobilní shell;
-- základ Meets: přepis → AI návrh úkolů → lidská revize;
-- základ Watson příkazů: LLM navrhne akce, klient je po potvrzení provede;
-- backendový most Zaměstnanec ↔ LuckyOS bez hotové obrazovky v aplikaci.
+Oprava:
 
-### Funkce, které jsou převážně prototyp nebo demo
+- `tasks.start_timezone varchar(64)` a párový CHECK se `start_date`;
+- migrace `0039_task_start_timezone.sql` s atomickým backfillem 21 řádků;
+- `Intl` validace skutečné IANA zóny na command/write path;
+- jednotné helpery pro wall-clock ↔ instant;
+- striktní odmítnutí neexistujícího jarního času;
+- deterministicky dřívější instant při podzimní dvojznačnosti;
+- automatické recurrence posunutí na první validní minutu přes DST mezeru;
+- PowerSync schema, registry a bucket rozšířené o `start_timezone`.
+
+Důkaz: 9 timezone regresních kontrol, DB pair/format testy, meeting command test a 0 orphan/missing zone po migraci.
+
+#### A2-02 — produkční mock data
 
-- Mail: seed + `localStorage`, bez reálného mailového backendu, vaultu a poskytovatele;
-- mailové role, AI, pravidla, šifrování, připojení schránek, token expiry, odesílání, plánované odeslání a offboarding;
-- automatická záloha na Google Disk;
-- e-mailové připomínky;
-- část Watson/Radar scénářů;
-- plný zaměstnanecký frontend;
-- reálné přílohy a souborový outbox.
+`LUCKYOS_MOCK=1` a meeting mock extraction nebyly explicitně omezeny na non-production. Oprava je fail-closed: `NODE_ENV=production` canned LuckyOS nikdy nezapne a meeting extraction bez skutečného provideru vrací 503.
 
-### Jak je aplikace postavená
+#### A2-03 — supply-chain mutabilita
 
-- **Web:** React 19, Vite, TanStack Router/Query, vlastní UI balíček.
-- **Offline:** PowerSync Web + SQLite WASM, jeden lokální soubor `watson.db`.
-- **API:** Hono/Node, Better Auth, Drizzle ORM.
-- **Data:** PostgreSQL + self-hosted PowerSync service.
-- **Integrace:** Anthropic, Web Push, připravovaný LuckyOS broker; Mail zatím nemá backend.
-- **Provoz:** pouze lokální Docker Compose; chybí produkční deployment, observabilita, DR a release gates.
+CI používalo pohyblivé action tagy. Workflow nyní má globální `contents: read`, checkout bez persist credentials a immutable SHA pro checkout v6.0.3, setup-node v6.5.0 a pnpm/action-setup v6.0.9. Dependabot kontroluje npm i GitHub Actions týdně.
+
+#### A2-04 — neomezené externí requesty
+
+Resend, LuckyOS, upload a Anthropic cally dostaly explicitní timeout, omezený retry a kontrolované 502/504. Timeout není vydáván za business úspěch.
+
+#### A2-05 — PWA/bundle bez rozpočtu
+
+Build nyní selže nad 350 KiB gzip pro největší JS a nad 5.5 MiB offline precache. PWA precachuje jen potřebný encrypted async SQLite WASM a denní jádro; navštívené velké volitelné moduly ukládá do omezené runtime cache. Aktuálně 289 KiB gzip a 4,941 KiB.
+
+#### A2-06 — blokovaný Web Storage mohl rozbít UI
+
+Přímé přístupy byly sjednoceny přes safe storage wrapper; plný, zakázaný nebo nedostupný storage degraduje na session/in-memory stav.
+
+#### A2-07 — neúplná obnova 2FA
+
+Nastavení nyní umí po ověření bezpečně otočit recovery kódy. DB test potvrzuje, že nová sada není uložena čitelně.
+
+#### A2-08 — tichý no-op recurrence drag
+
+První úplná vertikála je dokončená: drag základního i virtuálního výskytu otevře
+serverový preview diff, respektuje IANA/DST a Focus/dostupnost, atomicky uloží výjimku
+a nabídne 15minutové undo. PowerSync promítá stabilní identitu zdrojového výskytu i
+nové cílové datum. Rozsahy „tento a další“ a „celá řada“ zůstávají explicitně
+nedostupné, dokud nedostanou vlastní bezpečný model segmentů série.
+
+## 4. Bezpečnostní model po opravách
+
+### 4.1 Silné stránky
+
+- Invite-only registrace je serverová a platí i pro magic link/Google cestu.
+- Privilegované zápisy mohou v produkci vyžadovat TOTP; recovery kódy lze rotovat.
+- Session, backup, PowerSync a LuckyOS používají oddělené compromise domains.
+- PowerSync/LuckyOS private keyringy mají 0600, rotaci current/previous a odlišné `aud`/`iss`.
+- Sync write používá tabulkový/sloupcový allowlist, role policy, tenant reference validation, CAS a idempotency.
+- Meeting transcript není součástí plošného workspace bucketu.
+- HTML composer prochází allowlist sanitizerem; href povoluje jen http/https/mailto a přidává `noopener noreferrer nofollow`.
+- CSP, security headers, request ID, safe error mapping a distribuovaný rate limit jsou zapnuté.
+- AI policy je default-deny, vyžaduje user consent, redactuje e-mail/telefon, kvótuje a audit neukládá vstup.
+- Export je ACL-scoped, podepsaný a lokálně šifrovatelný PBKDF2-SHA256 310k + AES-256-GCM.
+
+### 4.2 Co bezpečnostně ještě není možné prohlásit
+
+- Aktuální lokální `pnpm audit --prod --audit-level high` je čistý; release musí výsledek reprodukovat jako CI artifact nad stejným lockfilem.
+- Bez produkčního nasazení nelze potvrdit TLS termination, proxy trust, secret store, log redaction a retention.
+- Aplikační export není náhradou PostgreSQL PITR.
+- Offline plaintext transcript je nyní v šifrované DB, ale kompromitovaný přihlášený profil/zařízení jej stále může číst.
+- Reálný Mail potřebuje OAuth token vault, provider scopes, webhook verification, malware scan, attachment object store a audit doručení.
+- Reálný LuckyOS/STT/AI provider potřebuje DPA, EU residency rozhodnutí, rotaci credentialů a revoke drill.
+
+## 5. Top 10 designových vylepšení
+
+Každý bod je samostatná issue s měřitelným acceptance gate; nejde o svolení k redesignu všeho najednou.
+
+1. **Jednotná vrstva důvěryhodných stavů.** Komponenta pro loading/empty/offline/stale/syncing/rejected/permission/demo. Žádná obrazovka nesmí skládat vlastní nekompatibilní copy. Gate: Storybook nebo vizuální katalog + všechny stavy testované.
+2. **Mobilní task card podle priorit informací.** Název a stav vždy, termín/deadline/priorita druhá řada, projekt/lidé až třetí; žádné horizontální odřezání na 320 px. Gate: 320/360/390 a 200% zoom.
+3. **Rozdělit Nastavení na routy.** Profil, Tým, Zabezpečení, Data a zálohy, Integrace, Notifikace, Vzhled. Deep link pro 2FA musí otevřít přesnou sekci.
+4. **Konzistentní mobilní navigace.** Jedna primární spodní lišta, jasné „Více“, zachovaný kontext a žádná jiná navigační taxonomie uvnitř Mailu.
+5. **Jeden modal/drawer/popover primitive.** Focus trap, restore focus, Esc, backdrop, scroll lock, nested layer a ARIA z jediné knihovny. Odstranit ruční overlay implementace postupně.
+6. **Sémantické design tokeny.** `surface`, `text`, `danger`, `warning`, `success`, `focus`, `disabled`, density a motion; ne nové ad-hoc barvy. Gate: kontrast AA ve světlém i tmavém režimu.
+7. **Definice KPI přímo v UI.** Reporty a Velín musí u čísla uvést scope, období, timezone, excluded data a freshness. Tooltip není dostačující pro zásadní omezení.
+8. **Explicitní edit/save/conflict režim.** U delších formulářů autosave stav, poslední potvrzení, lokální změna a konflikt; žádné neviditelné uložení po blur bez feedbacku.
+9. **Progressive disclosure.** Create flow ukazuje jméno/projekt/termín; recurrence, deadline, flow, barva a pokročilé přiřazení až na vyžádání. Power funkce zůstávají dostupné klávesnicí.
+10. **Recovery-first UX.** Centrum problémů sjednotí rejected sync, stale write, provider timeout, restore a retry. Každá chyba má „co se stalo / co zůstalo bezpečné / co může uživatel udělat“.
+
+## 6. Top 10 nových funkcí, které udělají Watson lepší
+
+1. **Watson Radar dopadů.** Vysvětlitelně propojí deadline, blokery, absenci, meeting decision a kapacitu; vždy ukáže zdroje a míru jistoty.
+2. **Pravidlový automatizační engine.** Trigger/conditions/actions, dry-run, idempotency key, audit a undo; žádný libovolný serverový kód.
+3. **Dependency graph úkolů a projektů.** Explicitní `blocks/blocked-by`, cycle constraint, critical path a dopad skluzu.
+4. **Kapacitní what-if plánování.** Pracovní hodiny, absence a odhady; porovnání scénářů bez automatického přepsání plánu.
+5. **Plný meeting lifecycle.** Agenda template, pre-read, rozhodnutí, action items, follow-up SLA, series analytics a explicitní invite ACL.
+6. **Reálný bezpečný Mail.** Provider adapter, OAuth vault, per-mailbox scope, verified send/delivery, attachments a audit. Demo se odstraní až po E2E provider důkazu.
+7. **AI návrhy s provenance.** Každý návrh má citaci zdroje, model/policy, confidence, accept/edit/reject a nikdy se neprovede bez člověka.
+8. **Decision log.** Rozhodnutí napříč meetingy/projekty s vlastníkem, datem účinnosti, revizí a vazbou na úkoly.
+9. **Verzované šablony.** Projekty, meetingy, seznamy a postupy se schema verzí, migrací instance, diffem a rollbackem.
+10. **Portfolio health.** Trend, confidence a vysvětlitelný risk pro cíle/projekty; žádné neprůhledné „AI score“.
+
+## 7. Top 10 funkcí, které udělají Watson praktičtější
 
-### Implementační mapa repozitáře
-
-| Oblast                       | Aktuální primární soubory                                                                            | Poznámka pro změny                                                                     |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Auth/session/workspace API   | `apps/api/src/auth.ts`, `apps/api/src/index.ts`                                                      | Autorita pro identity a role; UI kontrola sama nestačí.                                |
-| Generic sync write           | `apps/api/src/powersync.ts`                                                                          | Nejrizikovější trust boundary; měnit pouze s PostgreSQL integration testy.             |
-| PowerSync client             | `apps/web/src/lib/powersync/db.ts`, `connector.ts`, `AppSchema.ts`                                   | DB lifecycle, upload retry/rejection a lokální schema musí zůstat kompatibilní.        |
-| Sync visibility              | `powersync/sync-config.yaml`                                                                         | Změna pravidel je bezpečnostní změna a vyžaduje restart služby + dvouuživatelský test. |
-| PostgreSQL schema/migrations | `packages/db/src/schema/*`, `packages/db/drizzle/*`                                                  | Neměnit staré migrace; expand/backfill/validate/contract.                              |
-| Tasks/recurrence/workflows   | `packages/db/src/schema/task.ts`, `apps/web/src/lib/chainAdvance.ts`, recurrence/Quick Add moduly    | Date-only a instant nesmějí sdílet nejasnou semantiku.                                 |
-| Meetings                     | `apps/api/src/meetings.ts`, `apps/web/src/screens/Mitingy.tsx`, `packages/db/src/schema/meetings.ts` | Transcript content je citlivější scope než workspace metadata.                         |
-| Notifications                | `apps/api/src/push.ts`, `apps/web/src/lib/push.ts`, `apps/web/src/components/NotifCenter.tsx`        | `sent` znamená provider-confirmed delivery, ne zpracovaný řádek.                       |
-| Mail demo                    | `apps/web/src/mail/*`                                                                                | Do M1 není zdroj pravdy; všechny side-effecty musí být explicitně simulované.          |
-| Employee/LuckyOS             | `apps/api/src/employee.ts`, `packages/db/src/schema/system.ts`                                       | Osobní/HR data nikdy do širokého workspace bucketu.                                    |
-| Backup/restore               | `apps/web/src/lib/backup.ts`                                                                         | Současný soubor je jen neúplný lokální export.                                         |
-| PWA                          | `apps/web/src/sw.ts`, `apps/web/vite.config.ts`                                                      | Cache změny testovat na upgrade i cold offline startu.                                 |
-| i18n/design primitives       | `packages/i18n`, `packages/ui`, `apps/web/src/index.css`                                             | Žádné nové hardcoded user-facing texty ani ad-hoc barvy.                               |
-
----
-
-## 3. Ověřená fakta z auditu
-
-Audit kombinoval statickou kontrolu, běh aplikace jako `demo@watson.test`, desktop 1280 px, mobil 390 px a 320 px, skutečné DB constrainty a lokální build/testy.
-
-- `typecheck`: prošel ve všech 6 balíčcích.
-- produkční build: prošel, ale hlavní JS chunk má **1 057 kB min / 314,5 kB gzip**.
-- PWA precache: **5 541,5 KiB**; výstup obsahuje i nepoužívané šifrované SQLite WASM varianty.
-- test opakování: 14/14; quick-add corpus: 321/321.
-- jiné automatické testy neexistují; API, DB, UI, sync a role nemají test suite.
-- `lint` ve všech balíčcích je jen `echo "(lint: TODO)"`.
-- `pnpm audit --prod`: 1 high — Drizzle ORM SQL identifier injection, lokální verze 0.38.x, oprava od 0.45.2.
-- PostgreSQL: 35 `audit_events`, z nich **34 bez `workspace_id`**.
-- PostgreSQL: **13 projektů bez jediného `project_members.role='manager'`**.
-- Kontrola existujících cross-project/workspace referencí našla nyní 0 porušení; kód a DB jim však ve více cestách stále neumějí zabránit.
-- Mobil 320 px: `main.clientWidth=320`, `main.scrollWidth=443`; obsah úkolové karty přetéká mimo obrazovku.
-- Nastavení na mobilu: vnitřní scroll 7 416 px při viewportu 787 px, žádný sémantický nadpis.
-- Mobilní sheet „Více“ nemá `role=dialog`, `aria-modal`, focus trap ani Meets/workspace switcher.
-- Panel oznámení má `role=dialog`, ale ne `aria-modal`; Tab přesune fokus zpět na trigger v pozadí.
-- Hledání „Provozní porada“ vrátí 0 výsledků, přestože Meets tuto poradu zobrazuje.
-
----
-
-## 4. Největší systémové chyby a jejich řešení
-
-### P0 — stop-ship
-
-#### P0-01: falešné nuly a falešné „vše hotovo“ při načítání
-
-Obrazovky mapují `undefined` dotazu na `[]`. Globální `SyncGate` chrání jen první sync, ne připravenost jednotlivých dotazů. V runtime Velín nejdřív ukázal 0 otevřených/0 po termínu a po několika sekundách 17/11; Přehled nejdřív tvrdil „Vše odbaveno“ a poté 19 po termínu.
-
-**Řešení:** každý datový selector vrací `loading | ready | stale | offline | error`; KPI a empty state se nesmí renderovat před `ready`. Zobrazit „Data k času…“, sync stav a možnost retry. Zakázat `data ?? []` tam, kde prázdno znamená obchodní tvrzení.
-
-#### P0-02: Quick Add vyrábí neodeslatelný úkol a ztrácí `days`
-
-`QuickAdd.tsx` posílá pro neopakovaný úkol `recurrence_basis=null`, ale PostgreSQL má `NOT NULL`. Lokální insert se tváří úspěšně, server vrátí 400 a connector operaci zahodí. Parser umí `days`, UI ukáže pilulku, ale insert sloupec neukládá.
-
-**Řešení:** vždy poslat `recurrence_basis='due_date'` nebo sloupec vynechat; uložit `days`; celý task + assignments vložit v jedné lokální transakci. Přidat integrační test local SQLite → upload endpoint → PostgreSQL → download.
-
-#### P0-03: lokální data nejsou oddělená mezi účty
-
-PowerSync používá pevný `watson.db`. Odhlášení pouze odpojí sync; DB se nemaže ani nepřepíná podle uživatele. Desítky `localStorage` klíčů — mailové drafty, admin nastavení, notifikace, workspace, šablony a preference — nejsou namespacované uživatelem ani čištěné při odhlášení.
-
-**Řešení:** DB jméno odvodit z neprůhledného hash user ID; při změně identity zavřít starou DB, vyčistit query cache a otevřít novou. Citlivé lokální store namespacovat `userId/workspaceId`, mailové drafty přesunout do šifrovaného store; nabídnout „odhlásit a odstranit data ze zařízení“.
-
-#### P0-04: trvale odmítnuté sync operace jsou zahozené
-
-HTTP 400/403/409/422 vyvolá šestisekundový obecný toast, operace se přeskočí a transakce se dokončí. Chybí dead-letter, původní hodnoty, přesný důvod, retry, export a administrátorská diagnostika.
-
-**Řešení:** perzistentní **Centrum problémů se synchronizací**. Před dokončením transakce uložit odmítnutou operaci, entitu, diff, serverový kód a korelační ID. Uživatel zvolí opravit/retry/zahodit/exportovat. Pro permanentní chybu nikdy nepoužít pouze toast.
-
-#### P0-05: role a členství nejsou bezpečně vynucené
-
-- libovolný člen projektu může přes API přidat nebo odebrat libovolného člena;
-- běžný workspace member může zapisovat goals, lists, contacts, meetings a entity links;
-- manager může změnit roli admina směrem dolů, protože se nekontroluje hodnost cílové role;
-- UI zobrazuje správcovské ovladače i lidem, jejichž write bude odmítnut;
-- v DB je 13 projektů bez managera.
-
-**Řešení:** jedna centrální policy matice `workspace role × project role × resource × action`. Správu členství smí manager projektu nebo workspace admin/owner. Zakázat změnu uživatele se stejnou/vyšší hodností, posledního admina a posledního managera. UI capabilities načítat ze serveru, ne odhadovat. Doplnit backfill managerů a DB trigger/transactional invariant.
-
-#### P0-06: generický `PUT` umí přepsat cizí řádek a autora
-
-`INSERT ... ON CONFLICT(id) DO UPDATE` přepisuje všechny dodané sloupce. U tabulek s `creatorCol` server při každém PUT doplní aktuální user ID a při kolizi přepíše i autora. `authorEditOnly` se kontroluje jen u PATCH/DELETE. Týká se komentářů i dalších creator-scoped entit.
-
-**Řešení:** oddělit `CREATE`, `UPDATE`, `DELETE`; CREATE na existující ID vrací 409 a nikdy neupsertuje. Autor a created_at jsou immutable. UPDATE vyžaduje `version`/`updated_at` precondition. Přidat property/integration testy kolize ID a cizího autora.
-
-#### P0-07: vícekrokové změny nejsou atomické ani idempotentní
-
-Založení projektu, meeting commit, workflow advance a LuckyOS reconcile skládají řadu samostatných zápisů. Pád uprostřed nechá orphan projekt, část úkolů, chybějící assignments nebo duplicitní import. Opakování může vytvořit další kopie.
-
-**Řešení:** serverové command endpointy s DB transakcí, idempotency key a audit eventem ve stejné transakci. Offline klient ukládá command do outboxu; server vrací výsledný aggregate a verzi.
-
-#### P0-08: Mail klame o reálném stavu
-
-UI tvrdí „připojeno“, „šifrováno“, „token vyprší“, „pravidla běží na serveru“, „odesláno“ a nabízí „Schválit vše“, ale většina stavu je seed/localStorage a odesílání ani vault neexistují.
-
-**Řešení:** podle potvrzené varianty B zůstává modul viditelný, ale do M1 musí na každé Mail obrazovce zobrazovat permanentní `DEMO / lokální simulace`, zakázat či přesně označit externí side-effecty a nikdy nepoužít slovo „odesláno/připojeno/šifrováno“ bez serverového důkazu.
-
-#### P0-09: reminder se označí jako odeslaný i při nedoručení
-
-Push může vrátit 0, e-mailová větev je TODO/no-op, přesto se nastaví `sent_at`. Worker navíc neběží bez VAPID ani pro e-mail, není zamčený pro více instancí a může poslat duplicity.
-
-**Řešení:** delivery state machine `pending → claimed → sent | retry | dead`, `FOR UPDATE SKIP LOCKED`, attempt counter, provider message ID, backoff a dead-letter. `sent_at` jen po potvrzeném úspěchu. E-mailový kanál neschvalovat, dokud není implementovaný.
-
-#### P0-10: audit není auditní záruka
-
-Audit insert je best-effort po vlastní mutaci a mimo transakci. Při chybě se jen zaloguje warning. U projektových entit často chybí `workspace_id`; 34/35 reálných záznamů je bez něj. DELETE neuchovává předchozí stav.
-
-**Řešení:** audit event v téže DB transakci; before/after nebo RFC 6902 patch, workspace odvozený serverem, actor, request ID, reason/source, immutable storage a retenční politika. Pro kritické změny selhání auditu znamená rollback mutace.
-
-#### P0-11: produkční autentizace není dokončená
-
-2FA je plugin bez UI/enforcementu, ověření e-mailu je vypnuté, self-signup je otevřený, reset hesla chybí. Magic-link token se vždy tiskne do API logu; v produkci by mohl skončit v centralizovaných logách. Health tvrdí `twoFactor:true` a `magicLink:'dev'` bez důkazu připravenosti.
-
-**Řešení:** invite-only nebo ověřená doména, skutečný mailer, ověření e-mailu, reset hesla, 2FA enrollment/recovery a povinné 2FA pro adminy. Magic link do logu pouze v explicitním `DEV_AUTH_LOG_LINKS=1`; produkce bez maileru fail-closed.
-
-#### P0-12: ochrana dat na zařízení a klíčů je nedostatečná
-
-Lokální SQLite, mailové drafty a exportní JSON jsou plaintext. PowerSync RSA private JWK je v souboru s právy 644, pevným `kid=watson-dev-1`, bez rotace; stejný klíč podepisuje PowerSync i LuckyOS bridge tokeny.
-
-**Řešení:** separátní signing keys a audience/issuer, rotace přes více JWKS klíčů, secrets manager/KMS, soubor nejvýše 600 v devu. Citlivé lokální úložiště šifrovat klíčem v platformním key store; export volitelně šifrovat heslem.
-
-#### P0-13: přepisy porad jsou příliš široce sdílené
-
-Celý transcript a AI extraction se synchronizují všem členům workspace včetně guest, nikoli jen účastníkům. Každý člen může spustit placenou extrakci a každý člen včetně guest může na API vytvořit/commitnout meeting. Chybí consent, retention, vendor policy a PII redaction.
-
-**Řešení:** meeting ACL/participants, guest read policy, transcript oddělený od širokého workspace bucketu, AI off-by-default per workspace, consent před odesláním vendorovi, retention a delete/export. Cost quota a rate limit per user/workspace.
-
-#### P0-14: záloha je neúplná a bez obnovy
-
-Export vynechává meetings, entity_links, audit/activity a další entity, nemá manifest schématu, checksum, šifrování ani import. Popis „všechna tvoje data“ je nepravdivý.
-
-**Řešení:** serverový versioned export + restore wizard, referenční pořadí, dry-run, konfliktní režim, checksum/signature a audit. Pravidelný PostgreSQL backup + WAL/PITR a čtvrtletní restore drill.
-
-#### P0-15: DB nevynucuje klíčové invarianty
-
-DB hlídá prioritu, ale ne max hloubku úkolu, stejný projekt parent/section/status, stejný workspace u list/goal vazeb, meeting soft reference, posledního managera ani stavové přechody. Server navíc při offline referenci kontrolu přeskočí, pokud cílový řádek ještě neexistuje.
-
-**Řešení:** složené FK/unique klíče, deferred constraints nebo transakční validační procedury, enum/check pro statusy a kind, constraint testy v CI. Offline referenci nepřijmout jako „bezpečnou“; držet ji pending do ověření.
-
-#### P0-16: bezpečnostní perimeter a supply chain
-
-Chybí CSP, HSTS, frame-ancestors, nosniff, Permissions-Policy, jednotné body/file limity, schema validace a bezpečné chybové odpovědi. API vrací `String(err)` z DB. Rate limiter věří spoofovatelnému X-Forwarded-For, je in-memory a nepokrývá AI/meeting/employee upload. Produkční Drizzle má high advisory.
-
-**Řešení:** upgrade Drizzle, Zod validace všech endpointů, request/body/file limity, timeouty, bezpečné error envelope, proxy trust konfigurace, Redis limiter a per-user quotas. Přidat security headers, dependency scanning, secret scanning, SBOM a pravidelné patch SLA.
-
-#### P0-17: mobilní hlavní cesta je na 320 px rozbitá
-
-Úkolová karta používá desktopovou jednoradovou kompozici. Při 320 px se metadata a avatary překrývají; část je mimo viewport. Přesto je 320 px běžná minimální šířka PWA.
-
-**Řešení:** mobilní TaskCard varianta se 2–3 řádky, prioritizace názvu/termínu/priority a overflow menu pro sekundární metadata. Povinné vizuální testy 320/360/390/768/1024/1440 a zákaz horizontálního overflow.
-
-#### P0-18: nejsou testy ani observabilita kritických záruk
-
-Jediné testy jsou dvě skriptové doménové sady. Není API/RBAC/sync/e2e/a11y/visual/load/security test, error tracking, metrics, tracing, request ID ani alerting.
-
-**Řešení:** viz fáze F1/F2 níže. Bez automatické dvouuživatelské izolační sady a chaos sync testu se produkt nesmí pustit mimo interní pilot.
-
-### P1 — vysoká priorita po stop-ship opravách
-
-1. **Postupy ignorují `gate='manual'`:** kód explicitně auto-aktivuje i manual; rozhodování je klientské LWW a dva offline klienti mohou rozjet stav.
-2. **Meeting commit je částečný:** úkoly se zakládají jeden po druhém; retry duplikuje; UI vybírá lidi z workspace, server však assignment povolí jen project member.
-3. **Meeting lineage chybí:** review editace se neuloží do extraction, úkoly nemají `meeting_id/entity_link`, commit endpoint neověřuje vznik úkolů.
-4. **Meeting list je inertní a online-only:** existující řádek nelze otevřít; API načte všechny extraction JSON a řadí na klientu, i když meetings už jsou v PowerSync.
-5. **LuckyOS reconcile závodí:** globální unique `(source_system, external_id, to_type)` není scoped uživatelem/workspace; souběh může vytvořit orphan nebo nekonečné duplicity.
-6. **Zaměstnanec nemá route/UI:** hotový broker je pro běžného uživatele nedostupný.
-7. **Datumové typy jsou smíchané:** date-only termíny jsou `timestamptz`, `new Date('YYYY-MM-DD')` je UTC; DST/timezone mohou posunout den. Monthly day 31 má dvě různé semantiky.
-8. **Statistiky nejsou jednotné:** projektová karta ignoruje subtasks, detail je počítá; meeting tasks se místy odfiltrují a místy ne.
-9. **Projektový panel auto-ukládá:** barva, owner, status a členové se zapisují ihned; tlačítko „Zrušit“ nic nevrací.
-10. **Globální hledání je jen 5 entit:** neprohledá mail, meetings, seznamy, komentáře, transcript, přílohy ani obsah; některý výsledek pouze otevře modul, ne konkrétní entitu.
-11. **Nastavení nemá informační architekturu:** osobní, týmové a mail admin volby jsou jeden dlouhý dokument; na mobilu přes 7 400 px.
-12. **Angličtina není skutečně kompletní:** nejméně 116 natvrdo českých UI řetězců; přepnutí jazyka nechá velké části aplikace česky.
-13. **Overlay systém není přístupný:** chybí focus trap, return focus, `aria-modal`, inert background a jednotné vrstvení.
-14. **Interaktivní `div/span`:** zejména Mail má klikací generické prvky bez role, Enter/Space a dostatečného touch targetu.
-15. **Rich text není sanitizovaný:** hodnoty se zapisují do `innerHTML`; link URL není scheme/HTML validovaná. Při reálném sdílení hrozí stored XSS.
-16. **Push subscriptions:** unsubscribe není scoped na přihlášeného uživatele; subscribe umí převést existující endpoint na jiný účet.
-17. **PWA cache nerotuje:** konstantní cache name může akumulovat staré hash assety; vlastní origin je příliš obecně cache-first.
-18. **Bundle/performance:** hlavní chunk přes 1 MB, velké monolitické komponenty, široké live queries `SELECT *`, bez virtualizace.
-19. **Google Fonts:** externí request je privacy/CSP/dependency problém a při prvním offline startu není dostupný.
-20. **Error handling:** řada `catch {}` pouze skryje problém; chybí korelační ID a uživatelský způsob diagnostiky.
-
-### P2 — kvalita a dlouhodobá udržitelnost
-
-- sémantické nadpisy a landmarky nejsou konzistentní;
-- některé tokeny nesplňují WCAG AA kontrast;
-- hlavičkové plus na mobilu nemá přístupný název;
-- noční režim a density jsou jen lokální, ne per-user sync preference;
-- service worker nemá update UX a storage budget;
-- komponenty MailThread 4 108 LOC, MailList 2 454 LOC, Calendar 2 319 LOC a další jsou za hranicí rozumné testovatelnosti;
-- dokumentace obsahuje zastaralé audity a protichůdná rozhodnutí;
-- chybí jednotný feature-flag a capability systém;
-- health endpoint není readiness check DB/PowerSync/integrací;
-- produkční deployment, rollback runbook, on-call a incident proces neexistují.
-
----
-
-## 4A. Vykonatelné issue cards pro Claude Code
-
-Všechny issue níže mají výchozí stav **OPEN**. Řádkové odkazy jsou snapshot k 2026-07-14; před změnou hledej také podle názvu symbolu. P0 znamená, že daná chyba může vést ke ztrátě dat, úniku dat, neoprávněné změně, nepravdivému potvrzení kritické operace nebo znemožňuje spolehlivě provozovat pilot. P0 se neopravuje kosmetickým fallbackem.
-
-### CC-P0-01 — UI vydává nepravdivé obchodní tvrzení před dokončením dotazu
-
-**Důkaz:** `apps/web/src/screens/Prehled.tsx:80-123`, `apps/web/src/screens/Velin.tsx:87-154` a další selektory skládají výsledky z asynchronně doručovaných workspace/projects/tasks. Runtime audit: Velín nejprve ukázal `0 otevřených / 0 po termínu`, následně `17 / 11`; Přehled nejprve „Vše odbaveno“, následně 19 po termínu.
-
-**Přesný mechanismus:** `undefined`, prázdná lokální cache a autoritativní prázdný výsledek jsou v odvozeném UI ekvivalentní. Globální sync indikátor nedokazuje readiness každého dotazu. Hodnota `0` proto neznamená „dotaz doběhl a nic nenašel“.
-
-**Reprodukce:** vymazat lokální DB/cache nebo otevřít dashboard na studeném zařízení; zpomalit doručení workspaces/projects/tasks; zaznamenat hodnotu KPI před a po `ready`.
-
-**Požadovaná oprava:** zavést sdílený datový stav `loading | ready | stale | offline | error`; KPI a pozitivní empty state renderovat pouze při `ready`. Stale data označit časem poslední autoritativní aktualizace. Offline bez cache je samostatný stav, ne nula.
-
-**Povinný test:** komponentový/e2e test s postupným doručením závislých dotazů. Před `ready` nesmí DOM obsahovat „0“ jako KPI ani „Vše odbaveno“. Po doručení musí renderovat správnou hodnotu bez reloadu.
-
-**Není oprava:** delší skeleton timeout, `data ?? []`, skrytí KPI na fixních 500 ms nebo změna textu prázdného stavu bez readiness modelu.
-
-### CC-P0-02 — Quick Add explicitně porušuje NOT NULL a zahazuje vícedennost
-
-**Důkaz:** `apps/web/src/components/QuickAdd.tsx:171-188` vkládá `recurrence_basis` jako `parsed.recurrence ? "due_date" : null`. `packages/db/src/schema/task.ts:62-64` definuje `recurrence_basis NOT NULL DEFAULT 'due_date'`. Insert nemá sloupec `days`, přesto parser tuto hodnotu umí. `apps/web/src/lib/powersync/connector.ts:69-89` HTTP 400 přeskočí a dokončí transakci.
-
-**Přesný mechanismus:** explicitní SQL `NULL` nespustí DB default. Lokální SQLite změnu přijme, UI vyčistí vstup a působí úspěšně; serverový PostgreSQL zápis odmítne. Connector operaci označí jako permanentní a dokončí frontu. Po resyncu úkol zmizí. `days` se ztratí bez chyby.
-
-**Reprodukce:** vytvořit přes Quick Add neopakovaný úkol a vícedenný úkol; zachytit upload body a odpověď `/api/sync/write`; ověřit absenci řádku v PostgreSQL a absenci `days`.
-
-**Požadovaná oprava:** pro neopakovaný úkol sloupec vynechat nebo poslat `due_date`; přidat `days`; task a assignments zapisovat v jedné lokální transakci; UI nesmí vyčistit input, pokud lokální transakce selže.
-
-**Povinné testy:** parser → SQLite row → upload endpoint → PostgreSQL → PowerSync download pro (a) běžný úkol, (b) recurring, (c) `days=3`, (d) dva assignees. Ověřit `recurrence_basis='due_date'`, zachované `days` a žádnou rejected op.
-
-**Není oprava:** změnit PostgreSQL sloupec na nullable nebo překlasifikovat 400 na nekonečný retry.
-
-### CC-P0-03 — Přihlášené identity sdílejí jednu lokální databázi a neoddělené storage klíče
-
-**Důkaz:** `apps/web/src/lib/powersync/db.ts:6-9` vytváří jediný `watson.db`. `disconnectPowerSync()` na řádcích 20–23 pouze odpojí connector. `apps/web/src/screens/Nastaveni.tsx:218-220` při logoutu jen disconnect + signOut. Např. `apps/web/src/mail/state.tsx:268-389`, `apps/web/src/components/NotifCenter.tsx:23-63` a `apps/web/src/lib/workspace.tsx:53-72` používají globální klíče.
-
-**Přesný mechanismus:** uživatel A se odhlásí, lokální SQLite a localStorage zůstanou. Uživatel B ve stejném browser profilu může před novým syncem načíst A data nebo preference/drafty. Serverové bucket ACL nemohou odstranit již uložená klientská data v okamžiku změny identity.
-
-**Reprodukce:** přihlásit A, naplnit unikátní task/draft/notif seen, odhlásit se, přihlásit B při offline síti a zkontrolovat DOM, SQLite a localStorage.
-
-**Požadovaná oprava:** lifecycle manager před otevřením DB zná stabilní hash user ID; každý účet má vlastní DB. Session switch musí zavřít starou DB, zneplatnit Query cache a otevřít správnou. Nabídnout logout + remove local data. Citlivé storage namespacovat user/workspace; transcript cleanup respektuje rozhodnutí 4B.
-
-**Povinné testy:** A→logout→B online i offline; B nesmí načíst žádný A task, meeting transcript, mail draft, active workspace ani notification state. Re-login A může načíst vlastní data podle zvolené retention varianty.
-
-**Není oprava:** pouze `localStorage.clear()`, pouze odpojení PowerSync nebo CSS skeleton do prvního syncu.
-
-### CC-P0-04 — Permanentně odmítnutá sync operace je nevratně zahozená
-
-**Důkaz:** `apps/web/src/lib/powersync/connector.ts:35-90`. Pro 400/403/409/422 kód pouze loguje, vyšle ephemeral `watson:write-rejected`, pokračuje a nakonec volá `tx.complete()`.
-
-**Přesný mechanismus:** uživatelský intent i původní data existují jen v CRUD transakci. Po `complete()` PowerSync fronta nemá zdroj pro retry. Browser event nemá durable payload, přežití reloadu ani přesný response body/correlation ID.
-
-**Reprodukce:** offline upravit řádek, mezitím odebrat právo nebo vyvolat constraint, připojit; reloadnout do šesti sekund po toastu; ověřit, že uživatel nemůže změnu obnovit ani exportovat.
-
-**Požadovaná oprava:** před dokončením transakce uložit sanitizovaný rejected-op record do per-user durable store: operation ID, table/entity, intended diff, HTTP code, safe server code, request ID, timestamps, retryability a status. V Recovery Center umožnit opravit/retry/zahodit/exportovat. Citlivé body redigovat.
-
-**Povinné testy:** 400/403/409/422 přežijí reload a logout/re-login stejného účtu; jiný účet je neuvidí; retry je idempotentní; explicitní discard je auditovaný. 401/408/429/5xx zůstávají ve frontě a nejsou označeny permanentně.
-
-**Není oprava:** delší toast, console log nebo automatické přemapování všech 409 na last-write-wins.
-
-### CC-P0-05 — RBAC dovoluje manipulovat s vyšší rolí a libovolnému členu řídit členství projektu
-
-**Důkaz:** `apps/api/src/index.ts:482-557` ověřuje u POST/DELETE projektu pouze existenci členství volajícího, nikoli `role='manager'`. `apps/api/src/index.ts:343-389` kontroluje požadovanou novou roli proti caller ranku, ale nekontroluje současnou hodnost cíle; manager tak může admina degradovat. `apps/api/src/powersync.ts:733-785` povoluje workspace-scoped zápis každému non-guest členovi bez resource/action policy. Aktuální DB 2026-07-14: **13 projektů bez managera**.
-
-**Přesný mechanismus:** autorizace je rozptýlená v endpointu a registry metadata. „Je člen“ se zaměňuje za „smí spravovat členství“. Při změně role chybí pravidlo `caller_rank > target_current_rank` a invariant posledního admina/managera.
-
-**Reprodukce:** jako project commenter/editor přidat/odebrat jiného člena; jako workspace manager degradovat admina na member; odebrat posledního project managera; jako member měnit workspace-scoped citlivou entitu.
-
-**Požadovaná oprava:** centrální policy `subject × workspace role × project role × resource × action`; project membership pouze project manager nebo workspace admin/owner; volající nesmí změnit stejnou/vyšší hodnost; chránit ownera, posledního admina a posledního managera. Backfill 13 projektů musí mít report a deterministické pravidlo. UI dostává serverové capabilities.
-
-**Povinné testy:** tabulková matice guest/member/commenter/editor/manager/admin/owner × list/read/create/update/delete/manage-members/change-role. Nejméně dvě identity a dva workspace. Negativní testy musí ověřit i nezměněnou DB.
-
-**Není oprava:** schovat avatar toggle, spoléhat na typy TypeScriptu nebo opravit jen jeden endpoint.
-
-### CC-P0-06 — PUT je CREATE i UPDATE a obchází ochranu autora
-
-**Důkaz:** `apps/api/src/powersync.ts:630-673` pro PUT provádí `INSERT ... ON CONFLICT(id) DO UPDATE`. Řádky 648 a 653 přidají `creatorCol=userId` také do conflict update. `authorEditOnly` se kontroluje jen pro PATCH/DELETE na řádcích 833–843.
-
-**Přesný mechanismus:** člen projektu, který zná nebo uhodne existující ID creator-scoped řádku, pošle PUT. Endpoint jej považuje za create, ale konflikt aktualizuje původní řádek a přepíše autora na útočníka. Následná author-only kontrola již pracuje s novým autorem.
-
-**Reprodukce:** uživatel A vytvoří comment; uživatel B se stejným project access pošle PUT se stejným ID a jiným body; ověřit změněný body i author_id.
-
-**Požadovaná oprava:** protokol rozlišuje CREATE/PATCH/DELETE. CREATE používá čistý INSERT a při existujícím ID vrací safe `409 entity_exists`; immutable `creator_id/created_at` se nikdy nedostanou do update setu. PATCH vyžaduje existenci, capability a version precondition.
-
-**Povinné testy:** ID collision pro comments, tasks, goals, meetings a další creator tabulky; cizí creator zůstane nezměněn; create retry se stejným idempotency key vrátí původní výsledek bez duplicit.
-
-**Není oprava:** přidat náhodnější UUID nebo author check až po provedeném upsertu.
-
-### CC-P0-07 — Vícekrokové business operace mohou skončit v částečném stavu nebo duplicitě
-
-**Důkaz:** projekt se zapisuje po částech v `apps/api/src/index.ts:133-208`; meeting tasky v klientské smyčce `apps/web/src/screens/Mitingy.tsx:161-218`; LuckyOS task/assignment/link v `apps/api/src/employee.ts:255-321`; workflow stav počítá a zapisuje klient v `apps/web/src/lib/chainAdvance.ts:215-305`.
-
-**Přesný mechanismus:** mezi jednotlivými inserty může proces, síť nebo autorizace selhat. Retry nemá stabilní command/idempotency key. Výsledkem je projekt bez statusů/managera, meeting s částí tasků, LuckyOS orphan task nebo divergentní workflow.
-
-**Reprodukce:** injektovat failure po každém kroku a opakovat požadavek. Zkontrolovat orphan rows a duplicate business entities, nikoli jen HTTP status.
-
-**Požadovaná oprava:** dedikované serverové commandy v jedné DB transakci; stabilní idempotency key + unique constraint; audit/outbox ve stejné transakci; klientský offline outbox přenáší command, ne sérii nechráněných řádků.
-
-**Povinné testy:** failure injection po každém SQL kroku; rollback nechá nula nových řádků. Stejný command 2× a souběžně vytvoří právě jeden aggregate. Výsledek obsahuje authoritative IDs/version.
-
-**Není oprava:** `Promise.all`, `.catch(() => {})`, cleanup na klientu nebo časově založená deduplikace.
-
-### CC-P0-08 — Mail prezentuje seed/local state jako skutečnou komunikační službu
-
-**Důkaz:** `apps/web/src/mail/state.tsx:268-389` drží drafty a nastavení v localStorage/seed; `apps/web/src/mail/MailThread.tsx:653-660` plánované odeslání pouze zobrazí toast. Reálný provider, vault, mailbox sync, send queue, delivery/bounce source of truth a permission-aware backend neexistují.
-
-**Přesný mechanismus:** UI používá produkční formulace pro simulace. Uživatel může oprávněně usoudit, že mail opustil zařízení nebo že token/šifrování server ověřil, a přestat dělat reálnou práci jinde.
-
-**Potvrzené rozhodnutí:** Mail zůstává viditelný jako varianta **B**, nikoli skrytý.
-
-**Požadovaná oprava pro pilot:** permanentní banner na Mail listu, threadu, composeru, adminu i Nastavení: `DEMO — lokální simulace; zprávy neopouštějí Watson`. Všechna simulovaná potvrzení používají slovo simulace. Zakázat tlačítko nebo akci, pokud by text implikoval reálný side-effect.
-
-**Povinný test:** projít všechny Mail routes a modaly; banner musí být vidět bez scrollu. Automatický test zakáže texty `odesláno`, `doručeno`, `připojeno`, `zašifrováno` bez explicitního `demo/simulace` stavu z backend capability.
-
-**Není oprava:** jednorázový onboarding dialog, tooltip nebo banner pouze na hlavní stránce.
-
-### CC-P0-09 — Reminder nastaví `sent_at`, i když provider nic nedoručil
-
-**Důkaz:** `apps/api/src/push.ts:99-102` je email no-op; řádky 125–142 ignorují `pushToUser()` návratovou hodnotu a vždy nastaví `sent_at`; řádky 148–158 nespustí worker bez VAPID ani pro email. `subscribe` na řádcích 169–197 může převést známý endpoint na jiného usera a `unsubscribe` 200–212 nemaže v user scope.
-
-**Přesný mechanismus:** business stav „sent“ znamená pouze „worker prošel řádek“. Nula subscriptions, provider error i neimplementovaný email skončí stejným sent_at. Více API instancí může stejný pending řádek vyzvednout současně.
-
-**Požadovaná oprava:** delivery state machine `pending→claimed→sent|retry|dead`; transakční claim přes `FOR UPDATE SKIP LOCKED` nebo job queue; attempts, next_attempt_at, provider ID/error code. `sent_at` pouze při potvrzeném úspěchu alespoň jednoho zamýšleného delivery targetu. Email channel do implementace odmítat při create. Subscribe/unsubscribe scope na session usera.
-
-**Povinné testy:** 0 subscriptions, expired subscription, provider 429/500, email disabled, duplicate worker a retry. Přesně jednou `sent`; nedoručené zůstane retry/dead. Cizí user nemůže převzít ani odhlásit endpoint.
-
-**Není oprava:** nastavit sent po enqueue bez zvláštního `queued` stavu nebo ignorovat chybu providera.
-
-### CC-P0-10 — Audit může tiše chybět a neobsahuje dostatek kontextu k obnově
-
-**Důkaz:** `apps/api/src/powersync.ts:675-701` audit obaluje vlastním try/catch a selhání jen loguje. Volá se až po mutaci na řádcích 778–779 a 855–856 bez společné transakce. Workspace se bere pouze z `data.workspace_id`; aktuální DB: 35 událostí, **34 bez workspace_id**. DELETE ukládá `diff=null`.
-
-**Přesný mechanismus:** hlavní mutace může commitnout a audit selhat. Project/task-scoped payload běžně workspace_id nenese, proto audit ztrácí tenant scope. Bez before snapshotu není delete vysvětlitelný ani obnovitelný.
-
-**Požadovaná oprava:** transaction wrapper načte before, autorizuje, mutuje, vloží immutable audit a outbox. Workspace se odvozuje serverovým joinem. Event: actor, source, request_id, command_id, entity/version, before/after nebo patch, reason, timestamp. Kritická mutace rollbackne při audit failure.
-
-**Povinné testy:** vynucené audit insert failure rollbackne hlavní změnu; task/project/workspace event má workspace; DELETE má before; spoofnutý actor/workspace z klienta se ignoruje; retry commandu nepřidá duplicitní business audit.
-
-**Není oprava:** další `console.log`, nullable workspace backfill bez opravy derivace nebo background audit bez transactional outboxu.
-
-### CC-P0-11 — Auth funkce deklarované aplikací nejsou produkčně dokončené
-
-**Důkaz:** `apps/api/src/auth.ts:64-68` vypíná email verification; `apps/api/src/auth.ts:132-139` vždy loguje magic URL; 2FA plugin existuje bez kompletní enrollment/recovery/enforcement cesty. `apps/api/src/index.ts:56-69` health tvrdí `twoFactor:true`, `magicLink:'dev'`. Auth router vystavuje sign-up, ale invite-only policy není zavedena.
-
-**Přesný mechanismus:** bearer magic link může skončit v centralizovaných logách; neověřená adresa a otevřený signup rozšiřují attack surface; boolean v health popisuje přítomnost pluginu, ne provozní schopnost.
-
-**Požadovaná oprava:** pilot invite-only; mailer capability; verified email před týmovým přístupem; password reset; 2FA enrollment/recovery codes a povinné 2FA pro admin/owner. Magic URL log pouze při `DEV_AUTH_LOG_LINKS=1 && NODE_ENV!='production'`; produkce bez maileru fail-closed. Readiness vrací reálné capabilities bez secretů.
-
-**Povinné testy:** production config bez secretu/maileru selže podle policy; magic token není v production log capture; nepřizvaný signup je odmítnut; admin bez povinného 2FA projde řízeným enrollmentem, ne obejitím.
-
-**Není oprava:** skrýt signup link nebo změnit health text bez změny backendu.
-
-### CC-P0-12 — Lokální citlivá data a signing keys nejsou dostatečně chráněné
-
-**Důkaz:** `apps/api/src/powersync.ts:18-48` používá fixed `kid=watson-dev-1`, generuje exportovatelný private JWK a zapisuje jej bez explicitního mode; audit souboru zjistil 0644. Řádky 52–84 podepisují stejným klíčem PowerSync a LuckyOS bridge. `apps/web/src/lib/powersync/db.ts:6-9`, mail drafty a `apps/web/src/lib/backup.ts:67-91` ukládají plaintext.
-
-**Přesný mechanismus:** kompromitace jednoho klíče rozšiřuje dopad na dvě trust domains. Fixed kid a jedno-key JWKS neumožní bezvýpadkovou rotaci. Ztracený browser profil/backup odhalí lokální obsah.
-
-**Požadovaná oprava:** oddělit signing keys/issuer/audience, explicitní key provider, více aktivních JWKS keys pro rotaci, dev file mode 0600 a prod secrets manager/KMS. Per-user citlivý store má platformní key. Export nabídne šifrování a jasně označí plaintext variantu.
-
-**Výjimka rozhodnutí 4B:** participant-authorized offline transcript smí být v pilotu plaintext; stále musí být v per-user DB, mimo telemetry, odstranitelný při revoke/logout a označený rizikem zařízení.
-
-**Povinné testy:** key rotation old/new token overlap; PowerSync key neověří LuckyOS token; permission check souboru; A/B local isolation; revoke transcript odstraní lokální řádek po syncu.
-
-**Není oprava:** pouze `.gitignore`, Base64 nebo jiné `kid` bez rotace.
-
-### CC-P0-13 — Workspace membership neoprávněně implikuje přístup k celému transcriptu a AI
-
-**Důkaz:** `powersync/sync-config.yaml:66-104` parametrizuje meetings jen workspace membership a syncuje `transcript, extraction` všem členům včetně guest. `apps/api/src/meetings.ts:195-245`, 248–304 kontroluje pouze existenci workspace role, nikoli participant ACL nebo guest restriction. `claudeExtract` na řádcích 78–147 odesílá až 24 000 znaků vendorovi. Rate limit/AI budget/consent/retention chybí.
-
-**Přesný mechanismus:** uživatel získá citlivý text jen tím, že je členem workspace. Guest může spustit placenou extrakci a commit status. Odvolání participant access neodstraní již synchronizovanou širokou kopii.
-
-**Potvrzené rozhodnutí:** obsah vidí jen účastníci a explicitně pozvaní. Admin není automatický čtenář. Offline plaintext je pilotně povolen jen této skupině.
-
-**Požadovaná oprava:** `meeting_participants`/ACL model; metadata a obsah oddělit do různých bucketů; content bucket parametrizovat oprávněným userem; guest bez explicitního pozvání nemá content ani extract/commit. Consent, retention/delete/export, AI off default, per-user/workspace quota a audit vendor transferu.
-
-**Povinné testy:** participant, invited nonparticipant, ordinary member, admin bez pozvání a guest. Ověřit API i PowerSync local DB před/po revoke. AI endpoint bez consent/policy vrátí safe 403 a neprovede vendor call.
-
-**Není oprava:** filtrovat meeting po stažení na klientu nebo schovat transcript komponentu.
-
-### CC-P0-14 — Funkce nazvaná záloha není úplná záloha a nemá restore
-
-**Důkaz:** `apps/web/src/lib/backup.ts:12-34` whitelist vynechává meetings, entity_links, audit_events, task_activity a další stav. Řádky 43–60 chybu chybějící tabulky změní na prázdné pole. Payload 67–91 nemá schema manifest, checksum, signature, encryption ani import/restore.
-
-**Přesný mechanismus:** uživatel stáhne syntakticky validní JSON a UI může tvrdit „všechna data“, přesto nelze poznat, co chybělo. Bez restore testu není prokázáno referenční pořadí, kompatibilita verze ani recovery.
-
-**Požadovaná oprava:** přejmenovat současnou funkci na neúplný lokální export, dokud nebude hotovo. Serverový versioned manifest všech entit, row counts, schema version, checksum/signature a volitelné šifrování. Restore wizard: validate, dry-run, dependency order, mapping/dedup/conflict mode, audit.
-
-**Povinné testy:** export→čistá DB→restore→kanonické porovnání všech podporovaných entit a vazeb; poškozený checksum, novější schema, chybějící tabulka a duplicate IDs musí skončit řízeně. Samostatně PostgreSQL backup + PITR drill splní RPO/RTO.
-
-**Není oprava:** přidat pár názvů do `BACKUP_TABLES` nebo UI tlačítko Import bez round-trip testu.
-
-### CC-P0-15 — Klíčové tenant a doménové invarianty existují jen jako komentář/aplikační záměr
-
-**Důkaz:** `packages/db/src/schema/task.ts:36-39` výslovně říká, že max depth nehlídá DB. V `tasks` constraints na řádcích 95–102 je pouze priority range a indexy; neexistuje same-project parent/section/status constraint. `packages/db/src/schema/meetings.ts:31-45` používá soft references. Current DB kontrola našla 0 cross-parent/status/section porušení, ale prevence chybí.
-
-**Přesný mechanismus:** validace v klientu/write registry je obejitelná jiným endpointem, migrací, workerem nebo pořadím offline uploadu. Navíc `apps/api/src/powersync.ts:765-767` některé reference při chybějícím cíli přeskočí.
-
-**Požadovaná oprava:** invariant inventory pro každou FK a state transition. Same-project/same-workspace přes složené unique+FK, deferred constraint nebo transakční command. Max depth serverově/DB triggerem s cycle detection. Enum/check pro kind/status. Last-manager invariant transakčně. Neověřená offline reference zůstane pending, ne „valid“.
-
-**Povinné testy:** přímé SQL negativní testy, API negativní testy a out-of-order sync testy. Cross-tenant reference musí být odmítnuta bez částečného zápisu. Migrace nejdřív reportuje existující porušení.
-
-**Není oprava:** další TypeScript typ, UI filtr nebo validace pouze při vytvoření.
-
-### CC-P0-16 — API perimeter je neúplný a leakne interní chyby
-
-**Důkaz:** `apps/api/src/index.ts:37-54` má CORS a pouze auth/push rate limit; chybí security headers a body limits. Request bodies se často castují bez Zod. `apps/api/src/powersync.ts:780-782` a 857–859 vrací `String(err)`. `apps/api/src/rateLimit.ts:17-22` bez trust-proxy konfigurace věří `X-Forwarded-For`; store je per-process Map. `packages/db/package.json` používá Drizzle 0.38.x; audit 2026-07-13 našel high advisory opravený od 0.45.2. Dosud nalezené `sql.raw` identifikátory pocházejí z pevného registru/whitelistu, takže audit neprokázal přímo uživatelsky ovladatelnou exploit cestu; to ale neodstraňuje povinnost zranitelnou knihovnu aktualizovat a regresně ověřit.
-
-**Přesný mechanismus:** klient může získat driver/constraint detail, poslat příliš velké body, spoofovat rate-limit key nebo obejít limit přes jinou instanci. AI/meetings/employee/upload nemají cost-aware limit.
-
-**Požadovaná oprava:** upgrade Drizzle s regresí; jednotný middleware pro request ID, secure headers, safe error envelope a JSON/file limits; Zod schema pro params/query/body; nakonfigurovaný proxy trust; Redis/distributed limiter a per-user/workspace cost quotas; endpoint timeout/cancellation.
-
-**Povinné testy:** oversized/malformed body, unknown fields, invalid UUID/enum, spoofed XFF, 429 across two instances, DB exception redaction, CSP/HSTS/frame/nosniff/permissions headers a dependency scan bez high/critical.
-
-**Není oprava:** regex redakce `String(err)`, navýšení limiteru nebo blanket `try/catch` vracející 200.
-
-### CC-P0-17 — Úkolová karta není použitelná na podporované šířce 320 px
-
-**Důkaz:** runtime audit při 320×568: `main.clientWidth=320`, `main.scrollWidth=443`; metadata/avatars se překrývají a ořezávají. Mobilní shell je deklarovanou hlavní PWA cestou.
-
-**Přesný mechanismus:** desktopová jednoradová metadata mají nekomprimovatelnou součtovou šířku větší než viewport. Overflow se nepřizpůsobí prioritě informací a část akcí není dosažitelná.
-
-**Požadovaná oprava:** explicitní mobile TaskCard layout: název v samostatném řádku, primární termín/priority ve druhém, sekundární metadata v overflow menu; dlouhé názvy, 0–N avatarů a české/anglické texty nesmí změnit viewport width. Touch target min. 44×44 CSS px.
-
-**Povinné testy:** screenshot/DOM testy 320, 360, 390, 768, 1024, 1440; long name, 4 avatars, recurring, overdue, meeting, subtask a empty metadata. Na každé šířce `scrollWidth <= clientWidth` a žádné překrytí bounding boxes.
-
-**Není oprava:** `overflow-x:hidden`, zmenšení textu pod čitelnost nebo odstranění dat bez alternativního přístupu.
-
-### CC-P0-18 — Kritické záruky nemají automatické testy ani provozní důkaz
-
-**Důkaz:** `apps/web/package.json` spouští jen recurrence script a oddělený corpus; API nemá `test` script; všechny package lint scripts jsou placeholder. Neexistuje RBAC, sync chaos, DB invariant, e2e, a11y, visual, load nebo restore suite. Chybí request tracing, error tracking, metriky a alerty.
-
-**Přesný mechanismus:** změna může projít typecheck/buildem a současně zlomit izolaci tenantů nebo ztratit offline data. Bez korelačního ID nelze uživatelskou chybu spojit se serverovým zápisem.
-
-**Požadovaná oprava:** F1 test pyramid: unit čisté logiky; PostgreSQL integration; API contract/RBAC; Playwright; axe/visual; sync chaos; migration dry-run; restore; dependency/secret scan. Structured logs, request ID, error tracking, metriky rejection/sync latency/delivery a readiness.
-
-**Povinný gate:** CI musí zablokovat merge při selhání typecheck, skutečného lint, unit, integration, RBAC, migrace nebo kritického e2e. Flaky test se opraví nebo karanténa má ownera/expiry; nesmí se tiše přeskočit.
-
-**Není oprava:** přejmenovat skript na „integration“, zvýšit timeout nebo prohlásit ruční klikání za regresní suite.
-
-### 4A.1 Přesné P1 důkazy, které nesmí zmizet z backlogu
-
-| Issue                             | Primární důkaz v kódu                                                                            | Povinný konečný invariant                                                                                  |
-| --------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| P1-01 Manual workflow gate        | `apps/web/src/lib/chainAdvance.ts:227-243,260-305`                                               | `gate='manual'` se nikdy neaktivuje bez explicitní autorizované akce.                                      |
-| P1-02 Meeting commit              | `apps/web/src/screens/Mitingy.tsx:161-218`                                                       | Jeden idempotentní server command vytvoří tasky, assignments, lineage a commit status atomicky.            |
-| P1-03 Meeting ACL/list            | `apps/api/src/meetings.ts:248-304`, `powersync/sync-config.yaml:101-104`                         | Detail/content pouze participant ACL; list je stránkovaný a nečte plný extraction.                         |
-| P1-04 Inertní meeting row         | `apps/web/src/screens/Mitingy.tsx:267-293`                                                       | Každý řádek je sémanticky interaktivní a otevře konkrétní detail.                                          |
-| P1-05 LuckyOS dedup/race          | `packages/db/src/schema/system.ts:165-195`, `apps/api/src/employee.ts:255-321`                   | Unique scope obsahuje vlastníka/workspace; concurrent reconcile nevytvoří orphan ani duplicitu.            |
-| P1-06 Date/time model             | `packages/db/src/schema/task.ts:47-55`                                                           | Date-only hodnota se nezmění timezone; timed hodnota má instant + zone.                                    |
-| P1-07 Search coverage             | `apps/web/src/screens/Hledat.tsx:41-175`                                                         | Permission-aware výsledky zahrnou obsah, comments, meetings/transcript, lists, mail a konkrétní deep link. |
-| P1-08 Overlay accessibility       | `apps/web/src/layout/MobileTabBar.tsx:69-114`, `apps/web/src/components/NotifCenter.tsx:294-343` | Dialog primitive má aria-modal, focus trap, return focus, inert background, Escape stack a scroll lock.    |
-| P1-09 Stored XSS surface          | `apps/web/src/mail/RichText.tsx:72-86`, `apps/web/src/mail/MailThread.tsx:627-650`               | Sanitizace na vstupu i renderu; URL allowlist; žádný executable HTML.                                      |
-| P1-10 Push subscription ownership | `apps/api/src/push.ts:169-212`                                                                   | Endpoint nemůže cizí session převzít ani odhlásit.                                                         |
-| P1-11 PWA cache/privacy           | `apps/web/src/sw.ts:12-82`, `apps/web/vite.config.ts:50-57`                                      | Versioned cleanup, omezené runtime strategie, update UX, self-host fonts a storage budget.                 |
-| P1-12 Backup truthfulness         | `apps/web/src/lib/backup.ts:1-91`                                                                | UI rozlišuje export od zálohy a zálohu od ověřeného restore.                                               |
-| P1-13 Mobile navigation           | `apps/web/src/layout/MobileTabBar.tsx:25-38`                                                     | Meets a workspace switcher jsou dosažitelné bez desktop sidebaru.                                          |
-| P1-14 i18n                        | hardcoded české řetězce v `apps/web/src`                                                         | Produkční UI má 0 nezdůvodněných hardcoded user-facing řetězců a CZ/EN parity test.                        |
-| P1-15 Performance                 | build snapshot: main JS 1 057 kB min; precache 5 541,5 KiB                                       | Route/vendor chunking, selektivní query, virtualizace a vynucený bundle budget.                            |
-
----
-
-## 5. Cílová architektura
-
-```mermaid
-flowchart LR
-  U["Uživatel / PWA"] --> L["Per-user lokální DB + outbox"]
-  L --> S["PowerSync read model"]
-  L --> A["Watson API / command service"]
-  A --> P["Centrální policy + validace"]
-  P --> D["PostgreSQL: invarianty + verze"]
-  P --> E["Atomický audit/outbox"]
-  E --> W["Workers: notifikace, export, integrace"]
-  W --> M["Mail provider / vault"]
-  W --> H["LuckyOS"]
-  W --> AI["AI/STT provider"]
-  D --> S
-  A --> O["Logs + metrics + traces + alerts"]
-```
-
-### Principy
-
-1. **Browser je nedůvěryhodný klient.** Server nikdy nevěří workspace/project/user ID ani schopnostem poslaným klientem.
-2. **Command a query se oddělí.** Komplexní změny jsou serverové commandy, PowerSync zůstává skvělý read model a jednoduchá lokální editace s version checkem.
-3. **Jeden zdroj pravdy pro každý stav.** Žádná dvě pole pro tentýž termín, stav nebo členství bez explicitní derivace.
-4. **Transactional outbox.** Audit, integrační event a hlavní mutace vzniknou v jedné transakci.
-5. **Explicitní degradace.** `demo`, `offline`, `stale`, `AI off`, `provider down` jsou první třídy UI, ne skryté catch bloky.
-6. **Privacy by scope.** Workspace membership neznamená automatický přístup k HR, mailu nebo transcriptu.
-7. **AI pouze po politice a souhlasu.** Data se odesílají vendorovi jen ze serverově autorizovaného kontextu, s limitem a auditem.
-8. **Expand/backfill/validate/contract migrace.** Žádná produkční migrace nesmí záviset na ručním pořadí pěti souborů.
-
----
-
-## 6. Top 10 designových vylepšení
-
-1. **Trust layer pro data** — jednotné skeleton/stale/offline/error stavy, „data k času“, žádné falešné nuly.
-2. **Nová mobilní TaskCard** — dvouřádkový layout, jasná hierarchie, sekundární metadata do „…“, touch target 44 px.
-3. **Rozdělené Nastavení** — Osobní, Workspace, Bezpečnost, Notifikace, Integrace, Mail administrace; sticky lokální navigace a search.
-4. **Plnohodnotná mobilní navigace** — workspace switcher, Meets, rychlé poslední položky a konfigurovatelné primární taby.
-5. **Jednotný overlay/dialog primitive** — focus trap, return focus, Esc stack, inert background, aria-modal, scroll lock.
-6. **Sémantický design systém** — `PageHeader`, `Section`, `Card`, `DataState`, `Dialog`, `Menu`, `Toast`, `FormField`; WCAG AA tokeny a automatické a11y testy.
-7. **Konzistentní informační hierarchie** — stejné definice open/done/overdue/meeting/subtask ve všech kartách, detailech a KPI; drill-down z každého čísla.
-8. **Explicitní edit mode** — formuláře s Uložit/Zrušit a dirty state pro projekty, cíle a admin; auto-save jen u nízkorizikových polí s undo.
-9. **Progressive disclosure** — dashboard ukáže rozhodnutí, detail až na vyžádání; dlouhé filtry a metadata do sheetů/panelů.
-10. **Poctivé empty/degraded stavy** — zvlášť „nemáš data“, „načítám“, „offline cache je prázdná“, „nemáš právo“, „funkce je demo“ a „integrace nefunguje“.
-
----
-
-## 7. Top 10 nových funkcí, které udělají Watson lepší
-
-1. **Watson Radar dopadů** — deterministicky ukáže míč u tebe, tiché zablokování, co dnes hoří a co se kvůli tomu posune.
-2. **Serverový automation/rules engine** — podmínka → akce → audit → undo; dry-run a schválení pro rizikové akce.
-3. **Dependency graph a critical path** — explicitní blokace mezi úkoly/projekty, ne pouze lineární Postupy.
-4. **Kapacitní plánování a what-if** — vytížení lidí, pracovní kalendáře a simulace přeřazení/posunu.
-5. **Meeting hub + série** — příprava, účastníci, transcript, akční body, provenance a carry-over do další porady.
-6. **Reálný secure Mail** — oddělená sync služba, token vault, permission-aware buckety, skutečné draft/send a týmový dispečink.
-7. **AI Suggestion Center** — návrhy s důkazem zdrojů, diffem, cenou, policy, schválením, zamítnutím a auditní stopou.
-8. **Activity & decision timeline** — „co se změnilo, proč, kdo, z čeho AI vycházela“ napříč entitami.
-9. **Versionované šablony** — projekty, meetingy, seznamy, workflow a automatizace se správou verzí a migrací instancí.
-10. **Predikce cílů a portfolio health** — tempo, confidence, rizikové závislosti a doporučené zásahy s drill-downem.
-
----
-
-## 8. Top 10 nových funkcí, které udělají Watson praktičtější
-
-1. **Centrum sync problémů** — odmítnuté změny, konflikty, retry, oprava a export.
-2. **Univerzální hledání** — úkoly, popisy, komentáře, mail, meetings, transcript, seznamy, lidé, cíle a přílohy; konkrétní deep link.
-3. **Uložené pohledy a filtry** — per-user/per-team, sdílení, připnutí do navigace a e-mailový digest.
-4. **Hromadné akce s preview** — předem ukázat dopad, skipped položky a možnost atomického undo.
-5. **Rychlý workspace/project switcher** — poslední položky, klávesnice, mobilní přepínání a jasný scope.
-6. **Working hours, snooze a follow-up** — pracovní dny/svátky, „čekám na“, automatická urgence a tiché hodiny.
-7. **Import/export/restore wizard** — CSV/JSON, validace, mapování, dry-run, dedup a částečná obnova.
-8. **Offline drafts a outbox** — mail, formuláře, meeting commit a integrační odevzdání s viditelným stavem fronty.
-9. **Hlasové rychlé zachycení** — STT do Quick Add/composeru a až potom volitelný AI cleanup/příkaz.
-10. **Chytré digesty notifikací** — deduplikace, priority, quiet hours, souhrn ráno/večer a delivery history.
-
----
-
-## 9. Referenční implementační program F0–F10
-
-Tato kapitola popisuje úplný cílový rozsah a původní odhady pro obsazený produktový tým. Není to aktuální sólo harmonogram. Pro potvrzenou kapacitu jednoho člověka je závazná sekvenční 90denní roadmapa v kapitole 16; nedokončené části F0–F10 pokračují až po jejím go/no-go.
-
-### F0 — Stabilizační stop-ship balík (1–2 týdny)
-
-**Cíl:** odstranit lživé stavy a nejrychlejší cesty ke ztrátě či úniku dat.
-
-Obsah:
-
-- opravit Quick Add `recurrence_basis` a `days`, přidat integrační regresi;
-- přidat per-query readiness a zablokovat falešné KPI/empty states;
-- ponechat Mail viditelný, ale všude přidat permanentní nezaměnitelný DEMO banner, vypnout falešné externí side-effecty a každý simulovaný výsledek označit jako simulaci;
-- reminders neoznačovat sent bez úspěchu; e-mail channel vypnout;
-- Drizzle upgrade a lockfile audit;
-- role endpointy: project member management pouze manager/admin, ochrana posledního managera/admina a cílové hodnosti;
-- CREATE nesmí být upsert, creator immutable;
-- bezpečné error envelope místo `String(err)`;
-- request body limit a rate limit pro auth, sync, AI, meetings, employee a upload;
-- minimální security headers;
-- opravit 320px TaskCard a mobilní unlabeled plus;
-- namespacovat nejcitlivější localStorage klíče a při odhlášení vyčistit query cache.
-
-**Exit gate:** všechny P0 opravy mají regression test; žádný permanentní write reject se neztratí bez perzistentního záznamu; Mail už netvrdí neověřený stav.
-
-### F1 — Testovací a provozní základ (2–3 týdny)
-
-**Cíl:** umět prokázat, že další změna nerozbila bezpečnost a data.
-
-Obsah:
-
-- Vitest pro čistou logiku, API integration testy proti ephemeral Postgres, Playwright e2e;
-- dvě identity, dva workspace, guest/member/editor/manager/admin/owner matice;
-- sync chaos test: offline A+B, reorder, retry, 400/403/409/500, reconnect;
-- axe + keyboard + visual regression 320–1440;
-- contract tests AppSchema ↔ PowerSync rules ↔ PostgreSQL ↔ write registry;
-- CI: typecheck, reálný lint, unit, integration, e2e, migration dry-run, dependency/secret scan, bundle budget;
-- structured logger, request ID, OpenTelemetry/Sentry, metrics a alerty;
-- readiness endpoint kontrolující DB, PowerSync config a worker health.
-
-**Exit gate:** CI zablokuje merge při porušení izolace, migrace, WCAG kritické chyby nebo bundle budgetu.
-
-### F2 — Autoritativní data a synchronizace v2 (3–5 týdnů)
-
-**Cíl:** server garantuje invarianty; klient může být offline bez tiché ztráty.
-
-Obsah:
-
-- centrální policy service a capability endpoint;
-- command endpointy pro projekt, členství, bulk, meeting commit, workflow advance a import;
-- `version`/optimistic concurrency; CREATE/UPDATE/DELETE místo PUT upsertu;
-- transactional audit + outbox;
-- sync rejection store a Centrum problémů;
-- per-user DB lifecycle, session-change hard reset a encrypted sensitive store;
-- DB constrainty a backfill: cross-scope vazby, status/kind enumy, poslední manager, meeting reference;
-- migration orchestrator a expand/backfill/validate/contract runbook.
-
-**Exit gate:** dvouuživatelská izolační sada 100 %, chaos test bez ztráty, všechny commandy idempotentní.
-
-### F3 — Zálohy, DR a bezpečnost (2–4 týdny)
-
-**Cíl:** prokázat obnovitelnost a produkční perimeter.
-
-Obsah:
-
-- úplný versioned export a restore dry-run;
-- PostgreSQL encrypted backup, WAL/PITR, retention a restore drill;
-- oddělené signing keys, KMS/secrets manager a rotace JWKS;
-- invite-only onboarding, verified email, reset password, 2FA pro adminy;
-- CSP/HSTS/frame/permissions policies, self-host fonts;
-- Redis rate limiter a quotas;
-- file upload allowlist, size, MIME sniff, malware scan a timeout;
-- data retention/delete/export proces a vendor registry/DPA.
-
-**Exit gate:** naměřené RPO/RTO, úspěšný restore do čistého prostředí, security review bez critical/high.
-
-### F4 — UX důvěra, mobil a přístupnost (3–5 týdnů; může běžet paralelně s F2/F3)
-
-**Cíl:** hlavní cesty jsou jasné, konzistentní a použitelné klávesnicí i na telefonu.
-
-Obsah:
-
-- design-system primitives z Top 10;
-- nový TaskCard, responsive calendar/board/bulk bar;
-- mobile workspace switcher + Meets + upravitelné taby;
-- rozdělení Nastavení a oddělení Mail admin;
-- dialog/menu/sheet/focus stack;
-- jednotné count definice a drill-down;
-- explicit edit mode pro ProjectDetail;
-- univerzální search index + command palette;
-- úplné i18n bez hardcoded češtiny;
-- WCAG AA tokeny, 44px targets, headings/landmarks/live regions.
-
-**Exit gate:** 0 horizontální overflow na podporovaných viewports, critical axe=0, všechny kritické toky pouze klávesnicí.
-
-### F5 — Doménová správnost úkolů, času, Postupů a notifikací (3–5 týdnů)
-
-**Cíl:** odstranit rozdílné definice a klientské závody.
-
-Obsah:
-
-- oddělit `due_date` jako date-only od `start_at/end_at` jako instant + timezone;
-- sjednotit recurrence semantics včetně 29/30/31, DST a per-occurrence override;
-- server-authored workflow advance/rewind; manual gate opravdu manual;
-- atomické bulk a sync-aware undo;
-- jednotné open/done/overdue/subtask/meeting selektory;
-- reminder delivery state machine a notification digest.
-
-**Exit gate:** property testy času/recurrence, concurrency test postupů, provider delivery testy bez falešného sent.
-
-### F6 — Meets jako propojený systém (3–5 týdnů)
-
-**Cíl:** z přepisu udělat dohledatelný životní cyklus porady.
-
-Obsah:
-
-- meeting hub (`tasks.kind='meeting'`) jako zdroj termínu/přípravy;
-- participant ACL a transcript bucket pouze pro účastníky a explicitně pozvané;
-- podle potvrzeného rozhodnutí umožnit těmto oprávněným osobám offline plaintext kopii ještě před lokálním šifrováním; vyžadovat per-user úložiště, okamžité odvolání přístupu, smazání lokální kopie při logoutu/revokaci a jasné upozornění na riziko ztraceného zařízení;
-- detail Přehled/Příprava/Přepis/Akční body/Série;
-- atomický idempotentní commit s assignments a entity links;
-- review diff uložený jako finální extraction/provenance;
-- list podle termínu z lokálního read modelu, offline degradace;
-- série, carry-over a follow-up;
-- consent, retention, redaction, AI quota a source citations.
-
-**Závisí na:** F2, F3, F5.
-
-**Exit gate:** retry nevytvoří duplicitu, neúčastník transcript neuvidí, každý úkol má proklik na zdrojovou pasáž.
-
-### F7 — Zaměstnanec/LuckyOS (2–4 týdny pro v1)
-
-**Cíl:** bezpečný osobní hub, ne nekontrolovaný proxy formulář.
-
-Obsah:
-
-- opravit dedup scope na user/person/workspace a udělat reconcile transakční;
-- create-if-missing projekt přes unique + transaction;
-- timeout/circuit breaker/schema contract s LuckyOS;
-- skutečný identity mapping místo spoléhání pouze na e-mail;
-- route a UI Můj stav/Odevzdání/docházka/výdaje/dokumenty;
-- citlivá data nikdy do týmového PowerSync bucketu;
-- upload limit/scan a offline outbox s idempotency key;
-- audit a support diagnostics bez PII v logu.
-
-**Závisí na:** F2, F3, F4.
-
-**Exit gate:** dva uživatelé se stejným external ID se neovlivní; retry nevytvoří orphan ani duplicitu.
-
-### F8 — Reálný Mail M1–M3 (8–12 týdnů)
-
-**Cíl:** nahradit demo skutečnou bezpečnou komunikační doménou.
-
-Pořadí:
-
-1. **M1 jádro:** izolovaná mail sync služba, OAuth/IMAP adaptéry, KMS vault, mail schema, permission-aware buckets, skutečné draft/send, attachments a sanitizer.
-2. **M2 tým:** assignment, shared/per-user read state, audit, SLA, gatekeeper, offboarding a admin capabilities.
-3. **M3 automatizace/AI:** pravidla, triage, draft suggestions, scheduled send, bounce/delivery, retention/legal hold.
-
-**Závisí na:** F2–F4.
-
-**Exit gate:** provider sandbox e2e connect→sync→draft→send→delivery/bounce→revoke; žádný secret v DB/clientu/logu; permission revocation se propaguje a lokální data se odstraní.
-
-### F9 — Watson Radar, AI a hlas (4–8 týdnů)
-
-**Cíl:** inteligence až nad důvěryhodnými daty.
-
-Pořadí:
-
-1. deterministický Radar a čisté simulace bez LLM;
-2. AI policy + Suggestion Center + serverově sestavený kontext;
-3. cost/usage limit, prompt-injection evals, citations/provenance;
-4. AI command propose→edit→approve→execute→undo;
-5. STT adapter, MicButton, consent a raw/clean diff;
-6. AI nad Mail/Meetings jen po jejich produkčním gate.
-
-**Závisí na:** F1–F5; mailové akce na F8.
-
-**Exit gate:** AI nikdy sama externě neodesílá, nemaže ani nepřiděluje vyšší práva; každá akce projde policy a auditem.
-
-### F10 — Scale a release hardening (2–4 týdny)
-
-**Cíl:** bezpečný pilot a postupný go-live.
-
-- virtualizace dlouhých listů a selektivní queries/indexy;
-- route/vendor chunking, odstranit nepoužívané WASM, cache rotation/update UX;
-- load test 10× očekávaného objemu a 2× peak concurrency;
-- pen test/DAST, accessibility audit, browser/device matrix;
-- canary, feature flags, rollback, incident runbook, on-call;
-- pilot metriky a go/no-go review.
-
----
-
-## 10. Závislosti a doporučené pořadí
-
-```mermaid
-flowchart TD
-  F0["F0 Stop-ship"] --> F1["F1 Testy a observabilita"]
-  F1 --> F2["F2 Data a sync v2"]
-  F1 --> F4["F4 UX / mobil / a11y"]
-  F2 --> F3["F3 Security / backup / DR"]
-  F2 --> F5["F5 Doménová správnost"]
-  F3 --> F6["F6 Meets"]
-  F5 --> F6
-  F3 --> F7["F7 Zaměstnanec"]
-  F4 --> F7
-  F3 --> F8["F8 Reálný Mail"]
-  F4 --> F8
-  F5 --> F9["F9 Radar / AI / hlas"]
-  F6 --> F9
-  F8 --> F9
-  F9 --> F10["F10 Release hardening"]
-```
-
-**Potvrzená kapacita:** jeden full-stack vývojář/zakladatel. F0–F10 jsou referenční produktové fáze a nesmějí být chápány jako paralelní sprinty. Aktivní může být právě jedna implementační epika a jedna naléhavá provozní oprava.
-
-Pracovní plán počítá přibližně s 30–32 hodinami týdně na soustředěný vývoj, 4–6 hodinami na provoz, dokumentaci a ruční ověření a s 15% rezervou na nečekané problémy. Bez této rezervy by byl plán pouze optimistický seznam.
-
-- **90 dní:** důvěryhodné jádro úkoly/projekty, základní RBAC, izolace účtů, recoverable sync, ověřená záloha, kritický mobil/a11y průchod a interní pilot do 20 lidí.
-- **Po 90 dnech:** Meets, Zaměstnanec, reálný Mail, Radar, AI a hlas po jednom, vždy za feature flagem.
-- **Celý F0–F10 program sólo:** realisticky 14–20 měsíců při stabilním scope; aktivní podpora uživatelů nebo další velké funkce termín prodlouží.
-- **Nepřekročitelná podmínka:** pokud bezpečnostní nebo sync gate neprojde, neposouvá se další doména a termín se upraví. Nevynechají se testy.
-
----
-
-## 11. Epiky, vlastníci a akceptační kritéria
-
-### E01 — Truthful UI
-
-- **Owner:** Product + FE
-- **Hotovo když:** žádný success/connected/encrypted/sent/empty text není odvozen pouze z lokálního optimistic stavu; demo je označeno; loading/stale/error mají design i test.
-
-### E02 — Identity a lokální izolace
-
-- **Owner:** Platform + FE
-- **Hotovo když:** přepnutí účtu neumožní dotazem, hledáním, IndexedDB/OPFS ani localStorage přečíst data předchozí identity.
-
-### E03 — RBAC policy
-
-- **Owner:** Backend + Security
-- **Hotovo když:** automatická matice všech rolí/resources/actions projde; UI capability odpovídá API; poslední admin/manager nejde odstranit.
-
-### E04 — Write path v2
-
-- **Owner:** Backend/Sync
-- **Hotovo když:** žádný CREATE neupsertuje, creator je immutable, version konflikt je 409 s recovery payloadem, komplexní commandy jsou atomické/idempotentní.
-
-### E05 — Data invarianty a migrace
-
-- **Owner:** DB/Platform
-- **Hotovo když:** schema contract test neukáže drift; backfill report je nulový; všechny nové constrainty jsou validované bez výpadku.
-
-### E06 — Sync recovery
-
-- **Owner:** Sync + FE
-- **Hotovo když:** každá permanentní chyba je viditelná v Centru problémů a lze ji opravit/retry/exportovat; chaos test neztratí změnu.
-
-### E07 — Audit a observabilita
-
-- **Owner:** Platform
-- **Hotovo když:** každý kritický command má korelační ID, atomický audit, metriku a trace; alert obsahuje runbook, ne PII.
-
-### E08 — Backup/restore/DR
-
-- **Owner:** Platform/SRE
-- **Hotovo když:** restore z produkčního backupu do prázdného prostředí projde automatickým integritním reportem a měřeným RPO/RTO.
-
-### E09 — Mobile/a11y/design system
-
-- **Owner:** Design + FE + QA
-- **Hotovo když:** WCAG 2.2 AA kritické cesty, 320–1440 bez overflow, touch targets a keyboard-only e2e.
-
-### E10 — Search/IA/productivity
-
-- **Owner:** FE/Product
-- **Hotovo když:** každý indexovaný typ má konkrétní deep link, search respektuje scope/ACL a nastavení je dosažitelné do 2 úrovní.
-
-### E11 — Time/recurrence/workflows
-
-- **Owner:** Domain backend + QA
-- **Hotovo když:** timezone/DST/31/manual/concurrency test suite projde a všechny obrazovky používají stejné selektory.
-
-### E12 — Notifications
-
-- **Owner:** Backend/Worker
-- **Hotovo když:** `sent` znamená potvrzené doručení providerem; retry/dead-letter/quiet hours a delivery history fungují.
-
-### E13 — Meets
-
-- **Owner:** Product squad
-- **Hotovo když:** participant ACL, atomic commit, provenance, offline list a série projdou e2e.
-
-### E14 — Employee/LuckyOS
-
-- **Owner:** Integration squad
-- **Hotovo když:** contract, identity mapping, scoped idempotence, secure uploads a osobní UI projdou sandbox testem LuckyOS.
-
-### E15 — Mail
-
-- **Owner:** samostatný mail squad
-- **Hotovo když:** demo data nejsou produkční zdroj; vault, ACL, revoke wipe, send/delivery a retention projdou security review.
-
-### E16 — Radar/AI/Voice
-
-- **Owner:** AI/Product + Security
-- **Hotovo když:** AI evals, policy, quota, provenance, consent a human approval jsou automaticky testované; offline fallback je deterministický.
-
-### E17 — Performance/release
-
-- **Owner:** Platform + QA
-- **Hotovo když:** splněny SLO/budgets, canary/rollback ověřen, on-call přijme službu.
-
----
-
-## 12. Definition of Done pro každou produkční funkci
-
-Funkce není hotová, dokud nemá:
-
-1. popsaný owner, scope a threat model;
-2. serverově vynucené role a tenant isolation;
-3. DB invarianty a migrační/rollback plán;
-4. loading/empty/stale/offline/error/degraded UI;
-5. idempotenci a recovery pro retry;
-6. audit/metrics/logs/traces bez PII;
-7. unit + integration + e2e + a11y test přiměřený riziku;
-8. i18n CS/EN bez hardcoded textu;
-9. responsive QA 320–1440 a light/dark;
-10. dokumentaci, support diagnostiku a feature flag;
-11. privacy/retention/delete/export chování;
-12. měřitelné acceptance criteria a rollout/rollback.
-
----
-
-## 13. SLO a quality gates
-
-### Doporučené produktové SLO
-
-- dostupnost API a sync token endpointu: 99,9 % měsíčně pro pilot;
-- crash-free sessions: ≥99,9 %;
-- p95 otevření z lokální cache: <1,5 s; online cold usable <2,5 s;
-- p95 sync convergence po obnovení sítě: <5 s pro běžnou operaci;
-- permanentní write rejection zachycená v recovery centru: 100 %;
-- potvrzená ztráta dat: 0;
-- critical audit events bez workspace/actor: 0;
-- notification `sent` bez provider success: 0;
-- horizontal overflow na podporovaných viewports: 0;
-- axe critical/serious na kritických cestách: 0;
-- main initial JS gzip doporučeně <200 kB, route chunks <150 kB;
-- RPO ≤15 min, RTO ≤2 h pro pilot.
-
-### Release gate před externím pilotem
-
-- uzavřené všechny P0 a bezpečnostní P1;
-- úspěšný dvouuživatelský/tenant e2e a sync chaos;
-- úspěšný restore drill;
-- žádný known high/critical produkční dependency advisory bez schválené výjimky;
-- pen test bez neopraveného high/critical;
-- Mail/AI/Employee pouze za samostatnými flags a consentem;
-- support a incident runbook jsou připravené.
-
----
-
-## 14. Rollout bez velkého třesku
-
-1. **Shadow/diagnostic:** nové policy a count selektory jen porovnávají starý/nový výsledek, nic nemění.
-2. **Internal dogfood:** admin účet + 2 běžní členové + guest, reálné multi-device/offline scénáře.
-3. **Read-only pilot:** nové domény nejdřív čtou, nevykonávají externí side-effect.
-4. **1 workspace canary:** feature flag, denní review sync/rejection/audit metrik.
-5. **10 % / 50 % / 100 %:** postupně, s automatickým rollback thresholdem.
-6. **Contract phase:** starou cestu odstranit až po nulovém používání a dokončeném backfillu.
-
----
-
-## 15. Potvrzená produktová rozhodnutí
-
-Rozhodnutí uzavřena 2026-07-14. Změna některého bodu vyžaduje upravit roadmapu, rizika a akceptační kritéria.
-
-|   # | Oblast                      | Rozhodnutí                                                  | Praktický důsledek                                                                                                |
-| --: | --------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-|   1 | První release               | **A — interní pilot do 20 lidí**                            | Veřejný launch není cílem prvních 90 dní.                                                                         |
-|   2 | Mail před reálným backendem | **B — viditelný s výrazným demo bannerem**                  | Banner musí být permanentní; žádný simulovaný side-effect nesmí vypadat jako skutečný.                            |
-|   3 | Přístup k transcriptu       | **A — účastníci + explicitně pozvaní**                      | Workspace admin nemá automatický obsahový přístup.                                                                |
-|   4 | Offline transcript          | **B — plaintext oprávněným už v první verzi**               | Vědomě přijaté zvýšené riziko; povinné per-user úložiště, revokace, smazání při logoutu a upozornění na zařízení. |
-|   5 | Projektová členství         | **A — manager nebo workspace admin/owner**                  | Editor nesmí členství měnit.                                                                                      |
-|   6 | Offline konflikty           | **A — version check, field diff, Conflict Inbox**           | LWW pouze pro předem prokázané bezpečné případy.                                                                  |
-|   7 | Datumový model              | **A — `DATE` pro termín, `TIMESTAMPTZ` + timezone pro čas** | Nutná migrace a contract/property testy DST a opakování.                                                          |
-|   8 | AI privacy                  | **A — AI výchozím stavem vypnutá**                          | Aktivace až po souhlasu/DPA; osobní a HR data výchozím stavem mimo AI.                                            |
-|   9 | AI model a cena             | **A — model routing + denní budget**                        | Silný model jen pro explicitní složité požadavky.                                                                 |
-|  10 | České STT a residency       | **A — bake-off, EU/DPA gate, vyměnitelný adaptér**          | Provider nesmí být natvrdo svázaný s doménou.                                                                     |
-|  11 | Obnova pilotu               | **A — RPO 15 minut / RTO 2 hodiny**                         | Pilot nezačne bez změřeného restore drillu.                                                                       |
-|  12 | Kapacita                    | **B — jeden vývojář/zakladatel**                            | Jedna epika v běhu; Mail, AI, hlas a plný Employee jsou mimo prvních 90 dní.                                      |
-
-### Zaznamenané rizikové výjimky
-
-- **Viditelný demo Mail:** přijatelné pouze s bannerem na seznamu, detailu, composeru i Nastavení a s textem „simulace — zpráva neopustila Watson“. Demo nesmí používat formulace připojeno, zašifrováno, doručeno nebo odesláno bez skutečného důkazu.
-- **Offline plaintext transcript:** nejde o doporučenou dlouhodobou architekturu. Pro pilot je přípustný jen v per-user databázi pro účastníky/pozvané. Telemetrie nesmí obsahovat text, export musí respektovat ACL a revokace musí lokální kopii odstranit při nejbližším připojení.
-- **Sólo provoz:** zakladatel je současně vývoj, QA i on-call. Kritické migrace, auth, backup a permission změny proto vyžadují checklist, automatické testy a předem připravený rollback; ruční „vypadá to dobře“ není release gate.
-
----
-
-## 16. Sólo implementační roadmapa — prvních 90 dní
-
-### Scope, který se musí vejít
-
-Do 90 dní se dokončuje pouze spolehlivé jádro: přihlášení a izolace účtů, úkoly, projekty, oprávnění, synchronizace/recovery, auditní minimum, záloha/obnova, nejhorší mobilní a přístupnostní chyby a bezpečný interní pilot. Meets může být pouze bezpečný tenký průchod; Mail zůstává jasně označené demo.
-
-Mimo 90denní scope jsou reálný Mail, plný Employee/LuckyOS frontend, Radar, AI Suggestion Center, hlas, kapacitní plánování, rules engine a plošný redesign. Jejich přidání znamená explicitně vyřadit jiný závazek, ne posunout všechno naráz.
-
-### Pravidla sólo realizace
-
-1. WIP limit: jedna epika, jeden malý urgentní fix; žádné tři rozpracované subsystémy.
-2. Každý pracovní blok končí testem, krátkou aktualizací runbooku a deployovatelným stavem.
-3. PR/change-set má být menší než přibližně 400 logických řádků, kromě generované migrace.
-4. Pátek je buffer, regresní průchod, backup check a rozhodnutí pokračovat/zastavit.
-5. Security/data migrace se nenasazují v pátek ani bez rollbacku.
-6. Nový nápad jde do backlogu; do aktivního scope jen výměnou za stejně velkou položku.
-
-### Týdny 1–2 — Stop-ship a poctivé UI
-
-- Quick Add fix včetně serverové integrační regrese;
-- permanentní demo označení Mailu a vypnutí falešných externích side-effectů;
-- reminder delivery fix, vypnutí nefunkční e-mailové větve;
-- Drizzle upgrade a dependency kontrola;
-- project membership RBAC, cílová hodnost a ochrana posledního managera/admina;
-- bezpečné chyby, body limity a minimální security headers;
-- oprava nejhoršího přetečení TaskCard na 320/360/390 px.
-
-**Gate:** žádný známý tichý Quick Add reject, editor nemění členství, demo Mail netvrdí skutečné odeslání a produkční dependency audit nemá známou high zranitelnost.
-
-### Týdny 3–4 — Testovací bezpečnostní síť
-
-- reálný lint a CI;
-- API integration harness s ephemeral PostgreSQL;
-- matice dvě identity × dva workspace × role guest/member/editor/manager/admin/owner;
-- první Playwright happy path a mobilní smoke scénář;
-- structured log, request ID a error monitoring v minimálním provozuschopném rozsahu;
-- contract test PostgreSQL ↔ AppSchema ↔ write registry pro kritické tabulky.
-
-**Gate:** merge nejde provést při selhání typecheck/lint/API RBAC testů; kritickou chybu lze dohledat podle request ID.
-
-### Týdny 5–6 — Write path a izolace účtů
-
-- oddělit CREATE/PATCH/DELETE, odstranit generický create-upsert a zamknout `creator_id`;
-- per-user PowerSync DB lifecycle;
-- namespacovat lokální preference/drafty a čistit query cache i citlivá data při změně session;
-- perzistentní rejected-op store a první Recovery Center;
-- version check pro nejrizikovější editace a základ conflict diffu;
-- chaos scénáře offline → retry → 400/403/409/500 → reconnect.
-
-**Gate:** účet B po přihlášení nevidí lokální data účtu A; permanentní reject je viditelný a exportovatelný; retry nevytvoří duplicitu.
-
-### Týdny 7–8 — Datové invarianty, audit a obnova
-
-- backfill 13 projektů bez managera podle schváleného pravidla;
-- DB constrainty pro scope, projektové vazby, enumy a meeting reference;
-- transakční audit minimum s `workspace_id`, actor, before/after a request ID;
-- úplný inventář exportu a versioned serverový export kritických entit;
-- PostgreSQL backup + WAL/PITR konfigurace;
-- restore do čistého prostředí a změřené RPO 15 min / RTO 2 h.
-
-**Gate:** migrace projde dry-runem, referenční integrita se vynucuje v DB a restore drill splní potvrzené RPO/RTO.
-
-### Týdny 9–10 — Mobil, dialogy a důvěryhodné datové stavy
-
-- `DataState` pro loading/stale/offline/error/empty a odstranění falešných nul;
-- jednotný dialog/sheet primitive s focus trap, return focus a inert background;
-- mobilní workspace switcher, Meets vstup a 44px touch targets v kritických cestách;
-- základní WCAG AA opravy tokenů, nadpisů, labelů a keyboard průchodu;
-- explicitní Uložit/Zrušit v ProjectDetail;
-- odstranění horizontálního overflow na podporovaných šířkách.
-
-**Gate:** critical axe=0 na hlavních trasách, 320–1440 px bez horizontálního overflow a úkol lze vytvořit/upravit pouze klávesnicí.
-
-### Týdny 11–12 — Doménová správnost a bezpečný Meets slice
-
-- `DATE` pro termíny, `TIMESTAMPTZ` + timezone pro plánovaný čas;
-- recurrence/DST/29–31 property testy;
-- manual gate workflow skutečně zastavuje postup;
-- sjednotit definice open/done/overdue a KPI drill-down;
-- participant ACL pro transcript;
-- offline plaintext pouze v per-user úložišti oprávněných osob, včetně logout/revoke cleanup;
-- atomický idempotentní meeting commit v nejmenším použitelném rozsahu.
-
-**Gate:** datum se neposune změnou timezone, workflow nepřeskočí manual gate, neúčastník transcript neuvidí a retry meeting commit nevytvoří duplicitní úkoly.
-
-### Týden 13 — Pilot hardening a go/no-go
-
-- celý regresní průchod se dvěma identitami, dvěma workspace a dvěma zařízeními;
-- offline/online chaos, revoke, logout, obnovovací a rollback cvičení;
-- bundle/PWA kontrola největších regresí;
-- incident, backup, restore a release runbook;
-- canary pouze pro jeden workspace;
-- týden sledování rejection, error, sync latency a permission-denied metrik před rozšířením.
-
-**Výsledek 90 dní:** interní pilot do 20 lidí pro důvěryhodné úkoly/projekty a omezený Meets slice. Ne veřejný launch, ne reálný Mail a ne autonomní AI.
-
-### Stop podmínky a pravidlo výměny scope
-
-- Pokud týdny 5–8 nedají prokazatelnou izolaci, obnovu a neztrátovou synchronizaci, pilot se odkládá.
-- Pokud kritická chyba zabere více než tři dny, odkládá se nejnižší následující funkční slice; testy a rollback se neškrtají.
-- Každá nová funkce přidaná do prvních 90 dní musí jmenovitě nahradit jinou položku stejné nebo větší velikosti.
-- Externí bezpečnostní review před pilotem je silně doporučený placený zásah, i když je vlastní implementace sólo.
-
-### První konkrétní backlog na 10 pracovních dní
-
-### Dny 1–2
-
-- zmrazit 90denní scope a založit jednoduchý risk/decision log;
-- zavést permanentní demo stav Mailu na všech jeho obrazovkách;
-- odstranit nebo zablokovat UI cesty, které předstírají skutečné odeslání, připojení, šifrování či doručení;
-- zachytit současný typecheck/build/test baseline v CI.
-
-### Dny 3–4
-
-- Quick Add fix + end-to-end sync test;
-- upgrade Drizzle v samostatné změně + regresní test používaných SQL cest;
-- znovu spustit produkční dependency audit a uložit výsledek jako release artefakt.
-
-### Dny 5–6
-
-- sepsat jednu centrální role matici;
-- opravit project membership authorization, cílovou hodnost a last-manager/last-admin invariant;
-- přidat API integrační testy pro dvě identity, dva workspace a kritické role.
-
-### Dny 7–8
-
-- opravit reminder delivery state a vypnout nefunkční e-mail channel;
-- zavést safe error envelope, body limits a minimální security headers;
-- mobilní TaskCard 320/360/390;
-- doplnit jeden Playwright mobilní smoke scénář proti horizontálnímu overflow.
-
-### Dny 9–10
-
-- spustit celý F0 regresní průchod a opravit pouze blocker/critical nálezy;
-- zdokumentovat rollback každé provedené migrace;
-- go/no-go review týdne 1–2;
-- připravit přesný backlog pouze pro týdny 3–4, ne detailní paralelní práci dalších domén.
-
----
-
-## 17. Co teď nedělat
-
-- nepřidávat další automatické AI akce před policy/audit/idempotencí;
-- neprohlašovat Mail za připojený před M1 e2e;
-- nezapínat transcript sync všem členům;
-- nestavět další lokální `localStorage` doménový store;
-- neopravovat role jen skrytím tlačítka v UI;
-- nepřidávat další klientské vícekrokové LWW workflow;
-- nezvyšovat bundle warning limit místo rozdělení chunků;
-- neoznačit backup za hotový bez restore drillu;
-- neurychlovat release vypnutím testovacích gates;
-- nemíchat rozsáhlý Mail rewrite do stejného PR jako sync/security foundation.
-
----
-
-## 18. Konečné doporučení
-
-Nejlepší cesta k „maximálně top“ Watsonu není přidat co nejvíc funkcí najednou. Je to změnit pořadí: **důvěra → autorita dat → obnovitelnost → použitelnost → doménové integrace → inteligence**. Watson má dost produktových nápadů na velmi silný nástroj. To, co mu dnes chybí, je systémová disciplína, která z dobrého prototypu udělá produkt, na který se lidé mohou spolehnout.
+1. **Uložené pohledy.** Filtr, řazení, sloupce, density a scope; osobní nebo týmové, s jasným vlastníkem.
+2. **Bulk preview a bezpečné hromadné změny.** Předem přesný počet, recurrence scope, konflikty, atomický command a jedno undo batch ID.
+3. **Univerzální quick switcher.** Lidé, projekty, úkoly, meetingy a příkazy; permission-filtered, poslední položky lokálně v šifrovaném store.
+4. **Pracovní hodiny, svátky a snooze.** Per-user timezone/locale, quiet hours a plán reminderů bez posunů přes DST.
+5. **Import wizard.** CSV/Asana/Trello/Todoist s mapováním, validačním preview, dry-runem, idempotentním import ID a rollbackem.
+6. **Offline outbox s ruční kontrolou.** Co čeká, co se retryuje, co server odmítl, diff a možnost opravit bez ztráty vstupu.
+7. **Voice inbox.** Lokální nahrání, explicitní upload consent, STT adapter, editovatelný přepis a teprve pak create.
+8. **Denní digest.** Přesný zdroj a freshness, quiet hours, opt-in kanály a deep link na konkrétní problém.
+9. **Rychlá práce z notifikace.** Done, snooze, delegate a open; serverový command, idempotence a permission recheck.
+10. **Editor výjimek recurrence.** „Jen tento / tento a další / celá řada“, přesun data/času, DST policy, diff preview a undo. Tím se nahradí současné transparentní omezení drag occurrence.
+
+## 8. Release blokátory a externí prerequisite
+
+Tyto body nesmí být označeny jako hotové bez skutečného důkazu. Nejsou omluvou k obcházení gate.
+
+### R-01 — runtime UI/a11y/E2E důkaz
+
+Browser plugin stále končí chybou `Cannot redefine property: process`, proto je
+release kontrola nezávislá na pluginu: `pnpm verify:runtime-a11y` spouští persistentní
+Playwright Chromium + WebKit 26.5 matrix nad přihlášeným, synchronizovaným účtem.
+Pokrývá 15 hlavních rout × 390/1440 px × light/dark × oba enginy, tedy 120 průchodů
+s emulovaným reduced motion. Axe po opravách vrací nula WCAG A/AA nálezů; matrix má
+nula horizontálních overflow, chybějících `main` i runtime chyb. Klávesový scénář
+v obou enginech ověřil otevření dialogu Enterem, 14krokový focus trap, Escape s
+návratem focusu, otevření mailového vlákna Enterem a ovládání split separatoru
+šipkou. Domov, Mail a Nastavení prošly ekvivalentem 200% reflow při 720 CSS px.
+Lokální sanitized artifact je uložen v `docs/release-evidence/runtime-a11y-2026-07-16.json`.
+Navazující `pnpm verify:release-e2e` v Chromium i WebKitu prošel skutečným heslovým
+přihlášením izolovaného uživatele, prvním šifrovaným syncem, vytvořením úkolu po
+odpojení sítě, důkazem že server zápis offline neviděl, uploadem po reconnectu,
+editací názvu a termínu s DB round-tripem, trvale odmítnutým zápisem, jeho durable
+recovery záznamem, potvrzeným zahozením a úspěšným retry s idempotency receiptem.
+Stejný scénář ověřuje, že globální trust-state okamžitě přizná offline cache,
+po reconnectu stale stav odstraní a odmítnutou změnu trvale zpřístupní z každé
+routy. Oba kritické stavy jsou axe-clean a bez horizontálního overflow na 390 px.
+Stejný běh ověřil UI enrollment TOTP, rotaci šifrovaných recovery kódů, plánování
+porady, vložení holého transkriptu, skutečné provider AI zpracování pod explicitní
+workspace politikou, review akce a rozhodnutí, commit do task/Decision Log vrstvy,
+šifrovaný export, dry-run obnovy a auditovaný restore. Add Task, Task Detail i
+meeting plan/review prošly WCAG A/AA axe kontrolou; artifact je v
+`docs/release-evidence/release-e2e-2026-07-16.json`. Audit odhalil a opravil aktivně
+vypadající submit bez načteného projektu, chybějící přístupné názvy v detailu a
+meeting formulářích, kontrast utlumených meeting sekcí a globální reduced-motion
+mezeru pop-in animací. R-01 je v podporovaném browser matrixu uzavřený. Nativní
+Safari WebDriver nebyl použit, protože na hostiteli není povolená vzdálená
+automatizace; podporovaný WebKit engine je zelený.
+
+Acceptance:
+
+- Chrome/Safari nebo podporovaný matrix;
+- 320, 360, 390, 768, 1024, 1440 px;
+- keyboard-only, 200% zoom, reduced motion, light/dark;
+- sign-in, create/edit/move task, offline/reconnect, rejected sync recovery, meeting plan/transcript/commit, 2FA a backup/restore;
+- axe: 0 critical/serious; žádný focus loss nebo keyboard trap.
+
+### R-02 — dependency advisory evidence
+
+Reprodukovatelný `pnpm verify:dependency-audit` dne 2026-07-16 registry úspěšně kontaktoval, zapsal sanitizovaný report svázaný se SHA-256 aktuálního lockfile a vrátil nula high/critical advisories. Lokální evidence je v `docs/release-evidence/dependency-audit-2026-07-16.json`. CI běh `29663381680` dne 2026-07-18 stejný blokující runner úspěšně spustil a uchoval artifact `dependency-audit-production` (artifact `8435018094`): report je svázaný s aktuálním lockfile SHA-256 `61d40112801ed91c40dbd4f3e9e33283a16d3a06591b8c613032fa323ef6be68` a obsahuje nula high/critical advisories. R-02 je tím pro tento release candidate uzavřený.
+
+Acceptance: úspěšný CI artifact se seznamem advisories; high/critical = stop-ship nebo explicitní časově omezená výjimka s kompenzační kontrolou.
+
+### R-03 — produkční provoz
+
+Acceptance: TLS/HSTS, secret manager, backup key rotation, log redaction/retention, alerting, error budget, staging parity, runbook a rollback drill.
+
+### R-04 — PostgreSQL DR
+
+Acceptance: skutečný PITR test na izolované instanci, změřené RPO ≤15 min a RTO ≤2 h, obnovovací protokol a kontrola tenant/ACL po restore.
+
+### R-05 — reálné integrace
+
+- Mail provider + token vault + verified delivery.
+- LuckyOS credentials, contract test a revoke/failure drill.
+- AI/STT provider DPA, budget a EU/data residency rozhodnutí.
+- Attachment object store, scan a retention.
+
+## 9. Sólo implementační plán
+
+Pořadí je závazné. Jedna epika aktivní, další nezačíná před acceptance gate.
+
+### F0 — uzavřít release evidence (2–4 dny)
+
+1. Udržet kritické release E2E scénáře R-01 zelené; Chromium + WebKit axe/keyboard/reflow, task/offline recovery, 2FA, meeting commit a backup/restore jsou hotové.
+2. Udržet dependency audit R-02 zelený; runner, lokální evidence i první ověřený CI artifact jsou hotové.
+3. Opravit každý runtime nález stejnou vertikální disciplínou.
+4. Znovu spustit celý gate a uložit artifacty.
+
+Exit: žádný critical/serious a11y nález, žádný high/critical advisory bez schválené výjimky, všechny hlavní cesty E2E zelené.
+
+### F1 — provozní základ a DR (1–2 týdny)
+
+1. Staging konfigurace se skutečnými produkčními defaulty (`NODE_ENV=production`, mocky off).
+2. Secret manager a key rotation runbook.
+3. PostgreSQL PITR, restore drill a alerting.
+4. SLO zdroj je implementovaný: fail-closed `/ops/slo` dává readiness, 5xx, auth failure, sync rejection, reminder dead a provider timeout. Produkční dashboard/alert routing se musí napojit podle `ops/observability/RUNBOOK.md`.
+
+Rollback: aplikace zůstane invite-only; při nesplněném DR se pilot nerozšíří.
+
+### F2 — UX konsolidace (2–3 týdny)
+
+Pořadí: trust-state primitive → overlay primitive → Nastavení routes → mobile card/nav → KPI definitions.
+
+1. **Trust-state primitive — dokončeno 2026-07-17.** Jediný stavový model rozlišuje
+   inicializaci, první sync, aktivní upload/download, potvrzený checkpoint, reconnect,
+   offline cache, cold offline start, transportní chybu a durable rejected writes.
+   `connected` už nikdy samo nevytvoří tvrzení „Synchronizováno“. Desktopový sidebar,
+   mobilní shell, KPI freshness, první data gate a Centrum problémů sdílejí stejnou
+   pravdu. Offline/no-cache místo falešného empty stavu vysvětlí nedostupnost; stale
+   data nesou locale-aware checkpoint. Browser test ověřuje offline/reconnect,
+   odmítnutou změnu, 390px reflow a axe v Chromium i WebKitu. Vizuální audit navíc
+   odstranil duplicitní rejected toast, opravil kontrast akce, umístil toast nad
+   mobilní navigaci a rozdělil mobilní header do stabilních dvou řádků.
+2. **Overlay primitive — dokončeno 2026-07-17.** Modaly a drawery používají jediný
+   focus trap, inert pozadí, referenčně počítaný scroll lock, návrat fokusu a
+   topmost Escape. Nemodální popovery a kontextová menu sdílejí stejný pořadník,
+   ale stránku správně neinertují. Sémantická z-index stupnice nahradila náhodná
+   globální čísla; statický kontrakt zakazuje návrat starého focus trapu i druhý
+   body scroll lock. Těžké detaily úkolu a projektu jsou lazy-loaded.
+3. **Nastavení routes — dokončeno 2026-07-17.** Jediná routa zachovává všechny
+   funkční formuláře, ale URL-validované `?sekce=` dělí povrch na Profil, Tým,
+   Zabezpečení, Data a zálohy, Integrace a poštu, Oznámení a Vzhled. Kontextové
+   vstupy vedou rovnou do správné sekce; staré hash odkazy se bezpečně převádějí.
+   Desktop má sticky lokální navigaci, mobil 44px horizontální přepínač a profilová
+   karta se na úzkém displeji skládá bez ořezu. Menu rolí používá sdílenou popover
+   vrstvu a vrací fokus po Escape.
+4. **Mobilní karta a navigace — dokončeno 2026-07-17.** Existující task actions,
+   jediná primární spodní lišta a Mail bez druhé navigační taxonomie zůstaly zachované.
+   Karta má na dotyku bezpečné akce v titulním řádku, metadata pod názvem a projektový
+   kontext až ve třetí úrovni. „Více“ je scrollovatelný modální sheet se všemi moduly,
+   prostory, focus trapem a návratem fokusu; aktivní cíle jsou oznámené a 320px popisky
+   se neořezávají. Statický kontrakt brání návratu duplicitní lišty a browser audit
+   pokrývá 320/360/390 px v Chromium i WebKitu.
+5. **Definice KPI — dokončeno 2026-07-17.** Reporty i Velín u každé hlavní metriky
+   přímo zobrazují rozsah, období, IANA časovou zónu, vyloučená data, čerstvost a
+   přesný výpočet; zásadní omezení nejsou schovaná v tooltipu. PowerSync čísla
+   používají potvrzený checkpoint, zatímco Mail otevřeně přiznává lokální demo bez
+   provider synchronizace. Urgentní Mail KPI se počítá z celého aktivního inboxu,
+   ne jen z top-8 náhledu; týmové unread KPI vylučuje osobní, uzavřená, spamová,
+   archivovaná, smazaná, odložená a ztlumená vlákna bez rozbití osobního badge.
+
+Acceptance: vizuální regression snapshots, keyboard/axe gate, žádná změna doménové logiky bez testu.
+
+### F3 — practical core (3–5 týdnů)
+
+Pořadí: saved views → outbox UI → bulk preview/command → recurrence exception editor → working hours/timezone settings.
+
+Datové závislosti:
+
+- recurrence exceptions potřebují nové schema, scope a CAS; nepřetěžovat `done/skipped` sloupce nekompatibilním JSONem;
+- timezone setting musí validovat `Intl`, migrovat budoucí plány explicitním preview a nikdy neměnit `due_date`;
+- bulk command musí vracet batch ID pro undo a per-item rejection report.
+
+Stav dávky:
+
+1. **Saved views, bulk preview/undo a pracovní zóna — zachováno po auditu.** Existující
+   řešení už má striktní roundtrip filtrů, dávkový preview/undo kontrakt a IANA/DST
+   testy; F3 je nebude přepisovat. Další změna smí pouze doplnit doloženou mezeru.
+2. **Recovery-first outbox — dokončeno 2026-07-17.** Data a zálohy ukazují veřejnou
+   PowerSync upload frontu, počet/velikost, pravdivý offline/upload/empty stav a lidský
+   redigovaný diff. Čekající změny jsou pouze pro čtení; potvrzení a odstranění zůstává
+   výhradně connectoru. Durable odmítnuté zápisy mají diff, otevření objektu, retry,
+   kopii technického detailu a vědomý discard. Citlivá pole se nikdy nevypisují.
+   Chromium i WebKit dokazují offline create, kontrolu fronty při 390 px, reconnect,
+   odmítnutí, retry/discard, axe, reflow a autoritativní serverový výsledek.
+3. **Recurrence exception editor / všechny tři rozsahy — dokončeno 2026-07-17.**
+   Migrace 0060 rozšířila per-occurrence override o cílové datum, skutečný instant,
+   IANA zónu, délku a verzi; dokončení/přeskočení zůstává samostatný kompatibilní stav.
+   Migrace 0061–0064 přidaly konečné prefixy původní řady pro „tento a další“, striktní
+   allowlist pravidel, nullable autora se `SET NULL` a DB zákaz překryvu segmentů.
+   Aktivní task se neklonuje:
+   komentáře, přílohy a dependency zůstávají na jediném ID a dřívější výskyty se
+   promítají jako auditovatelná část stejného úkolu; samostatně je lze dál přesunout.
+   Strukturální undo fail-closed odmítne přepsat jejich pozdější změny. Rozsah „celá aktivní řada“ posune
+   kotvu i pravidlo; existující oddělenou historii nemění. Strukturální změna se
+   fail-closed zastaví, pokud by přepsala budoucí výjimky nebo překročila deadline.
+   Preview, execute a undo jsou serverové commandy s ACL, advisory lockem, idempotency,
+   stale-preview kontrolou, CAS, auditem a 15minutovým undo batch ID. Klient používá
+   jeden materializer v Kalendáři, Dnes, Nadcházející i detailu. Chromium a WebKit
+   ověřily všechny tři rozsahy přes drag → dialog → server save → PowerSync projekci
+   → undo, mobilní reflow, focus trap a axe. Export/restore segmenty skutečně obnoví.
+
+### F4 — integration center (2–4 týdny)
+
+Provider registry, health, scopes, last success, last error, revoke, test connection a audit. Začít LuckyOS, poté reminder e-mail/attachments. Mail až samostatně.
+
+Stav dávky:
+
+1. **Provider registry + LuckyOS health/lifecycle — dokončeno 2026-07-17.**
+   Existující LuckyOS broker nebyl nahrazen: dostal server-only osobní registry bez
+   credentialů, deklarované scopes/capabilities, pravdivý configured/demo/degraded/
+   revoked stav, poslední test/úspěch/chybu a bezpečný allowlist error kódů. Test
+   validuje nejen HTTP, ale i runtime kontrakt identity; vadný payload se nikdy
+   nevrací klientovi. Revoke/reconnect jsou CAS, idempotentní, rate-limitované a
+   auditované; revoke před vydáním bridge tokenu uzavře čtení, formuláře i upload.
+   DB triggery vynucují osobní tenant scope, vlastnictví receiptů a konzistenci
+   revoked/error stavu. Chromium i WebKit ověřily scopes, test, inline potvrzení,
+   serverové odpojení, perzistenci, reconnect, 390px reflow a axe. Mail zůstává
+   pravdivě označený jako demo a přechází až do samostatného F5 programu.
+
+2. **Reminder e-mail + task attachment health — dokončeno 2026-07-17.**
+   Resend adapter je společný pro auth a remindery, ale reminder má vlastní odesílatele,
+   per-user revoke/reconnect, safe error allowlist a stabilní idempotency key. Worker
+   claimuje push i e-mail přes stejný `SKIP LOCKED` lease, respektuje Focus/snooze,
+   trvalé 4xx ukončí bez marných retry a `sent` zapíše až po validním ACK s provider ID.
+   PowerSync přijme `channel=email` jen při nakonfigurovaném a povoleném provideru.
+   Vestavěné úložiště skutečných task příloh nebylo nahrazeno; Integration Center mu
+   přidal redigovaný health/scopes test. Falešné přepínače Oznámení byly odstraněny:
+   digest je pravdivě „zatím neaktivní“ a osobní remindery odkazují na nastavení u úkolu.
+   Lokální Resend stub dokazuje malformed ACK, žádný upstream leak, worker ACK, CAS,
+   tenant izolaci a revoke; Chromium/WebKit ověřily tři provider karty, mobil a axe.
+
+### F5 — reálný Mail (8–12 týdnů; samostatný program)
+
+1. Provider adapter a OAuth vault.
+2. Inbound sync/webhook verification a idempotence.
+3. Per-mailbox ACL a encrypted local partition.
+4. Outbound send command, provider message ID a delivery states.
+5. Attachments, malware scan, object retention.
+6. Audit, export/delete, incident/revoke runbook.
+7. Teprve po E2E důkazu odstranit demo banner a seed claims.
+
+První bezpečnostní základ dokončen 2026-07-17: osobní `mail_accounts`, oddělený
+`mail_account_credentials` envelope bez plaintext sloupců, rotovatelný AES-256-GCM
+keyring, account/owner/provider AAD, produkční startup/preflight gate a DB triggery pro
+osobní tenant scope i shodu credential/provider. Odesílání ještě není hotové;
+permanentní Mail demo banner proto záměrně zůstává.
+
+Gmail account lifecycle dokončen 2026-07-17: dedikovaný mail OAuth klient (oddělený od
+loginu), PKCE S256, v DB pouze SHA-256 state, user-bound jednorázový callback s expirací,
+šifrovaný PKCE verifier, přesná kontrola scope `gmail.modify`, encrypted refresh token,
+owner-only account list, reconnect se stabilním account ID a provider-first idempotentní
+revoke s CAS/auditem. Osobní správa je v Nastavení → Pošta; týmová administrace ji
+nevystavuje. API E2E ověřuje state binding/replay, tenant izolaci, malformed provider,
+revoke/reconnect a ciphertext; Chromium i WebKit ověřují dialog, mobilní reflow a WCAG.
+Veřejné produkční spuštění navíc vyžaduje doloženou Google OAuth verifikaci a případné
+security assessment pro restricted Gmail scope.
+
+Inbound Gmail sync a osobní read-only inbox dokončeny 2026-07-17: stránkovaný bounded full sync, následný
+`historyId` incremental sync, minutový fallback poll bez závislosti na push notifikaci,
+automatický nový full generation po 404/expired history, CAS refresh access tokenu,
+`SKIP LOCKED` lease/retry/dead/reauth state machine a generation-based reconciliation.
+Předmět, adresy, snippet, těla i metadata příloh jsou autentizovaný ciphertext pod
+odděleným HMAC-derived content subkey; v clear indexu zůstávají jen opaque provider ID,
+čas, system label ID a velikost. Owner-only cursor API vrací plaintext text až po
+autorizaci, nikdy surové HTML; revoke po provider ACK fyzicky maže credential, cursor i
+obsah. Web slučuje skutečné osobní účty nad tímto API, zobrazuje reálné počty a tělo
+dešifruje až po otevření zprávy; nic z obsahu neukládá do nešifrovaného browser storage.
+Chromium i WebKit dokazují celý OAuth → sync → list → detail tok, řízené selhání,
+390px reflow a axe bez A/AA nálezů. Týmové seed UI je stále demo, proto se
+banner změnil jen na „částečně demo“ a nesmí se odstranit.
+
+Osobní outbound M1 dokončen: textový composer ukládá příjemce, předmět a tělo pouze do
+AAD-vázaného AES-GCM envelope. Okamžitý send má desetisekundové Undo okno, Send Later
+zůstává vratný do claimu a paralelní workery používají `SKIP LOCKED`. Gmail ACK je bounded
+a validovaný; stabilní Watson `Message-ID` dovoluje zopakovat jen jednoznačné 429. Timeout,
+5xx, vadný 2xx ACK nebo expirovaný sending lease končí jako `uncertain` bez automatického
+retry, protože provider mohl zprávu přijmout. Revoke zruší queued/retry a sending označí
+uncertain. API + DB verifier dokazuje šifrování, owner scope, idempotenci, souběh, Send Later,
+provider ACK/no-duplicate i redigovaný audit; Chromium a WebKit navíc dokazují composer,
+hlídku zapomenuté přílohy, Undo, skutečné přijetí providerem, mobilní reflow a axe.
+
+Execution Inbox M2 doplněn 2026-07-17: owner může z reálné osobní zprávy přes explicitní
+preview založit skutečný úkol pouze v aktivním projektu stejného osobního workspace.
+Příkaz je transakční a idempotentní: task, osobní assignment, opaque mail provenance a
+redigovaný audit vzniknou společně; celý mail, přílohy ani obsah odpovědi se nekopírují
+automaticky. Vazba je vidět v seznamu i detailu zprávy, ukazuje živé dokončení a task
+nese kanonický deep link zpět na konkrétní owner-only mail. Smazání tasku nesmaže původ;
+náhradní task vyžaduje výslovnou akci a starý link se pouze označí jako retired. DB trigger
+odmítá cross-owner, cross-account i cross-workspace reference i mimo API. API verifier a
+Chromium/WebKit browser flow pokrývají tenant izolaci, replay/konflikty, delete/replace,
+dialog, lazy detail, přímý deep link, mobilní reflow a axe. Týmová varianta zůstává až M3.
+
+### F6 — Radar/automation/AI (4–8 týdnů)
+
+Nejdřív dependency graph a decision log, potom explainable Radar, poté rules engine. AI smí pouze navrhovat, dokud každá action nemá command, preview, permission recheck, audit a undo.
+
+Kanonický Decision Log dokončen 2026-07-17: ruční zápis, označený komentář a lidsky schválený výstup vloženého přepisu porady končí ve stejné projektově izolované vrstvě. Název a zdroj jsou neměnný snapshot; oprava probíhá výslovným nahrazením, původní řádek zůstává `superseded`, odvolání je terminální. Revize používá CAS verzi, create/review mají stabilní operation receipt a paralelní nahrazení zamyká původní rozhodnutí. DB hlídá workspace/project, členství vlastníka i autora, source scope a task vazby. API stránkuje stabilním cursorem, restricted projekt neprozradí nečlenovi a audit neobsahuje titul ani odůvodnění. Meeting commit už rozhodnutí neduplikuje do popisu hubu; nejasnosti tam zůstávají. PowerSync poskytuje project-scoped offline kopii, UI v Meets umí vyhledávání, filtry, vlastníka, review date, související úkoly, deep-link, revizi, nahrazení i lokální fallback. Delete/Undo úkolu zachová historický záznam a obnoví jeho vazby. Export v3 přenáší Decision Log; podepsaný v2 export bez nových tabulek se bezpečně normalizuje a komentářová rozhodnutí doplní. API verifier pokrývá replay, souběh, tenant útoky, cursor, meeting/comment zdroje, delete/undo a redigovaný audit; Chromium i WebKit dokazují ztracenou odpověď bez duplicity, revizi, historii, deep-link, 390px reflow a axe WCAG A/AA.
+
+Explainable Radar dokončen 2026-07-17: Velín dostal živý read model `radar:v1`, který skládá riziko konkrétní práce z termínu, nedokončených blockerů, nemožného pořadí, skutečných časových kolizí, absence/Focus Time, chybějícího řešitele a revize rozhodnutí. Každý signál zveřejňuje váhu, fakt/projekci, zdroj a lidské vysvětlení; score je přesný součet do 100 a nikdy nepatří člověku. Odmítnutý kapacitní součet ani employee productivity score nevznikly. Endpoint je leadership-only, ale ani workspace admin nevidí projekt bez project membership; private label nedostupnosti se vůbec nenačítá, odpověď je `no-store`, rate-limitovaná a při limitu přizná částečné pokrytí. UI filtruje stupně, ukazuje okamžik výpočtu, poctivý error/empty/partial stav a vede přesný deep-link na úkol nebo zvýrazněné rozhodnutí. API verifier dokazuje redakci, scope, timezone, blokace, kolize, meeting decision a přesný rozklad skóre; Chromium i WebKit dokazují vysvětlení, filtr, decision deep-link, 390px bez overflow a WCAG A/AA.
+
+Rules & Automation Engine v1 dokončen 2026-07-17: projektová pravidla mají oddělený měnitelný draft, explicitní Preview a neměnné publikované verze; každý běh je připnutý ke konkrétní verzi. V1 reaguje na vytvoření/dokončení/znovuotevření úkolu, umí AND podmínky nad prioritou, deadlinem a řešitelem a atomicky mění prioritu/plánované datum nebo přidá komentář. Worker deduplikuje `(version,event)`, ignoruje vlastní systémové audity a před každým během znovu ověří oprávnění autora publikace. Výsledek má redigovaný audit, historii a 24h stale-safe Undo. Pozastavení nefrontuje nové běhy. DB hlídá tenant, neměnnost verzí i stavový automat runu. UI v Postupech vysvětluje Když → A pokud → Pak, odděluje koncept od publikace a ukazuje procesní počty bez employee scoringu. API verifier pokrývá replay, CAS, pinning, atomické akce, dedup, pause, Undo a tenant útok; Chromium i WebKit dokazují create → preview → publish, focus modal, 390px bez overflow a axe WCAG A/AA. Odmítnuté přiřazování podle role/vytížení a SLA/eskalace zůstávají mimo scope.
+
+### F7 — Employee Hub, LuckyOS a znalostní vrstva
+
+Employee Hub core dokončen 2026-07-17: existující Watson ↔ LuckyOS broker nebyl nahrazen.
+Přibyl owner-only online povrch „Můj zaměstnanecký přehled“ se stavem připravenosti,
+blokacemi, chybějícími dokumenty, termíny, DPP limitem a oznámeními. LuckyOS zůstává
+jedinou účetní a personální autoritou; citlivý stav se neukládá do PowerSync ani browser
+storage a každá Employee odpověď je `private, no-store`. Server validuje provider identitu
+i status a vrací pouze explicitní allowlist projekci; neznámá metadata, provider e-mail,
+interní ID pravidel a absolutní odkazy se redigují. Modul, sidebar, mobilní nabídka i karta
+„Můj stav“ na Přehledu se zobrazí pouze po skutečném `linked=true`.
+
+Akční LuckyOS notifikace lze výslovně převést do osobního projektu „Zaměstnanec“; reconciliation
+je serializovaná per user, tenant-scoped, auditovaná a přes `entity_links` idempotentní.
+Informativní oznámení úkol nevytvářejí. API důkaz pokrývá session, no-store, redakci,
+bezpečné relativní odkazy, provider kontrakt, task lineage a retry bez duplicity. Chromium
+i WebKit ověřily gating, dashboard, sync, 390px reflow, mobilní 44px akci a axe WCAG A/AA;
+ruční vizuální audit následně přeskládal mobilní hlavičku. Provozní hranice jsou v
+`docs/employee-hub-runbook.md`. Dokumenty/podpisy, dovolená/absence i
+onboarding/offboarding přes Postupy i Employee-facing Knowledge/SOP navazují
+samostatnými dokončenými F7 vertikálami.
+
+LuckyOS v1 integrační základ dokončen 2026-07-17: starý e-mailový broker zůstává
+výslovným `legacy` režimem a žádný deploy ho automaticky nepřepne. V1 vydává přesný
+čtyřminutový RS256 token `iss=watson`, `aud=lucky-os`, `jti`, tenant,
+`watson_user_id` a nejmenší scopes bez e-mailu/person ID. Podepsaný LuckyOS outbox
+má HMAC/timestamp/body limit, trvalý idempotentní inbox a server-only identitu
+uživatel → provider link/osoba. DB i command vrstva odmítají cross-tenant, dvojí
+napárování osoby, konfliktní verzi, stale downgrade a použití stejného klíče pro
+jiný payload; nový link nahradí jen revokovaný. Odchozí adapter odvozuje person ID
+výhradně z této vazby, před tokenem respektuje lokální revoke, zakazuje redirect a
+limituje timeout i odpověď. Produkční preflight vyžaduje tenant a izolovaný webhook
+secret. Integrační důkaz používá reálnou DB a dual-contract LuckyOS stub a pokrývá
+podpis, replay, pořadí, replacement, lokální/provider revoke a přesný M2M scope.
+
+LuckyOS v1 self-service profil + docházka + malá čísla dokončen 2026-07-17:
+nový povrch je zpřístupněn jen explicitním `selfService=true`; legacy zůstává
+beze změny. Browser nikdy nevolí person ID, tenant ani scopes. Profil maskuje
+bankovní účet a změnu převádí na schvalovanou žádost bez vracení patch hodnot.
+Docházka i malá čísla oddělují koncept od potvrzeného submitu, všechny write
+commandy mají user-bound idempotency key a provider konflikty se mapují na
+bezpečné kódy. Zod kontrakt a veřejné projekce zahazují neznámá provider pole i
+upstream text. V1 work items se mapují do stávajícího reconciliation, takže se
+nerozvětvuje původní osobní projekt Zaměstnanec. Citlivé query mají `no-store`,
+krátký memory-only cache a žádný browser/offline draft. API důkaz pokrývá
+redakci, replay/konflikt, budoucí datum, submit, sync a revoke; Chromium i WebKit
+ověřily všechny tři formuláře, potvrzení, 390px reflow a axe WCAG A/AA.
+
+LuckyOS v1 dokumenty + výdaje + elektronický podpis dokončeny 2026-07-17:
+Watson je session-bound person-scoped facade a žádný HR soubor, účtenku, podpis
+ani finální PDF neukládá do DB, PowerSyncu nebo browser storage. Server ověří
+magic bytes a příponu, drží 25MB limit, spočítá SHA-256 a přes immutable upload
+intent předá binární obsah do LuckyOS, které vlastní malware scan, storage,
+retention i atomický finalize. Upload a doménový command mají oddělené user-bound
+idempotency klíče a celý tok lze bezpečně zopakovat po ztracené odpovědi.
+Publikované dokumenty se streamují s minimálním scope, response stropem, bez
+redirectu a `no-store`. Výdaj má serverový CZK přepočet a může odkazovat jen na
+vlastní aktivní trenérský projekt. Podpis je připnutý na verzi smlouvy a vyžaduje
+identity challenge, PNG/JPEG podpis, výslovný souhlas i druhé potvrzení; finální
+PDF a neměnný audit vytváří LuckyOS. Náhled se nabídne pouze pro publikované PDF
+se stejným názvem i verzí smlouvy; chybějící obsah se poctivě přizná a metadata se
+nevydávají za přečtenou smlouvu. API důkaz pokrývá redakci provider metadata,
+upload/replay, výdaj, challenge, podpis a revoke; Chromium i WebKit pokrývají
+retry, dokument, výdaj, podpis, 390px reflow a axe WCAG A/AA.
+
+LuckyOS v1 dovolená a absence dokončena 2026-07-17: zaměstnanec odesílá
+striktní, idempotentní `absence` case do LuckyOS; Watson ukládá jen minimalizovanou
+kalendářovou projekci bez poznámky nebo HR detailu. `pending` je týmově viditelný,
+ale neblokuje plánování, Nerušit ani Radar; až LuckyOS `resolved` podepsaným
+eventem přepne projekci na `approved`. Event vždy znovu načte autoritativní
+person-scoped cases, ověří alespoň eventovou verzi a při zpoždění read modelu vrátí
+retryable 503. API důkaz pokrývá obrácené období, překryv, retry, izolaci osoby,
+projekci do více workspace, pending vs. strict plánování i redakci poznámky. Chromium
+i WebKit ověřily ztracenou odpověď se stabilním operation ID, explicitní potvrzení,
+desktop, 390px, 44px mobilní cíle a axe WCAG A/AA. Produkční build, celý gate a úplná
+API integrační sada jsou zelené; ruční screenshot audit nenašel overflow ani nečitelný stav.
+
+LuckyOS v1 onboarding/offboarding přes Postupy dokončen 2026-07-17: LuckyOS je
+jediný HR system of record a Watson nevytváří duplicitní `chains`, tasky ani kopii
+odpovědí. Online facade čte onboarding/offboarding oddělenými minimálními scopes,
+validuje celý provider kontrakt a zveřejňuje pouze název, allowlistované kroky,
+stav, termín, progres a verzi. Employee Hub umí výslovně potvrdit, doplnit text či
+údaj, udělit souhlas, položit otázku, odmítnout nebo přes zabezpečený
+`lifecycle_document` upload předat soubor; každý command má přesnou verzi, druhé
+potvrzení a stabilní user-bound operation ID. Postupy zobrazují živý osobní progres
+a vedou do stejného Employee Hubu, takže původní flow engine zůstává beze změny.
+API důkaz pokrývá redakci, invalidní potvrzení, replay, konflikt idempotency a
+souborový submit. Chromium i WebKit ověřily ztracenou odpověď, automatický přechod
+na další krok, Postupy, desktop, 390px, lokalizovaný file picker, bez overflow a
+axe WCAG A/AA.
+
+Employee-facing Knowledge a SOP dokončeny 2026-07-17: workspace má úzce zaměřené
+příručky, očíslované SOP a zásady se strukturovanými sekcemi, vlastníkem, štítky,
+vyhledáváním a deep linkem; nevznikl Notion-like builder, chat ani office suite.
+Manager/admin/owner pracuje s CAS konceptem a explicitním Draft → Publish; čtenář
+vždy dostane pouze neměnný aktuální snapshot. Výchozí interní publikum vylučuje
+hosty, které musí správce výslovně zahrnout. Volitelné potvrzení patří přesné verzi
+a správa ukazuje jen agregát bez hodnocení lidí. DB hlídá tenant, strukturu obsahu,
+vlastníka, pořadí verzí, neměnnost snapshotu i platnost potvrzení. Retry všech
+commandů je user-bound a audit neobsahuje text znalosti. Podepsaný export/restore
+skutečně obnovil archivovaný článek, dvě verze i dvě potvrzení; restore výjimka je
+jen transaction-local. API verifier má 26 průchodů a Chromium/WebKit browser důkaz
+pokrývá create → publish → acknowledge, historii, hledání, 390 px, 44px cíle,
+overflow i axe WCAG A/AA. Provozní hranice jsou v `docs/knowledge-sop-runbook.md`.
+
+F8a personalizovaná informační architektura dokončena 2026-07-17 bez přepsání
+existujících obrazovek: Přehled zůstává syntézou celé aplikace a Dnes samostatným
+výkonným seznamem. Role-aware vstupy Můj den / Tým / Provoz vedou na adresovatelné
+řezy; Provoz vidí jen vedení a ručně zadaný deep link běžného člena fail-closed
+přesměruje na Tým. Vedená navigace drží sedm každodenních cílů nahoře, všechny
+ostatní moduly zachovává jeden klik daleko a Seznamy mají nižší, nikoli ztracenou
+váhu. Pokročilý režim je výslovná per-device preference a aktivní nástroj se nikdy
+neschová. Chromium i WebKit produkční průchod pokryl admina i člena, guided →
+advanced persistence, týmový/provozní obsah, 390 px, 44px cíle, overflow, runtime
+a axe WCAG A/AA; screenshoty byly vizuálně zkontrolovány. Kontrakt a rollback jsou
+v `docs/information-architecture-runbook.md`.
+
+F8b PWA-first instalace a capture dokončeny 2026-07-17 nad původním offline shellem
+a jediným Quick Capture commandem. Manifest má stabilní identitu, 192/512 PNG a
+maskable ikonu, Můj den/Rychlé zachycení shortcuts a Web Share Target `/zachytit`.
+Neověřené title/text/URL mají pevné limity, odstraňují řídicí a bidi znaky a URL
+přijmou jen HTTP(S) bez credentials; query se po převzetí nahradí čistým `/`.
+Bookmarklet se pouze kopíruje a nikde nevzniká `javascript:` href. Nastavení
+pravdivě rozlišuje dostupný install prompt, instalovaný stav a ruční instalaci z
+menu prohlížeče. Denní jádro zůstává precache; osm velkých volitelných modulů se
+po návštěvě uloží do max. 48členné runtime cache. Offline odemčení zůstává
+bezpečnostní hranicí: otevřená a online ověřená relace pokračuje offline, ale cold
+start záměrně necachuje Better Auth session ani serverový DB klíč. Chromium i
+WebKit produkčně ověřily manifest, title/text/URL ingress, zamítnutí `javascript:`,
+stejný task DB round-trip, precache/runtime cache, zachycení v odpojené otevřené
+relaci, 390 px, neokludované 44px cíle, overflow a axe WCAG A/AA. Vizuální audit
+zkontroloval desktop capture, instalační mobilní kartu i offline modal. Kontrakt,
+provozní hranice a rollback jsou v `docs/pwa-capture-runbook.md`.
+
+## 10. Detailní acceptance checklist pro budoucí funkce
+
+Každá produkční funkce musí odpovědět ano na vše relevantní:
+
+- Je zdroj pravdy jednoznačný?
+- Je tenant odvozen serverem?
+- Je role ověřena ve stejné transakci jako zápis?
+- Jsou reference ve stejném workspace/projectu?
+- Je CREATE odlišeno od UPDATE?
+- Má retry stabilní idempotency key a payload hash?
+- Co se stane při offline, timeoutu a reconnectu?
+- Uvidí uživatel rejected/stale stav a může jej opravit?
+- Je multiwrite atomický?
+- Má DB negativní invariant?
+- Obsahuje audit actor, scope, request ID, before a diff bez tajných dat?
+- Je lokální cache per-user a šifrovaná, pokud obsahuje citlivá data?
+- Je export/delete/retention cesta?
+- Je provider stav poctivý?
+- Je AI default-deny, consented, redacted a budgeted?
+- Funguje klávesnice, focus, screen reader, 320 px a 200% zoom?
+- Má funkce unit + integration + relevantní E2E?
+- Existuje rollback nebo bezpečný roll-forward?
+
+## 11. Aktuální automatické důkazy
+
+Poslední ověření 2026-07-17:
+
+- `pnpm lint`: 6 balíčků, 0 warnings/errors; accessibility contract 121 TSX.
+- `pnpm typecheck`: 6/6 balíčků.
+- `pnpm test`: recurrence 14/14 + 9 projekčních regresí + 6 transformací řady, Quick Add, timezone, recent items, proč-teď, deep linky,
+  uložené pohledy, univerzální hledání, více připomínek, progres, závislosti,
+  Waiting Room, projektové milníky, zmínky, importní CSV parser, Mail claims, chain gate, sync recovery
+  a backup crypto.
+- `pnpm --filter @watson/web test:corpus`: 321/321.
+- `pnpm audit --prod --audit-level high` i plný `pnpm audit --audit-level high`:
+  žádná známá zranitelnost v aktuálním lockfile včetně nových browser dev dependencies.
+- `bash scripts/ci-api-integration.sh`: contract, Drizzle, reminders, LuckyOS reconciliation,
+  DB invariants, signing keys, RBAC, sync refs/CAS/idempotency, rozhodnutí,
+  komentářová spolupráce, bulk commandy, uložené pohledy, projektová přednastavení,
+  závislosti, časová osa, přílohy, typovaná vlastní pole, ankety, projektové milníky,
+  intake, akceptace urgentních úkolů, jednorázový import,
+  dostupnost, Focus Time, snooze/reminder hold, nouzové výjimky a interní rezervace,
+  meeting ACL/commandy,
+  AI policy, task delete/restore, workspace policy, export/restore, manual gate,
+	Employee Knowledge/SOP včetně verzí a export/restore, input/observability,
+	rate limit a auth/2FA — vše prošlo.
+- Migrace 0046: aplikována; sedm typů projektových polí i jejich task hodnoty mají
+  DB validaci, ACL, audit, export/restore, delete/undo a PowerSync kontrakt.
+- Migrace 0047 + dopředná oprava 0048: aplikovány; pět typů vložitelných task anket
+  má stabilní option ID, jednu pojmenovanou odpověď na osobu, uzavření/znovuotevření,
+  DB validaci, ACL, audit bez obsahu odpovědi, export/restore, delete/undo a PowerSync.
+- Migrace 0049: aplikována; volitelné projektové milníky odvozují stav z úkolů
+  (`task_completed`, `completed_count`, `all_tasks_completed`). DB guard odmítá uzavření
+  i pozdější regresi cílového projektu, task reference chrání delete/move a auditovaný
+  API command pokrývá ACL, idempotenci, přesné potvrzení smazání a lokalizovaný výchozí milník.
+- Migrace 0050: aplikována; interní formuláře pro příjem práce vytvářejí úkol a
+  neměnný snapshot otázek/odpovědí v jedné transakci. Správa respektuje projektové
+  role, běžný člen smí použít týmový formulář a cizí tenant dostává fail-closed 404.
+  Historie zůstává dohledatelná po smazání úkolu a undo vazbu bezpečně obnoví.
+- Intake formuláře prošly 26 integračními kontrolami: ACL, typed validace, CAS,
+  idempotentní create i submit/retry, same-project DB guard, archive/delete, audit
+  bez obsahu odpovědí, task delete/undo a bezpečný odkaz pouze při aktuálním přístupu.
+- Migrace 0051: aplikována a ověřena i kompletním během všech migrací do čerstvé
+  prázdné databáze. Volitelná projektová politika vyžádá akceptaci P1 nebo P1–P2
+  od každého řešitele kromě autora; systémové request/cancel události mají vlastní
+  `system` actor type a dokončení bez platného přijetí blokuje autoritativní DB trigger.
+- Akceptace urgentních úkolů prošla 38 integračními kontrolami: manager ACL,
+  default-off a threshold policy, per-assignee lifecycle, CAS a přesný retry,
+  fail-closed tenant/project přístup, DB completion guard, změna priority či řešitele,
+  delete/undo, časová osa a audit bez textu soukromé poznámky. Následně prošly i
+  regresní sady bulk move/undo, task delete/restore, export/restore a PowerSync kontrakt.
+- Migrace 0052: aplikována a ověřena kompletním během všech migrací do čerstvé
+  prázdné databáze. Import ukládá jen minimální dávkovou stopu, nikoli zdrojové CSV;
+  DB vynucuje workspace/project/task/attachment scope, aktivní fingerprint brání
+  duplicitě a task delete/undo i podepsaný export/restore zachovávají vazby.
+- Jednorázový import CSV/Asana/Trello/Todoist prošel 35 integračními kontrolami:
+  serverem filtrované cílové projekty, fail-closed ACL, stateless dry-run, tříúrovňová
+  hierarchie, členové, termíny, priority, sekce, štítky, dokončení, idempotentní retry,
+  fingerprint deduplikace, zabezpečené přílohy, časová osa, delete/undo a bezpečný
+  rollback odmítající pozdější práci. Klientský parser navíc ověřuje RFC 4180 quoting,
+  BOM, CRLF, delimiter, česká/ISO data, Todoist priority, rodiče podle ID či jednoznačného
+  názvu, řešitele, ztrátu nadbytečných hodnot a stabilní SHA-256.
+- Migrace 0053–0056: aplikovány a ověřeny i čistým během všech migrací do prázdné
+  databáze. Profil dostupnosti má DB-validovaný pracovní/tichý rozvrh a membership
+  scope; Focus/absence/nedostupnost/volno jsou verzované bloky; reminder state machine
+  rozlišuje `held`; nouzová výjimka je přesný task/block/assignee scope. DB triggery
+  a per-user advisory locks uzavírají přímé zápisy i souběh Focus bloku s přiřazením.
+- Dostupnost prošla 50 integračními kontrolami: fail-closed tenant a restricted ACL,
+  souběžný první profile save a block create, CAS/idempotence, soukromé popisky,
+  warning/strict policy, Focus preflight, přesný emergency override retry i atomická
+  vícenásobná výjimka přes několik Focus bloků, DB assignment
+  a schedule guard, bulk preview, PowerSync 409, atomické odmítnutí porady, tiché hodiny
+  přes DST, reminder hold/release bez falešného provider pokusu a auditní časová osa.
+- Migrace 0057–0059: interní booking pages, pevní účastníci, sloty a historické
+  rezervace mají same-project/workspace vazby, CAS verze, přesnou IANA zónu a DB guard
+  délky slotu. Pár meeting/hub se při pozdějším mazání odpojuje atomicky a aktivní
+  rezervovaný meet nelze obejít generickým task delete commandem.
+- Interní rezervace prošly 37 integračními kontrolami: management ACL, fail-closed
+  projektová viditelnost, create/book/cancel replay, reuse ID konflikt, souběžní
+  rezervující, privacy rezervujícího, Focus a busy guard, atomický meeting/hub/
+  assignments zápis, znovuotevření slotu, ruční meeting parity, archive, export a audit.
+- Celý `scripts/ci-api-integration.sh` po opravě korektního ukončení intake verifieru
+  proběhl až po produkční 2FA restart a skončil úspěšně.
+- PowerSync po restartu: nový replication stream aktivní, sync-config bez chyby.
+- Migrace 0060: aplikována; schedule výjimka má same-project FK, párový instant/zónu,
+  kladnou délku/verzi a DB zákaz současného `done` + `skipped`. Schedule sloupce jsou
+  v PowerSync bucketu pouze pro čtení a nejdou obejít generickým upload registrem.
+  Recurrence API prošlo 21 živými kontrolami včetně DB invariantů, restricted ACL, DST mezery,
+  Focus blokace, idempotentního replay, operation-ID reuse, stale preview a undo,
+  které nesmaže později přidané dokončení výskytu.
+- Migrace 0061–0064: aplikovány; „tento a další“ ukládá konečný prefix původní řady
+  se same-project FK, validním rozsahem, pravidlem, IANA časem a kladnou verzí. Prefix
+  je v PowerSync pouze pro čtení, obecný write registry ho nepřijímá, export/restore
+  ho obnoví, `created_by SET NULL` neblokuje správu účtů a exclusion constraint
+  nedovolí překryv segmentů ani při souběhu či restore. Recurrence API prošlo 41
+  živými kontrolami včetně přesného count/until transformu, zachování jediného tasku,
+  idempotence, blokace existujících budoucích výjimek, downsyncu a CAS undo obou
+  strukturálních rozsahů.
+- `pnpm build`: největší JS 289 KiB gzip, precache 5,491 KiB; oba rozpočty splněny;
+  vlastní pole, ankety, projektové milníky, intake, importní průvodce, Úkoly a Nadcházející jsou oddělené
+  lazy-loaded chunky.
+- Celý `pnpm gate` po runtime opravách znovu prošel: typecheck 6/6, lint bez warnings,
+  accessibility contract 105/105, všechny testy, corpus 321/321 a produkční build.
+- Autentizovaný Chrome axe matrix: 15 hlavních rout × 320/360/390/768/1024/1440 px
+  ve světlém režimu (90 průchodů) a × 390/1440 px v tmavém režimu (30 průchodů),
+  vždy s `prefers-reduced-motion: reduce`. Po opravě globálních a Mail tokenů,
+  vnořených interaktivních prvků, scroll regionu a split separatoru zůstalo 0
+  critical/serious i 0 dalších WCAG A/AA nálezů a 0 horizontálních overflow.
+  Jednorázový externí `ERR_QUIC_PROTOCOL_ERROR` se v cíleném opakování nereprodukoval;
+  aplikační runtime error nezůstal.
+- Chrome keyboard/zoom scénář: dialog úkolu se otevřel Enterem, 14 Tab kroků zůstalo
+  uvnitř, Escape jej zavřel a vrátil focus otvírači. Audit odhalil a opravil mezeru
+  společného focus trapu na deterministické cyklení. Mailové vlákno se otevřelo
+  Enterem, split separator reagoval na šipku a Domov/Mail/Nastavení prošly 200%
+  page scale při 720 CSS px bez overflow; žádná runtime chyba.
+- Reprodukovatelný `pnpm verify:runtime-a11y` následně ověřil stejný klávesový a
+  reflow kontrakt v Chromium i WebKitu a plnou matici 15 rout × 390/1440 px ×
+  light/dark × 2 enginy (120 naplněných průchodů): 0 axe WCAG A/AA nálezů,
+  0 overflow, 0 chybějících `main`, 0 runtime chyb. Audit odhalil a opravil neplatné
+  `ul > div > li`, vnořená tlačítka task/overview karet, kontrast hotových úkolů,
+  postranní navigace, overdue/mail/goal stavů a nekonzistentní šířku Mail separatoru.
+- Reprodukovatelný `pnpm verify:release-e2e` v Chromium i WebKitu ověřil skutečné
+  heslové přihlášení, první sync, lokální offline create, nulový předčasný serverový
+  zápis, reconnect upload, editaci názvu a termínu, durable zachycení odmítnuté
+  operace, discard i úspěšný ruční retry s autoritativním receiptem. Dále ověřil
+  enrollment 2FA a rotaci recovery kódů, meeting plan → transkript → skutečné AI
+  review → Decision Log/task commit a šifrovaný export → dry-run → auditovaný restore.
+  Add Task, Task Detail a meeting plan/review jsou axe-clean; při opravě se doplnil
+  nativní disabled stav submitu, přístupné názvy formulářů, kontrast utlumených sekcí
+  a skutečné omezení pop-in animací při `prefers-reduced-motion`.
+- F2 trust-state browser důkaz rozšířil release scénář o okamžitý offline stav nad
+  potvrzenou cache, odstranění stale lišty po reconnectu, globální durable upozornění
+  na rejected write a 390px axe/reflow kontrolu. Cílený runtime matrix Domov/Mail/
+  Nastavení v light/dark, 390/1440 px a Chromium/WebKit má 24/24 průchodů, 0 WCAG
+  nálezů, 0 overflow a 0 runtime chyb. Ruční snímky odhalily a následný scénář ověřil
+  kontrast toast akce, odstranění duplicitního rejected toastu, bezpečný odstup od
+  mobilní lišty a stabilní dvouřádkový header bez ztraceného názvu. Sanitizované
+  výsledky jsou v `docs/release-evidence/trust-state-e2e-2026-07-17.json` a
+  `docs/release-evidence/trust-state-runtime-a11y-2026-07-17.json`.
+- F2 overlay primitive sjednotil modaly, drawery i nemodální popovery do jednoho
+  topmost Escape pořadníku. Dialogy sdílejí focus trap, inert, referenčně počítaný
+  scroll lock a návrat fokusu; popovery okolí neinertují a u explicitního triggeru
+  vracejí fokus deterministicky i při rychlém zanoření. Release E2E v Chromium i
+  WebKitu ověřuje Task Detail → command palette i Pohledy → command palette,
+  12krokové cyklení fokusu, postupné Escape zavírání a návrat otvírači. Cílený
+  runtime matrix osmi dotčených rout má 64/64 průchodů, 0 axe, 0 overflow a 0
+  runtime chyb. Vizuální kontrola zanořeného desktopového stavu je bez ořezu a
+  nechtěného překrytí. Artifacty jsou v
+  `docs/release-evidence/overlay-e2e-2026-07-17.json` a
+  `docs/release-evidence/overlay-runtime-a11y-2026-07-17.json`.
+- F2 Nastavení zachovalo jeden povrch i existující formuláře a přidalo sedm
+  adresovatelných sekcí s validovaným URL kontraktem a kompatibilitou starých hash
+  odkazů. Kontextové vstupy ze synchronizace, Mailu a Lidé míří do správného místa.
+  Chromium i WebKit ověřily všech 7 sekcí při 390/1440 px (28/28 stavů), návrat
+  fokusu menu rolí, legacy mail-admin redirect, 0 axe WCAG A/AA nálezů, 0 overflow
+  a 0 runtime chyb. Důkaz je v
+  `docs/release-evidence/settings-runtime-a11y-2026-07-17.json`.
+- F2 mobilní karta a navigace zachovaly jedinou spodní lištu i existující Mail a
+  task flows, ale opravily pořadí titul → metadata → projektový kontext, přidaly
+  44px dotykovou nabídku bezpečných akcí a plně dosažitelný scrollovatelný sheet
+  „Více“. Vizuální audit opravil stísněné „Nadcházející“ na 320 px a chybnou vrstvu
+  lišty nad otevřeným sheetem. Chromium i WebKit ověřily 320/360/390 px: právě jednu
+  navigaci také v Mailu, 22/22 task karet s novou hierarchií, focus trap, scroll lock,
+  překrytí lišty, Escape + návrat fokusu, 0 overflow a 0 runtime chyb. Matice Domov/
+  Mail má současně 0 axe WCAG A/AA nálezů. Důkaz je v
+  `docs/release-evidence/mobile-runtime-a11y-2026-07-17.json`.
+- F2 transparentní KPI nahradily nezdokumentovaná čísla v Reportech a Velínu
+  společnou kartou s viditelným rozsahem, obdobím, IANA zónou, výlukami, čerstvostí
+  a vzorcem. Audit současně našel a opravil dvě Mail agregace: urgentní počet už
+  není omezen top-8 náhledem a unread týmový počet nevstřebává spam ani uzavřená
+  vlákna; osobní badge zůstal oddělený. Statický kontrakt, unit scope test a
+  Chromium/WebKit ověřily 3 Report KPI + 5 Velín KPI při 390/1440 px, disclosure
+  Mail demo zdroje, 0 axe WCAG A/AA nálezů, 0 overflow a 0 runtime chyb. Důkaz je v
+  `docs/release-evidence/kpi-runtime-a11y-2026-07-17.json`.
+- F3 recovery-first outbox rozšířil původní Centrum problémů bez přepsání connectoru.
+  Čekající PowerSync operace jsou čitelné s počtem, velikostí, pravdivým stavem a
+  redigovaným dvou/třísloupcovým diffem; rejected operace zachovávají retry, kopii,
+  otevření objektu a potvrzený discard. Statický kontrakt zakazuje `.complete()` i
+  mazání interní fronty z UI. Chromium + WebKit release E2E ověřily offline create,
+  pending diff na 390 px, nulový předčasný serverový zápis, reconnect upload,
+  rejected diff, discard a retry s receiptem; oba stavy jsou axe-clean, bez overflow
+  a po vizuální opravě používají lidské názvy polí i konzistentní offline copy.
+  Důkaz je v `docs/release-evidence/outbox-e2e-2026-07-17.json`.
+- F3 recurrence sjednotila dříve oddělenou projekci Dnes/Nadcházející/Kalendáře a
+  opravila i start-only sérii přes půlnoc: identita se odvozuje z lokálního data v
+  uložené IANA zóně, nikoli z UTC řezu. Živý API verifier má 41/41 kontrol a
+  reprodukovatelný browser verifier prošel v Chromium i WebKitu pro „jen tento“,
+  „tento a další“ i „celá aktivní řada“: dialogový diff a dopad, 390px reflow, focus
+  trap, axe, autoritativní DB zápis, prefix historie, PowerSync downsync a CAS undo.
+  Statický kontrakt hlídá command-only schedule/prefix data a zakazuje návrat původního
+  tichého `@occurrence` no-opu. Podepsaný export/restore navíc skutečně obnovil smazaný
+  segment a opakovaný apply ho neduplikuje. Task delete/undo prefix zahrnuje do stejného
+  atomického snapshotu, import rollback ho považuje za pozdější práci a časová osa
+  strukturální přesun zobrazuje jako plánovací diff.
+- Autentizovaný Chrome CDP audit: 14 desktopových + 15 responzivních rout bez
+  horizontálního overflow; vlastní pole prošla 320/390/768/1440 px, min. targetem
+  44 px, offline zápisem a následným autoritativním uploadem. Jediný zachycený
+  network log pocházel z úmyslné simulace offline stavu.
+- Cílený Chrome audit anket: create → hlasování → pojmenované výsledky → uzavření →
+  potvrzený delete prošel na 320/390/768/1440 px bez overflow a runtime chyb; nález
+  32px summary targetu byl opraven na 44 px a celý scénář poté prošel znovu.
+- Waiting Room je odvozený z autoritativních závislostí a aktivních kroků Postupů,
+  bez nové kopie stavu. Oba směry, firemní filtr a proklik prošly cíleným scénářem;
+  karta má na 320/390/768/1440 px targety ≥44 px, bez overflow a runtime chyb.
+- Projektové milníky prošly 20 integračními kontrolami: ACL a fail-closed 404,
+  idempotentní create, CAS konflikt nastavení i milníku, same-project FK, DB
+  completion/regression guard, blokovaný task delete/move, update/delete confirmation,
+  výchozí milník a audit. Editor byl vizuálně
+  zkontrolován na 320/390/768/1440 px bez overflow či runtime chyb; formulář a ovládání
+  mají 44px cíle a UI respektuje efektivní editor/manager oprávnění.
+- Cílený Chrome CDP audit dostupnosti: desktop 1440 px a mobil 390 px bez document ani
+  section overflow, všechny ovladače pojmenované a vysoké nejméně 44 px. Dialog bloku
+  drží a vrací fokus, Escape jej zavře a pozadí je nedosažitelné. Focus Time se po
+  skutečném PowerSync round-tripu vykreslil v týdenním kalendáři jako šrafovaná
+  netasková vrstva; rychlé Nerušit je dostupné z hlavičky.
+- Cílený Chrome CDP audit interních rezervací: samostatný povrch mimo běžný kalendář
+  prošel na 1440 a 390 px bez overflow či runtime chyby. Mobilní grid regresi odhalil
+  screenshot a následná oprava; ověřeny jsou seznam, create formulář, fallback prázdného
+  jména, potvrzená rezervace, toast, „Moje rezervace“, otevření a zrušení meetu.
+- `NODE_ENV=production LUCKYOS_MOCK=1 ...`: oba produkční mock gates potvrzeně zůstaly vypnuté.
+- `git diff --check`, YAML parser a journal JSON parser: prošly.
+- `pnpm verify:dependency-audit`: produkční registry scan je svázaný s lockfile SHA,
+  high/critical = 0; sanitizovaný lokální artifact je uložený a CI má blokující
+  runner i immutable-pinned archivaci výsledku.
+- SLO observability: unit klasifikace 5xx/auth/sync/504, fail-closed constant-time
+  bearer auth a živý PostgreSQL integrační průchod `/ops/slo` jsou zelené; provider
+  timeout se nově odlišuje jako 504 a provozní panely/alerty mají runbook.
+- Produkční konfigurační preflight kontroluje HTTPS a rezervované hosty, invite-only/2FA/proxy
+  politiku, sílu a oddělení tajemství, PowerSync/LuckyOS keyringy i úplnost providerů.
+  Šest kontraktních scénářů ověřuje fail-closed návratový kód, sanitizovaný report bez
+  hodnot tajemství a atomický artifact s právy `0600`; rotace má samostatný runbook.
+- Čerstvý lokální encrypted PostgreSQL restore drill obnovil všech 62 migračních záznamů
+  do izolované databáze za 2 sekundy, ověřil nulové orphan/cross-tenant odchylky pro
+  tasky, projekty, meetingy, dostupnost, booking a intake a cílovou DB po sobě odstranil.
+  Čtyři historická dev přiřazení bez projektového členství jsou explicitní varování;
+  lokální drill kvůli nim svévolně nemaže data ani neuděluje přístup, produkční drill je odmítá.
+- Víceokenný shell sdílí jediný provider/auth/PowerSync strom a adresuje stav přes URL.
+  Chromium ověřuje souběžný Mail, Úkoly, Nadcházející/Kalendář, Seznamy, Přehled a
+  Velín včetně wallboardů, izolace workspace a propagace motivu. WebKit ověřuje
+  bezpečný same-window fallback bez druhé lokální DB. Verze zpráv, single-leader
+  background práce, notifikační routing a allowlist shellů hlídají unit a statický
+  kontrakt; provozní hranice a rollback jsou v `docs/multi-window-runbook.md`.
+
+Neověřené v tomto snapshotu:
+
+- nativní Safari smoke zůstává volitelným doplňkem k zelenému podporovanému
+  Chromium + WebKit matrixu;
+- cílený browser screenshot audit intake formulářů, urgentní akceptace a importního průvodce; lokální browser
+  runtime skončil před připojením chybou pluginu, proto tyto dávky kryjí statické
+  design/accessibility kontrakty, integrační testy a produkční build;
+- skutečný produkční PITR/provider/deployment drill; lokální restore důkaz nenahrazuje
+  WAL archivaci, off-site retention, secret manager, TLS ani produkční alert routing.
+
+## 12. Go/no-go
+
+### Interní vývojový pilot
+
+GO pouze pro řízené interní testování task/project/meeting jádra s vědomím, že Mail je demo a externí providery mohou být unavailable.
+
+### Externí pilot nebo produkce
+
+NO-GO, dokud nejsou splněny R-01 až R-05 v relevantním rozsahu. Žádný zelený unit test nenahrazuje browser evidence, dependency audit, PITR ani skutečné provider potvrzení.
+
+### Konečná instrukce pro Claude Code
+
+Nezačínej nový feature backlog tím, že přepíšeš stabilizované commandy nebo schéma. Nejprve uzavři release evidence F0. Potom postupuj přesně po jedné vertikální epice. Pokud objevíš další reprodukovatelný bug, přidej jej do tohoto dokumentu s důkazem, oprav jej před novou funkcí a nenechávej jej jako poznámku „později“.

@@ -6,11 +6,16 @@
  * hlídám slíbenou přílohu (Modul 5); šablony TPL nikdy nepřepisují text (L-50).
  */
 import { type CSSProperties, useEffect, useRef, useState } from "react";
+import {
+	migratePrivateJson,
+	removePrivateJson,
+	writePrivateJson,
+} from "../lib/powersync/privateState";
 import { showToast } from "../lib/toast";
-import { MB, TPL } from "./data";
 import { MailDemoBanner } from "./DemoBanner";
+import { MB, TPL } from "./data";
 import { RichText, type RichTextHandle } from "./RichText";
-import { RecipientField, SigBlock, sigIdOf, SigPicker } from "./SigPicker";
+import { RecipientField, SigBlock, SigPicker, sigIdOf } from "./SigPicker";
 import { useMail } from "./state";
 
 /** Regex „text slibuje přílohu" — shodný se state.checkSend (prototyp ř. 3417). */
@@ -76,49 +81,63 @@ interface NewDraft {
 	atts: string[];
 }
 
-const loadNewDraft = (): NewDraft | null => {
-	try {
-		const raw = localStorage.getItem(LS_NEW);
-		if (!raw) return null;
-		const d = JSON.parse(raw) as Partial<NewDraft>;
-		return {
-			from: typeof d.from === "string" ? d.from : "info",
-			to: typeof d.to === "string" ? d.to : "",
-			cc: typeof d.cc === "string" ? d.cc : "",
-			bcc: typeof d.bcc === "string" ? d.bcc : "",
-			subj: typeof d.subj === "string" ? d.subj : "",
-			body: typeof d.body === "string" ? d.body : "",
-			atts: Array.isArray(d.atts) ? d.atts.filter((a) => typeof a === "string") : [],
-		};
-	} catch {
-		return null;
-	}
+const EMPTY_DRAFT: NewDraft = {
+	from: "info",
+	to: "",
+	cc: "",
+	bcc: "",
+	subj: "",
+	body: "",
+	atts: [],
 };
 
 export function NewMessage({ open, onClose }: { open: boolean; onClose: () => void }) {
 	// rozepsaný koncept z minula (D10); lazy init — čte se jen při mountu
-	const [saved] = useState(loadNewDraft);
 	// výchozí identita info@ (prototyp state.newFrom: 'info', ř. 2284)
-	const [from, setFrom] = useState(saved?.from ?? "info");
+	const [from, setFrom] = useState("info");
 	// Volba podpisu PRO TENTO MAIL (per-mail override). null = řídit se výchozím
 	// podpisem schránky; výběr v composeru přepíše jen tuhle zprávu, ne nastavení.
 	// (efektivní `sigId` + reset se dopočítá pod `const m = useMail()`.)
 	const [sigOverride, setSigOverride] = useState<string | null>(null);
-	const [to, setTo] = useState(saved?.to ?? "");
-	const [cc, setCc] = useState(saved?.cc ?? "");
-	const [bcc, setBcc] = useState(saved?.bcc ?? "");
+	const [to, setTo] = useState("");
+	const [cc, setCc] = useState("");
+	const [bcc, setBcc] = useState("");
 	// Cc/Bcc rozbalené, když z minula zůstala kopie (jinak schované za „Kopie")
-	const [ccOn, setCcOn] = useState(!!(saved?.cc || saved?.bcc));
-	const [subj, setSubj] = useState(saved?.subj ?? "");
-	const [body, setBody] = useState(saved?.body ?? "");
-	const [atts, setAtts] = useState<Att[]>(() =>
-		(saved?.atts ?? []).map((label) => ({ id: crypto.randomUUID(), label })),
-	);
+	const [ccOn, setCcOn] = useState(false);
+	const [subj, setSubj] = useState("");
+	const [body, setBody] = useState("");
+	const [atts, setAtts] = useState<Att[]>([]);
+	const [privateHydrated, setPrivateHydrated] = useState(false);
 	const [warnAtt, setWarnAtt] = useState(false);
 	const [tplOpen, setTplOpen] = useState(false);
 	const rteRef = useRef<RichTextHandle>(null);
 	const tplRef = useRef<HTMLDivElement>(null);
 	const m = useMail();
+
+	useEffect(() => {
+		let cancelled = false;
+		void migratePrivateJson<NewDraft>(LS_NEW, EMPTY_DRAFT).then((saved) => {
+			if (cancelled) return;
+			setFrom(typeof saved.from === "string" ? saved.from : "info");
+			setTo(typeof saved.to === "string" ? saved.to : "");
+			setCc(typeof saved.cc === "string" ? saved.cc : "");
+			setBcc(typeof saved.bcc === "string" ? saved.bcc : "");
+			setCcOn(Boolean(saved.cc || saved.bcc));
+			setSubj(typeof saved.subj === "string" ? saved.subj : "");
+			setBody(typeof saved.body === "string" ? saved.body : "");
+			setAtts(
+				Array.isArray(saved.atts)
+					? saved.atts
+							.filter((label): label is string => typeof label === "string")
+							.map((label) => ({ id: crypto.randomUUID(), label }))
+					: [],
+			);
+			setPrivateHydrated(true);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 
 	// Efektivní podpis composeru: override (per-mail) nebo výchozí dle schránky.
 	const sigId = sigOverride ?? sigIdOf(m.sigChoice, from);
@@ -168,21 +187,23 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 	// koncept přežije zavření okna i reload (D10) — debounce 1 s; prázdný
 	// formulář záznam maže, ať nestraší starý koncept po odeslání/resetu
 	useEffect(() => {
+		if (!privateHydrated) return;
 		const timer = setTimeout(() => {
-			try {
-				if (!to && !cc && !bcc && !subj && !plainText(body) && atts.length === 0)
-					localStorage.removeItem(LS_NEW);
-				else
-					localStorage.setItem(
-						LS_NEW,
-						JSON.stringify({ from, to, cc, bcc, subj, body, atts: atts.map((a) => a.label) }),
-					);
-			} catch {
-				/* plné úložiště — koncept zůstává aspoň v paměti */
-			}
+			if (!to && !cc && !bcc && !subj && !plainText(body) && atts.length === 0)
+				void removePrivateJson(LS_NEW);
+			else
+				void writePrivateJson(LS_NEW, {
+					from,
+					to,
+					cc,
+					bcc,
+					subj,
+					body,
+					atts: atts.map((a) => a.label),
+				});
 		}, 1000);
 		return () => clearTimeout(timer);
-	}, [from, to, cc, bcc, subj, body, atts]);
+	}, [from, to, cc, bcc, subj, body, atts, privateHydrated]);
 
 	const isFwd = subj.startsWith("Fwd:");
 	const extOn = hasExternal(to);
@@ -200,11 +221,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 		setWarnAtt(false);
 		setTplOpen(false);
 		// odeslaný/zahozený koncept nesmí obživnout při dalším otevření (D10)
-		try {
-			localStorage.removeItem(LS_NEW);
-		} catch {
-			/* bez úložiště není co mazat */
-		}
+		void removePrivateJson(LS_NEW);
 	};
 
 	/** Odeslání (prototyp nw.send, ř. 4220) — s pojistkou na slíbenou přílohu.
@@ -251,6 +268,8 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 
 	return (
 		<div
+			role="dialog"
+			aria-label="Nová zpráva"
 			data-esc-layer
 			data-screen-label="Nová zpráva"
 			style={{
@@ -286,13 +305,23 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 				>
 					Nová zpráva
 				</span>
-				<span
+				<button
+					type="button"
+					aria-label="Zavřít novou zprávu"
 					onClick={onClose}
 					title="Zavřít (Esc)"
-					style={{ fontSize: 17, lineHeight: 1, color: "var(--ink-3)", cursor: "pointer" }}
+					style={{
+						border: 0,
+						background: "transparent",
+						padding: 4,
+						fontSize: 17,
+						lineHeight: 1,
+						color: "var(--ink-3)",
+						cursor: "pointer",
+					}}
 				>
 					×
-				</span>
+				</button>
 			</div>
 
 			{/* Od — jen schránky s přístupem, identita barvou schránky (ř. 1813–1818, audit L-11) */}
@@ -307,8 +336,10 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 			>
 				<span style={FIELD_LABEL}>Od</span>
 				{FROM_IDS.map((id) => (
-					<span
+					<button
 						key={id}
+						type="button"
+						aria-pressed={from === id}
 						onClick={() => setFrom(id)}
 						data-chip
 						data-on={from === id ? "true" : undefined}
@@ -327,10 +358,12 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 					>
 						<span data-mbdot={id} style={{ width: 7, height: 7, borderRadius: "50%" }} />
 						{MB[id]?.short}
-					</span>
+					</button>
 				))}
 				{/* osobní identita — se zámkem (soukromá sféra, prototyp ř. 4208) */}
-				<span
+				<button
+					type="button"
+					aria-pressed={from === "osobni"}
 					onClick={() => setFrom("osobni")}
 					data-chip
 					data-on={from === "osobni" ? "true" : undefined}
@@ -350,6 +383,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 					<span data-mbdot="osobni" style={{ width: 7, height: 7, borderRadius: "50%" }} />
 					{OSOBNI_ADDR}
 					<svg width="8" height="8" viewBox="0 0 12 12" fill="none" aria-hidden>
+						<title>Soukromá identita</title>
 						<rect
 							x="2.2"
 							y="5"
@@ -361,7 +395,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 						/>
 						<path d="M4 5 V3.8 A2 2 0 0 1 8 3.8 V5" stroke="currentColor" strokeWidth="1.3" />
 					</svg>
-				</span>
+				</button>
 			</div>
 			<div
 				style={{
@@ -407,10 +441,13 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 					</span>
 				)}
 				{!ccOn && (
-					<span
+					<button
+						type="button"
 						onClick={() => setCcOn(true)}
 						title="Přidat kopii (Cc) a skrytou kopii (Bcc)"
 						style={{
+							border: 0,
+							background: "transparent",
 							fontFamily: "var(--w-font-mono)",
 							fontSize: 10,
 							color: "var(--brass-text)",
@@ -420,7 +457,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 						}}
 					>
 						Kopie
-					</span>
+					</button>
 				)}
 			</div>
 
@@ -557,6 +594,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 							}}
 						>
 							<svg width="10" height="10" viewBox="0 0 14 14" fill="none" aria-hidden>
+								<title>Příloha</title>
 								<path
 									d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4"
 									stroke="currentColor"
@@ -565,13 +603,22 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 								/>
 							</svg>
 							{a.label}
-							<span
+							<button
+								type="button"
+								aria-label={`Odebrat přílohu ${a.label}`}
 								onClick={() => setAtts((s) => s.filter((x) => x.id !== a.id))}
 								title="Odebrat přílohu"
-								style={{ cursor: "pointer", color: "var(--ink-3)", lineHeight: 1 }}
+								style={{
+									border: 0,
+									background: "transparent",
+									padding: 2,
+									cursor: "pointer",
+									color: "var(--ink-3)",
+									lineHeight: 1,
+								}}
 							>
 								×
-							</span>
+							</button>
 						</span>
 					))}
 				</div>
@@ -605,6 +652,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 						}}
 					>
 						<svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden>
+							<title>Přidat přílohu</title>
 							<path
 								d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4"
 								stroke="currentColor"
@@ -637,19 +685,30 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 							tým.
 						</div>
 						<div style={{ display: "flex", gap: 7, marginTop: 8, flexWrap: "wrap" }}>
-							<span
+							<button
+								type="button"
 								onClick={() => setWarnAtt(false)}
 								data-ghost
-								style={{ fontSize: 11, padding: "5px 11px" }}
+								style={{ border: 0, fontSize: 11, padding: "5px 11px" }}
 							>
 								Zrušit
-							</span>
-							<span onClick={doSend} data-ghost style={{ fontSize: 11, padding: "5px 11px" }}>
+							</button>
+							<button
+								type="button"
+								onClick={doSend}
+								data-ghost
+								style={{ border: 0, fontSize: 11, padding: "5px 11px" }}
+							>
 								Poslat i tak
-							</span>
-							<span onClick={addAtt} data-primary style={{ fontSize: 11, padding: "5px 12px" }}>
+							</button>
+							<button
+								type="button"
+								onClick={addAtt}
+								data-primary
+								style={{ border: 0, fontSize: 11, padding: "5px 12px" }}
+							>
 								Připojit soubor
-							</span>
+							</button>
 						</div>
 					</div>
 				</div>
@@ -657,14 +716,22 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 
 			{/* akční řádek (ř. 1831–1836) + Šablony (TPL per schránka) */}
 			<div style={{ display: "flex", gap: 7, marginTop: 10, alignItems: "center" }}>
-				<span onClick={trySend} data-primary style={{ fontSize: 12, padding: "8px 16px" }}>
+				<button
+					type="button"
+					onClick={trySend}
+					data-primary
+					style={{ border: 0, fontSize: 12, padding: "8px 16px" }}
+				>
 					Odeslat
-				</span>
-				<span
+				</button>
+				<button
+					type="button"
+					aria-label="Odeslat později"
 					onClick={() => showToast("Odeslat později: dnes večer · zítra ráno · vlastní čas.")}
 					data-ghost
 					title="Odeslat později"
 					style={{
+						border: 0,
 						display: "inline-flex",
 						alignItems: "center",
 						justifyContent: "center",
@@ -674,6 +741,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 					}}
 				>
 					<svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden>
+						<title>Odeslat později</title>
 						<circle cx="7" cy="7" r="5.2" stroke="currentColor" strokeWidth="1.2" />
 						<path
 							d="M7 4.2 V7 L9 8.6"
@@ -682,12 +750,15 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 							strokeLinecap="round"
 						/>
 					</svg>
-				</span>
-				<span
+				</button>
+				<button
+					type="button"
+					aria-label="Přiložit soubor"
 					onClick={addAtt}
 					data-ghost
 					title="Přiložit soubor"
 					style={{
+						border: 0,
 						display: "inline-flex",
 						alignItems: "center",
 						justifyContent: "center",
@@ -697,6 +768,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 					}}
 				>
 					<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
+						<title>Přiložit soubor</title>
 						<path
 							d="M11 6.2 L6.8 10.4 A2.6 2.6 0 0 1 3.1 6.7 L7.6 2.2 A1.8 1.8 0 0 1 10.2 4.8 L5.9 9.1 A0.9 0.9 0 0 1 4.6 7.8 L8.4 4"
 							stroke="currentColor"
@@ -704,13 +776,16 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 							strokeLinecap="round"
 						/>
 					</svg>
-				</span>
+				</button>
 				<div ref={tplRef} style={{ position: "relative" }}>
-					<span
+					<button
+						type="button"
+						aria-expanded={tplOpen}
 						onClick={() => setTplOpen((v) => !v)}
 						data-ghost
 						title="Sdílené šablony odpovědí vybrané schránky"
 						style={{
+							border: 0,
 							display: "inline-flex",
 							alignItems: "center",
 							fontSize: 11,
@@ -718,7 +793,7 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 						}}
 					>
 						Šablony
-					</span>
+					</button>
 					{tplOpen && (
 						<div
 							style={{
@@ -761,14 +836,16 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 								</div>
 							)}
 							{tpls.map((tp) => (
-								<div
+								<button
 									key={tp.n}
+									type="button"
 									onClick={() => insertTpl(tp.b)}
 									data-menuitem
 									title="Vloží se na kurzor — rozepsaný text se nikdy nepřepisuje"
+									style={{ width: "100%", border: 0, background: "transparent", color: "inherit" }}
 								>
 									<span style={{ flex: 1 }}>{tp.n}</span>
-								</div>
+								</button>
 							))}
 						</div>
 					)}

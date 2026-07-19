@@ -6,15 +6,23 @@
  * klíče se příkazová vrstva skryje (503) a zůstane jen odkaz na přehled.
  */
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useNavigate } from "@tanstack/react-router";
+import i18n from "@watson/i18n";
 import { type CSSProperties, useMemo, useState } from "react";
 import { logTaskActivity } from "../lib/activity";
 import { API_URL } from "../lib/api";
+import { focusOnMount } from "../lib/focusOnMount";
 import { useSession } from "../lib/auth-client";
 import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { showToast } from "../lib/toast";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace } from "../lib/workspace";
+import {
+	PERSONAL_COMPOSE_INTENT_EVENT,
+	savePersonalComposeIntent,
+} from "../mail/personalComposeIntent";
+import { useMail } from "../mail/state";
 
 interface Action {
 	type: string;
@@ -31,8 +39,8 @@ const EXAMPLES = [
 const OVERLAY: CSSProperties = {
 	position: "fixed",
 	inset: 0,
-	zIndex: 90,
-	background: "rgba(20,16,10,.34)",
+	zIndex: "var(--w-layer-nested)",
+	background: "transparent",
 	display: "flex",
 	alignItems: "flex-start",
 	justifyContent: "center",
@@ -54,7 +62,9 @@ const CARD: CSSProperties = {
 export function WatsonCard({ onClose }: { onClose: () => void }) {
 	const { activeWs } = useWorkspace();
 	const { data: session } = useSession();
-	const trapRef = useFocusTrap<HTMLDivElement>(true);
+	const navigate = useNavigate();
+	const mail = useMail();
+	const trapRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	const { data: allProjects } = usePsQuery<ProjectRow>(
 		"SELECT id, name, workspace_id FROM projects WHERE archived_at IS NULL ORDER BY created_at",
@@ -77,6 +87,8 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 
 	async function run() {
 		if (command.trim().length < 2 || !activeWs) return;
+		const vendorConsent = window.confirm(i18n.t("common.aiVendorConsentConfirm"));
+		if (!vendorConsent) return;
 		setBusy(true);
 		setActions(null);
 		setNote(null);
@@ -99,6 +111,7 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 				body: JSON.stringify({
 					workspaceId: activeWs,
 					command,
+					vendorConsent,
 					context: { projects: projects.map((p) => ({ id: p.id, name: p.name ?? "" })), tasks },
 				}),
 			});
@@ -128,6 +141,7 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 		const uid = session.user.id;
 		setBusy(true);
 		let done = 0;
+		let composeIntent: { to: string; subject: string; body: string } | null = null;
 		try {
 			for (let i = 0; i < actions.length; i++) {
 				if (!keep[i]) continue;
@@ -198,10 +212,21 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 						body: JSON.stringify({ name: String(p.name ?? "").slice(0, 200), workspaceId: activeWs }),
 					});
 					if (r.ok) done++;
-				} else if (a.type === "draft_email" || a.type === "assign_email") {
-					// Mail je zatím z velké části demo — akci nabídneme, ale reálně neprovádíme.
-					showToast("Mailové akce přijdou s reálným mailem (M1).");
+				} else if (a.type === "draft_email" && !composeIntent) {
+					composeIntent = {
+						to: typeof p.to === "string" ? p.to : "",
+						subject: typeof p.subject === "string" ? p.subject : "",
+						body: typeof p.body === "string" ? p.body : "",
+					};
+					done++;
 				}
+			}
+			if (composeIntent) {
+				await savePersonalComposeIntent(composeIntent);
+				mail.setScr("mail");
+				mail.setFolder("osobni");
+				await navigate({ to: "/mail", search: {} });
+				window.dispatchEvent(new Event(PERSONAL_COMPOSE_INTENT_EVENT));
 			}
 			showToast(`Watson provedl ${done} ${done === 1 ? "akci" : "akcí"}.`);
 			onClose();
@@ -215,16 +240,24 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 	const keepCount = keep.filter(Boolean).length;
 
 	return (
-		// biome-ignore lint/a11y/useKeyWithClickEvents: klik na pozadí zavře (Esc řeší focus-trap)
 		<div
 			style={OVERLAY}
 			data-esc-layer
 			data-watson-layer
-			onClick={(e) => {
-				if (e.target === e.currentTarget) onClose();
-			}}
 		>
-			<div ref={trapRef} style={CARD} role="dialog" aria-label="Watson">
+			<button
+				type="button"
+				aria-label="Zavřít Watsona"
+				onClick={onClose}
+				style={{ position: "absolute", inset: 0, border: 0, background: "rgba(20,16,10,.34)" }}
+			/>
+			<div
+				ref={trapRef}
+				style={{ ...CARD, position: "relative", zIndex: 1 }}
+				role="dialog"
+				aria-modal="true"
+				aria-label="Watson"
+			>
 				{/* hlavička */}
 				<div
 					style={{
@@ -284,8 +317,7 @@ export function WatsonCard({ onClose }: { onClose: () => void }) {
 						}}
 						placeholder="Řekni Watsonovi, co udělat… (⌘/Ctrl + Enter odešle)"
 						rows={3}
-						// biome-ignore lint/a11y/noAutofocus: hlavní vstup karty
-						autoFocus
+						ref={focusOnMount}
 						style={{
 							width: "100%",
 							fontSize: 14,

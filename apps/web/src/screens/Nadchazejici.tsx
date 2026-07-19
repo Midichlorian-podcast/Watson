@@ -1,8 +1,10 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import i18n, { useTranslation } from "@watson/i18n";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "../components/Board";
 import { Calendar } from "../components/CalendarLazy";
+import { DataLoading } from "../components/Loading";
 import { TaskItem } from "../components/TaskItem";
 import {
 	DEFAULT_TOOLBAR,
@@ -13,12 +15,13 @@ import {
 	useToolbarCtx,
 } from "../components/TasksToolbar";
 import { WorkspaceChips } from "../components/WorkspaceChips";
+import { useAddTask } from "../lib/addTask";
 import { useFlowSteps } from "../lib/flowSteps";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
-import { expandOccurrences, occId, parseRecurrenceRule } from "../lib/occurrences";
-import type { TaskRow } from "../lib/powersync/AppSchema";
-import { useProjects } from "../lib/projects";
+import { materializeRecurringTasks, type OccurrenceOverrideRow } from "../lib/occurrenceProjection";
+import type { TaskRecurrencePrefixRow, TaskRow } from "../lib/powersync/AppSchema";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { dayOf, todayISO } from "../lib/tasks";
 import { useViewMode } from "../lib/viewMode";
@@ -61,45 +64,97 @@ function dayBucket(d: string, tdy: string): Bucket {
  */
 export function Nadchazejici() {
 	const { t } = useTranslation();
-	const { view } = useViewMode();
-	const projects = useProjects();
+	const navigate = useNavigate();
+	const search = useSearch({ from: "/nadchazejici" });
+	const { openAdd } = useAddTask();
+	const { view, setView } = useViewMode("upcoming");
+	const externalView = useRef(search.zobrazeni ?? null);
+	useEffect(() => {
+		if (!search.zobrazeni) return;
+		externalView.current = search.zobrazeni;
+		setView(search.zobrazeni);
+	}, [search.zobrazeni, setView]);
+	useEffect(() => {
+		if (externalView.current) {
+			if (externalView.current === view) externalView.current = null;
+			return;
+		}
+		if (search.zobrazeni === view) return;
+		void navigate({
+			to: "/nadchazejici",
+			search: (current) => ({ ...current, zobrazeni: view }),
+			replace: true,
+		});
+	}, [navigate, search.zobrazeni, view]);
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
-	const [wsFilter, setWsFilter] = useState<string | null>(null);
-	// Výkon: bez „Dokončené" filtruj hotové v SQL (opakované úkoly mají completed_at vždy NULL —
-	// dokončení posouvá due_date, takže se neztratí žádná řada).
-	const { data: allTasks } = usePsQuery<TaskRow>(
-		tb.showDone
-			? "SELECT * FROM tasks WHERE due_date IS NOT NULL ORDER BY due_date"
-			: "SELECT * FROM tasks WHERE due_date IS NOT NULL AND completed_at IS NULL ORDER BY due_date",
+	const [wsFilter, setWsFilter] = useState<string | null>(search.prostor ?? null);
+	useEffect(() => setWsFilter(search.prostor ?? null), [search.prostor]);
+	const updateWorkspaceFilter = useCallback(
+		(workspaceId: string | null) => {
+			setWsFilter(workspaceId);
+			void navigate({
+				to: "/nadchazejici",
+				search: (current) => ({ ...current, prostor: workspaceId ?? undefined }),
+				replace: true,
+			});
+		},
+		[navigate],
 	);
-	// Kalendář má vlastní zdroj: NEOŘEZANÝ do budoucna (jinak zmizí minulé/zpožděné úkoly a panel
-	// „Plánování → Zpožděné" je mrtvý) a nezávislý na skrytém „Dokončené" (aby šlo hotové vidět
-	// a přes CalCheck zas odškrtnout). Filtruje se jen podle workspace, ne toolbarem ani hledáním.
-	const { data: calAll } = usePsQuery<TaskRow>(
+	const calendarNavigationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const calendarNavigationRef = useRef<{
+		range: "day" | "week" | "month";
+		date: string;
+	} | null>(null);
+	const updateCalendarNavigation = useCallback(
+		(next: { range: "day" | "week" | "month"; date: string }) => {
+			calendarNavigationRef.current = next;
+			if (calendarNavigationTimer.current) clearTimeout(calendarNavigationTimer.current);
+			calendarNavigationTimer.current = setTimeout(() => {
+				const pending = calendarNavigationRef.current;
+				calendarNavigationTimer.current = null;
+				if (!pending) return;
+				void navigate({
+					to: "/nadchazejici",
+					search: (current) => ({
+						...current,
+						zobrazeni: "calendar",
+						rozsah: pending.range,
+						datum: pending.date,
+					}),
+					replace: true,
+				});
+			}, 120);
+		},
+		[navigate],
+	);
+	useEffect(
+		() => () => {
+			if (calendarNavigationTimer.current) clearTimeout(calendarNavigationTimer.current);
+		},
+		[],
+	);
+	// Jeden lokální odběr je zdrojem pro všechny tři pohledy. Původně obrazovka držela dvě
+	// téměř shodné PowerSync subscription a při každé interakci zbytečně zpracovávala obě.
+	const { data: allTasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		"SELECT * FROM tasks WHERE due_date IS NOT NULL ORDER BY due_date",
 	);
 	const flowSteps = useFlowSteps();
 	const { setNavIds } = useTaskDetail();
 	const { q: searchQ } = useListSearch();
 	// Per-výskyt výjimky (R4) — skip/done jednotlivých výskytů.
-	const { data: ovr } = usePsQuery<{
-		task_id: string | null;
-		occ_date: string | null;
-		done: number | null;
-		skipped: number | null;
-	}>("SELECT task_id, occ_date, done, skipped FROM task_occurrence_overrides");
-	const ovrMap = useMemo(() => {
-		const m = new Map<string, { done: boolean; skipped: boolean }>();
-		for (const o of ovr ?? []) {
-			if (o.task_id && o.occ_date)
-				m.set(`${o.task_id}@${o.occ_date}`, {
-					done: !!o.done,
-					skipped: !!o.skipped,
-				});
-		}
-		return m;
-	}, [ovr]);
+	const { data: ovr, isLoading: overridesLoading } = usePsQuery<OccurrenceOverrideRow>(
+		`SELECT id, task_id, occ_date, done, skipped, override_due_date,
+		        override_start_date, override_start_timezone, override_duration_min, updated_at
+		 FROM task_occurrence_overrides`,
+	);
+	const { data: recurrencePrefixes, isLoading: recurrencePrefixesLoading } =
+		usePsQuery<TaskRecurrencePrefixRow>(
+			`SELECT id, task_id, project_id, anchor_date, end_date, recurrence_rule,
+			        start_date, start_timezone, duration_min, created_by, version, created_at, updated_at
+			 FROM task_recurrence_prefixes`,
+		);
 
 	const tbCtx = useToolbarCtx();
 	const tasks = useMemo(() => {
@@ -112,63 +167,36 @@ export function Nadchazejici() {
 		return filterByQuery(sortTasks(filterTasks(list, tb, tbCtx), tb, tbCtx), searchQ);
 	}, [allTasks, tb, tbCtx, wsFilter, projMap, searchQ]);
 
-	// Zdroj pro kalendář — jen wsFilter, bez ořezu na budoucnost, bez toolbaru/hledání.
+	// Kalendář není ořezaný jen na budoucnost, ale respektuje stejný uložitelný filtr,
+	// řazení, workspace a hledání jako ostatní pohledy tohoto modulu.
 	const calTasks = useMemo(() => {
-		const list = calAll ?? [];
-		return wsFilter
-			? list.filter((x) => x.project_id && projMap.get(x.project_id)?.workspace_id === wsFilter)
-			: list;
-	}, [calAll, wsFilter, projMap]);
+		let list = allTasks ?? [];
+		if (wsFilter)
+			list = list.filter(
+				(x) => x.project_id && projMap.get(x.project_id)?.workspace_id === wsFilter,
+			);
+		return filterByQuery(sortTasks(filterTasks(list, tb, tbCtx), tb, tbCtx), searchQ);
+	}, [allTasks, wsFilter, projMap, tb, tbCtx, searchQ]);
 
 	const view2 = useMemo(() => {
 		const tdy = todayISO();
 		const horizon = iso(Date.now() + HORIZON_DAYS * DAY);
 		const byBucket = new Map<Bucket, TaskRow[]>();
 
-		for (const tk of tasks) {
+		for (const tk of materializeRecurringTasks(
+			tasks,
+			ovr ?? [],
+			tdy,
+			horizon,
+			40,
+			recurrencePrefixes ?? [],
+		)) {
 			const d = dayOf(tk);
 			if (!d) continue;
 			const b = dayBucket(d, tdy);
 			const arr = byBucket.get(b);
 			if (arr) arr.push(tk);
 			else byBucket.set(b, [tk]);
-			// Projekce výskytů opakování jako plnohodnotné klikací řádky (kromě base dne);
-			// per-výskyt výjimky: skipped se nezobrazí, done se propíše (README ř. 64);
-			// konec řady until/count a repeatShowAll se respektují (prototyp _recOccur).
-			const rule = parseRecurrenceRule(tk.recurrence_rule);
-			if (rule) {
-				for (const od of expandOccurrences({
-					baseISO: d,
-					kind: rule.kind,
-					weekday: rule.weekday,
-					nth: rule.nth,
-					day: rule.day,
-					parity: rule.parity,
-					fromISO: tdy,
-					toISO: horizon,
-					cap: 40,
-					until: rule.until,
-					count: rule.count,
-					doneCount: rule.doneCount,
-					showAll: rule.showAll,
-				})) {
-					if (od === d) continue;
-					const vid = occId(tk.id, od);
-					const ex = ovrMap.get(vid);
-					if (ex?.skipped) continue;
-					const virt: TaskRow = {
-						...tk,
-						id: vid,
-						due_date: od,
-						start_date: tk.start_date ? `${od}T${tk.start_date.slice(11)}` : null,
-						completed_at: ex?.done ? new Date().toISOString() : null,
-					};
-					const ob = dayBucket(od, tdy);
-					const oArr = byBucket.get(ob) ?? [];
-					oArr.push(virt);
-					byBucket.set(ob, oArr);
-				}
-			}
 		}
 
 		const tdyLabel = `${t("nav.today")} · ${wdLong(tdy)}`;
@@ -186,7 +214,7 @@ export function Nadchazejici() {
 			label: labels[b],
 			list: byBucket.get(b) ?? [],
 		})).filter((g) => g.list.length > 0);
-	}, [tasks, ovrMap, t]);
+	}, [tasks, ovr, recurrencePrefixes, t]);
 
 	// Pořadí pro ↑/↓ v detailu (prototyp _navIds) + kbsel navigace.
 	const flatList = useMemo(() => view2.flatMap((g) => g.list), [view2]);
@@ -196,20 +224,50 @@ export function Nadchazejici() {
 	const kbSel = useKbNav(flatList, view === "list");
 
 	const empty = view2.length === 0;
+	// Kalendář je strukturální plocha: po průchodu globálním SyncGate se má vyrenderovat
+	// okamžitě a lokální řádky se do něj doplní. Blokovat celou mřížku kvůli obnovující se
+	// subscription vytvářelo několikasekundový spinner i ve chvíli, kdy cache už byla použitelná.
+	if (
+		view !== "calendar" &&
+		(projectsLoading || tasksLoading || overridesLoading || recurrencePrefixesLoading)
+	)
+		return <DataLoading />;
 
 	if (view === "calendar") {
 		return (
-			<div className="mx-auto max-w-[1080px] px-5 py-7">
-				<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
-				<Calendar tasks={calTasks} />
+			<div className="w-full min-w-0 px-3 py-3 sm:px-5 sm:py-5">
+				<WorkspaceChips value={wsFilter} onChange={updateWorkspaceFilter} />
+				<TasksToolbar
+					state={tb}
+					onChange={setTb}
+					ctx={tbCtx}
+					showSavedViews
+					savedViewsSurface="upcoming"
+					savedViewsWorkspaceFilter={wsFilter}
+					onSavedViewsWorkspaceFilterChange={updateWorkspaceFilter}
+				/>
+				<Calendar
+					tasks={calTasks}
+					range={search.rozsah}
+					anchorDate={search.datum}
+					onNavigationChange={updateCalendarNavigation}
+				/>
 			</div>
 		);
 	}
 	if (view === "board") {
 		return (
 			<div className="mx-auto max-w-[1080px] px-5 py-7">
-				<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
-				<TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />
+				<WorkspaceChips value={wsFilter} onChange={updateWorkspaceFilter} />
+				<TasksToolbar
+					state={tb}
+					onChange={setTb}
+					ctx={tbCtx}
+					showSavedViews
+					savedViewsSurface="upcoming"
+					savedViewsWorkspaceFilter={wsFilter}
+					onSavedViewsWorkspaceFilterChange={updateWorkspaceFilter}
+				/>
 				<Board tasks={tasks} />
 			</div>
 		);
@@ -217,15 +275,35 @@ export function Nadchazejici() {
 
 	return (
 		<div className="mx-auto max-w-[1080px]" style={{ padding: "10px 22px 90px" }}>
-			<WorkspaceChips value={wsFilter} onChange={setWsFilter} />
-			<TasksToolbar state={tb} onChange={setTb} ctx={tbCtx} />
+			<WorkspaceChips value={wsFilter} onChange={updateWorkspaceFilter} />
+			<TasksToolbar
+				state={tb}
+				onChange={setTb}
+				ctx={tbCtx}
+				showSavedViews
+				savedViewsSurface="upcoming"
+				savedViewsWorkspaceFilter={wsFilter}
+				onSavedViewsWorkspaceFilterChange={updateWorkspaceFilter}
+			/>
 			{empty && (
-				<p
-					className="text-center font-body text-ink-3"
-					style={{ padding: "80px 20px", fontSize: 13.5 }}
-				>
-					{t("today.emptyClean")}
-				</p>
+				<div className="text-center" style={{ padding: "80px 20px" }}>
+					<p className="font-body text-ink-3" style={{ fontSize: 13.5 }}>
+						{t("today.emptyClean")}
+					</p>
+					<button
+						type="button"
+						onClick={() => openAdd({ date: todayISO() })}
+						className="mt-3 rounded-[9px] font-display font-bold text-white hover:brightness-105"
+						style={{
+							minHeight: 44,
+							background: "var(--w-brass)",
+							padding: "8px 14px",
+							fontSize: 12.5,
+						}}
+					>
+						+ {t("today.addTask")}
+					</button>
+				</div>
 			)}
 
 			{view2.map(({ b, label, list }) => (
@@ -243,7 +321,7 @@ export function Nadchazejici() {
 					</div>
 					<ul>
 						{list.map((tk) => (
-							<div
+							<li
 								key={tk.id}
 								data-kbsel={kbSel === tk.id || undefined}
 								className="rounded-xl"
@@ -258,7 +336,7 @@ export function Nadchazejici() {
 									project={tk.project_id ? projMap.get(tk.project_id) : undefined}
 									flow={flowSteps.get(tk.id)}
 								/>
-							</div>
+							</li>
 						))}
 					</ul>
 				</section>

@@ -12,9 +12,9 @@ services:
       POSTGRES_PASSWORD: watson
       POSTGRES_DB: watson
     ports:
-      # 5433 na hostu — 5432 drží SSH tunel LuckyOS (kolize 2026-07-14);
+      # 5435 na hostu — 5432 drží SSH tunel LuckyOS, 5433 zabral dev-server RUBENS (kolize 2026-07-14);
       # PowerSync jde na kontejner přes docker síť, mapování hostu se ho netýká
-      - "5433:5432"
+      - "5435:5432"
     command:
       - "postgres"
       - "-c"

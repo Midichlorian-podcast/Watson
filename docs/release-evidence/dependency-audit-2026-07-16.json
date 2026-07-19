@@ -1,0 +1,24 @@
+{
+  "createdAt": "2026-07-16T23:20:10.063Z",
+  "status": "passed",
+  "tool": "pnpm audit",
+  "scope": "production",
+  "threshold": "high",
+  "lockfileSha256": "79401bc3e004e39610cbe86829035053bd04bb16f1552467205ffe2d61ae1f6c",
+  "packageManager": "pnpm/11.9.0",
+  "vulnerabilities": {
+    "info": 0,
+    "low": 0,
+    "moderate": 0,
+    "high": 0,
+    "critical": 0
+  },
+  "dependencies": {
+    "production": 79,
+    "optional": 73,
+    "total": 152
+  },
+  "advisories": [],
+  "commandExitCode": 0,
+  "error": null
+}

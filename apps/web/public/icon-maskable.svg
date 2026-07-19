@@ -1,0 +1,5 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-label="Watson">
+  <rect width="512" height="512" fill="#17283F" />
+  <text x="256" y="338" text-anchor="middle" font-family="Montserrat, sans-serif" font-weight="800" font-size="262" fill="#FFFFFF" letter-spacing="-6">W</text>
+  <circle cx="374" cy="357" r="33" fill="#C68A3E" />
+</svg>

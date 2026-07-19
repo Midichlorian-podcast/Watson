@@ -1,16 +1,18 @@
 import { useQuery as usePsQuery } from "@powersync/react";
+import { Link } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useMemo } from "react";
 import { Board } from "../components/Board";
 import { Calendar } from "../components/CalendarLazy";
+import { DataLoading } from "../components/Loading";
 import { TaskItem } from "../components/TaskItem";
 import { useSession } from "../lib/auth-client";
 import { useFlowSteps } from "../lib/flowSteps";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import type { TaskRow } from "../lib/powersync/AppSchema";
-import { useProjects } from "../lib/projects";
-import { useViewMode } from "../lib/viewMode";
+import { useProjectsWithState } from "../lib/projects";
 import { NOT_MEETING } from "../lib/tasks";
+import { useViewMode } from "../lib/viewMode";
 
 /**
  * Oblíbené — rychlé filtry ze sidebaru: Priorita 1 / Přiřazeno mně (jen reálná přiřazení,
@@ -20,16 +22,16 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 	const { t } = useTranslation();
 	const { data: session } = useSession();
 	const meId = session?.user?.id;
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 	const inboxIds = useMemo(() => inboxProjectIds(projects), [projects]);
 	const flowSteps = useFlowSteps();
-	const { view } = useViewMode();
+	const { view } = useViewMode("favorites");
 
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		`SELECT * FROM tasks WHERE completed_at IS NULL AND ${NOT_MEETING} ORDER BY priority, due_date IS NULL, due_date`,
 	);
-	const { data: assignments } = usePsQuery<{
+	const { data: assignments, isLoading: assignmentsLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
@@ -70,26 +72,36 @@ export function Oblibene({ mode }: { mode: "p1" | "me" }) {
 				</span>
 			</div>
 
-			{view === "calendar" ? (
+			{projectsLoading || tasksLoading || assignmentsLoading ? (
+				<DataLoading />
+			) : view === "calendar" ? (
 				<Calendar tasks={shown} />
 			) : view === "board" ? (
 				<Board tasks={shown} />
 			) : shown.length === 0 ? (
-				<p
-					className="text-center font-body text-ink-3"
-					style={{ padding: "80px 20px", fontSize: 13.5 }}
-				>
-					{t("today.emptyClean")}
-				</p>
+				<div className="text-center" style={{ padding: "80px 20px" }}>
+					<p className="font-body text-ink-3" style={{ fontSize: 13.5 }}>
+						{t("today.emptyClean")}
+					</p>
+					<Link
+						to="/ukoly"
+						search={{}}
+						className="mt-3 inline-flex min-h-11 items-center rounded-[9px] border border-line px-4 font-display font-bold text-ink-2 hover:border-brass hover:text-brass-text"
+						style={{ fontSize: 12.5 }}
+					>
+						{t("projects.allTasks")}
+					</Link>
+				</div>
 			) : (
 				<ul className="flex flex-col gap-0">
 					{shown.map((tk) => (
-						<TaskItem
-							key={tk.id}
-							task={tk}
-							project={projMap.get(tk.project_id ?? "")}
-							flow={flowSteps.get(tk.id)}
-						/>
+						<li key={tk.id}>
+							<TaskItem
+								task={tk}
+								project={projMap.get(tk.project_id ?? "")}
+								flow={flowSteps.get(tk.id)}
+							/>
+						</li>
 					))}
 				</ul>
 			)}

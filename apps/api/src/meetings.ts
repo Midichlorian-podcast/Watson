@@ -5,16 +5,41 @@
  * NÁVRH se uloží do meetings.extraction (jsonb) → syncne se klientovi přes PowerSync,
  * kde ho člověk zreviduje a teprve pak z něj vzniknou reálné úkoly (human-in-the-loop).
  *
- * Bez ANTHROPIC_API_KEY (aiEnabled=false) běží deterministický `mockExtract`, ať je
- * celý tok testovatelný i bez klíče. Přepis se do promptu vkládá jako DATA, ne instrukce.
+ * Bez ANTHROPIC_API_KEY běží deterministický `mockExtract` pouze v lokálním/dev režimu.
+ * Produkce bez providera fail-closed vrací 503. Přepis se vkládá jako DATA, ne instrukce.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { and, eq, entityLinks, getDb, meetings, memberships, sql, users } from "@watson/db";
+import {
+	and,
+	assignments,
+	auditEvents,
+	decisions as decisionLog,
+	entityLinks,
+	eq,
+	getDb,
+	inArray,
+	isNull,
+	meetings,
+	memberships,
+	projectMembers,
+	projects,
+	sql,
+	tasks,
+	users,
+} from "@watson/db";
 import { Hono } from "hono";
+import { z } from "zod";
+import { authorizeAiVendorTransfer, redactVendorText } from "./aiPolicy";
 import { auth } from "./auth";
-import { aiEnabled, env } from "./env";
+import { aiEnabled, aiMockEnabled, env } from "./env";
+import { lockMeetingSchedule, readMeetingBusyConflicts } from "./meetingScheduling";
+import { providerFailureStatus } from "./providerErrors";
+import { readTaskAvailabilityConflicts } from "./taskAvailability";
 
-export const meetingsRoutes = new Hono();
+export const meetingsRoutes = new Hono<{ Variables: { requestId: string } }>();
+
+const PROJECT_ROLE_RANK: Record<string, number> = { commenter: 1, editor: 2, manager: 3 };
+const PROJECT_EDITOR_RANK = PROJECT_ROLE_RANK.editor ?? 2;
 
 /** Jeden navržený úkol (kanonický tvar meetings.extraction[]). */
 export interface TaskProposal {
@@ -39,6 +64,12 @@ export interface TaskProposal {
 	kind?: "action" | "unclear" | "decision" | null;
 	/** Doslovná citace pasáže přepisu, ze které položka vychází (ukotvení + audit). */
 	evidence?: string | null;
+	/** REVIZNÍ stav (autosave rozpracované revize; AI je neplní): více řešitelů. */
+	assigneeUserIds?: string[] | null;
+	/** REVIZNÍ stav: zaškrtnutí bodu. */
+	keep?: boolean | null;
+	/** REVIZNÍ stav: cílový projekt bodu. */
+	projectId?: string | null;
 }
 
 type RosterRow = { id: string; name: string | null; areas: string | null; bio: string | null };
@@ -70,6 +101,7 @@ function mockExtract(transcript: string, roster: RosterRow[]): TaskProposal[] {
 			return first && first.length > 2 && low.includes(first);
 		});
 		const pMatch = low.match(/\bp([1-4])\b/);
+		const isDecision = /\b(rozhodnutí|rozhodli|schválili|dohodli)\b/i.test(title);
 		out.push({
 			title,
 			note: null,
@@ -79,7 +111,7 @@ function mockExtract(transcript: string, roster: RosterRow[]): TaskProposal[] {
 			due: null,
 			projectHint: null,
 			parentIndex: null,
-			kind: who ? "action" : "unclear",
+			kind: isDecision ? "decision" : who ? "action" : "unclear",
 			evidence: raw.slice(0, 300),
 		});
 		if (out.length >= 40) break;
@@ -93,11 +125,12 @@ async function claudeExtract(
 	roster: RosterRow[],
 	todayISO: string,
 ): Promise<TaskProposal[]> {
-	const client = new Anthropic({ apiKey: env.anthropicApiKey });
+	const client = new Anthropic({ apiKey: env.anthropicApiKey, timeout: 90_000, maxRetries: 1 });
 	const rosterText = roster
-		.map(
-			(r) =>
+		.map((r) =>
+			redactVendorText(
 				`- ${r.name ?? "?"} (id: ${r.id})${r.areas ? ` — oblasti: ${r.areas}` : ""}${r.bio ? `; ${r.bio}` : ""}`,
+			),
 		)
 		.join("\n");
 
@@ -177,7 +210,7 @@ async function claudeExtract(
 	});
 
 	const block = msg.content.find((b) => b.type === "tool_use");
-	if (!block || block.type !== "tool_use") return [];
+	if (block?.type !== "tool_use") return [];
 	const input = block.input as { tasks?: TaskProposal[] };
 	return Array.isArray(input.tasks) ? input.tasks : [];
 }
@@ -249,22 +282,406 @@ async function memberNotGuest(
 }
 
 /**
+ * CC-P0-13 / rozhodnutí §15/3 — OBSAH porady (přepis, AI extraction) vidí JEN
+ * ÚČASTNÍK: kdo je přiřazený na kotevním úkolu, nebo poradu založil. „Explicitně
+ * pozvaný" = přidaný mezi účastníky (assignments hubu) — jiný mechanismus zvát
+ * nezavádíme, aby existovala jediná pravda o tom, kdo na poradě je.
+ *
+ * Členství v prostoru samo o sobě NESTAČÍ a admin NENÍ automatický čtenář:
+ * dřív stačilo být kýmkoli z prostoru a člověk viděl celý doslovný přepis.
+ *
+ * Rychlý zápis bez kotevního úkolu (legacy) má jen zakladatele — to je záměr.
+ */
+async function meetingParticipant(
+	db: ReturnType<typeof getDb>,
+	m: typeof meetings.$inferSelect,
+	userId: string,
+): Promise<boolean> {
+	// Rychlý zápis bez kotevního úkolu (legacy) nemá koho přiřadit — jen zakladatel.
+	if (!m.hubTaskId) return m.createdBy === userId;
+	const who = await db
+		.select({ userId: assignments.userId })
+		.from(assignments)
+		.where(eq(assignments.taskId, m.hubTaskId));
+	// Zakladatel má přístup, jen DOKUD porada nemá účastníky (čerstvě naplánovaná —
+	// assignments se teprve nahrávají). Jakmile účastníci existují, platí jen seznam:
+	// kdo naplánuje cizí 1:1 a sám na ně nejde, přepis číst nesmí (audit CC-P0-13/F2).
+	if (who.length === 0) return m.createdBy === userId;
+	return who.some((w) => w.userId === userId);
+}
+
+type DbTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
+/** Stejná content ACL uvnitř zamčené business transakce (revokace se znovu ověří). */
+async function canWriteMeetingContentTx(
+	tx: DbTransaction,
+	m: typeof meetings.$inferSelect,
+	userId: string,
+): Promise<boolean> {
+	const role = (
+		await tx
+			.select({ role: memberships.role })
+			.from(memberships)
+			.where(and(eq(memberships.workspaceId, m.workspaceId), eq(memberships.userId, userId)))
+			.limit(1)
+	)[0]?.role;
+	if (!role || role === "guest") return false;
+	if (!m.hubTaskId) return m.createdBy === userId;
+	const participants = await tx
+		.select({ userId: assignments.userId })
+		.from(assignments)
+		.where(eq(assignments.taskId, m.hubTaskId));
+	if (participants.length === 0) return m.createdBy === userId;
+	return participants.some((participant) => participant.userId === userId);
+}
+
+const planMeetingSchema = z
+	.object({
+		meetingId: z.string().uuid(),
+		hubTaskId: z.string().uuid(),
+		workspaceId: z.string().uuid(),
+		projectId: z.string().uuid(),
+		title: z.string().trim().min(1).max(300),
+		dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+		startAt: z.string().datetime({ offset: true }),
+		startTimezone: z
+			.string()
+			.max(64)
+			.regex(/^(UTC|[A-Za-z_]+(\/[A-Za-z0-9_+.-]+)+)$/)
+			.optional(),
+		durationMin: z.number().int().min(5).max(1440),
+		participantIds: z.array(z.string().uuid()).min(1).max(100),
+		seriesId: z.string().uuid().optional(),
+		prevMeetingId: z.string().uuid().optional(),
+		carryTaskIds: z.array(z.string().uuid()).max(200).optional(),
+	})
+	.strict()
+	.superRefine((value, ctx) => {
+		if (!!value.seriesId !== !!value.prevMeetingId) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "seriesId and prevMeetingId must be supplied together",
+			});
+		}
+		if ((value.carryTaskIds?.length ?? 0) > 0 && !value.prevMeetingId) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: "carry requires prevMeetingId" });
+		}
+	});
+
+/**
+ * CC-P0-07/P1-02 — naplánování porady je jedna serverová command: hub task,
+ * meeting sidecar, účastníci a audit buď vzniknou všechny, nebo nic. Stabilní
+ * meetingId/hubTaskId dělají retry idempotentní; advisory lock řeší souběžný retry.
+ */
+meetingsRoutes.post("/api/meetings/plan", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const parsed = planMeetingSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_meeting_plan" }, 422);
+	const startTimezone = parsed.data.startTimezone ?? session.user.timezone ?? "Europe/Prague";
+	try {
+		new Intl.DateTimeFormat("en-GB", { timeZone: startTimezone }).format(0);
+	} catch {
+		return c.json({ error: "invalid_start_timezone" }, 422);
+	}
+	const body = { ...parsed.data, startTimezone };
+	const participantIds = [...new Set(body.participantIds)];
+	const carryTaskIds = [...new Set(body.carryTaskIds ?? [])];
+	const startsAt = new Date(body.startAt);
+	const endsAt = new Date(startsAt.getTime() + body.durationMin * 60_000);
+	const planHash = await commandHash({
+		...body,
+		participantIds: [...participantIds].sort(),
+		carryTaskIds: [...carryTaskIds].sort(),
+	});
+	const db = getDb();
+
+	const result = await db.transaction(async (tx) => {
+		await lockMeetingSchedule(tx, {
+			workspaceId: body.workspaceId,
+			meetingId: body.meetingId,
+			participantIds,
+			startsAt,
+			endsAt,
+		});
+		const existing = (
+			await tx.select().from(meetings).where(eq(meetings.id, body.meetingId)).limit(1)
+		)[0];
+		if (existing) {
+			const priorEvents = await tx
+				.select({ diff: auditEvents.diff })
+				.from(auditEvents)
+				.where(
+					and(
+						eq(auditEvents.entity, "meetings"),
+						eq(auditEvents.entityId, body.meetingId),
+						eq(auditEvents.action, "plan"),
+					),
+				);
+			const priorHash = priorEvents
+				.map((event) => event.diff as { commandHash?: unknown } | null)
+				.map((diff) => diff?.commandHash)
+				.find((hash): hash is string => typeof hash === "string");
+			const hub = (await tx.select().from(tasks).where(eq(tasks.id, body.hubTaskId)).limit(1))[0];
+			const assigned = hub
+				? await tx
+						.select({ userId: assignments.userId })
+						.from(assignments)
+						.where(eq(assignments.taskId, body.hubTaskId))
+				: [];
+			const assignedIds = assigned.map((row) => row.userId).sort();
+			const expectedIds = [...participantIds].sort();
+			const carried = carryTaskIds.length
+				? await tx
+						.select({ id: tasks.id, parentId: tasks.parentId })
+						.from(tasks)
+						.where(inArray(tasks.id, carryTaskIds))
+				: [];
+			const sameParticipants =
+				assignedIds.length === expectedIds.length &&
+				assignedIds.every((id, index) => id === expectedIds[index]);
+			const sameCarry =
+				carried.length === carryTaskIds.length &&
+				carried.every((task) => task.parentId === body.hubTaskId);
+			if (
+				priorHash !== planHash ||
+				existing.createdBy !== session.user.id ||
+				existing.workspaceId !== body.workspaceId ||
+				existing.hubTaskId !== body.hubTaskId ||
+				existing.title !== body.title ||
+				existing.seriesId !== (body.seriesId ?? null) ||
+				existing.prevMeetingId !== (body.prevMeetingId ?? null) ||
+				!hub ||
+				hub.projectId !== body.projectId ||
+				hub.name !== body.title ||
+				hub.kind !== "meeting" ||
+				hub.meetingId !== body.meetingId ||
+				hub.createdBy !== session.user.id ||
+				hub.dueDate?.toISOString().slice(0, 10) !== body.dueDate ||
+				hub.startDate?.getTime() !== new Date(body.startAt).getTime() ||
+				hub.startTimezone !== body.startTimezone ||
+				hub.durationMin !== body.durationMin ||
+				!sameParticipants ||
+				!sameCarry
+			) {
+				return { conflict: true as const };
+			}
+			return { conflict: false as const, replayed: true, meetingId: existing.id };
+		}
+
+		const project = (
+			await tx
+				.select({ workspaceId: projects.workspaceId, role: projectMembers.role })
+				.from(projects)
+				.innerJoin(
+					projectMembers,
+					and(
+						eq(projectMembers.projectId, projects.id),
+						eq(projectMembers.userId, session.user.id),
+					),
+				)
+				.where(eq(projects.id, body.projectId))
+				.limit(1)
+		)[0];
+		if (
+			!project ||
+			project.workspaceId !== body.workspaceId ||
+			(PROJECT_ROLE_RANK[project.role] ?? 0) < PROJECT_EDITOR_RANK
+		) {
+			return { forbidden: true as const };
+		}
+
+		const allowedParticipants = await tx
+			.select({ userId: projectMembers.userId })
+			.from(projectMembers)
+			.where(
+				and(
+					eq(projectMembers.projectId, body.projectId),
+					inArray(projectMembers.userId, participantIds),
+				),
+			);
+		if (allowedParticipants.length !== participantIds.length) {
+			return { invalidParticipants: true as const };
+		}
+		const policyRows = (await tx.execute(sql`
+			SELECT task_conflict_policy AS policy FROM workspaces WHERE id = ${body.workspaceId} LIMIT 1
+		`)) as unknown as { policy: string }[];
+		const availability = await readTaskAvailabilityConflicts(tx, {
+			workspaceId: body.workspaceId,
+			policy: policyRows[0]?.policy === "strict" ? "strict" : "warning",
+			actorUserId: session.user.id,
+			taskId: body.hubTaskId,
+			startsAt: new Date(body.startAt),
+			durationMin: body.durationMin,
+			assigneeIds: participantIds,
+		});
+		if (!availability.canSchedule) return { availabilityConflict: availability };
+		const busyConflicts = await readMeetingBusyConflicts(tx, {
+			workspaceId: body.workspaceId,
+			participantIds,
+			startsAt,
+			endsAt,
+			excludeTaskId: body.hubTaskId,
+		});
+		if (busyConflicts.length > 0) return { busyConflict: busyConflicts };
+
+		if (body.prevMeetingId && body.seriesId) {
+			const previous = (
+				await tx.select().from(meetings).where(eq(meetings.id, body.prevMeetingId)).limit(1)
+			)[0];
+			if (
+				!previous ||
+				previous.workspaceId !== body.workspaceId ||
+				!previous.hubTaskId ||
+				(previous.seriesId ?? previous.id) !== body.seriesId
+			) {
+				return { invalidPreviousMeeting: true as const };
+			}
+			const previousParticipants = await tx
+				.select({ userId: assignments.userId })
+				.from(assignments)
+				.where(eq(assignments.taskId, previous.hubTaskId));
+			const mayContinue =
+				previousParticipants.some((row) => row.userId === session.user.id) ||
+				(previousParticipants.length === 0 && previous.createdBy === session.user.id);
+			if (!mayContinue) return { notPreviousParticipant: true as const };
+			if (carryTaskIds.length > 0) {
+				const carry = await tx
+					.select({
+						id: tasks.id,
+						parentId: tasks.parentId,
+						projectId: tasks.projectId,
+						kind: tasks.kind,
+					})
+					.from(tasks)
+					.where(and(inArray(tasks.id, carryTaskIds), isNull(tasks.completedAt)));
+				if (
+					carry.length !== carryTaskIds.length ||
+					carry.some(
+						(task) =>
+							task.parentId !== previous.hubTaskId ||
+							task.projectId !== body.projectId ||
+							task.kind !== "task",
+					)
+				) {
+					return { invalidCarry: true as const };
+				}
+			}
+		}
+
+		await tx.insert(tasks).values({
+			id: body.hubTaskId,
+			projectId: body.projectId,
+			name: body.title,
+			priority: 4,
+			dueDate: new Date(`${body.dueDate}T00:00:00.000Z`),
+			startDate: new Date(body.startAt),
+			startTimezone: body.startTimezone,
+			durationMin: body.durationMin,
+			assignmentMode: participantIds.length > 1 ? "shared_all" : "single",
+			kind: "meeting",
+			meetingId: body.meetingId,
+			createdBy: session.user.id,
+		});
+		await tx.insert(meetings).values({
+			id: body.meetingId,
+			workspaceId: body.workspaceId,
+			title: body.title,
+			status: "scheduled",
+			hubTaskId: body.hubTaskId,
+			seriesId: body.seriesId ?? null,
+			prevMeetingId: body.prevMeetingId ?? null,
+			createdBy: session.user.id,
+		});
+		await tx.insert(assignments).values(
+			participantIds.map((userId) => ({
+				taskId: body.hubTaskId,
+				projectId: body.projectId,
+				userId,
+			})),
+		);
+		if (carryTaskIds.length > 0) {
+			await tx
+				.update(tasks)
+				.set({ parentId: body.hubTaskId })
+				.where(inArray(tasks.id, carryTaskIds));
+		}
+		await tx.insert(auditEvents).values({
+			workspaceId: body.workspaceId,
+			actorType: "user",
+			actorUserId: session.user.id,
+			entity: "meetings",
+			entityId: body.meetingId,
+			action: "plan",
+			diff: {
+				hubTaskId: body.hubTaskId,
+				projectId: body.projectId,
+				participantCount: participantIds.length,
+				previousMeetingId: body.prevMeetingId ?? null,
+				carryCount: carryTaskIds.length,
+				carryTaskIds,
+				commandHash: planHash,
+			},
+			requestId: c.get("requestId") ?? null,
+		});
+		return { conflict: false as const, replayed: false, meetingId: body.meetingId };
+	});
+
+	if ("conflict" in result && result.conflict) return c.json({ error: "command_id_conflict" }, 409);
+	if ("forbidden" in result) return c.json({ error: "forbidden" }, 403);
+	if ("invalidParticipants" in result)
+		return c.json({ error: "participant_not_project_member" }, 422);
+	if ("busyConflict" in result)
+		return c.json({ error: "schedule_conflict", conflicts: result.busyConflict }, 409);
+	if ("availabilityConflict" in result)
+		return c.json(
+			{ error: "availability_conflict", availability: result.availabilityConflict },
+			409,
+		);
+	if ("invalidPreviousMeeting" in result) return c.json({ error: "invalid_previous_meeting" }, 422);
+	if ("notPreviousParticipant" in result) return c.json({ error: "not-a-participant" }, 403);
+	if ("invalidCarry" in result) return c.json({ error: "invalid_carry" }, 422);
+	return c.json({ ok: true, ...result });
+});
+
+/**
  * Vytvoř míting z přepisu a rovnou z něj vytáhni návrhy úkolů (create + extract v jednom
  * kroku — bez závislosti na PowerSync sync latenci). Vrací návrhy k revizi na klientu.
  * S `meetingId` NEzakládá nový záznam, ale doplní přepis+návrhy k EXISTUJÍCÍ (naplánované)
  * poradě — audit Fáze 1: dřív vznikal duplikát a hub zůstal navěky „čeká na zápis".
  */
+const extractMeetingSchema = z
+	.object({
+		workspaceId: z.string().uuid().optional(),
+		meetingId: z.string().uuid().optional(),
+		title: z.string().trim().max(300).optional(),
+		transcript: z.string().trim().min(10).max(100_000),
+		vendorConsent: z.boolean(),
+		baseUpdatedAt: z.string().datetime({ offset: true }).optional(),
+	})
+	.strict()
+	.superRefine((value, ctx) => {
+		if (value.meetingId && !value.baseUpdatedAt)
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["baseUpdatedAt"],
+				message: "existing meeting requires a concurrency base",
+			});
+		if (!value.meetingId && !value.workspaceId)
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["workspaceId"],
+				message: "new meeting requires workspaceId",
+			});
+	});
+
 meetingsRoutes.post("/api/meetings/extract", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const body = (await c.req.json().catch(() => ({}))) as {
-		workspaceId?: string;
-		meetingId?: string;
-		title?: string;
-		transcript?: string;
-	};
-	const transcript = (body.transcript ?? "").trim();
-	if (transcript.length < 10) return c.json({ error: "empty transcript" }, 400);
+	const parsed = extractMeetingSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_meeting_extract" }, 422);
+	const body = parsed.data;
+	const transcript = body.transcript;
 
 	const db = getDb();
 	// Existující porada: workspace se bere z JEJÍHO řádku (ne z klienta — anti-spoof).
@@ -274,14 +691,21 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 		if (!existing) return c.json({ error: "not found" }, 404);
 	}
 	const workspaceId = existing?.workspaceId ?? body.workspaceId;
-	if (!workspaceId) return c.json({ error: "missing workspaceId" }, 400);
+	if (!workspaceId) return c.json({ error: "missing_workspace" }, 422);
 	// CC-P0-13 — host obsah porad nevytváří ani nečte; extract navíc volá AI (náklady).
 	if (!(await memberNotGuest(db, workspaceId, session.user.id)))
 		return c.json({ error: "forbidden" }, 403);
+	// K EXISTUJÍCÍ poradě smí přepis vložit (a zaplatit AI) jen její účastník —
+	// členství v prostoru nestačí (§15/3). Nová porada = zakladatel je účastník.
+	if (existing && !(await meetingParticipant(db, existing, session.user.id)))
+		return c.json({ error: "not-a-participant" }, 403);
 	// Už zpracovaná porada se nesmí tiše přepsat (audit F2-4: destruktivní overwrite
 	// + regres statusu; verze/soubeh řeší až Conflict Inbox — CC-P0-04/07).
+	if (existing && existing.status === "cancelled")
+		return c.json({ error: "meeting_cancelled" }, 409);
 	if (existing && existing.status === "committed")
 		return c.json({ error: "already committed" }, 409);
+	if (!aiEnabled && !aiMockEnabled) return c.json({ error: "ai_not_configured" }, 503);
 
 	const roster: RosterRow[] = await db
 		.select({ id: users.id, name: users.name, areas: memberships.areas, bio: memberships.bio })
@@ -290,30 +714,74 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 		.where(eq(memberships.workspaceId, workspaceId));
 	const rosterIds = new Set(roster.map((r) => r.id));
 	const todayISO = new Date().toISOString().slice(0, 10);
+	if (aiEnabled) {
+		const authorization = await authorizeAiVendorTransfer({
+			workspaceId,
+			userId: session.user.id,
+			capability: "meeting_extract",
+			userConsent: body.vendorConsent === true,
+			requestId: c.get("requestId") ?? null,
+			inputChars: transcript.length,
+			model: env.anthropicModel,
+		});
+		if (!authorization.ok) return c.json({ error: authorization.error }, authorization.status);
+	}
 
 	let proposals: TaskProposal[];
 	try {
 		proposals = aiEnabled
-			? await claudeExtract(transcript, roster, todayISO)
+			? await claudeExtract(redactVendorText(transcript), roster, todayISO)
 			: mockExtract(transcript, roster);
 	} catch (err) {
-		console.error("[watson-api] extrakce mítingu selhala:", err);
-		return c.json({ error: "extraction failed" }, 502);
+		console.error(
+			JSON.stringify({
+				level: "error",
+				event: "meeting_extraction_failed",
+				requestId: c.get("requestId") ?? null,
+				name: err instanceof Error ? err.name : "UnknownError",
+			}),
+		);
+		return c.json({ error: "extraction failed" }, providerFailureStatus(err));
 	}
 	const clean = sanitizeProposals(proposals, rosterIds);
 
 	if (existing) {
-		// Doplň přepis+návrhy k naplánované poradě (žádný duplikát).
-		await db
-			.update(meetings)
-			.set({
-				transcript: transcript.slice(0, 100000),
-				extraction: clean,
-				status: "extracted",
-				updatedAt: new Date(),
-			})
-			.where(eq(meetings.id, existing.id));
-		return c.json({ ok: true, meetingId: existing.id, proposals: clean, mock: !aiEnabled });
+		// AI call nesmí držet DB lock, proto po návratu znovu načti autoritativní
+		// řádek pod stejným lockem jako commit/autosave a ověř ACL i client base.
+		const base = new Date(body.baseUpdatedAt ?? "");
+		const result = await db.transaction(async (tx) => {
+			await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${existing.id}, 0))`);
+			const current = (
+				await tx.select().from(meetings).where(eq(meetings.id, existing.id)).limit(1)
+			)[0];
+			if (!current) return { missing: true as const };
+			if (!(await canWriteMeetingContentTx(tx, current, session.user.id)))
+				return { forbidden: true as const };
+			if (
+				current.status === "committed" ||
+				current.status === "cancelled" ||
+				Number.isNaN(base.getTime()) ||
+				current.updatedAt.getTime() !== base.getTime()
+			)
+				return { conflict: true as const, updatedAt: current.updatedAt };
+			const extractedAt = new Date();
+			await tx
+				.update(meetings)
+				.set({ transcript, extraction: clean, status: "extracted", updatedAt: extractedAt })
+				.where(eq(meetings.id, current.id));
+			return { extractedAt };
+		});
+		if ("missing" in result) return c.json({ error: "not_found" }, 404);
+		if ("forbidden" in result) return c.json({ error: "not-a-participant" }, 403);
+		if ("conflict" in result && result.updatedAt)
+			return c.json({ error: "conflict", updatedAt: result.updatedAt.toISOString() }, 409);
+		return c.json({
+			ok: true,
+			meetingId: existing.id,
+			proposals: clean,
+			mock: aiMockEnabled,
+			updatedAt: result.extractedAt.toISOString(),
+		});
 	}
 
 	const inserted = (
@@ -322,7 +790,7 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 			.values({
 				workspaceId,
 				title: body.title?.trim().slice(0, 300) || null,
-				transcript: transcript.slice(0, 100000),
+				transcript,
 				extraction: clean,
 				status: "extracted",
 				createdBy: session.user.id,
@@ -330,39 +798,143 @@ meetingsRoutes.post("/api/meetings/extract", async (c) => {
 			.returning({ id: meetings.id })
 	)[0];
 
-	return c.json({ ok: true, meetingId: inserted?.id, proposals: clean, mock: !aiEnabled });
+	return c.json({ ok: true, meetingId: inserted?.id, proposals: clean, mock: aiMockEnabled });
 });
 
 /**
  * Ulož zápis BEZ AI extrakce (board: „Uložit zápis"). Status new/scheduled → 'transcribed';
  * extracted zůstává (návrhy na řádku platí). Committed poradu nelze přepsat (409).
  */
+const UUID_RE = /^[0-9a-f-]{36}$/i;
+/** Sanitizace ULOŽENÉ revize (autosave) — tvar a limity, žádné domýšlení. */
+function sanitizeReview(raw: unknown): TaskProposal[] {
+	if (!Array.isArray(raw)) return [];
+	return raw
+		.filter((p): p is TaskProposal => !!p && typeof p === "object" && typeof p.title === "string")
+		.slice(0, 80)
+		.map((p, i) => ({
+			title: p.title.slice(0, 200),
+			note: typeof p.note === "string" ? p.note.slice(0, 1000) : null,
+			// Kanonické single pole drž v synchronu s vícenásobným (odebraný řešitel
+			// nesmí přežívat pro budoucí konzumenty — audit autosave).
+			assigneeUserId: Array.isArray(p.assigneeUserIds)
+				? (p.assigneeUserIds.find((x) => typeof x === "string" && UUID_RE.test(x)) ?? null)
+				: typeof p.assigneeUserId === "string" && UUID_RE.test(p.assigneeUserId)
+					? p.assigneeUserId
+					: null,
+			// Hierarchie z extrakce se autosavem nesmí ztratit; jen zpětné reference.
+			parentIndex:
+				typeof p.parentIndex === "number" && p.parentIndex >= 0 && p.parentIndex < i
+					? p.parentIndex
+					: null,
+			assigneeHint: typeof p.assigneeHint === "string" ? p.assigneeHint.slice(0, 120) : null,
+			priority:
+				typeof p.priority === "number" && p.priority >= 1 && p.priority <= 4 ? p.priority : null,
+			due: typeof p.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.due) ? p.due : null,
+			projectHint: typeof p.projectHint === "string" ? p.projectHint.slice(0, 120) : null,
+			kind:
+				p.kind === "action" || p.kind === "unclear" || p.kind === "decision" ? p.kind : "unclear",
+			evidence: typeof p.evidence === "string" ? p.evidence.slice(0, 500) : null,
+			assigneeUserIds: Array.isArray(p.assigneeUserIds)
+				? p.assigneeUserIds
+						.filter((x): x is string => typeof x === "string" && UUID_RE.test(x))
+						.slice(0, 20)
+				: null,
+			keep: typeof p.keep === "boolean" ? p.keep : null,
+			projectId: typeof p.projectId === "string" && UUID_RE.test(p.projectId) ? p.projectId : null,
+		}));
+}
+
+/**
+ * Autosave ROZPRACOVANÉ revize (úpravy titulků, řešitelé, projekty, keep, promote).
+ * Přepíše meetings.extraction — board ji při otevření rehydratuje, takže úpravy
+ * přežijí reload i přepnutí porady v řetězu. Prázdné pole = vědomé zahození návrhů.
+ */
+const saveExtractionSchema = z
+	.object({
+		proposals: z.unknown(),
+		baseUpdatedAt: z.string().datetime({ offset: true }),
+	})
+	.strict();
+
+meetingsRoutes.post("/api/meetings/:id/extraction", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const parsed = saveExtractionSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_extraction_save" }, 422);
+	const body = parsed.data;
+	const db = getDb();
+	const clean = sanitizeReview(body.proposals);
+	const base = new Date(body.baseUpdatedAt);
+	const meetingId = c.req.param("id");
+	const result = await db.transaction(async (tx) => {
+		await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
+		const m = (await tx.select().from(meetings).where(eq(meetings.id, meetingId)).limit(1))[0];
+		if (!m) return { missing: true as const };
+		if (!(await canWriteMeetingContentTx(tx, m, session.user.id)))
+			return { forbidden: true as const };
+		if (
+			m.status === "committed" ||
+			m.status === "cancelled" ||
+			m.updatedAt.getTime() !== base.getTime()
+		)
+			return { conflict: true as const, updatedAt: m.updatedAt };
+		const updatedAt = new Date();
+		await tx.update(meetings).set({ extraction: clean, updatedAt }).where(eq(meetings.id, m.id));
+		return { updatedAt };
+	});
+	if ("missing" in result) return c.json({ error: "not_found" }, 404);
+	if ("forbidden" in result) return c.json({ error: "not-a-participant" }, 403);
+	if ("conflict" in result)
+		return c.json({ error: "conflict", updatedAt: result.updatedAt.toISOString() }, 409);
+	return c.json({ ok: true, count: clean.length, updatedAt: result.updatedAt.toISOString() });
+});
+
+const saveTranscriptSchema = z
+	.object({
+		transcript: z.string().trim().min(1).max(100_000),
+		baseUpdatedAt: z.string().datetime({ offset: true }),
+	})
+	.strict();
+
 meetingsRoutes.post("/api/meetings/:id/transcript", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const body = (await c.req.json().catch(() => ({}))) as { transcript?: string };
-	const transcript = (body.transcript ?? "").trim();
-	if (!transcript) return c.json({ error: "empty transcript" }, 400);
+	const parsed = saveTranscriptSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_transcript_save" }, 422);
+	const body = parsed.data;
+	const transcript = body.transcript;
+	const base = new Date(body.baseUpdatedAt);
+	const meetingId = c.req.param("id");
 	const db = getDb();
-	const m = (
-		await db
-			.select()
-			.from(meetings)
-			.where(eq(meetings.id, c.req.param("id")))
-	)[0];
-	if (!m) return c.json({ error: "not found" }, 404);
-	if (!(await memberNotGuest(db, m.workspaceId, session.user.id)))
-		return c.json({ error: "forbidden" }, 403);
-	if (m.status === "committed") return c.json({ error: "already committed" }, 409);
-	await db
-		.update(meetings)
-		.set({
-			transcript: transcript.slice(0, 100000),
-			status: m.status === "extracted" ? "extracted" : "transcribed",
-			updatedAt: new Date(),
-		})
-		.where(eq(meetings.id, m.id));
-	return c.json({ ok: true });
+	const result = await db.transaction(async (tx) => {
+		await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
+		const m = (await tx.select().from(meetings).where(eq(meetings.id, meetingId)).limit(1))[0];
+		if (!m) return { missing: true as const };
+		if (!(await canWriteMeetingContentTx(tx, m, session.user.id)))
+			return { forbidden: true as const };
+		if (
+			m.status === "committed" ||
+			m.status === "cancelled" ||
+			m.updatedAt.getTime() !== base.getTime()
+		)
+			return { conflict: true as const, updatedAt: m.updatedAt };
+		const updatedAt = new Date();
+		await tx
+			.update(meetings)
+			.set({
+				transcript,
+				status: m.status === "extracted" ? "extracted" : "transcribed",
+				updatedAt,
+			})
+			.where(eq(meetings.id, m.id));
+		return { updatedAt };
+	});
+	if ("missing" in result) return c.json({ error: "not_found" }, 404);
+	if ("forbidden" in result) return c.json({ error: "not-a-participant" }, 403);
+	if ("conflict" in result)
+		return c.json({ error: "conflict", updatedAt: result.updatedAt.toISOString() }, 409);
+	return c.json({ ok: true, updatedAt: result.updatedAt.toISOString() });
 });
 
 /** Seznam mítingů prostoru (nejnovější první). */
@@ -408,77 +980,419 @@ meetingsRoutes.get("/api/meetings/:id", async (c) => {
 			.where(eq(meetings.id, c.req.param("id")))
 	)[0];
 	if (!m) return c.json({ error: "not found" }, 404);
-	// CC-P0-13 — přepis je obsah: host ho nedostane (plné participant ACL = follow-up).
-	if (!(await memberNotGuest(db, m.workspaceId, session.user.id)))
+	// CC-P0-13 / §15/3 — přepis je OBSAH: dostane ho jen účastník porady (nebo ten,
+	// koho mezi účastníky přidali). Být členem prostoru — ani adminem — nestačí.
+	if (!(await myWorkspaceRole(db, m.workspaceId, session.user.id)))
 		return c.json({ error: "forbidden" }, 403);
+	if (!(await meetingParticipant(db, m, session.user.id)))
+		return c.json({ error: "not-a-participant" }, 403);
 	return c.json({ meeting: m });
 });
 
+const linkExistingSchema = z
+	.object({ taskIds: z.array(z.string().uuid()).min(1).max(200) })
+	.strict();
+
 /**
- * Označ míting jako zpracovaný (úkoly vytvořeny na klientu přes write-path).
- * `taskIds` = založené akční body → server zapíše lineage do entity_links
- * (relation 'derived_from'; klient entity_links psát nesmí — audit Fáze 1).
- * Idempotentní: existující dvojice (meeting, task) se nezdvojí.
+ * Jednorázová oprava starších lokálně vytvořených akčních bodů. Nový tok používá
+ * /commit; tento endpoint pouze bezpečně doplní lineage řádkům, které už mají
+ * tasks.meeting_id. Nikdy nepřijímá libovolný cizí task jen podle ID.
  */
-meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
+meetingsRoutes.post("/api/meetings/:id/link-existing", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const body = (await c.req.json().catch(() => ({}))) as { taskIds?: string[] };
+	const parsed = linkExistingSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_link_request" }, 422);
+	const taskIds = [...new Set(parsed.data.taskIds)];
+	const meetingId = c.req.param("id");
 	const db = getDb();
-	const m = (
-		await db
-			.select()
-			.from(meetings)
-			.where(eq(meetings.id, c.req.param("id")))
-	)[0];
-	if (!m) return c.json({ error: "not found" }, 404);
-	if (!(await memberNotGuest(db, m.workspaceId, session.user.id)))
-		return c.json({ error: "forbidden" }, 403);
-
-	const candidates = (Array.isArray(body.taskIds) ? body.taskIds : [])
-		.filter((x) => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x))
-		.slice(0, 100);
-	// Anti cross-tenant (S7/CC-P0-15): existující úkol MUSÍ patřit do workspace porady;
-	// úkol, který ještě nedorazil sync frontou, projde (soft-pending, jako refProjectCols).
-	const taskIds: string[] = [];
-	for (const tid of candidates) {
-		const row = (
-			await db.execute(
-				sql`SELECT p.workspace_id AS ws FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ${tid} LIMIT 1`,
+	const result = await db.transaction(async (tx) => {
+		await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
+		const m = (await tx.select().from(meetings).where(eq(meetings.id, meetingId)).limit(1))[0];
+		if (!m) return { notFound: true as const };
+		const role = (
+			await tx
+				.select({ role: memberships.role })
+				.from(memberships)
+				.where(
+					and(eq(memberships.workspaceId, m.workspaceId), eq(memberships.userId, session.user.id)),
+				)
+				.limit(1)
+		)[0]?.role;
+		if (!role || role === "guest") return { forbidden: true as const };
+		const participants = m.hubTaskId
+			? await tx
+					.select({ userId: assignments.userId })
+					.from(assignments)
+					.where(eq(assignments.taskId, m.hubTaskId))
+			: [];
+		const participant =
+			participants.some((row) => row.userId === session.user.id) ||
+			(participants.length === 0 && m.createdBy === session.user.id);
+		if (!participant) return { notParticipant: true as const };
+		const candidates = await tx
+			.select({
+				id: tasks.id,
+				meetingId: tasks.meetingId,
+				workspaceId: projects.workspaceId,
+				role: projectMembers.role,
+			})
+			.from(tasks)
+			.innerJoin(projects, eq(projects.id, tasks.projectId))
+			.innerJoin(
+				projectMembers,
+				and(
+					eq(projectMembers.projectId, tasks.projectId),
+					eq(projectMembers.userId, session.user.id),
+				),
 			)
-		)[0] as { ws?: string } | undefined;
-		if (!row || row.ws === m.workspaceId) taskIds.push(tid);
-	}
-	await db.transaction(async (tx) => {
-		for (const tid of taskIds) {
-			const dup = (
-				await tx
-					.select({ id: entityLinks.id })
-					.from(entityLinks)
-					.where(
-						and(
-							eq(entityLinks.fromType, "meeting"),
-							eq(entityLinks.fromId, m.id),
-							eq(entityLinks.toType, "task"),
-							eq(entityLinks.toId, tid),
-						),
-					)
-			)[0];
-			if (dup) continue;
-			await tx.insert(entityLinks).values({
-				workspaceId: m.workspaceId,
-				fromType: "meeting",
-				fromId: m.id,
-				toType: "task",
-				toId: tid,
-				relation: "derived_from",
-				sourceSystem: "meets",
-			});
+			.where(inArray(tasks.id, taskIds));
+		if (
+			candidates.length !== taskIds.length ||
+			candidates.some(
+				(task) =>
+					task.meetingId !== m.id ||
+					task.workspaceId !== m.workspaceId ||
+					(PROJECT_ROLE_RANK[task.role] ?? 0) < PROJECT_EDITOR_RANK,
+			)
+		) {
+			return { invalidTask: true as const };
+		}
+		for (const taskId of taskIds) {
+			await tx
+				.insert(entityLinks)
+				.values({
+					workspaceId: m.workspaceId,
+					fromType: "meeting",
+					fromId: m.id,
+					toType: "task",
+					toId: taskId,
+					relation: "derived_from",
+					sourceSystem: "meets",
+					externalId: `${m.id}:legacy:${taskId}`,
+				})
+				.onConflictDoNothing();
 		}
 		await tx
 			.update(meetings)
 			.set({ status: "committed", updatedAt: new Date() })
 			.where(eq(meetings.id, m.id));
+		await tx.insert(auditEvents).values({
+			workspaceId: m.workspaceId,
+			actorType: "user",
+			actorUserId: session.user.id,
+			entity: "meetings",
+			entityId: m.id,
+			action: "link_existing",
+			diff: { taskIds, count: taskIds.length },
+			requestId: c.get("requestId") ?? null,
+		});
+		return { ok: true as const, linked: taskIds.length };
 	});
-	return c.json({ ok: true, linked: taskIds.length });
+	if ("notFound" in result) return c.json({ error: "not found" }, 404);
+	if ("forbidden" in result) return c.json({ error: "forbidden" }, 403);
+	if ("notParticipant" in result) return c.json({ error: "not-a-participant" }, 403);
+	if ("invalidTask" in result) return c.json({ error: "invalid_legacy_task" }, 422);
+	return c.json(result);
+});
+
+const commitMeetingSchema = z
+	.object({
+		defaultProjectId: z.string().uuid(),
+		proposals: z.array(z.unknown()).max(80),
+	})
+	.strict();
+
+async function commandHash(value: unknown): Promise<string> {
+	const bytes = new TextEncoder().encode(JSON.stringify(value));
+	const digest = await crypto.subtle.digest("SHA-256", bytes);
+	return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * CC-P0-07/P1-02 — lidsky schválené návrhy se materializují výhradně zde.
+ * Tasks, assignments, parent vazby, lineage, audit a status=committed tvoří jednu
+ * serverovou transakci. Lock meetingu je zároveň idempotency boundary pro retry.
+ */
+meetingsRoutes.post("/api/meetings/:id/commit", async (c) => {
+	const session = await auth.api.getSession({ headers: c.req.raw.headers });
+	if (!session) return c.json({ error: "unauthorized" }, 401);
+	const parsed = commitMeetingSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_meeting_commit" }, 422);
+	const review = sanitizeReview(parsed.data.proposals);
+	const selected = review
+		.map((proposal, proposalIndex) => ({ proposal, proposalIndex }))
+		.filter(
+			({ proposal }) =>
+				proposal.keep === true && proposal.kind === "action" && proposal.title.trim().length > 0,
+		);
+	const decisionProposals = review
+		.map((proposal, proposalIndex) => ({ proposal, proposalIndex }))
+		.filter(
+			({ proposal }) =>
+				proposal.keep === true && proposal.kind === "decision" && proposal.title.trim().length > 0,
+		);
+	const unresolved = review.filter(
+		(proposal) => proposal.kind === "unclear" && proposal.title.trim().length > 0,
+	);
+	const commitHash = await commandHash({ defaultProjectId: parsed.data.defaultProjectId, review });
+	const db = getDb();
+	const meetingId = c.req.param("id");
+	const result = await db.transaction(async (tx) => {
+		await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
+		const m = (await tx.select().from(meetings).where(eq(meetings.id, meetingId)).limit(1))[0];
+		if (!m) return { notFound: true as const };
+
+		const membership = (
+			await tx
+				.select({ role: memberships.role })
+				.from(memberships)
+				.where(
+					and(eq(memberships.workspaceId, m.workspaceId), eq(memberships.userId, session.user.id)),
+				)
+				.limit(1)
+		)[0];
+		if (!membership || membership.role === "guest") return { forbidden: true as const };
+		const participant =
+			m.createdBy === session.user.id ||
+			(m.hubTaskId
+				? (
+						await tx
+							.select({ id: assignments.id })
+							.from(assignments)
+							.where(
+								and(eq(assignments.taskId, m.hubTaskId), eq(assignments.userId, session.user.id)),
+							)
+							.limit(1)
+					).length > 0
+				: false);
+		if (!participant) return { notParticipant: true as const };
+		if (m.status === "cancelled") return { cancelled: true as const };
+
+		if (m.status === "committed") {
+			const priorEvents = await tx
+				.select({ diff: auditEvents.diff })
+				.from(auditEvents)
+				.where(
+					and(
+						eq(auditEvents.entity, "meetings"),
+						eq(auditEvents.entityId, m.id),
+						eq(auditEvents.action, "commit"),
+					),
+				);
+			const priorHash = priorEvents
+				.map((event) => event.diff as { commandHash?: unknown } | null)
+				.map((diff) => diff?.commandHash)
+				.find((hash): hash is string => typeof hash === "string");
+			if (priorHash !== commitHash) return { differentPayload: true as const };
+			const linked = await tx
+				.select({ taskId: entityLinks.toId })
+				.from(entityLinks)
+				.where(
+					and(
+						eq(entityLinks.fromType, "meeting"),
+						eq(entityLinks.fromId, m.id),
+						eq(entityLinks.toType, "task"),
+					),
+				);
+			const priorDecisions = await tx
+				.select({ id: decisionLog.id })
+				.from(decisionLog)
+				.where(and(eq(decisionLog.sourceType, "meeting"), eq(decisionLog.sourceObjectId, m.id)));
+			return {
+				ok: true as const,
+				replayed: true,
+				created: linked.length,
+				taskIds: linked.map((row) => row.taskId),
+				decisionIds: priorDecisions.map((row) => row.id),
+			};
+		}
+
+		const materialized = selected.map(({ proposal, proposalIndex }) => ({
+			proposal,
+			proposalIndex,
+			projectId: proposal.projectId ?? parsed.data.defaultProjectId,
+			assigneeIds: [
+				...(proposal.assigneeUserIds ?? []),
+				...(proposal.assigneeUserId ? [proposal.assigneeUserId] : []),
+			].filter((id, index, all) => all.indexOf(id) === index),
+		}));
+		const hub = m.hubTaskId
+			? (await tx.select().from(tasks).where(eq(tasks.id, m.hubTaskId)).limit(1))[0]
+			: undefined;
+		const hasMeetingOutputs = decisionProposals.length > 0 || unresolved.length > 0;
+		if (hasMeetingOutputs && m.hubTaskId && !hub) return { invalidHub: true as const };
+		const decisionProjectId = hub?.projectId ?? parsed.data.defaultProjectId;
+		const projectIds = [
+			...new Set([
+				parsed.data.defaultProjectId,
+				...materialized.map((item) => item.projectId),
+				...(decisionProposals.length > 0 ? [decisionProjectId] : []),
+				...(unresolved.length > 0 && hub ? [hub.projectId] : []),
+			]),
+		];
+		const allowedProjects = projectIds.length
+			? await tx
+					.select({ id: projects.id, workspaceId: projects.workspaceId, role: projectMembers.role })
+					.from(projects)
+					.innerJoin(
+						projectMembers,
+						and(
+							eq(projectMembers.projectId, projects.id),
+							eq(projectMembers.userId, session.user.id),
+						),
+					)
+					.where(inArray(projects.id, projectIds))
+			: [];
+		if (
+			allowedProjects.length !== projectIds.length ||
+			allowedProjects.some(
+				(project) =>
+					project.workspaceId !== m.workspaceId ||
+					(PROJECT_ROLE_RANK[project.role] ?? 0) < PROJECT_EDITOR_RANK,
+			)
+		) {
+			return { invalidProject: true as const };
+		}
+
+		const allAssigneeIds = [...new Set(materialized.flatMap((item) => item.assigneeIds))];
+		const allowedAssignments = allAssigneeIds.length
+			? await tx
+					.select({ projectId: projectMembers.projectId, userId: projectMembers.userId })
+					.from(projectMembers)
+					.where(
+						and(
+							inArray(projectMembers.projectId, projectIds),
+							inArray(projectMembers.userId, allAssigneeIds),
+						),
+					)
+			: [];
+		const assignmentKeys = new Set(
+			allowedAssignments.map((row) => `${row.projectId}:${row.userId}`),
+		);
+		if (
+			materialized.some((item) =>
+				item.assigneeIds.some((userId) => !assignmentKeys.has(`${item.projectId}:${userId}`)),
+			)
+		) {
+			return { invalidAssignee: true as const };
+		}
+
+		const taskByProposal = new Map<number, { id: string; projectId: string }>();
+		const taskIds: string[] = [];
+		for (const item of materialized) {
+			const parent =
+				item.proposal.parentIndex == null
+					? null
+					: (taskByProposal.get(item.proposal.parentIndex) ?? null);
+			if (parent && parent.projectId !== item.projectId)
+				return { crossProjectParent: true as const };
+			const taskId = crypto.randomUUID();
+			await tx.insert(tasks).values({
+				id: taskId,
+				projectId: item.projectId,
+				parentId: parent?.id ?? null,
+				name: item.proposal.title.trim(),
+				description: item.proposal.note ?? null,
+				priority: item.proposal.priority ?? 3,
+				dueDate: item.proposal.due ? new Date(`${item.proposal.due}T00:00:00.000Z`) : null,
+				assignmentMode: item.assigneeIds.length > 1 ? "shared_all" : "single",
+				kind: "task",
+				meetingId: m.id,
+				createdBy: session.user.id,
+			});
+			if (item.assigneeIds.length > 0) {
+				await tx.insert(assignments).values(
+					item.assigneeIds.map((userId) => ({
+						taskId,
+						projectId: item.projectId,
+						userId,
+					})),
+				);
+			}
+			await tx.insert(entityLinks).values({
+				workspaceId: m.workspaceId,
+				fromType: "meeting",
+				fromId: m.id,
+				toType: "task",
+				toId: taskId,
+				relation: "derived_from",
+				sourceSystem: "meets",
+				externalId: `${m.id}:${item.proposalIndex}`,
+			});
+			taskByProposal.set(item.proposalIndex, { id: taskId, projectId: item.projectId });
+			taskIds.push(taskId);
+		}
+
+		const decisionIds: string[] = [];
+		for (const item of decisionProposals) {
+			const decisionId = crypto.randomUUID();
+			await tx.insert(decisionLog).values({
+				id: decisionId,
+				workspaceId: m.workspaceId,
+				projectId: decisionProjectId,
+				sourceType: "meeting",
+				sourceObjectId: m.id,
+				sourceKey: String(item.proposalIndex),
+				title: item.proposal.title.trim(),
+				rationale: item.proposal.note?.trim() || null,
+				decidedAt: new Date(),
+				createdBy: session.user.id,
+			});
+			decisionIds.push(decisionId);
+		}
+
+		if (unresolved.length > 0 && hub) {
+			const appendix = `K dořešení (nepřevzato jako úkol):\n${unresolved
+				.map((item) => `• ${item.title.trim()}`)
+				.join("\n")}`;
+			await tx
+				.update(tasks)
+				.set({
+					description: hub.description ? `${hub.description}\n\n${appendix}` : appendix,
+				})
+				.where(eq(tasks.id, hub.id));
+		}
+
+		await tx
+			.update(meetings)
+			.set({ status: "committed", updatedAt: new Date() })
+			.where(eq(meetings.id, m.id));
+		await tx.insert(auditEvents).values({
+			workspaceId: m.workspaceId,
+			actorType: "user",
+			actorUserId: session.user.id,
+			entity: "meetings",
+			entityId: m.id,
+			action: "commit",
+			diff: {
+				taskIds,
+				count: taskIds.length,
+				decisionIds,
+				decisionCount: decisionIds.length,
+				unresolvedCount: unresolved.length,
+				commandHash: commitHash,
+			},
+			requestId: c.get("requestId") ?? null,
+		});
+		return {
+			ok: true as const,
+			replayed: false,
+			created: taskIds.length,
+			taskIds,
+			decisionIds,
+		};
+	});
+
+	if ("notFound" in result) return c.json({ error: "not found" }, 404);
+	if ("forbidden" in result) return c.json({ error: "forbidden" }, 403);
+	if ("notParticipant" in result) return c.json({ error: "not-a-participant" }, 403);
+	if ("cancelled" in result) return c.json({ error: "meeting_cancelled" }, 409);
+	if ("differentPayload" in result)
+		return c.json({ error: "already_committed_different_payload" }, 409);
+	if ("invalidProject" in result) return c.json({ error: "invalid_project" }, 403);
+	if ("invalidHub" in result) return c.json({ error: "invalid_meeting_hub" }, 409);
+	if ("invalidAssignee" in result) return c.json({ error: "assignee_not_project_member" }, 422);
+	if ("crossProjectParent" in result) return c.json({ error: "cross_project_parent" }, 422);
+	return c.json(result);
 });

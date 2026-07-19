@@ -2,48 +2,112 @@ import { PowerSyncContext } from "@powersync/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { retryPendingAttachmentFinalizations } from "./lib/attachments";
 import { useSession } from "./lib/auth-client";
 import { initPowerSyncForUser, powerSync } from "./lib/powersync/db";
+import { startLeaderTask, subscribeWindowEvent } from "./lib/windowCoordinator";
 import { router } from "./router";
 import { SignIn } from "./screens/SignIn";
+
+function safeDbErrorChain(error: unknown) {
+	const chain: { name: string; code: string }[] = [];
+	let current: unknown = error;
+	for (let depth = 0; current instanceof Error && depth < 5; depth += 1) {
+		chain.push({ name: current.name, code: current.message.slice(0, 120) });
+		current = current.cause;
+	}
+	return chain;
+}
+
+function AttachmentFinalizationRecovery() {
+	useEffect(() => {
+		return startLeaderTask("attachment-finalization", 15_000, async () => {
+			try {
+				await retryPendingAttachmentFinalizations();
+			} catch (error) {
+				if (import.meta.env.DEV) console.warn("[attachments] retry selhal", error);
+			}
+		});
+	}, []);
+	return null;
+}
 
 export function App() {
 	const { data: session, isPending } = useSession();
 	// CC-P0-03: router se NErenderuje, dokud není otevřená per-user DB právě
 	// přihlášeného uživatele — jinak by dotazy četly databázi předchozí identity.
 	const [dbUserId, setDbUserId] = useState<string | null>(null);
+	const [dbError, setDbError] = useState<{ message: string; code: string } | null>(null);
+	const [dbAttempt, setDbAttempt] = useState(0);
 	const userId = session?.user?.id ?? null;
 
+	// Cookie relace je společná všem oknům. Po odhlášení v jednom z nich se ostatní
+	// okamžitě znovu načtou a nikdy nezůstanou nad odemčenou lokální DB staré identity.
+	useEffect(() => subscribeWindowEvent("session-invalidated", () => window.location.reload()), []);
+
 	useEffect(() => {
+		// Explicitní retry nonce: tlačítko musí znovu spustit celý bezpečný init.
+		void dbAttempt;
 		if (!userId) return;
 		let cancelled = false;
-		void initPowerSyncForUser(userId).then(() => {
-			if (!cancelled) setDbUserId(userId);
-		});
+		setDbError(null);
+		void initPowerSyncForUser(userId)
+			.then(() => {
+				if (!cancelled) setDbUserId(userId);
+			})
+			.catch((error: unknown) => {
+				const errorChain = safeDbErrorChain(error);
+				if (import.meta.env.DEV) {
+					console.error(`[powersync] init selhal ${JSON.stringify(errorChain)}`);
+				}
+				if (!cancelled) {
+					setDbError({
+						message: "Lokální data se nepodařilo bezpečně otevřít nebo připojit.",
+						code: errorChain.map((item) => item.code).join(" → ") || "local_database_unknown",
+					});
+				}
+			});
 		return () => {
 			cancelled = true;
 		};
-	}, [userId]);
+	}, [userId, dbAttempt]);
 
 	if (isPending) {
-		return (
-			<div className="grid min-h-full place-items-center text-sm text-ink-3">
-				…
-			</div>
-		);
+		return <div className="grid min-h-full place-items-center text-sm text-ink-3">…</div>;
 	}
 	if (!session) return <SignIn />;
 	if (dbUserId !== userId) {
-		return (
-			<div className="grid min-h-full place-items-center text-sm text-ink-3">
-				…
-			</div>
-		);
+		if (dbError) {
+			return (
+				<div className="grid min-h-full place-items-center p-6">
+					<div className="max-w-md text-center">
+						<p className="text-sm font-semibold text-ink">{dbError.message}</p>
+						<p className="mt-2 text-sm text-ink-3">
+							Zkontroluj připojení. Neodeslané offline změny zůstaly na zařízení a nebyly smazány.
+						</p>
+						{import.meta.env.DEV && (
+							<p data-db-init-error className="mt-2 font-mono text-ink-3 text-xs">
+								Vývojový kód: {dbError.code}
+							</p>
+						)}
+						<button
+							type="button"
+							className="mt-4 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white"
+							onClick={() => setDbAttempt((n) => n + 1)}
+						>
+							Zkusit znovu
+						</button>
+					</div>
+				</div>
+			);
+		}
+		return <div className="grid min-h-full place-items-center text-sm text-ink-3">…</div>;
 	}
 
 	return (
 		<ErrorBoundary>
 			<PowerSyncContext.Provider value={powerSync}>
+				<AttachmentFinalizationRecovery />
 				<RouterProvider router={router} />
 			</PowerSyncContext.Provider>
 		</ErrorBoundary>

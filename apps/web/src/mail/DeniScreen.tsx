@@ -314,7 +314,7 @@ export function DeniScreen() {
 				{/* filtrační chipy (prototyp ř. 1387–1391) */}
 				<div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 14 }}>
 					{CHIPS.map(([id, label]) => (
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							key={id}
 							data-statepill
 							data-on={src === id || undefined}
@@ -352,7 +352,7 @@ export function DeniScreen() {
 							</span>
 						</div>
 						{nadch.map((u) => (
-							<div
+							<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								key={u.txt}
 								onClick={() => {
 									if (u.th) {
@@ -391,7 +391,7 @@ export function DeniScreen() {
 									{metaRow(u)}
 								</div>
 								{u.k === "send" && (
-									<span
+									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										data-ghost
 										onClick={(e) => {
 											e.stopPropagation();
@@ -434,7 +434,7 @@ export function DeniScreen() {
 							outline: "none",
 						}}
 					/>
-					<span data-primary onClick={addMan} style={{ fontSize: 11.5, padding: "8px 15px", flex: "none" }}>
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }} data-primary onClick={addMan} style={{ fontSize: 11.5, padding: "8px 15px", flex: "none" }}>
 						Zapsat
 					</span>
 				</div>
@@ -471,7 +471,7 @@ export function DeniScreen() {
 							// biome-ignore lint/suspicious/noArrayIndexKey: statická osa, pořadí je deterministické
 							<div key={i}>
 								{head}
-								<div
+								<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => openEvent(ev)}
 									data-drow
 									style={{

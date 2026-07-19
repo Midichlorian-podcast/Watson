@@ -5,14 +5,17 @@
  * schránkách" na SDÍLENÝ m.perOsoba/m.setPerOsoba (globální výchozí, per
  * schránka se ladí v Administraci). Zbytek (notifikace, VIP, soukromí,
  * chování po archivaci, OOO, podpisy) je demo vrstva držená lokálně
- * (useState z NAST_SEED). Swipe gesta vynechána — seznam je zatím nemá.
+ * (useState z NAST_SEED). Čtyři swipe sloty jsou živá perzistentní preference
+ * MailProvideru a seznam jejich změnu používá okamžitě.
  */
 import { useState } from "react";
 import { useTheme } from "../layout/useTheme";
 import { showToast } from "../lib/toast";
 import { MB, NAST_SEED, type NastSeed } from "./data";
+import { MailboxWizard } from "./MailboxWizard";
 import { sigIdOf } from "./SigPicker";
 import { useMail } from "./state";
+import { MAIL_SWIPE_ACTIONS, type MailSwipeAction, type MailSwipeSlot } from "./swipeConfig";
 
 /** Kopie osobního seedu — lokální demo stav se nesmí propsat do seedu. */
 const nastInit = (): NastSeed => ({
@@ -60,6 +63,29 @@ const headStyle = {
 	padding: "13px 18px 11px",
 	borderBottom: "1px solid var(--line)",
 } as const;
+
+const SWIPE_ACTION_LABEL: Record<MailSwipeAction, string> = {
+	read: "Přečtené / nepřečtené",
+	pin: "Připnout / odepnout",
+	archive: "Archivovat / obnovit",
+	snooze: "Odložit / probudit",
+	done: "Hotovo / vrátit",
+	trash: "Přesunout do koše",
+	assign: "Převzít / uvolnit",
+	set_aside: "Set Aside / vrátit",
+	none: "Bez akce",
+};
+
+const SWIPE_SLOT_ROWS: Array<{
+	slot: MailSwipeSlot;
+	label: string;
+	hint: string;
+}> = [
+	{ slot: "r1", label: "Krátce doprava", hint: "první práh · 110 px" },
+	{ slot: "r2", label: "Dlouze doprava", hint: "druhý práh · 260 px" },
+	{ slot: "l1", label: "Krátce doleva", hint: "první práh · 110 px" },
+	{ slot: "l2", label: "Dlouze doleva", hint: "druhý práh · 260 px" },
+];
 
 /** Inline editor jednoho podpisu (název + tělo po řádcích). */
 function SigEditor({
@@ -119,10 +145,10 @@ function SigEditor({
 				}}
 			/>
 			<div style={{ display: "flex", gap: 7, marginTop: 8 }}>
-				<span onClick={onSave} data-primary style={{ fontSize: 11.5, padding: "6px 14px" }}>
+				<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }} onClick={onSave} data-primary style={{ fontSize: 11.5, padding: "6px 14px" }}>
 					Uložit
 				</span>
-				<span
+				<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 					onClick={() => setEd(null)}
 					data-ghost
 					style={{ fontSize: 11.5, padding: "6px 12px" }}
@@ -138,6 +164,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 	const m = useMail();
 	const { theme, toggle } = useTheme();
 	const [nast, setNastRaw] = useState<NastSeed>(cache.nast);
+	const [mailboxManagerOpen, setMailboxManagerOpen] = useState(false);
 	// editor podpisu: {id:null} = nový, jinak úprava existujícího (název + tělo po řádcích)
 	const [sigEd, setSigEd] = useState<{ id: string | null; n: string; b: string } | null>(null);
 
@@ -195,7 +222,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 				}
 			>
 				{!embedded && (
-					<span
+					<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 						data-ghost
 						onClick={() => m.setScr("mail")}
 						style={{
@@ -257,7 +284,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 									padding: 2,
 								}}
 							>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => theme === "dark" && toggle()}
 									data-tab
 									data-active={theme === "light" || undefined}
@@ -265,7 +292,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								>
 									Světlý
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => theme === "light" && toggle()}
 									data-tab
 									data-active={theme === "dark" || undefined}
@@ -277,6 +304,110 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 						</div>
 					</div>
 				)}
+
+				{/* ── Čtyři konfigurovatelná swipe gesta (Spark model) ── */}
+				<div style={{ ...cardStyle, marginTop: 18 }} data-mail-swipe-settings>
+					<div style={headStyle}>Gesta přejetím</div>
+					<div
+						style={{
+							padding: "10px 18px",
+							fontFamily: "var(--w-font-body)",
+							fontSize: 11,
+							lineHeight: 1.5,
+							color: "var(--ink-3)",
+							background: "var(--panel-2)",
+						}}
+					>
+						Každý směr má malý a velký práh. Akce se potvrdí puštěním; podporované zařízení
+						krátce zavibruje při dosažení prahu a znovu při provedení.
+					</div>
+					{SWIPE_SLOT_ROWS.map(({ slot, label, hint }) => (
+						<label
+							key={slot}
+							data-mail-swipe-slot={slot}
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 12,
+								padding: "11px 18px",
+								borderBottom: "1px solid var(--line)",
+								flexWrap: "wrap",
+							}}
+						>
+							<span style={{ flex: 1, minWidth: 150 }}>
+								<span
+									style={{
+										display: "block",
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 700,
+										fontSize: 12,
+										color: "var(--ink-2)",
+									}}
+								>
+									{label}
+								</span>
+								<span
+									style={{
+										display: "block",
+										fontFamily: "var(--w-font-mono)",
+										fontSize: 9.5,
+										color: "var(--ink-3)",
+										marginTop: 2,
+									}}
+								>
+									{hint}
+								</span>
+							</span>
+							<select
+								aria-label={`Akce pro ${label.toLowerCase()}`}
+								value={m.swipeConfig[slot]}
+								onChange={(event) =>
+									m.setSwipeAction(slot, event.target.value as MailSwipeAction)
+								}
+								style={{
+									minHeight: 44,
+									minWidth: 220,
+									border: "1px solid var(--line)",
+									borderRadius: 9,
+									background: "var(--panel)",
+									color: "var(--ink)",
+									padding: "0 10px",
+									fontFamily: "var(--w-font-body)",
+									fontSize: 12,
+								}}
+							>
+								{MAIL_SWIPE_ACTIONS.map((action) => (
+									<option key={action} value={action}>
+										{SWIPE_ACTION_LABEL[action]}
+									</option>
+								))}
+							</select>
+						</label>
+					))}
+					<div style={{ padding: "10px 18px" }}>
+						<button
+							type="button"
+							onClick={() => {
+								m.resetSwipeConfig();
+								showToast("Výchozí gesta obnovena");
+							}}
+							style={{
+								minHeight: 44,
+								border: "1px solid var(--line)",
+								borderRadius: 9,
+								background: "transparent",
+								color: "var(--ink-2)",
+								padding: "0 13px",
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 600,
+								fontSize: 11.5,
+								cursor: "pointer",
+							}}
+						>
+							Obnovit výchozí mapování
+						</button>
+					</div>
+				</div>
 
 				{/* ── Notifikace (prototyp ř. 1627–1651) ── */}
 				<div style={cardStyle}>
@@ -320,7 +451,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 									padding: 2,
 								}}
 							>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => setNast({ notif: { ...nast.notif, [r.id]: "vse" } })}
 									data-tab
 									data-active={nast.notif[r.id] === "vse" || undefined}
@@ -328,7 +459,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								>
 									Všechny
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => setNast({ notif: { ...nast.notif, [r.id]: "vip" } })}
 									data-tab
 									data-active={nast.notif[r.id] === "vip" || undefined}
@@ -337,7 +468,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								>
 									VIP
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									onClick={() => setNast({ notif: { ...nast.notif, [r.id]: "zadne" } })}
 									data-tab
 									data-active={nast.notif[r.id] === "zadne" || undefined}
@@ -370,7 +501,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								— přerušit smí jen P1
 							</span>
 						</span>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-statepill
 							data-on={nast.quiet || undefined}
 							onClick={() => setNast({ quiet: !nast.quiet })}
@@ -396,7 +527,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								flex: "none",
 							}}
 						>
-							VIP odesílatelé <span style={{ opacity: 0.8 }}>— upozorní vždy:</span>
+							VIP odesílatelé <span>— upozorní vždy:</span>
 						</span>
 						{nast.vip.map((addr) => (
 							<span
@@ -414,12 +545,23 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								}}
 							>
 								{addr}
-								<span
+								<button
+									type="button"
+									aria-label={`Odebrat VIP adresu ${addr}`}
 									onClick={() => setNast({ vip: nast.vip.filter((z) => z !== addr) })}
-									style={{ cursor: "pointer", opacity: 0.6, fontSize: 12, lineHeight: 1 }}
+									style={{
+										width: 44,
+										height: 44,
+										border: 0,
+										background: "transparent",
+										cursor: "pointer",
+										color: "var(--ink-2)",
+										fontSize: 16,
+										lineHeight: 1,
+									}}
 								>
 									×
-								</span>
+								</button>
 							</span>
 						))}
 						<input
@@ -429,8 +571,10 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								if (e.key === "Enter") addVip();
 							}}
 							placeholder="přidat adresu ⏎"
+							aria-label="Přidat VIP e-mailovou adresu"
 							style={{
 								width: 150,
+								minHeight: 44,
 								border: "1px dashed var(--line)",
 								background: "transparent",
 								borderRadius: 999,
@@ -473,7 +617,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								blokování skryje sledovací pixely — načteš je pak jedním klikem
 							</div>
 						</div>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-statepill
 							data-on={nast.privImg || undefined}
 							onClick={() => setNast({ privImg: !nast.privImg })}
@@ -500,7 +644,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								pro rychlé náhledy; vypni na pomalém připojení
 							</div>
 						</div>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-statepill
 							data-on={nast.privAtt || undefined}
 							onClick={() => setNast({ privAtt: !nast.privAtt })}
@@ -546,7 +690,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								flex: "none",
 							}}
 						>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => setNast({ beh: "dalsi" })}
 								data-tab
 								data-active={nast.beh !== "seznam" || undefined}
@@ -554,7 +698,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 							>
 								Další konverzace
 							</span>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => setNast({ beh: "seznam" })}
 								data-tab
 								data-active={nast.beh === "seznam" || undefined}
@@ -601,7 +745,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								flex: "none",
 							}}
 						>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => {
 									m.setPerOsoba(true);
 									showToast(
@@ -614,7 +758,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 							>
 								Per osoba
 							</span>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => {
 									m.setPerOsoba(false);
 									showToast(
@@ -689,14 +833,14 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 										{s.body.length ? s.body.join("\n") : "— bez textu —"}
 									</div>
 								</div>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									data-ghost
 									onClick={() => setSigEd({ id: s.id, n: s.n, b: s.body.join("\n") })}
 									style={{ fontSize: 11, padding: "4px 10px", flex: "none" }}
 								>
 									Upravit
 								</span>
-								<span
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 									data-ghost
 									onClick={() => {
 										m.deleteSig(s.id);
@@ -721,7 +865,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 						<SigEditor ed={sigEd} setEd={setSigEd} onSave={saveSig} />
 					) : (
 						<div style={{ padding: "10px 18px", borderBottom: "1px solid var(--line)" }}>
-							<span
+							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								data-ghost
 								onClick={() => setSigEd({ id: null, n: "", b: "" })}
 								style={{ fontSize: 11.5, padding: "5px 12px" }}
@@ -776,7 +920,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								</span>
 								<div style={{ display: "flex", gap: 5, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
 									{m.sigs.map((s) => (
-										<span
+										<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 											key={s.id}
 											onClick={() => m.setSigChoice(idn.id, s.id)}
 											data-statepill
@@ -838,7 +982,7 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 								mimo kancelář — každému odesílateli max 1× za 4 dny, newslettery se přeskakují
 							</div>
 						</div>
-						<span
+						<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							data-statepill
 							data-on={nast.ooo || undefined}
 							onClick={() => setNast({ ooo: !nast.ooo })}
@@ -883,81 +1027,33 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 					)}
 				</div>
 
-				{/* ── Osobní schránka (prototyp ř. 1745–1755) ── */}
+				{/* ── Osobní schránky: skutečný serverový account manager M1 ── */}
 				<div style={cardStyle}>
-					<div style={headStyle}>Osobní schránka</div>
+					<div style={headStyle}>Osobní e-mailové účty</div>
 					<div
 						style={{
 							display: "flex",
-							alignItems: "center",
+							alignItems: "flex-start",
 							gap: 10,
 							padding: "12px 18px",
 							flexWrap: "wrap",
 						}}
 					>
-						<span
-							data-mbdot="osobni"
-							style={{ width: 9, height: 9, borderRadius: "50%", flex: "none" }}
-						/>
-						<span
-							style={{ fontFamily: "var(--w-font-mono)", fontSize: 11.5, color: "var(--ink-2)" }}
+						<div style={{ flex: "1 1 260px", fontFamily: "var(--w-font-body)", fontSize: 11, lineHeight: 1.5, color: "var(--ink-3)" }}>
+							Google účet připojíš přes OAuth; heslo Watson nikdy nevidí a credential ukládá šifrovaně.
+							Obsah zpráv a akce v Mailu zůstávají do další etapy zřetelně demo.
+						</div>
+						<button
+							type="button"
+							onClick={() => setMailboxManagerOpen(true)}
+							style={{ minHeight: 44, padding: "0 14px", border: 0, borderRadius: 9, background: "var(--ink)", color: "var(--panel)", cursor: "pointer", flex: "none", fontWeight: 700 }}
 						>
-							kosir.adam@gmail.com
-						</span>
-						<span
-							style={{
-								display: "inline-flex",
-								alignItems: "center",
-								gap: 5,
-								fontFamily: "var(--w-font-mono)",
-								fontSize: 9.5,
-								padding: "2px 9px",
-								borderRadius: 999,
-								background: "var(--pers-bg)",
-								border: "1px solid var(--pers-line)",
-								color: "var(--pers-ink)",
-							}}
-						>
-							<svg width="9" height="9" viewBox="0 0 12 12" fill="none" aria-hidden>
-								<rect
-									x="2.2"
-									y="5"
-									width="7.6"
-									height="5.2"
-									rx="1.2"
-									stroke="currentColor"
-									strokeWidth="1.2"
-								/>
-								<path d="M4 5 V3.8 A2 2 0 0 1 8 3.8 V5" stroke="currentColor" strokeWidth="1.2" />
-							</svg>
-							demo · bez AI
-						</span>
-						<span style={{ flex: 1 }} />
-						<span
-							data-ghost
-							onClick={() =>
-								showToast(
-									"Simulace: osobní schránka by se odpojila — vlákna zůstávají jen v tvém zařízení (demo, nešifrováno)",
-								)
-							}
-							style={{ fontSize: 11, padding: "5px 11px", color: "var(--overdue)", flex: "none" }}
-						>
-							Odpojit
-						</span>
-					</div>
-					<div
-						style={{
-							fontFamily: "var(--w-font-body)",
-							fontSize: 10.5,
-							color: "var(--ink-3)",
-							padding: "0 18px 13px",
-						}}
-					>
-						Mimo týmové hledání, AI i správu týmu; admin ji nevidí. V demu uložená lokálně bez
-						šifrování — to přijde s M1.
+							Spravovat účty
+						</button>
 					</div>
 				</div>
 			</div>
+			<MailboxWizard open={mailboxManagerOpen} onClose={() => setMailboxManagerOpen(false)} />
 		</div>
 	);
 }

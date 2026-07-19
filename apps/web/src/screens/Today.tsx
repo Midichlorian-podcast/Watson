@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { useEffect, useMemo, useState } from "react";
+import { DataLoading } from "../components/Loading";
 import { QuickAdd } from "../components/QuickAdd";
 import { RescheduleMenu } from "../components/RescheduleMenu";
 import { TaskItem } from "../components/TaskItem";
@@ -21,10 +22,18 @@ import { useFlowSteps } from "../lib/flowSteps";
 import { inboxProjectIds, isInboxTask, pickInboxId } from "../lib/inbox";
 import { useKbNav } from "../lib/kbNav";
 import { filterByQuery, useListSearch } from "../lib/listSearch";
+import {
+	materializeRecurringTasks,
+	type OccurrenceOverrideRow,
+} from "../lib/occurrenceProjection";
 import { expandOccurrences, parseRecurrenceRule } from "../lib/occurrences";
-import type { ProjectRow, TaskRow } from "../lib/powersync/AppSchema";
+import type {
+	ProjectRow,
+	TaskRecurrencePrefixRow,
+	TaskRow,
+} from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
@@ -61,17 +70,29 @@ export function DnesTab() {
 	const { toggleWatson } = useWatson();
 	const isMobile = useIsMobile();
 
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const projMap = useMemo(() => new Map(projects.map((p) => [p.id, p] as const)), [projects]);
 
 	const [tb, setTb] = useState<ToolbarState>(DEFAULT_TOOLBAR);
 	// Výkon: v běžném případě (bez „Dokončené") filtruj hotové rovnou v SQL — méně řádků materializuje
 	// se přes WASM bridge při KAŽDÉ změně tabulky. Zapnutí „Dokončené" se re-subscribne na plný dotaz.
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		tb.showDone
 			? "SELECT * FROM tasks ORDER BY priority, due_date IS NULL, due_date, created_at DESC"
 			: "SELECT * FROM tasks WHERE completed_at IS NULL ORDER BY priority, due_date IS NULL, due_date, created_at DESC",
 	);
+	const { data: occurrenceOverrides, isLoading: occurrenceOverridesLoading } =
+		usePsQuery<OccurrenceOverrideRow>(
+			`SELECT id, task_id, occ_date, done, skipped, override_due_date,
+			        override_start_date, override_start_timezone, override_duration_min, updated_at
+			 FROM task_occurrence_overrides`,
+		);
+	const { data: recurrencePrefixes, isLoading: recurrencePrefixesLoading } =
+		usePsQuery<TaskRecurrencePrefixRow>(
+			`SELECT id, task_id, project_id, anchor_date, end_date, recurrence_rule,
+			        start_date, start_timezone, duration_min, created_by, version, created_at, updated_at
+			 FROM task_recurrence_prefixes`,
+		);
 	const [wsFilter, setWsFilter] = useState<string | null>(null);
 	const { q: searchQ } = useListSearch();
 	const flowSteps = useFlowSteps();
@@ -79,11 +100,11 @@ export function DnesTab() {
 	const userId = session?.user?.id;
 	const { activeWs } = useWorkspace();
 	const inboxId = useMemo(() => pickInboxId(projects, activeWs), [projects, activeWs]);
-	const { data: allAsg } = usePsQuery<{
+	const { data: allAsg, isLoading: assignmentsLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments ORDER BY created_at");
-	const { data: allSteps } = usePsQuery<{
+	const { data: allSteps, isLoading: stepsLoading } = usePsQuery<{
 		chain_id: string | null;
 		task_id: string | null;
 		position: number | null;
@@ -124,7 +145,24 @@ export function DnesTab() {
 		for (const x of awake) {
 			const rule = parseRecurrenceRule(x.recurrence_rule);
 			const d = dayOf(x);
-			if (rule && d && d < tdy && !x.completed_at) {
+			if (rule && d && !x.completed_at) {
+				const materialized = materializeRecurringTasks(
+					[x],
+					occurrenceOverrides ?? [],
+					tdy,
+					tdy,
+					2,
+					recurrencePrefixes ?? [],
+				);
+				const todayOccurrences = materialized.filter((row) => dayOf(row) === tdy);
+				if (d >= tdy) {
+					projected.push(...materialized);
+					continue;
+				}
+				if (todayOccurrences.length > 0) {
+					projected.push(...todayOccurrences);
+					continue;
+				}
 				const [next] = expandOccurrences({
 					baseISO: d,
 					kind: rule.kind,
@@ -139,14 +177,9 @@ export function DnesTab() {
 					count: rule.count,
 					doneCount: rule.doneCount,
 				});
-				if (next === tdy) {
-					projected.push({
-						...x,
-						due_date: x.due_date && x.due_date.length > 10 ? tdy + x.due_date.slice(10) : tdy,
-					});
-				} else if (!next) {
-					projected.push(x);
-				}
+				// Přesunutý dnešní výskyt už zpracoval materializer výše. Pokud řada nemá
+				// žádný další výskyt, ponecháme poslední base jako zpožděný; jinak se dnešku netýká.
+				if (!next) projected.push(materialized.find((row) => row.id === x.id) ?? x);
 				continue;
 			}
 			projected.push(x);
@@ -165,7 +198,18 @@ export function DnesTab() {
 				return d === tdy || (!!x.completed_at && d !== null && d < tdy);
 			}),
 		};
-	}, [tasks, tb, tbCtx, flowSteps, wsFilter, projMap, projects, searchQ]);
+	}, [
+		tasks,
+		occurrenceOverrides,
+		recurrencePrefixes,
+		tb,
+		tbCtx,
+		flowSteps,
+		wsFilter,
+		projMap,
+		projects,
+		searchQ,
+	]);
 
 	// Pořadí pro ↑/↓ v detailu (prototyp _navIds) + kbsel navigace.
 	const flatList = useMemo(() => [...g.overdue, ...g.today], [g.overdue, g.today]);
@@ -258,7 +302,7 @@ export function DnesTab() {
 	const card = (task: TaskRow) => {
 		const p = task.project_id ? projMap.get(task.project_id) : undefined;
 		return (
-			<div
+			<li
 				key={task.id}
 				data-kbsel={kbSel === task.id || undefined}
 				className="rounded-xl"
@@ -271,9 +315,18 @@ export function DnesTab() {
 					project={p ? { name: p.name, color: p.color, workspace_id: p.workspace_id } : undefined}
 					flow={flowSteps.get(task.id)}
 				/>
-			</div>
+			</li>
 		);
 	};
+	if (
+		projectsLoading ||
+		tasksLoading ||
+		occurrenceOverridesLoading ||
+		recurrencePrefixesLoading ||
+		assignmentsLoading ||
+		stepsLoading
+	)
+		return <DataLoading />;
 
 	return (
 		<>

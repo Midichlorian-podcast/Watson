@@ -3,26 +3,65 @@ import i18n, { useTranslation } from "@watson/i18n";
 import {
 	type CSSProperties,
 	type PointerEvent as ReactPointerEvent,
+	type RefObject,
+	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
 } from "react";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
-import { expandOccurrences, occId, parseOccId, parseRecurrenceRule } from "../lib/occurrences";
-import type { TaskRow } from "../lib/powersync/AppSchema";
+import {
+	CALENDAR_STRIP_BUFFER_DAYS,
+	CALENDAR_STRIP_SETTLE_MS,
+	CALENDAR_STRIP_SNAP_MS,
+	calendarDayClassName,
+	calendarDayKind,
+	calendarInitialScrollTop,
+	calendarStripCenter,
+	calendarStripDayWidth,
+	consumeCalendarWheel,
+	nearestCalendarDayOffset,
+} from "../lib/calendarGesture";
+import { materializeRecurringTasks, type OccurrenceOverrideRow } from "../lib/occurrenceProjection";
+import { parseOccId } from "../lib/occurrences";
+import type {
+	AvailabilityBlockRow,
+	TaskRecurrencePrefixRow,
+	TaskRow,
+} from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
 import { useProjects } from "../lib/projects";
+import type { RecurrencePreviewInput } from "../lib/recurrenceCommands";
 import { useRowMeta } from "../lib/rowMeta";
+import { storageGet, storageSet } from "../lib/storage";
+import {
+	createTaskAvailabilityOverrides,
+	preflightTaskAvailability,
+	type TaskAvailabilityConflict,
+} from "../lib/taskAvailability";
 import { useTaskDetail } from "../lib/taskDetail";
-import { rowDue, startMinOf, todayISO, toggleTask } from "../lib/tasks";
+import { rowDue, startMinOf, toggleTask } from "../lib/tasks";
+import {
+	dateInTimeZone,
+	deviceTimeZone,
+	minutesInTimeZone,
+	wallTimeFromInstant,
+	zonedDateTimeToIso,
+} from "../lib/timeZone";
+import { showToast } from "../lib/toast";
 import { pushUndo } from "../lib/undo";
 import { useIsMobile } from "../lib/useIsMobile";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useUserColors } from "../lib/userColors";
+import type { CalendarRange } from "../lib/windowSurfaces";
+import { useWorkspace } from "../lib/workspace";
 import { CalendarMonth } from "./CalendarMonth";
+import { RecurrenceMoveDialog } from "./RecurrenceMoveDialog";
 
-type Mode = "day" | "week" | "month";
+type Mode = CalendarRange;
 type WeekView = "cols" | "grid";
 type CalBorder = "priority" | "project";
 
@@ -31,18 +70,19 @@ const WEEKVIEW_LS = "watson.calWeekView";
 const DENSITY_LS = "watson.calDensity";
 const BORDER_LS = "watson.calBorder";
 const PLANNING_LS = "watson.calPlanning";
+const HOURS = Array.from({ length: 25 }, (_, hour) => hour);
 
 /** Pixely/minuta (prototyp PPMOPT, ř. 1912). */
 const PPMOPT = { comfortable: 0.62, spacious: 0.95 } as const;
 const MAX_LANES = 3;
-// Pás CELÝ DEN: JEDEN per-den rozpočet. Vícedenní celodenní = defaultně tenká překryvná
-// linka protínající sloupce (nezabírá kartu). V dni, kde je rozpočet plný, se linka na tom
-// segmentu nekreslí a událost spadne do „+N" toho dne (odtud otevřitelná). Přeplněné chipy
-// i přetečené vícedenní se tak kapují na „+N" — pás nikdy nescrolluje.
-const ALLDAY_PER_COL = 3; // rozpočet karet CELÝ DEN na sloupec (jednodenní chipy), pak „+N"
-const MAX_LINE_ROWS = 3; // max řádků tenkých vícedenních linek (nad rámec → „+N")
-const LINE_ROW_H = 9; // výška řádku linky (klikací obálka)
-const LINE_H = 5; // tloušťka samotné linky
+const CALENDAR_STRIP_INTERACTION_EVENT = "watson:calendar-strip-interaction";
+const CALENDAR_GUTTER_WIDTH = 46;
+const CALENDAR_WEEK_HEADER_HEIGHT = 50;
+// Celý den je orientační pás, ne druhý seznam úkolů. Jeden vícedenní pruh + jedna
+// karta na sloupec udrží maximum přibližně na 64 px; zbytek zůstává v „+N".
+const ALLDAY_PER_COL = 1;
+const MAX_ALLDAY_BAR_ROWS = 1;
+const ALLDAY_BAR_ROW_HEIGHT = 24;
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -52,10 +92,39 @@ export const addDaysISO = (iso: string, n: number) => {
 	d.setDate(d.getDate() + n);
 	return isoOf(d);
 };
+
+export type CalendarAvailabilityBlock = AvailabilityBlockRow;
+
+/** Část absolutního availability bloku, která patří do jednoho lokálního kalendářního dne. */
+export function availabilitySegment(
+	block: CalendarAvailabilityBlock,
+	iso: string,
+	timeZone: string,
+): { start: number; end: number } | null {
+	if (!block.starts_at || !block.ends_at || block.cancelled_at) return null;
+	const dayStart = zonedDateTimeToIso(iso, "00:00", timeZone);
+	const nextStart = zonedDateTimeToIso(addDaysISO(iso, 1), "00:00", timeZone);
+	if (!dayStart || !nextStart) return null;
+	const dayStartMs = Date.parse(dayStart);
+	const nextStartMs = Date.parse(nextStart);
+	const startMs = Math.max(Date.parse(block.starts_at), dayStartMs);
+	const endMs = Math.min(Date.parse(block.ends_at), nextStartMs);
+	if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
+	const start =
+		startMs === dayStartMs ? 0 : minutesInTimeZone(new Date(startMs).toISOString(), timeZone);
+	const end =
+		endMs === nextStartMs ? 1440 : minutesInTimeZone(new Date(endMs).toISOString(), timeZone);
+	return start === null || end === null || end <= start ? null : { start, end };
+}
 const fmtMin = (m: number) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
 
 /** Den, na kterém úkol začíná (termín). */
-export const tIso = (t: TaskRow) => (t.due_date ?? t.start_date)?.slice(0, 10) ?? null;
+export const tIso = (t: TaskRow) =>
+	t.due_date ??
+	(t.start_date && t.start_timezone
+		? dateInTimeZone(t.start_timezone, new Date(t.start_date))
+		: t.start_date?.slice(0, 10)) ??
+	null;
 /** Konec vícedenního rozsahu (days sloupec; 1 den = totéž datum). */
 export const tIsoEnd = (t: TaskRow) => {
 	const s = tIso(t);
@@ -113,6 +182,199 @@ function layoutDay(items: { id: string; s: number; e: number }[]) {
 	return map;
 }
 
+function useRollingCalendarStrip({
+	scrollRef,
+	visibleDays,
+	totalDays,
+	bufferDays,
+	viewportInset = 0,
+	anchorKey,
+	onAnchorOffset,
+	onScrollSync,
+}: {
+	scrollRef: RefObject<HTMLDivElement | null>;
+	visibleDays: number;
+	totalDays: number;
+	bufferDays: number;
+	viewportInset?: number;
+	anchorKey: string;
+	onAnchorOffset: (offset: number) => void;
+	onScrollSync?: (left: number, top: number) => void;
+}) {
+	const [dayWidth, setDayWidth] = useState(0);
+	const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const snapFrame = useRef<number | null>(null);
+	const ignoreScroll = useRef(false);
+	const snapping = useRef(false);
+	const lastLeft = useRef(0);
+	const lastInteractionAt = useRef(0);
+	const onAnchorOffsetRef = useRef(onAnchorOffset);
+	const onScrollSyncRef = useRef(onScrollSync);
+	onAnchorOffsetRef.current = onAnchorOffset;
+	onScrollSyncRef.current = onScrollSync;
+
+	const cancelMotion = useCallback(() => {
+		if (settleTimer.current) clearTimeout(settleTimer.current);
+		settleTimer.current = null;
+		if (resetTimer.current) clearTimeout(resetTimer.current);
+		resetTimer.current = null;
+		if (snapFrame.current !== null) cancelAnimationFrame(snapFrame.current);
+		snapFrame.current = null;
+		snapping.current = false;
+		ignoreScroll.current = false;
+	}, []);
+
+	useLayoutEffect(() => {
+		const element = scrollRef.current;
+		if (!element) return;
+		const measure = () => {
+			const next = calendarStripDayWidth(element.clientWidth - viewportInset, visibleDays);
+			setDayWidth((current) => (Math.abs(current - next) < 0.25 ? current : next));
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, [scrollRef, viewportInset, visibleDays]);
+
+	const center = calendarStripCenter(dayWidth, bufferDays);
+	const contentWidth = dayWidth * totalDays;
+
+	useLayoutEffect(() => {
+		const element = scrollRef.current;
+		if (!element || dayWidth <= 0 || !anchorKey) return;
+		cancelMotion();
+		ignoreScroll.current = true;
+		element.scrollLeft = center;
+		lastLeft.current = center;
+		onScrollSyncRef.current?.(center, element.scrollTop);
+		// ResizeObserver a flex layout mohou ještě jeden frame měnit scrollWidth.
+		// Finální centrování proběhne až po jejich doběhu a samo nikdy nespustí snap.
+		resetTimer.current = setTimeout(() => {
+			element.scrollLeft = center;
+			lastLeft.current = center;
+			onScrollSyncRef.current?.(center, element.scrollTop);
+			ignoreScroll.current = false;
+			resetTimer.current = null;
+		}, 80);
+		return () => {
+			if (resetTimer.current) clearTimeout(resetTimer.current);
+			resetTimer.current = null;
+		};
+	}, [anchorKey, cancelMotion, center, dayWidth, scrollRef]);
+
+	const settle = useCallback(() => {
+		const element = scrollRef.current;
+		if (!element || dayWidth <= 0 || snapping.current) return;
+		const offset = nearestCalendarDayOffset(
+			element.scrollLeft,
+			center,
+			dayWidth,
+			-bufferDays,
+			bufferDays,
+		);
+		const target = center + offset * dayWidth;
+		const start = element.scrollLeft;
+		const distance = target - start;
+		const finish = () => {
+			element.scrollLeft = target;
+			lastLeft.current = target;
+			onScrollSyncRef.current?.(target, element.scrollTop);
+			snapFrame.current = null;
+			if (offset === 0) {
+				snapping.current = false;
+				ignoreScroll.current = false;
+				return;
+			}
+			onAnchorOffsetRef.current(offset);
+		};
+		if (
+			Math.abs(distance) < 0.5 ||
+			window.matchMedia("(prefers-reduced-motion: reduce)").matches
+		) {
+			ignoreScroll.current = true;
+			finish();
+			return;
+		}
+		snapping.current = true;
+		ignoreScroll.current = true;
+		const startedAt = performance.now();
+		const animate = (now: number) => {
+			const progress = Math.min(1, (now - startedAt) / CALENDAR_STRIP_SNAP_MS);
+			const eased = 1 - (1 - progress) ** 3;
+			element.scrollLeft = start + distance * eased;
+			lastLeft.current = element.scrollLeft;
+			onScrollSyncRef.current?.(element.scrollLeft, element.scrollTop);
+			if (progress < 1) snapFrame.current = requestAnimationFrame(animate);
+			else finish();
+		};
+		snapFrame.current = requestAnimationFrame(animate);
+	}, [bufferDays, center, dayWidth, scrollRef]);
+
+	const onScroll = useCallback(() => {
+		const element = scrollRef.current;
+		if (!element) return;
+		onScrollSyncRef.current?.(element.scrollLeft, element.scrollTop);
+		const movedHorizontally = Math.abs(element.scrollLeft - lastLeft.current) >= 0.25;
+		lastLeft.current = element.scrollLeft;
+		if (!movedHorizontally || ignoreScroll.current || snapping.current) return;
+		if (settleTimer.current) clearTimeout(settleTimer.current);
+		settleTimer.current = setTimeout(() => {
+			settleTimer.current = null;
+			settle();
+		}, CALENDAR_STRIP_SETTLE_MS);
+	}, [scrollRef, settle]);
+
+	const onInteractionStart = useCallback(() => {
+		lastInteractionAt.current = performance.now();
+		if (!snapping.current && !ignoreScroll.current) return;
+		const wasWaitingForLayout = resetTimer.current !== null;
+		cancelMotion();
+		if (!wasWaitingForLayout) return;
+		const element = scrollRef.current;
+		if (!element) return;
+		element.scrollLeft = center;
+		lastLeft.current = center;
+		onScrollSyncRef.current?.(center, element.scrollTop);
+	}, [cancelMotion, center, scrollRef]);
+
+	useEffect(() => {
+		const element = scrollRef.current;
+		if (!element) return;
+		element.addEventListener(CALENDAR_STRIP_INTERACTION_EVENT, onInteractionStart);
+		const onScrollEnd = () => {
+			if (ignoreScroll.current || snapping.current) return;
+			if (settleTimer.current) clearTimeout(settleTimer.current);
+			const remaining = CALENDAR_STRIP_SETTLE_MS - (performance.now() - lastInteractionAt.current);
+			if (remaining > 0) {
+				settleTimer.current = setTimeout(() => {
+					settleTimer.current = null;
+					settle();
+				}, remaining);
+				return;
+			}
+			settleTimer.current = null;
+			settle();
+		};
+		element.addEventListener("scrollend", onScrollEnd);
+		return () =>
+			{
+				element.removeEventListener(CALENDAR_STRIP_INTERACTION_EVENT, onInteractionStart);
+				element.removeEventListener("scrollend", onScrollEnd);
+			};
+	}, [onInteractionStart, scrollRef, settle]);
+	useEffect(() => cancelMotion, [cancelMotion]);
+
+	return {
+		center,
+		contentWidth,
+		dayWidth,
+		onInteractionStart,
+		onScroll,
+	};
+}
+
 /** Kruhový checkbox kalendáře (port calCheck, ř. 2762). */
 function CalCheck({ t: tk, size, style }: { t: TaskRow; size: number; style?: CSSProperties }) {
 	const done = Boolean(tk.completed_at);
@@ -165,13 +427,57 @@ interface BlockDrag {
 	moved: boolean;
 }
 
+interface CalendarMovePlan {
+	taskId: string;
+	dueDate: string;
+	startsAt: string | null;
+	startTimezone: string | null;
+	durationMin: number | null;
+	previousDueDate: string | null;
+	previousStartsAt: string | null;
+	previousStartTimezone: string | null;
+}
+
+interface PendingEmergencyMove {
+	move: CalendarMovePlan;
+	conflicts: TaskAvailabilityConflict[];
+}
+
+interface PendingRecurrenceMove {
+	taskId: string;
+	input: RecurrencePreviewInput;
+}
+
 /**
  * Kalendář 1:1 dle prototypu: Den / Týden (Sloupce|Mřížka) / Měsíc, projekce opakování,
  * vícedenní pruhy, pás CELÝ DEN, drag move/create/resize, lanes + „+N", now-line se štítkem,
  * gear menu (hustota / barevný okraj / Plánování panel), klik do prázdna = nový úkol.
  */
-export function Calendar({ tasks }: { tasks: TaskRow[] }) {
+export interface CalendarNavigationState {
+	range: CalendarRange;
+	date: string;
+}
+
+export function Calendar({
+	tasks,
+	range,
+	anchorDate,
+	onNavigationChange,
+}: {
+	tasks: TaskRow[];
+	range?: CalendarRange;
+	anchorDate?: string;
+	onNavigationChange?: (state: CalendarNavigationState) => void;
+}) {
 	const { t } = useTranslation();
+	const { data: session } = useSession();
+	const userTimeZone = session?.user?.timezone ?? deviceTimeZone();
+	const { activeWs } = useWorkspace();
+	const { data: availabilityRows } = usePsQuery<CalendarAvailabilityBlock>(
+		"SELECT * FROM availability_blocks WHERE workspace_id = ? AND user_id = ? AND cancelled_at IS NULL",
+		[activeWs ?? "", session?.user?.id ?? ""],
+	);
+	const availability = availabilityRows ?? [];
 	const { open } = useTaskDetail();
 	const { openAdd } = useAddTask();
 	const projects = useProjects();
@@ -180,42 +486,94 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	const projName = (id: string | null) =>
 		(id ? projects.find((p) => p.id === id)?.name : null) ?? "";
 
-	const [mode, setModeState] = useState<Mode>(() => {
-		const m = localStorage.getItem(MODE_LS);
+	const initialMode: Mode = (() => {
+		if (range) return range;
+		const m = storageGet(MODE_LS);
 		return m === "day" || m === "month" ? m : "week";
-	});
+	})();
+	const [mode, setModeState] = useState<Mode>(initialMode);
 	const [weekView, setWeekViewState] = useState<WeekView>(() =>
-		localStorage.getItem(WEEKVIEW_LS) === "grid" ? "grid" : "cols",
+		storageGet(WEEKVIEW_LS) === "grid" ? "grid" : "cols",
 	);
 	const [density, setDensity] = useState<keyof typeof PPMOPT>(() =>
-		localStorage.getItem(DENSITY_LS) === "spacious" ? "spacious" : "comfortable",
+		storageGet(DENSITY_LS) === "spacious" ? "spacious" : "comfortable",
 	);
 	const [calBorder, setCalBorder] = useState<CalBorder>(() =>
-		localStorage.getItem(BORDER_LS) === "project" ? "project" : "priority",
+		storageGet(BORDER_LS) === "project" ? "project" : "priority",
 	);
-	const [planningOn, setPlanningOn] = useState(() => localStorage.getItem(PLANNING_LS) === "1");
+	const [planningOn, setPlanningOn] = useState(() => storageGet(PLANNING_LS) === "1");
 	const [gearOpen, setGearOpen] = useState(false);
+	const [pendingEmergencyMove, setPendingEmergencyMove] = useState<PendingEmergencyMove | null>(
+		null,
+	);
+	const [pendingRecurrenceMove, setPendingRecurrenceMove] = useState<PendingRecurrenceMove | null>(
+		null,
+	);
+	const [emergencyReason, setEmergencyReason] = useState("");
+	const [emergencyBusy, setEmergencyBusy] = useState(false);
+	const emergencyBusyRef = useRef(false);
+	const emergencyInputRef = useRef<HTMLTextAreaElement>(null);
+	const emergencyDialogRef = useOverlayLayer<HTMLDivElement>(Boolean(pendingEmergencyMove), () => {
+		if (!emergencyBusyRef.current) setPendingEmergencyMove(null);
+	});
 	const isMobile = useIsMobile();
-	// Kotevní datum (calCur) — týden je „rolující" od kotvy bez snapu (prototyp weekDates, ř. 2658);
+	useEffect(() => {
+		if (!pendingEmergencyMove) return;
+		setEmergencyReason("");
+		setTimeout(() => emergencyInputRef.current?.focus(), 0);
+	}, [pendingEmergencyMove]);
+	// Kotevní datum (calCur) — týden je rolovací od libovolného dne a po gestu snapuje po dni;
 	// při startu v týdnu kotvíme na pondělí (ekvivalent calToday, ř. 2661).
 	const [cur, setCur] = useState<Date>(() => {
-		const d = new Date();
-		const m = localStorage.getItem(MODE_LS);
+		const d = new Date(`${anchorDate ?? dateInTimeZone(userTimeZone)}T12:00:00`);
+		const m = initialMode;
 		if (m !== "day" && m !== "month") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
 		return d;
 	});
+	const modeRef = useRef(mode);
+	const curRef = useRef(cur);
+	modeRef.current = mode;
+	curRef.current = cur;
+
+	// URL je zdroj pravdy pouze tehdy, když se jeho hodnota skutečně změní.
+	// Závislost na lokálním `mode`/`cur` by po interní navigaci znovu aplikovala
+	// ještě staré props a zrušila kliknutí, klávesu i gesto trackpadu.
+	useEffect(() => {
+		if (!range) return;
+		modeRef.current = range;
+		setModeState((current) => (current === range ? current : range));
+	}, [range]);
+	useEffect(() => {
+		if (!anchorDate) return;
+		const next = fromISO(anchorDate);
+		curRef.current = next;
+		setCur((current) => (isoOf(current) === anchorDate ? current : next));
+	}, [anchorDate]);
 	const PPM = PPMOPT[density];
 
-	const setMode = (m: Mode) => {
-		setModeState(m);
-		localStorage.setItem(MODE_LS, m);
-	};
+	const commitNavigation = useCallback(
+		(nextMode: Mode, nextDate: Date) => {
+			modeRef.current = nextMode;
+			curRef.current = nextDate;
+			setModeState(nextMode);
+			setCur(nextDate);
+			onNavigationChange?.({ range: nextMode, date: isoOf(nextDate) });
+		},
+		[onNavigationChange],
+	);
+	const setMode = useCallback(
+		(m: Mode) => {
+			storageSet(MODE_LS, m);
+			commitNavigation(m, curRef.current);
+		},
+		[commitNavigation],
+	);
 	const setWeekView = (v: WeekView) => {
 		setWeekViewState(v);
-		localStorage.setItem(WEEKVIEW_LS, v);
+		storageSet(WEEKVIEW_LS, v);
 	};
 
-	const todayIso = todayISO();
+	const todayIso = dateInTimeZone(userTimeZone);
 	const gridScrollRef = useRef<HTMLDivElement>(null);
 
 	// Full-bleed výška (prototyp ř. 490: flex sloupec height:100%) — obrazovky (Ukoly/Nadchazejici)
@@ -232,30 +590,34 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 		return () => window.removeEventListener("resize", upd);
 	}, []);
 
-	const shiftCur = (dir: number) => {
-		setCur((c) => {
-			const d = new Date(c);
-			if (mode === "day") d.setDate(d.getDate() + dir);
-			else if (mode === "week") d.setDate(d.getDate() + dir * 7);
+	const shiftCur = useCallback(
+		(dir: number) => {
+			const currentMode = modeRef.current;
+			const d = new Date(curRef.current);
+			if (currentMode === "day") d.setDate(d.getDate() + dir);
+			else if (currentMode === "week") d.setDate(d.getDate() + dir * 7);
 			else d.setMonth(d.getMonth() + dir, 1);
-			return d;
-		});
-	};
-	const goToday = () => {
-		const d = new Date();
+			commitNavigation(currentMode, d);
+		},
+		[commitNavigation],
+	);
+	const goToday = useCallback(() => {
+		const d = new Date(`${dateInTimeZone(userTimeZone)}T12:00:00`);
 		// Dnes v týdnu → snap kotvy na pondělí (prototyp calToday, ř. 2661).
-		if (mode === "week") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-		setCur(d);
+		if (modeRef.current === "week") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+		commitNavigation(modeRef.current, d);
 		const el = gridScrollRef.current;
 		if (el) {
-			const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+			const nowMin = minutesInTimeZone(new Date().toISOString(), userTimeZone) ?? 0;
 			el.scrollTop = Math.max(0, nowMin * PPM - 90);
 		}
-	};
+	}, [commitNavigation, PPM, userTimeZone]);
+	const calendarLanguage = i18n.language;
 
-	/** Dny zobrazeného období. Popisky přes Intl(i18n.language) — CS genitivy měsíců i EN. */
-	const { days, rangeLabel, monthBase } = useMemo(() => {
-		const lang = i18n.language;
+	/** Dny zobrazeného období + třídenní buffer pro plynulý trackpadový pás. */
+	// biome-ignore lint/correctness/useExhaustiveDependencies: i18n.language je mutabilní hodnota singletonu a změna jazyka musí invalidovat Intl formátovače
+	const { days, rangeLabel, monthBase, visibleDayCount, anchorIndex } = useMemo(() => {
+		const lang = calendarLanguage;
 		const dayMonth = (d: Date) =>
 			new Intl.DateTimeFormat(lang, { day: "numeric", month: "long" }).format(d);
 		const monthYear = (d: Date) =>
@@ -263,45 +625,66 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 		const weekdayLong = (d: Date) => new Intl.DateTimeFormat(lang, { weekday: "long" }).format(d);
 		if (mode === "day") {
 			const label = `${dayMonth(cur)} · ${weekdayLong(cur)}`;
-			return { days: [new Date(cur)], rangeLabel: label, monthBase: cur };
-		}
-		if (mode === "week") {
-			// Rolující týden od kotvy — bez snapu na pondělí (prototyp weekDates, ř. 2658).
 			const first = new Date(cur);
-			const list = Array.from({ length: 7 }, (_, i) => {
+			first.setDate(first.getDate() - CALENDAR_STRIP_BUFFER_DAYS);
+			const list = Array.from({ length: 1 + CALENDAR_STRIP_BUFFER_DAYS * 2 }, (_, i) => {
 				const d = new Date(first);
 				d.setDate(first.getDate() + i);
 				return d;
 			});
-			const last = list[6] ?? first;
+			return {
+				days: list,
+				rangeLabel: label,
+				monthBase: cur,
+				visibleDayCount: 1,
+				anchorIndex: CALENDAR_STRIP_BUFFER_DAYS,
+			};
+		}
+		if (mode === "week") {
+			// Kotva může být libovolný den; buffer se po snapu beze změny obrazu znovu vystředí.
+			const visibleFirst = new Date(cur);
+			const visibleLast = new Date(cur);
+			visibleLast.setDate(visibleLast.getDate() + 6);
+			const first = new Date(cur);
+			first.setDate(first.getDate() - CALENDAR_STRIP_BUFFER_DAYS);
+			const list = Array.from({ length: 7 + CALENDAR_STRIP_BUFFER_DAYS * 2 }, (_, i) => {
+				const d = new Date(first);
+				d.setDate(first.getDate() + i);
+				return d;
+			});
 			const label =
-				first.getMonth() === last.getMonth()
-					? `${first.getDate()}.–${last.getDate()}. ${monthYear(last)}`
-					: `${dayMonth(first)} – ${dayMonth(last)} ${last.getFullYear()}`;
-			return { days: list, rangeLabel: label, monthBase: first };
+				visibleFirst.getMonth() === visibleLast.getMonth()
+					? `${visibleFirst.getDate()}.–${visibleLast.getDate()}. ${monthYear(visibleLast)}`
+					: `${dayMonth(visibleFirst)} – ${dayMonth(visibleLast)} ${visibleLast.getFullYear()}`;
+			return {
+				days: list,
+				rangeLabel: label,
+				monthBase: visibleFirst,
+				visibleDayCount: 7,
+				anchorIndex: CALENDAR_STRIP_BUFFER_DAYS,
+			};
 		}
 		const base = new Date(cur.getFullYear(), cur.getMonth(), 1);
-		return { days: [], rangeLabel: monthYear(base), monthBase: base };
-	}, [mode, cur, i18n.language]);
+		return {
+			days: [],
+			rangeLabel: monthYear(base),
+			monthBase: base,
+			visibleDayCount: 0,
+			anchorIndex: 0,
+		};
+	}, [mode, cur, calendarLanguage]);
 
 	// Per-výskyt výjimky (R4): skipped výskyty se nekreslí, done se propíše.
-	const { data: ovr } = usePsQuery<{
-		task_id: string | null;
-		occ_date: string | null;
-		done: number | null;
-		skipped: number | null;
-	}>("SELECT task_id, occ_date, done, skipped FROM task_occurrence_overrides");
-	const ovrMap = useMemo(() => {
-		const m = new Map<string, { done: boolean; skipped: boolean }>();
-		for (const o of ovr ?? []) {
-			if (o.task_id && o.occ_date)
-				m.set(`${o.task_id}@${o.occ_date}`, {
-					done: !!o.done,
-					skipped: !!o.skipped,
-				});
-		}
-		return m;
-	}, [ovr]);
+	const { data: ovr } = usePsQuery<OccurrenceOverrideRow>(
+		`SELECT id, task_id, occ_date, done, skipped, override_due_date,
+		        override_start_date, override_start_timezone, override_duration_min, updated_at
+		 FROM task_occurrence_overrides`,
+	);
+	const { data: recurrencePrefixes } = usePsQuery<TaskRecurrencePrefixRow>(
+		`SELECT id, task_id, project_id, anchor_date, end_date, recurrence_rule,
+		        start_date, start_timezone, duration_min, created_by, version, created_at, updated_at
+		 FROM task_recurrence_prefixes`,
+	);
 
 	/** Úkoly viditelného rozsahu + virtuální výskyty opakování (port calTasks, ř. 2633). */
 	const calTasks = useMemo(() => {
@@ -314,40 +697,8 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 			fromI = isoOf(days[0] ?? new Date());
 			toI = isoOf(days[days.length - 1] ?? new Date());
 		}
-		const out: TaskRow[] = [...tasks];
-		for (const tk of tasks) {
-			const rule = parseRecurrenceRule(tk.recurrence_rule);
-			const base = tIso(tk);
-			if (!rule || !base || tk.completed_at) continue;
-			for (const od of expandOccurrences({
-				baseISO: base,
-				kind: rule.kind,
-				weekday: rule.weekday,
-				nth: rule.nth,
-				day: rule.day,
-				parity: rule.parity,
-				fromISO: fromI,
-				toISO: toI,
-				cap: 62,
-				until: rule.until,
-				count: rule.count,
-				doneCount: rule.doneCount,
-			})) {
-				if (od === base) continue;
-				const vid = occId(tk.id, od);
-				const ex = ovrMap.get(vid);
-				if (ex?.skipped) continue;
-				out.push({
-					...tk,
-					id: vid,
-					due_date: od,
-					start_date: tk.start_date ? `${od}T${tk.start_date.slice(11)}` : null,
-					completed_at: ex?.done ? new Date().toISOString() : null,
-				});
-			}
-		}
-		return out;
-	}, [tasks, mode, days, monthBase, ovrMap]);
+		return materializeRecurringTasks(tasks, ovr ?? [], fromI, toI, 62, recurrencePrefixes ?? []);
+	}, [tasks, mode, days, monthBase, ovr, recurrencePrefixes]);
 
 	// ── zkratky ←/→ / d / 1-3 (guard na otevřený detail — prototyp ř. 2228) ────
 	const { openId } = useTaskDetail();
@@ -372,28 +723,68 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-		// PPM v deps: po změně hustoty se handler převáže, aby goToday („d") scrolloval dle aktuální PPM.
-	}, [mode, PPM]);
+	}, [shiftCur, goToday, setMode]);
 
-	// Horizontální wheel navigace (port calWheel, ř. 2671) — mimo měsíc roluje po 1 dni (shiftCur(dir)).
+	const commitRollingOffset = useCallback(
+		(offset: number) => {
+			if (!offset || modeRef.current === "month") return;
+			const next = new Date(curRef.current);
+			next.setDate(next.getDate() + offset);
+			commitNavigation(modeRef.current, next);
+		},
+		[commitNavigation],
+	);
+
+	// Den a týden používají nativní pixelový posun uvnitř svého pásu. Wheel nad hlavičkou
+	// přepošleme do stejného scrolleru; měsíc si zachovává diskrétní navigaci po měsících.
 	const wheelAcc = useRef(0);
-	const onWheel = (e: React.WheelEvent) => {
-		if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-		wheelAcc.current += e.deltaX;
-		let steps = 0;
-		while (Math.abs(wheelAcc.current) >= 32 && steps < 8) {
-			const dir = wheelAcc.current > 0 ? 1 : -1;
-			if (mode === "month") shiftCur(dir);
-			else
-				setCur((c) => {
-					const d = new Date(c);
-					d.setDate(d.getDate() + dir);
-					return d;
-				});
-			wheelAcc.current -= dir * 32;
-			steps++;
-		}
-	};
+	const wheelOffset = useRef(0);
+	const wheelFrame = useRef<number | null>(null);
+	useEffect(
+		() => () => {
+			if (wheelFrame.current !== null) cancelAnimationFrame(wheelFrame.current);
+		},
+		[],
+	);
+	useEffect(() => {
+		const root = rootRef.current;
+		if (!root) return;
+		const onWheel = (event: WheelEvent) => {
+			if (modeRef.current !== "month") {
+				const strip = gridScrollRef.current;
+				if (!strip || strip.contains(event.target as Node)) return;
+				const horizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
+				if (
+					!horizontal &&
+					!(event.target as Element | null)?.closest?.("[data-calendar-scroll-mirror]")
+				)
+					return;
+				event.preventDefault();
+				strip.dispatchEvent(new Event(CALENDAR_STRIP_INTERACTION_EVENT));
+				if (horizontal) strip.scrollLeft += event.deltaX;
+				else strip.scrollTop += event.deltaY;
+				return;
+			}
+			if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+			event.preventDefault();
+			const progress = consumeCalendarWheel(wheelAcc.current, event.deltaX, event.deltaY);
+			wheelAcc.current = progress.remainder;
+			if (!progress.offset) return;
+			wheelOffset.current += progress.offset;
+			if (wheelFrame.current !== null) return;
+			wheelFrame.current = requestAnimationFrame(() => {
+				wheelFrame.current = null;
+				const offset = wheelOffset.current;
+				wheelOffset.current = 0;
+				if (!offset) return;
+				const next = new Date(curRef.current);
+				next.setMonth(next.getMonth() + offset, 1);
+				commitNavigation("month", next);
+			});
+		};
+		root.addEventListener("wheel", onWheel, { passive: false });
+		return () => root.removeEventListener("wheel", onWheel);
+	}, [commitNavigation]);
 
 	const borderColorOf = (tk: TaskRow) =>
 		calBorder === "project" ? projColor(tk.project_id) : `var(--w-p${tk.priority ?? 4})`;
@@ -402,30 +793,147 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	 * Zápis přesunu úkolu (drag): nový den + volitelně čas. min=null zachová původní čas
 	 * (prototyp monthDropTo, ř. 2710 — mění jen date); allDay=true čas smaže (pás CELÝ DEN, ř. 2700).
 	 */
-	const moveTask = async (id: string, iso: string, min: number | null, allDay = false) => {
-		if (id.includes("@")) return; // per-výskyt výjimky odloženy (RECONCILIACE §17)
-		const tk = tasks.find((x) => x.id === id);
-		if (!tk) return;
-		let start: string | null = null;
-		if (!allDay) {
-			if (min != null) start = `${iso}T${fmtMin(min)}:00`;
-			else if (startMin(tk) != null && tk.start_date) start = `${iso}T${tk.start_date.slice(11)}`;
-		}
-		const prevDue = tk.due_date;
-		const prevStart = tk.start_date;
-		const write = async (d: string | null, s: string | null) => {
-			await powerSync.execute("UPDATE tasks SET due_date = ?, start_date = ? WHERE id = ?", [
-				d,
-				s,
-				id,
-			]);
+	const commitMove = async (move: CalendarMovePlan) => {
+		const write = async (d: string | null, s: string | null, z: string | null) => {
+			await powerSync.execute(
+				"UPDATE tasks SET due_date = ?, start_date = ?, start_timezone = ? WHERE id = ?",
+				[d, s, z, move.taskId],
+			);
 		};
-		await write(iso, start);
-		// ⌘Z vrátí přesun v kalendáři (prototyp verzuje každou změnu tasks, ř. 2239).
+		await write(move.dueDate, move.startsAt, move.startTimezone);
 		pushUndo({
-			undo: () => write(prevDue, prevStart),
-			redo: () => write(iso, start),
+			undo: () => write(move.previousDueDate, move.previousStartsAt, move.previousStartTimezone),
+			redo: () => write(move.dueDate, move.startsAt, move.startTimezone),
 		});
+	};
+
+	const moveTask = async (id: string, iso: string, min: number | null, allDay = false) => {
+		const occurrence = parseOccId(id);
+		const taskId = occurrence?.taskId ?? id;
+		const baseTask = tasks.find((task) => task.id === taskId);
+		const tk = calTasks.find((task) => task.id === id) ?? baseTask;
+		if (!tk || !baseTask) return;
+		let start: string | null = null;
+		const zone = tk.start_timezone ?? userTimeZone;
+		let requestedTime: string | null = null;
+		if (!allDay) {
+			if (min != null) requestedTime = fmtMin(min);
+			else if (startMin(tk) != null && tk.start_date) {
+				const wallTime = tk.start_timezone
+					? wallTimeFromInstant(tk.start_date, tk.start_timezone)
+					: tk.start_date.slice(11);
+				requestedTime = wallTime?.slice(0, 5) ?? null;
+			}
+			start = requestedTime ? zonedDateTimeToIso(iso, requestedTime, zone) : null;
+		}
+		if (baseTask.recurrence_rule) {
+			const occurrenceDate = occurrence?.iso ?? tIso(baseTask);
+			if (!occurrenceDate) {
+				showToast(t("calendar.recurringDragUnsupported"));
+				return;
+			}
+			setPendingRecurrenceMove({
+				taskId,
+				input: {
+					occurrenceDate,
+					scope: "this_occurrence",
+					schedule: {
+						date: iso,
+						time: allDay ? null : requestedTime,
+						timeZone: allDay || !requestedTime ? null : zone,
+						durationMin: allDay || !requestedTime ? null : tk.duration_min,
+					},
+					dstPolicy: "next_valid",
+				},
+			});
+			return;
+		}
+		if (!allDay) {
+			if ((min != null || tk.start_date) && !start) {
+				showToast(t("addmodal.invalidLocalTime"));
+				return;
+			}
+		}
+		const nextZone = start ? zone : null;
+		const move: CalendarMovePlan = {
+			taskId,
+			dueDate: iso,
+			startsAt: start,
+			startTimezone: nextZone,
+			durationMin: tk.duration_min,
+			previousDueDate: tk.due_date,
+			previousStartsAt: tk.start_date,
+			previousStartTimezone: tk.start_timezone,
+		};
+		if (start) {
+			try {
+				const availability = await preflightTaskAvailability(id, {
+					startsAt: start,
+					durationMin: tk.duration_min,
+				});
+				const strictNonFocus = availability.conflicts.filter(
+					(conflict) => conflict.blocking && conflict.kind !== "focus",
+				);
+				if (strictNonFocus.length > 0) {
+					showToast(
+						t("calendar.availabilityStrictBlocked", {
+							names: [...new Set(strictNonFocus.map((conflict) => conflict.assigneeName))].join(
+								", ",
+							),
+						}),
+					);
+					return;
+				}
+				const focusConflicts = availability.conflicts.filter(
+					(conflict) => conflict.blocking && conflict.kind === "focus",
+				);
+				if (focusConflicts.length > 0) {
+					setPendingEmergencyMove({ move, conflicts: focusConflicts });
+					return;
+				}
+				const warnings = availability.conflicts.filter((conflict) => !conflict.blocking);
+				if (warnings.length > 0) {
+					showToast(
+						t("calendar.availabilityWarning", {
+							names: [...new Set(warnings.map((conflict) => conflict.assigneeName))].join(", "),
+						}),
+					);
+				}
+			} catch {
+				// Offline-first: záměr neztratíme. Serverový DB guard při synchronizaci stále
+				// odmítne nepovolený konflikt a uloží ho do Centra problémů.
+				showToast(t("calendar.availabilityOffline"));
+			}
+		}
+		await commitMove(move);
+	};
+
+	const confirmEmergencyMove = async () => {
+		const pending = pendingEmergencyMove;
+		const reason = emergencyReason.trim();
+		if (!pending || reason.length < 8 || emergencyBusy || !pending.move.startsAt) return;
+		emergencyBusyRef.current = true;
+		setEmergencyBusy(true);
+		try {
+			await createTaskAvailabilityOverrides(pending.move.taskId, {
+				overrides: pending.conflicts.map((conflict) => ({
+					id: crypto.randomUUID(),
+					blockId: conflict.blockId,
+					assigneeId: conflict.assigneeId,
+				})),
+				reason,
+				startsAt: pending.move.startsAt,
+				durationMin: pending.move.durationMin,
+			});
+			await commitMove(pending.move);
+			setPendingEmergencyMove(null);
+			showToast(t("calendar.emergencySaved"));
+		} catch {
+			showToast(t("calendar.emergencyFailed"));
+		} finally {
+			emergencyBusyRef.current = false;
+			setEmergencyBusy(false);
+		}
 	};
 
 	const chevron = (dir: -1 | 1) => (
@@ -443,9 +951,9 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 	return (
 		<div
 			ref={rootRef}
+			data-testid="calendar-root"
 			className="flex min-h-0 flex-col"
-			style={{ height: rootH }}
-			onWheel={onWheel}
+			style={{ height: rootH, overscrollBehaviorX: "none" }}
 		>
 			{/* toolbar — lišta s border-b (prototyp ř. 491–503) */}
 			<div
@@ -478,6 +986,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 					</button>
 				</div>
 				<span
+					data-testid="calendar-range-label"
 					className="whitespace-nowrap font-display font-extrabold text-ink capitalize"
 					style={{ fontSize: 16 }}
 				>
@@ -498,6 +1007,8 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 							key={k}
 							type="button"
 							onClick={() => setMode(k)}
+							aria-pressed={mode === k}
+							data-calendar-range={k}
 							className="rounded-md font-display font-semibold"
 							style={{
 								fontSize: 12,
@@ -586,7 +1097,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 													on={density === k}
 													onClick={() => {
 														setDensity(k);
-														localStorage.setItem(DENSITY_LS, k);
+														storageSet(DENSITY_LS, k);
 													}}
 												>
 													{l}
@@ -600,7 +1111,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 												onClick={() => {
 													const next: CalBorder = calBorder === "priority" ? "project" : "priority";
 													setCalBorder(next);
-													localStorage.setItem(BORDER_LS, next);
+													storageSet(BORDER_LS, next);
 												}}
 											>
 												<span
@@ -625,7 +1136,7 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 										on={planningOn}
 										onClick={() => {
 											setPlanningOn((v) => {
-												localStorage.setItem(PLANNING_LS, v ? "0" : "1");
+												storageSet(PLANNING_LS, v ? "0" : "1");
 												return !v;
 											});
 										}}
@@ -665,29 +1176,41 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 					{mode === "month" ? (
 						<CalendarMonth
 							tasks={calTasks}
+							availability={availability}
+							timeZone={userTimeZone}
 							controlledBase={monthBase}
 							borderColorOf={borderColorOf}
 							onOpenDay={(d) => {
-								setCur(d);
-								setMode("day");
+								storageSet(MODE_LS, "day");
+								commitNavigation("day", d);
 							}}
 							onDropDay={(id, iso, min) => void moveTask(id, iso, min)}
 						/>
 					) : mode === "week" && weekView === "cols" ? (
 						<WeekColumns
 							days={days}
+							visibleDayCount={visibleDayCount}
+							anchorIndex={anchorIndex}
 							calTasks={calTasks}
+							availability={availability}
+							timeZone={userTimeZone}
 							todayIso={todayIso}
 							borderColorOf={borderColorOf}
 							projColor={projColor}
 							onOpen={(tk) => open(tk.id)}
 							onDrop={(id, iso) => void moveTask(id, iso, null)}
+							scrollRef={gridScrollRef}
+							onAnchorOffset={commitRollingOffset}
 						/>
 					) : (
 						<TimeGrid
 							days={days}
+							visibleDayCount={visibleDayCount}
+							anchorIndex={anchorIndex}
 							calTasks={calTasks}
+							availability={availability}
 							todayIso={todayIso}
+							timeZone={userTimeZone}
 							PPM={PPM}
 							borderColorOf={borderColorOf}
 							projColor={projColor}
@@ -704,9 +1227,10 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 							}
 							onMove={moveTask}
 							onOpenDay={(iso) => {
-								setCur(fromISO(iso));
-								setMode("day");
+								storageSet(MODE_LS, "day");
+								commitNavigation("day", fromISO(iso));
 							}}
+							onAnchorOffset={commitRollingOffset}
 						/>
 					)}
 				</div>
@@ -714,6 +1238,88 @@ export function Calendar({ tasks }: { tasks: TaskRow[] }) {
 					<PlanningPanel tasks={tasks} todayIso={todayIso} projColor={projColor} onOpen={open} />
 				)}
 			</div>
+			{pendingRecurrenceMove && (
+				<RecurrenceMoveDialog
+					taskId={pendingRecurrenceMove.taskId}
+					input={pendingRecurrenceMove.input}
+					onClose={() => setPendingRecurrenceMove(null)}
+				/>
+			)}
+			{pendingEmergencyMove && (
+				<div
+					className="fixed inset-0 grid place-items-center bg-black/40 p-4"
+					style={{ zIndex: "var(--w-layer-critical)" }}
+				>
+					<div
+						ref={emergencyDialogRef}
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="focus-emergency-title"
+						className="w-full max-w-[520px] rounded-2xl border border-line bg-card p-5 shadow-2xl"
+					>
+						<div className="mb-1 flex items-start gap-3">
+							<div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-700">
+								<span aria-hidden>!</span>
+							</div>
+							<div>
+								<h2
+									id="focus-emergency-title"
+									className="font-display font-extrabold text-base text-ink"
+								>
+									{t("calendar.emergencyTitle")}
+								</h2>
+								<p className="mt-1 text-sm text-ink-2">{t("calendar.emergencyDesc")}</p>
+							</div>
+						</div>
+						<ul className="my-4 space-y-2" aria-label={t("calendar.emergencyConflicts")}>
+							{pendingEmergencyMove.conflicts.map((conflict) => (
+								<li
+									key={`${conflict.blockId}:${conflict.assigneeId}`}
+									className="rounded-xl bg-panel-2 px-3 py-2 text-sm text-ink"
+								>
+									<span className="font-semibold">{conflict.assigneeName}</span>
+									{conflict.label ? ` · ${conflict.label}` : ""}
+								</li>
+							))}
+						</ul>
+						<label
+							className="block font-display font-semibold text-sm text-ink"
+							htmlFor="focus-emergency-reason"
+						>
+							{t("calendar.emergencyReason")}
+						</label>
+						<textarea
+							ref={emergencyInputRef}
+							id="focus-emergency-reason"
+							value={emergencyReason}
+							onChange={(event) => setEmergencyReason(event.target.value)}
+							maxLength={500}
+							rows={3}
+							placeholder={t("calendar.emergencyReasonPlaceholder")}
+							className="mt-2 w-full resize-y rounded-xl border border-line bg-panel px-3 py-2 text-sm text-ink outline-none focus:border-brass"
+						/>
+						<p className="mt-1 text-xs text-ink-3">{t("calendar.emergencyAuditNote")}</p>
+						<div className="mt-5 flex justify-end gap-2">
+							<button
+								type="button"
+								disabled={emergencyBusy}
+								onClick={() => setPendingEmergencyMove(null)}
+								className="rounded-xl border border-line px-4 py-2 font-display font-semibold text-sm text-ink-2 hover:bg-panel-2 disabled:opacity-50"
+							>
+								{t("common.cancel")}
+							</button>
+							<button
+								type="button"
+								disabled={emergencyBusy || emergencyReason.trim().length < 8}
+								onClick={() => void confirmEmergencyMove()}
+								className="rounded-xl bg-amber-700 px-4 py-2 font-display font-semibold text-sm text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								{emergencyBusy ? t("calendar.emergencySaving") : t("calendar.emergencyConfirm")}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
@@ -796,35 +1402,71 @@ function GearChip({
 
 function WeekColumns({
 	days,
+	visibleDayCount,
+	anchorIndex,
 	calTasks,
+	availability,
+	timeZone,
 	todayIso,
 	borderColorOf,
 	projColor,
 	onOpen,
 	onDrop,
+	scrollRef,
+	onAnchorOffset,
 }: {
 	days: Date[];
+	visibleDayCount: number;
+	anchorIndex: number;
 	calTasks: TaskRow[];
+	availability: CalendarAvailabilityBlock[];
+	timeZone: string;
 	todayIso: string;
 	borderColorOf: (t: TaskRow) => string;
 	projColor: (id: string | null) => string;
 	onOpen: (t: TaskRow) => void;
 	onDrop: (id: string, iso: string) => void;
+	scrollRef: RefObject<HTMLDivElement | null>;
+	onAnchorOffset: (offset: number) => void;
 }) {
 	const { t } = useTranslation();
 	const uc = useUserColors();
+	const headerScrollRef = useRef<HTMLDivElement>(null);
+	const syncHeader = useCallback((left: number) => {
+		if (headerScrollRef.current) headerScrollRef.current.scrollLeft = left;
+	}, []);
+	const strip = useRollingCalendarStrip({
+		scrollRef,
+		visibleDays: visibleDayCount,
+		totalDays: days.length,
+		bufferDays: anchorIndex,
+		anchorKey: isoOf(days[anchorIndex] ?? new Date()),
+		onAnchorOffset,
+		onScrollSync: syncHeader,
+	});
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
 			{/* hlavičková lišta */}
-			<div className="flex flex-none border-line border-b">
-				{days.map((d) => {
+			<div
+				ref={headerScrollRef}
+				data-calendar-scroll-mirror
+				className="w-calendar-strip flex-none overflow-x-hidden border-line border-b"
+			>
+				<div className="flex" style={{ width: strip.contentWidth }}>
+				{days.map((d, index) => {
 					const iso = isoOf(d);
 					const isToday = iso === todayIso;
+					const isPrimary =
+						index >= anchorIndex && index < anchorIndex + visibleDayCount;
 					return (
 						<div
 							key={iso}
-							className="min-w-0 flex-1 border-line border-l text-center"
+							data-calendar-day-header={iso}
+							data-calendar-day-kind={calendarDayKind(d)}
+							data-calendar-primary={isPrimary ? "true" : "false"}
+							className={`${calendarDayClassName(d)} min-w-0 border-line border-l text-center`}
 							style={{
+								flex: `0 0 ${strip.dayWidth}px`,
 								padding: "7px 4px",
 								background: isToday ? "var(--w-brass-soft)" : undefined,
 							}}
@@ -851,28 +1493,52 @@ function WeekColumns({
 						</div>
 					);
 				})}
+				</div>
 			</div>
 			{/* ploché sloupce — flex:1 min-height:0 overflow auto (prototyp ř. 2607) */}
-			<div className="flex min-h-0 flex-1 items-stretch overflow-y-auto">
-				{days.map((d) => {
+			<div
+				ref={scrollRef}
+				data-calendar-strip="week-columns"
+				data-calendar-visible-days={visibleDayCount}
+				className="w-calendar-strip min-h-0 flex-1 overflow-auto"
+				style={{ overscrollBehaviorX: "none" }}
+				onScroll={strip.onScroll}
+				onWheel={strip.onInteractionStart}
+				onPointerDown={strip.onInteractionStart}
+			>
+				<div className="flex min-h-full items-stretch" style={{ width: strip.contentWidth }}>
+				{days.map((d, index) => {
 					const iso = isoOf(d);
 					const isToday = iso === todayIso;
-					const wknd = d.getDay() === 0 || d.getDay() === 6;
+					const isPrimary =
+						index >= anchorIndex && index < anchorIndex + visibleDayCount;
 					const list = calTasks
 						.filter((tk) => hit(tk, iso))
 						.sort((a, b) => (startMin(a) ?? -1) - (startMin(b) ?? -1));
+					const availabilityToday = availability
+						.map((block) => ({ block, segment: availabilitySegment(block, iso, timeZone) }))
+						.filter(
+							(
+								value,
+							): value is {
+								block: CalendarAvailabilityBlock;
+								segment: { start: number; end: number };
+							} => Boolean(value.segment),
+						)
+						.sort((left, right) => left.segment.start - right.segment.start);
 					return (
 						<div
+							role="region"
 							key={iso}
-							className="flex min-w-0 flex-1 flex-col border-line border-l"
+							data-calendar-day={iso}
+							data-calendar-day-kind={calendarDayKind(d)}
+							data-calendar-primary={isPrimary ? "true" : "false"}
+							className={`${calendarDayClassName(d)} flex min-w-0 flex-col border-line border-l`}
 							style={{
+								flex: `0 0 ${strip.dayWidth}px`,
 								gap: 4,
 								padding: "6px 4px",
-								background: isToday
-									? "rgba(198,138,62,.05)"
-									: wknd
-										? "rgba(120,120,140,.04)"
-										: undefined,
+								background: isToday ? "rgba(198,138,62,.05)" : undefined,
 							}}
 							onDragOver={(e) => e.preventDefault()}
 							onDrop={(e) => {
@@ -881,7 +1547,35 @@ function WeekColumns({
 								if (id) onDrop(id, iso);
 							}}
 						>
-							{list.length === 0 && (
+							{availabilityToday.map(({ block, segment }) => (
+								<div
+									key={`availability-${block.id}`}
+									role="note"
+									aria-label={`${t(`availability.kind.${block.kind ?? "unavailable"}`)}${block.approval_status === "pending" ? ` · ${t("availability.approval.pending")}` : ""} ${fmtMin(segment.start)}–${fmtMin(segment.end)}`}
+									style={{
+										border: `1px ${block.approval_status === "pending" ? "dashed" : "solid"} var(--w-brass)`,
+										borderRadius: 7,
+										padding: "5px 7px",
+										background:
+											block.kind === "focus"
+												? "repeating-linear-gradient(135deg, var(--w-brass-soft), var(--w-brass-soft) 6px, var(--w-card) 6px, var(--w-card) 12px)"
+												: "var(--w-panel-2)",
+										color: "var(--w-brass-text)",
+										fontSize: 10.5,
+									}}
+								>
+									<strong>
+										{t(`availability.kind.${block.kind ?? "unavailable"}`)}
+										{block.approval_status === "pending"
+											? ` · ${t("availability.approval.pending")}`
+											: ""}
+									</strong>
+									<div className="font-mono" style={{ marginTop: 2, fontSize: 9.5 }}>
+										{fmtMin(segment.start)}–{fmtMin(segment.end)}
+									</div>
+								</div>
+							))}
+							{list.length === 0 && availabilityToday.length === 0 && (
 								<div className="text-center" style={{ fontSize: 11, opacity: 0.5, marginTop: 8 }}>
 									—
 								</div>
@@ -890,10 +1584,17 @@ function WeekColumns({
 								const sm = startMin(tk);
 								const done = Boolean(tk.completed_at);
 								return (
-									// biome-ignore lint/a11y/useKeyWithClickEvents: drag chip; klávesnice řeší list view
 									<div
+										role="button"
+										tabIndex={0}
+										onKeyDown={(event) => {
+											if (event.key === "Enter" || event.key === " ") {
+												event.preventDefault();
+												event.currentTarget.click();
+											}
+										}}
 										key={tk.id}
-										draggable={!isVirtual(tk)}
+										draggable
 										onDragStart={(e) => e.dataTransfer.setData("text/plain", tk.id)}
 										onClick={() => onOpen(tk)}
 										title={`${tk.name ?? ""} · ${sm != null ? `${fmtMin(sm)}–${fmtMin(endMin(tk))}` : t("calendar.allDay")}`}
@@ -954,9 +1655,10 @@ function WeekColumns({
 							})}
 						</div>
 					);
-				})}
-			</div>
-		</div>
+					})}
+						</div>
+					</div>
+				</div>
 	);
 }
 
@@ -964,8 +1666,12 @@ function WeekColumns({
 
 function TimeGrid({
 	days,
+	visibleDayCount,
+	anchorIndex,
 	calTasks,
+	availability,
 	todayIso,
+	timeZone,
 	PPM,
 	borderColorOf,
 	projColor,
@@ -975,10 +1681,15 @@ function TimeGrid({
 	onAdd,
 	onMove,
 	onOpenDay,
+	onAnchorOffset,
 }: {
 	days: Date[];
+	visibleDayCount: number;
+	anchorIndex: number;
 	calTasks: TaskRow[];
+	availability: CalendarAvailabilityBlock[];
 	todayIso: string;
+	timeZone: string;
 	PPM: number;
 	borderColorOf: (t: TaskRow) => string;
 	projColor: (id: string | null) => string;
@@ -988,6 +1699,7 @@ function TimeGrid({
 	onAdd: (iso: string, min: number | null, dur?: number, days?: number) => void;
 	onMove: (id: string, iso: string, min: number | null, allDay?: boolean) => Promise<void>;
 	onOpenDay: (iso: string) => void;
+	onAnchorOffset: (offset: number) => void;
 }) {
 	const { t } = useTranslation();
 	const { metaOf } = useRowMeta();
@@ -995,7 +1707,9 @@ function TimeGrid({
 	const H = 1440 * PPM;
 	const weekGridRef = useRef<HTMLDivElement>(null);
 	const allDayRef = useRef<HTMLDivElement>(null);
-	const [nowMin, setNowMin] = useState(() => new Date().getHours() * 60 + new Date().getMinutes());
+	const [nowMin, setNowMin] = useState(
+		() => minutesInTimeZone(new Date().toISOString(), timeZone) ?? 0,
+	);
 	const [create, setCreate] = useState<DragCreate | null>(null);
 	const [drag, setDrag] = useState<BlockDrag | null>(null);
 	const dragRef = useRef<BlockDrag | null>(null);
@@ -1012,20 +1726,50 @@ function TimeGrid({
 		x: number;
 		y: number;
 	} | null>(null);
+	const strip = useRollingCalendarStrip({
+		scrollRef,
+		visibleDays: visibleDayCount,
+		totalDays: days.length,
+		bufferDays: anchorIndex,
+		viewportInset: CALENDAR_GUTTER_WIDTH,
+		anchorKey: isoOf(days[anchorIndex] ?? new Date()),
+		onAnchorOffset,
+	});
 
 	// now-line refresh (60 s)
 	useEffect(() => {
-		const id = setInterval(
-			() => setNowMin(new Date().getHours() * 60 + new Date().getMinutes()),
-			60_000,
-		);
+		const id = setInterval(() => {
+			setNowMin(minutesInTimeZone(new Date().toISOString(), timeZone) ?? 0);
+		}, 60_000);
 		return () => clearInterval(id);
-	}, []);
+	}, [timeZone]);
 
-	// výchozí scroll na 7:00
-	useEffect(() => {
+	// První vstup začíná na 06:00. Datumové změny ani async data tuto orientaci neresetují.
+	const verticalScrollInitialized = useRef(false);
+	const previousPPM = useRef(PPM);
+	useLayoutEffect(() => {
 		const el = scrollRef.current;
-		if (el) el.scrollTop = Math.max(0, 7 * 60 * PPM - 8);
+		if (!el) return;
+		const apply = () => {
+			if (!verticalScrollInitialized.current) {
+				// Při prvním layoutu ještě rodič nemusí mít finální výšku; počkáme na skutečný overflow.
+				if (el.scrollHeight <= el.clientHeight + 1) return;
+				el.scrollTop = calendarInitialScrollTop(PPM);
+				verticalScrollInitialized.current = el.scrollTop > 0;
+				previousPPM.current = PPM;
+			} else if (previousPPM.current !== PPM) {
+				el.scrollTop *= PPM / previousPPM.current;
+				previousPPM.current = PPM;
+			}
+		};
+		apply();
+		const observer = new ResizeObserver(apply);
+		observer.observe(el);
+		const frame = requestAnimationFrame(apply);
+		return () => {
+			cancelAnimationFrame(frame);
+			observer.disconnect();
+		};
 	}, [PPM, scrollRef]);
 
 	// Esc zavře triage popover přetečených celodenních úkolů (konzistence s ostatními overlayi).
@@ -1045,20 +1789,19 @@ function TimeGrid({
 	const snap = (m: number) => Math.max(0, Math.min(1425, Math.round(m / 15) * 15));
 
 	/** Sloupec dle clientX (cross-day drag, ř. 2691) — POZOR na 46px hodinovou osu vlevo. */
-	const GUTTER = 46;
 	const colAt = (clientX: number): string | null => {
-		const el = weekGridRef.current;
+		const el = scrollRef.current;
 		if (!el) return null;
 		const r = el.getBoundingClientRect();
-		const usable = r.width - GUTTER;
-		if (usable <= 0) return null;
-		const idx = Math.floor(((clientX - r.left - GUTTER) / usable) * isos.length);
+		if (strip.dayWidth <= 0) return null;
+		const idx = Math.floor(
+			(el.scrollLeft + clientX - r.left - CALENDAR_GUTTER_WIDTH) / strip.dayWidth,
+		);
 		return isos[Math.max(0, Math.min(isos.length - 1, idx))] ?? null;
 	};
 
 	// ── blok: move/resize (port calBlockDown/_calMove/_calUp) ──
 	const blockDown = (tk: TaskRow, mode2: BlockDrag["mode"]) => (e: ReactPointerEvent) => {
-		if (isVirtual(tk)) return;
 		e.preventDefault();
 		e.stopPropagation();
 		const s0 = startMin(tk) ?? 0;
@@ -1142,17 +1885,28 @@ function TimeGrid({
 				// bottom může přejet přes dny → přesné trvání + počet dní
 				const off = Math.max(0, dayOffsetISO(cur.iso0, cur.endIso));
 				const dur = Math.max(15, off * 1440 + cur.e - cur.s0);
+				const zone = tk.start_timezone ?? timeZone;
+				const start = zonedDateTimeToIso(cur.iso0, `${fmtMin(cur.s0)}:00`, zone);
+				if (!start) {
+					showToast(t("addmodal.invalidLocalTime"));
+					return;
+				}
 				await powerSync.execute(
-					"UPDATE tasks SET start_date = ?, duration_min = ?, days = ? WHERE id = ?",
-					[`${cur.iso0}T${fmtMin(cur.s0)}:00`, dur, off + 1, cur.id],
+					"UPDATE tasks SET start_date = ?, start_timezone = ?, duration_min = ?, days = ? WHERE id = ?",
+					[start, zone, dur, off + 1, cur.id],
 				);
 			} else {
 				// top: posun začátku v rámci dne (konec beze změny)
-				await powerSync.execute("UPDATE tasks SET start_date = ?, duration_min = ? WHERE id = ?", [
-					`${cur.iso0}T${fmtMin(cur.s)}:00`,
-					cur.e0 - cur.s,
-					cur.id,
-				]);
+				const zone = tk.start_timezone ?? timeZone;
+				const start = zonedDateTimeToIso(cur.iso0, `${fmtMin(cur.s)}:00`, zone);
+				if (!start) {
+					showToast(t("addmodal.invalidLocalTime"));
+					return;
+				}
+				await powerSync.execute(
+					"UPDATE tasks SET start_date = ?, start_timezone = ?, duration_min = ? WHERE id = ?",
+					[start, zone, cur.e0 - cur.s, cur.id],
+				);
 			}
 		};
 		window.addEventListener("pointermove", onMoveEv);
@@ -1230,7 +1984,6 @@ function TimeGrid({
 
 	// ── celodenní chip: pointer-drag → do mřížky = časový úkol, nad pásem = přesun dne ──
 	const allDayChipDown = (tk: TaskRow) => (e: ReactPointerEvent) => {
-		if (isVirtual(tk)) return;
 		e.preventDefault();
 		e.stopPropagation();
 		const x0 = e.clientX;
@@ -1276,29 +2029,29 @@ function TimeGrid({
 		onAdd(iso, snap((e.clientY - rect.top) / PPM));
 	};
 
-	// ── data pro pás CELÝ DEN ── JEDEN per-den rozpočet (ALLDAY_PER_COL karet).
-	// Vícedenní celodenní = tenké linky protínající sloupce; v plném dni linka na tom segmentu
-	// nekreslí a událost spadne do „+N" toho dne (odtud otevřitelná — i přetečená vícedenní).
-	const isWeekBand = isos.length > 1;
+	// ── data pro kompaktní pás CELÝ DEN. Vícedenní položka má jeden čitelný pruh,
+	// nikdy anonymní čáru; další položky se skládají do „+N" místo růstu celé sekce.
+	const isWeekBand = visibleDayCount > 1;
 	const isoKey = isos.join("|");
 	// biome-ignore lint/correctness/useExhaustiveDependencies: isoKey pokrývá isos (stabilní klíč).
 	const allDay = useMemo(() => {
 		type Seg = { tk: TaskRow; row: number; x0: number; x1: number };
 		type Col = { chips: TaskRow[]; overflow: TaskRow[] };
 		const alldayTk = calTasks.filter((tk) => startMin(tk) == null);
-		// Den: vše celodenní přes hit() jako chipy (bez linek); rozpočet 3, zbytek „+N".
+		// Den: každý bufferovaný den má vlastní chipy; viditelná kotva tak zůstane plná i během swipu.
 		if (!isWeekBand) {
-			const iso = isos[0] ?? todayIso;
-			const hits = alldayTk.filter((tk) => hit(tk, iso));
 			const cols = new Map<string, Col>();
-			cols.set(iso, {
-				chips: hits.slice(0, ALLDAY_PER_COL),
-				overflow: hits.slice(ALLDAY_PER_COL),
-			});
+			for (const iso of isos) {
+				const hits = alldayTk.filter((tk) => hit(tk, iso));
+				cols.set(iso, {
+					chips: hits.slice(0, ALLDAY_PER_COL),
+					overflow: hits.slice(ALLDAY_PER_COL),
+				});
+			}
 			return { segs: [] as Seg[], stripRows: 0, cols };
 		}
 		const n = isos.length;
-		// jednodenní celodenní chipy per sloupec + vícedenní celodenní (linky)
+		// jednodenní celodenní chipy per sloupec + vícedenní celodenní pruhy
 		const singleByIso = new Map<string, TaskRow[]>();
 		for (const iso of isos) singleByIso.set(iso, []);
 		const multi: TaskRow[] = [];
@@ -1325,9 +2078,7 @@ function TimeGrid({
 			}
 			if (!placed) rows.push([tk]);
 		}
-		const shown = rows.slice(0, MAX_LINE_ROWS);
-		// den je plný, když jednodenní chipy vyčerpají rozpočet → tam se linka nekreslí
-		const isFull = (iso: string) => (singleByIso.get(iso)?.length ?? 0) >= ALLDAY_PER_COL;
+		const shown = rows.slice(0, MAX_ALLDAY_BAR_ROWS);
 		const segs: Seg[] = [];
 		shown.forEach((row, ri) => {
 			for (const tk of row) {
@@ -1336,7 +2087,7 @@ function TimeGrid({
 				let run: number | null = null;
 				for (let i = 0; i < n; i++) {
 					const iso = isos[i] ?? "";
-					const draw = iso >= s && iso <= e && !isFull(iso);
+					const draw = iso >= s && iso <= e;
 					if (draw) {
 						if (run == null) run = i;
 					} else if (run != null) {
@@ -1403,8 +2154,9 @@ function TimeGrid({
 					const list = allDay.cols.get(adPopover.iso)?.overflow ?? [];
 					return (
 						<>
-							{/* biome-ignore lint/a11y/useKeyWithClickEvents: overlay pro zavření */}
-							<div
+							<button
+								type="button"
+								aria-label={t("common.close")}
 								className="fixed inset-0"
 								style={{ zIndex: 89 }}
 								onClick={() => setAdPopover(null)}
@@ -1436,7 +2188,6 @@ function TimeGrid({
 								{list.map((tk) => {
 									const done = Boolean(tk.completed_at);
 									return (
-										// biome-ignore lint/a11y/useKeyWithClickEvents: tažení/klik řeší allDayChipDown
 										<div
 											key={tk.id}
 											onPointerDown={(e) => {
@@ -1501,17 +2252,67 @@ function TimeGrid({
 						</>
 					);
 				})()}
-			{/* hlavička dnů (jen týden; den view ji nemá — ř. 2846) */}
-			{isos.length > 1 && (
-				<div className="flex flex-none" style={{ marginLeft: 46 }}>
-					{days.map((d) => {
+			{/* Jeden společný 2D scroller: hlavička, Celý den i časy sdílejí tutéž
+			    horizontální souřadnici. Sticky prvky řeší jen orientaci, ne synchronizaci. */}
+			<div
+				ref={scrollRef}
+				data-calendar-strip={visibleDayCount === 7 ? "week-grid" : "day-grid"}
+				data-calendar-visible-days={visibleDayCount}
+				data-calendar-initial-hour="6"
+				className="w-calendar-strip min-h-0 min-w-0 flex-1 overflow-auto"
+				style={{ overscrollBehaviorX: "none" }}
+				onScroll={strip.onScroll}
+				onWheel={strip.onInteractionStart}
+				onPointerDown={strip.onInteractionStart}
+			>
+				<div
+					style={{
+						width: strip.contentWidth + CALENDAR_GUTTER_WIDTH,
+						minHeight: H + 40,
+						position: "relative",
+					}}
+				>
+				{/* Hlavička dnů je součást stejného pásu a drží se nahoře. */}
+				{visibleDayCount > 1 && (
+					<div
+						className="flex"
+						style={{
+							position: "sticky",
+							top: 0,
+							height: CALENDAR_WEEK_HEADER_HEIGHT,
+							width: "100%",
+							zIndex: 20,
+							background: "var(--w-card)",
+						}}
+					>
+						<div
+							style={{
+								position: "sticky",
+								left: 0,
+								width: CALENDAR_GUTTER_WIDTH,
+								flex: "none",
+								zIndex: 2,
+								background: "var(--w-card)",
+							}}
+						/>
+						<div className="flex" style={{ width: strip.contentWidth }}>
+						{days.map((d, index) => {
 						const iso = isoOf(d);
 						const isToday = iso === todayIso;
+						const isPrimary =
+							index >= anchorIndex && index < anchorIndex + visibleDayCount;
 						return (
 							<div
 								key={iso}
-								className="min-w-0 flex-1 text-center"
-								style={{ padding: "6px 0 4px" }}
+								data-calendar-day-header={iso}
+								data-calendar-day-kind={calendarDayKind(d)}
+								data-calendar-primary={isPrimary ? "true" : "false"}
+								className={`${calendarDayClassName(d)} min-w-0 text-center`}
+								style={{
+									flex: `0 0 ${strip.dayWidth}px`,
+									padding: "6px 0 4px",
+									background: isToday ? "var(--w-brass-soft)" : undefined,
+								}}
 							>
 								<div
 									className="font-display font-bold uppercase"
@@ -1534,22 +2335,34 @@ function TimeGrid({
 								</div>
 							</div>
 						);
-					})}
-				</div>
-			)}
+						})}
+						</div>
+					</div>
+				)}
 
-			{/* pás CELÝ DEN (ř. 2798–2826) */}
+			{/* Kompaktní pás CELÝ DEN — sticky pod hlavičkou, max. jedna karta na den. */}
 			<div
 				ref={allDayRef}
-				className="relative flex flex-none items-stretch border-line border-b"
-				style={{ minHeight: 30, background: "var(--w-panel-2)" }}
+				data-calendar-all-day
+				className="flex items-stretch border-line border-b"
+				style={{
+					position: "sticky",
+					top: visibleDayCount > 1 ? CALENDAR_WEEK_HEADER_HEIGHT : 0,
+					width: "100%",
+					minHeight: 30,
+					zIndex: 19,
+					background: "var(--w-panel-2)",
+				}}
 			>
 				{/* gutter popisek vertikálně i horizontálně na středu (prototyp ř. 2824) */}
 				<div
 					className="flex items-center justify-center text-center font-mono uppercase"
 					style={{
-						width: 46,
+						position: "sticky",
+						left: 0,
+						width: CALENDAR_GUTTER_WIDTH,
 						flex: "none",
+						zIndex: 2,
 						fontSize: 8.5,
 						color: "var(--w-ink-3)",
 						letterSpacing: ".02em",
@@ -1559,39 +2372,66 @@ function TimeGrid({
 				>
 					{t("calendar.allDayBand")}
 				</div>
-				<div className="relative min-w-0 flex-1">
-					{/* vícedenní celodenní = tenké překryvné linky protínající sloupce (strop MAX_LINE_ROWS).
-					    V plném dni se segment linky nekreslí — událost je v „+N" toho dne (viz allDay memo). */}
+				<div className="relative" style={{ width: strip.contentWidth }}>
+					{/* Vícedenní položka je popsaný kompaktní pruh, ne anonymní barevná čára. */}
 					{allDay.stripRows > 0 && (
-						<div className="relative" style={{ height: allDay.stripRows * LINE_ROW_H + 4 }}>
-							{allDay.segs.map((sg, i) => {
+						<div
+							className="relative"
+							style={{ height: allDay.stripRows * ALLDAY_BAR_ROW_HEIGHT + 2 }}
+						>
+							{allDay.segs.map((sg) => {
 								const done = Boolean(sg.tk.completed_at);
 								const leftPct = (sg.x0 / isos.length) * 100;
 								const wPct = ((sg.x1 - sg.x0 + 1) / isos.length) * 100;
-								const col = done
-									? "var(--w-line)"
-									: (uc(sg.tk.id, sg.tk.color) as string) || borderColorOf(sg.tk);
+								const rangeLabel = t("today.daysCount", { count: sg.tk.days ?? 1 });
+								const labelDay = Math.max(sg.x0, Math.min(sg.x1, anchorIndex));
+								const labelInset = (labelDay - sg.x0) * strip.dayWidth;
 								return (
-									// biome-ignore lint/a11y/useKeyWithClickEvents: linka, tap = detail / drag = přesun (allDayChipDown)
 									<div
-										key={`${sg.tk.id}:${i}`}
+										key={`${sg.tk.id}:${sg.x0}:${sg.x1}`}
 										data-adchip
+										data-calendar-multiday-bar
 										onPointerDown={allDayChipDown(sg.tk)}
 										title={`${sg.tk.name ?? ""} · ${t("today.daysCount", { count: sg.tk.days ?? 1 })}`}
-										className="absolute flex cursor-grab items-center"
+										className="absolute flex cursor-grab items-center overflow-hidden rounded-[6px] border border-line bg-card"
 										style={{
-											top: sg.row * LINE_ROW_H + 2,
+											top: sg.row * ALLDAY_BAR_ROW_HEIGHT + 1,
 											left: `calc(${leftPct}% + 2px)`,
 											width: `calc(${wPct}% - 4px)`,
-											height: LINE_ROW_H,
+											height: 22,
+											gap: 5,
+											padding: "0 7px",
+											borderLeft: `3px solid ${done ? "var(--w-line)" : borderColorOf(sg.tk)}`,
+											background:
+												!done && uc(sg.tk.id, sg.tk.color)
+													? tcTint(uc(sg.tk.id, sg.tk.color) as string)
+													: undefined,
 											opacity: done ? 0.55 : 1,
 											zIndex: 3,
 										}}
 									>
 										<span
-											className="w-full"
-											style={{ height: LINE_H, borderRadius: 999, background: col }}
-										/>
+											className="flex min-w-0 items-center"
+											style={{
+												width: Math.max(0, strip.dayWidth - 14),
+												flex: "none",
+												marginLeft: labelInset,
+												gap: 5,
+											}}
+										>
+											<span
+												className="min-w-0 flex-1 truncate font-display font-semibold"
+												style={{ fontSize: 11, color: done ? "var(--w-ink-3)" : "var(--w-ink)" }}
+											>
+												{sg.tk.name}
+											</span>
+											<span
+												className="shrink-0 font-mono"
+												style={{ fontSize: 9, color: "var(--w-ink-3)" }}
+											>
+												{rangeLabel}
+											</span>
+										</span>
 									</div>
 								);
 							})}
@@ -1599,25 +2439,42 @@ function TimeGrid({
 					)}
 					{/* celodenní chipy per sloupec — jednodenní (týden) / vše přes hit (den); rozpočet + „+N" */}
 					<div className="flex">
-						{isos.map((iso) => {
+						{isos.map((iso, index) => {
 							const colM = allDay.cols.get(iso) ?? { chips: [], overflow: [] };
 							const list = colM.chips;
 							const overflowN = colM.overflow.length;
 							const isToday = iso === todayIso;
+							const day = days[index] ?? fromISO(iso);
+							const isPrimary =
+								index >= anchorIndex && index < anchorIndex + visibleDayCount;
 							return (
-								// biome-ignore lint/a11y/useKeyWithClickEvents: klik do prázdna = nový úkol
 								<div
+									role="button"
+									tabIndex={isPrimary ? 0 : -1}
+									onKeyDown={(event) => {
+										if (event.key === "Enter" || event.key === " ") {
+											event.preventDefault();
+											event.currentTarget.click();
+										}
+									}}
 									key={iso}
+									data-calendar-day={iso}
+									data-calendar-day-kind={calendarDayKind(day)}
+									data-calendar-primary={isPrimary ? "true" : "false"}
+									data-calendar-track="all-day"
 									onClick={(e) => {
 										if ((e.target as HTMLElement).closest("[data-adchip]")) return;
 										onAdd(iso, null);
 									}}
-									className="flex min-w-0 flex-1 flex-col border-line border-l"
+									className={`${calendarDayClassName(day)} flex min-w-0 flex-col border-line border-l`}
 									style={{
-										gap: 3,
-										padding: 4,
+										flex: `0 0 ${strip.dayWidth}px`,
+										position: "relative",
+										gap: 2,
+										padding: "3px 4px",
 										background: isToday ? "var(--w-brass-soft)" : undefined,
 										minHeight: 26,
+										height: 30,
 										cursor: "pointer",
 									}}
 									onDragOver={(e) => e.preventDefault()}
@@ -1625,21 +2482,20 @@ function TimeGrid({
 										e.preventDefault();
 										const id = e.dataTransfer.getData("text/plain");
 										// drop do pásu = celodenní, čas se maže (prototyp dropToAllDay, ř. 2706)
-										if (id && !id.includes("@")) void onMove(id, iso, null, true);
+										if (id) void onMove(id, iso, null, true);
 									}}
 								>
 									{list.map((tk) => {
 										const done = Boolean(tk.completed_at);
 										return (
-											// biome-ignore lint/a11y/useKeyWithClickEvents: chip, klik = detail
 											<div
 												key={tk.id}
 												data-adchip
 												onPointerDown={allDayChipDown(tk)}
-												className="flex cursor-grab items-center rounded-[6px] border border-line bg-card"
-												style={{
-													gap: 5,
-													padding: "3px 7px 3px 8px",
+											className="flex h-6 cursor-grab items-center overflow-hidden rounded-[6px] border border-line bg-card"
+											style={{
+												gap: 4,
+												padding: overflowN > 0 ? "2px 29px 2px 6px" : "2px 6px",
 													borderLeft: `3px solid ${done ? "var(--w-line)" : borderColorOf(tk)}`,
 													opacity: done ? 0.55 : 1,
 													background:
@@ -1648,7 +2504,7 @@ function TimeGrid({
 															: undefined,
 												}}
 											>
-												<CalCheck t={tk} size={13} />
+											<CalCheck t={tk} size={12} />
 												<span
 													className="shrink-0 rounded-full"
 													style={{
@@ -1658,18 +2514,12 @@ function TimeGrid({
 													}}
 												/>
 												<span
-													className="font-display font-semibold"
-													style={{
-														fontSize: 11.5,
-														color: done ? "var(--w-ink-3)" : "var(--w-ink)",
-														textDecoration: done ? "line-through" : "none",
-														display: "-webkit-box",
-														WebkitLineClamp: 2,
-														WebkitBoxOrient: "vertical",
-														overflow: "hidden",
-														overflowWrap: "break-word",
-														wordBreak: "break-word",
-													}}
+												className="min-w-0 flex-1 truncate font-display font-semibold"
+												style={{
+													fontSize: 11,
+													color: done ? "var(--w-ink-3)" : "var(--w-ink)",
+													textDecoration: done ? "line-through" : "none",
+												}}
 												>
 													{tk.name}
 													{tk.recurrence ? " ↻" : ""}
@@ -1686,13 +2536,14 @@ function TimeGrid({
 												const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
 												setAdPopover({ iso, x: r.left, y: r.bottom + 4 });
 											}}
-											className="rounded-[6px] text-left font-display font-semibold text-brass-text hover:bg-brass-soft"
-											style={{ fontSize: 10.5, padding: "2px 8px" }}
-										>
-											+{overflowN} {t("calendar.moreCount", { count: overflowN })}
+										aria-label={`+${overflowN} ${t("calendar.moreCount", { count: overflowN })}`}
+										className="absolute rounded-[6px] bg-panel-2 font-display font-semibold text-brass-text hover:bg-brass-soft"
+										style={{ top: 4, right: 4, zIndex: 2, fontSize: 10, padding: "2px 5px" }}
+									>
+										+{overflowN}
 										</button>
 									)}
-									{isos.length === 1 && list.length === 0 && (
+									{visibleDayCount === 1 && isPrimary && list.length === 0 && (
 										<span
 											className="font-body"
 											style={{
@@ -1708,19 +2559,26 @@ function TimeGrid({
 							);
 						})}
 					</div>
-				</div>
+			</div>
 			</div>
 
-			{/* mřížka — flex:1 min-height:0, scroll uvnitř (prototyp ř. 2860, bez maxHeight) */}
-			<div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+			{/* Časová osa a dny jsou ve stejném scrollovacím souřadném systému. */}
+			<div className="flex" style={{ width: "100%" }}>
 				<div
-					ref={weekGridRef}
-					className="flex"
-					style={{ height: H + 40, position: "relative", paddingBottom: 40 }}
+					className="w-calendar-time-gutter flex-none"
+					style={{
+						position: "sticky",
+						left: 0,
+						width: CALENDAR_GUTTER_WIDTH,
+						zIndex: 8,
+						background: "var(--w-card)",
+					}}
+				>
+				<div
+					style={{ height: H + 40, position: "relative" }}
 				>
 					{/* hodinová osa (0–24 vč.; 00:00 s výjimkou top:2 — prototyp ř. 2832) */}
-					<div style={{ width: 46, flex: "none", position: "relative" }}>
-						{Array.from({ length: 25 }, (_, h) => (
+						{HOURS.map((h) => (
 							<span
 								key={h}
 								className="absolute right-1.5 font-mono text-ink-3"
@@ -1730,10 +2588,22 @@ function TimeGrid({
 							</span>
 						))}
 					</div>
-					{days.map((d) => {
+				</div>
+				<div
+					ref={weekGridRef}
+					className="flex"
+					style={{
+						height: H + 40,
+						width: strip.contentWidth,
+						position: "relative",
+						paddingBottom: 40,
+					}}
+				>
+					{days.map((d, index) => {
 						const iso = isoOf(d);
 						const isToday = iso === todayIso;
-						const wknd = d.getDay() === 0 || d.getDay() === 6;
+						const isPrimary =
+							index >= anchorIndex && index < anchorIndex + visibleDayCount;
 						// segment [segS, segE) úkolu v TOMTO sloupci (min od půlnoci sloupce).
 						// Vícedenní časovaný úkol = spojité segmenty: start→půlnoc, plné dny, půlnoc→konec.
 						// Při resize „bottom" použij živý konec z dragu (přes sloupce).
@@ -1789,10 +2659,31 @@ function TimeGrid({
 							}),
 						);
 						const hiddenByLane = timed.filter((tk) => (lanes.get(tk.id)?.lane ?? 0) >= MAX_LANES);
+						const availabilityToday = availability
+							.map((block) => ({ block, segment: availabilitySegment(block, iso, timeZone) }))
+							.filter(
+								(
+									value,
+								): value is {
+									block: CalendarAvailabilityBlock;
+									segment: { start: number; end: number };
+								} => Boolean(value.segment),
+							);
 						return (
-							// biome-ignore lint/a11y/useKeyWithClickEvents: klik do prázdna = nový úkol s časem
 							<div
+								role="button"
+								tabIndex={isPrimary ? 0 : -1}
+								onKeyDown={(event) => {
+									if (event.key === "Enter" || event.key === " ") {
+										event.preventDefault();
+										event.currentTarget.click();
+									}
+								}}
 								key={iso}
+								data-calendar-day={iso}
+								data-calendar-day-kind={calendarDayKind(d)}
+								data-calendar-primary={isPrimary ? "true" : "false"}
+								data-calendar-track="time"
 								onClick={gridClickAdd(iso)}
 								onPointerDown={createDown(iso)}
 								onDragOver={(e) => e.preventDefault()}
@@ -1803,23 +2694,65 @@ function TimeGrid({
 									const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 									void onMove(id, iso, snap((e.clientY - rect.top) / PPM));
 								}}
-								className="relative min-w-0 flex-1 border-line border-l"
+								className={`${calendarDayClassName(d)} relative min-w-0 border-line border-l`}
 								style={{
-									background: isToday
-										? "var(--w-brass-soft)"
-										: wknd
-											? "rgba(120,120,140,.045)"
-											: undefined,
+									flex: `0 0 ${strip.dayWidth}px`,
+									background: isToday ? "var(--w-brass-soft)" : undefined,
 								}}
 							>
 								{/* hodinové linky */}
-								{Array.from({ length: 25 }, (_, h) => (
+								{HOURS.map((h) => (
 									<div
 										key={h}
 										className="absolute right-0 left-0 border-line border-t"
 										style={{ top: h * 60 * PPM }}
 									/>
 								))}
+								{/* Dostupnost je netasková vrstva: bez checkboxu, dragu a priority. */}
+								{availabilityToday.map(({ block, segment }) => {
+									const kind = block.kind ?? "unavailable";
+									const height = Math.max(5, (segment.end - segment.start) * PPM);
+									const label = `${t(`availability.kind.${kind}`)}${block.approval_status === "pending" ? ` · ${t("availability.approval.pending")}` : ""}`;
+									return (
+										<div
+											key={`availability-${block.id}`}
+											role="note"
+											aria-label={`${label} ${fmtMin(segment.start)}–${fmtMin(segment.end)}`}
+											title={`${label} · ${fmtMin(segment.start)}–${fmtMin(segment.end)}`}
+											style={{
+												pointerEvents: "none",
+												position: "absolute",
+												left: 2,
+												right: 2,
+												top: segment.start * PPM,
+												height,
+												zIndex: 1,
+												border: `1px ${kind === "focus" || block.approval_status === "pending" ? "dashed" : "solid"} var(--w-brass)`,
+												borderRadius: 5,
+												background:
+													kind === "focus"
+														? "repeating-linear-gradient(135deg, color-mix(in srgb, var(--w-brass) 13%, transparent), color-mix(in srgb, var(--w-brass) 13%, transparent) 7px, transparent 7px, transparent 14px)"
+														: "color-mix(in srgb, var(--w-ink-3) 8%, transparent)",
+												color: "var(--w-brass-text)",
+												overflow: "hidden",
+											}}
+										>
+											{height >= 22 && (
+												<span
+													className="font-display"
+													style={{
+														display: "inline-block",
+														padding: "2px 5px",
+														fontSize: 9.5,
+														fontWeight: 750,
+													}}
+												>
+													{label} · {fmtMin(segment.start)}–{fmtMin(segment.end)}
+												</span>
+											)}
+										</div>
+									);
+								})}
 								{/* now line + štítek (ř. 2624) */}
 								{isToday && (
 									<div
@@ -1976,7 +2909,6 @@ function TimeGrid({
 										isVirtual(tk) ? { ...tk, id: parseOccId(tk.id)?.taskId ?? tk.id } : tk,
 									).avatars[0]?.initials;
 									return (
-										// biome-ignore lint/a11y/useKeyWithClickEvents: pointer drag blok; klik = detail
 										<div
 											key={tk.id}
 											data-evblock={tk.id}
@@ -2145,9 +3077,9 @@ function TimeGrid({
 										} else subs.push({ s: x.s, e: x.e, n: 1 });
 									}
 									const W = 100 / 3.8;
-									return subs.map((g, gi) => (
+									return subs.map((g) => (
 										<button
-											key={`more-${g.s}-${gi}`}
+											key={`more-${g.s}-${g.e}`}
 											type="button"
 											title={`${g.n} ${t("calendar.moreInTime")}`}
 											onClick={(e) => {
@@ -2180,6 +3112,8 @@ function TimeGrid({
 				</div>
 			</div>
 		</div>
+	</div>
+</div>
 	);
 }
 
@@ -2240,8 +3174,15 @@ function PlanningPanel({
 					{list.map((tk) => {
 						const due = rowDue(tk, t);
 						return (
-							// biome-ignore lint/a11y/useKeyWithClickEvents: drag karta do mřížky; klik = detail
 							<div
+								role="button"
+								tabIndex={0}
+								onKeyDown={(event) => {
+									if (event.key === "Enter" || event.key === " ") {
+										event.preventDefault();
+										event.currentTarget.click();
+									}
+								}}
 								key={tk.id}
 								draggable
 								onDragStart={(e) => e.dataTransfer.setData("text/plain", tk.id)}

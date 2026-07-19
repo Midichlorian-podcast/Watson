@@ -3,8 +3,9 @@ import { WatsonCard } from "../components/WatsonCard";
 
 interface WatsonCtx {
 	toggleWatson: () => void;
+	watsonOpen: boolean;
 }
-const Ctx = createContext<WatsonCtx>({ toggleWatson: () => {} });
+const Ctx = createContext<WatsonCtx>({ toggleWatson: () => {}, watsonOpen: false });
 
 /**
  * Watson — vycentrovaná karta „Zeptej se Watsona" (AI příkazy napříč aplikací),
@@ -14,7 +15,7 @@ const Ctx = createContext<WatsonCtx>({ toggleWatson: () => {} });
 export function WatsonProvider({ children }: { children: ReactNode }) {
 	const [open, setOpen] = useState(false);
 	return (
-		<Ctx.Provider value={{ toggleWatson: () => setOpen((o) => !o) }}>
+		<Ctx.Provider value={{ toggleWatson: () => setOpen((o) => !o), watsonOpen: open }}>
 			{children}
 			{open && <WatsonCard onClose={() => setOpen(false)} />}
 		</Ctx.Provider>

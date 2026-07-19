@@ -1,17 +1,27 @@
 import { useQuery as usePsQuery } from "@powersync/react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+	type CSSProperties,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useState,
+} from "react";
+import { KpiCard } from "../components/KpiCard";
 import { PeekPanel, type PeekTarget } from "../components/PeekPanel";
+import { RadarPanel } from "../components/RadarPanel";
 import { useSession } from "../lib/auth-client";
+import { kpi, useAllReady } from "../lib/dataState";
 import { initials } from "../lib/format";
 import { inboxProjectIds, isInboxTask } from "../lib/inbox";
 import { useAllMembers, useFlowsOverview, useGoalsOverview } from "../lib/overview";
 import type { TaskRow } from "../lib/powersync/AppSchema";
-import { kpi, useAllReady } from "../lib/dataState";
 import { useProjectsWithState } from "../lib/projects";
 import { useTaskDetail } from "../lib/taskDetail";
 import { todayISO } from "../lib/tasks";
+import { deviceTimeZone } from "../lib/timeZone";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailDigest, useOpenMailThread } from "../mail/state";
 
@@ -83,6 +93,7 @@ function NavyAvatar({ text }: { text: string }) {
 export function Velin() {
 	const { t, i18n } = useTranslation();
 	const navigate = useNavigate();
+	const { firma } = useSearch({ from: "/velin" });
 	const { open } = useTaskDetail();
 	const { data: session } = useSession();
 	const { data: workspaces } = useWorkspaces();
@@ -95,7 +106,19 @@ export function Velin() {
 	const digest = useMailDigest();
 	const openMailThread = useOpenMailThread();
 	const urgMails = (digest?.items ?? []).filter((x) => x.flag === "p1" || x.flag === "p2");
-	const [firm, setFirm] = useState<string | null>(null); // velFirm
+	const [firm, setFirmState] = useState<string | null>(firma ?? null); // velFirm
+	useEffect(() => setFirmState(firma ?? null), [firma]);
+	const setFirm = useCallback(
+		(next: string | null) => {
+			setFirmState(next);
+			void navigate({
+				to: "/velin",
+				search: (current) => ({ ...current, firma: next ?? undefined }),
+				replace: true,
+			});
+		},
+		[navigate],
+	);
 	// peek — náhled položky na místě (feedback: neodvádět z Velína pryč)
 	const [peek, setPeek] = useState<PeekTarget | null>(null);
 	// „dnešek" z tikajícího zdroje — jinak u dlouho otevřené karty (přes půlnoc)
@@ -134,7 +157,7 @@ export function Velin() {
 	const firmsWs = useMemo(() => (workspaces ?? []).filter((w) => !w.isPersonal), [workspaces]);
 
 	const view = useMemo(() => {
-		const tdy = todayISO();
+		const tdy = dayKey;
 		const inboxIds = inboxProjectIds(projects);
 		const projById = new Map(projects.map((p) => [p.id, p]));
 		const wsOfT = (tk: TaskRow) =>
@@ -289,12 +312,26 @@ export function Velin() {
 	]);
 
 	const todayLabel = useMemo(() => {
-		const d = new Date();
+		const d = new Date(`${dayKey}T12:00:00`);
 		const wd = new Intl.DateTimeFormat(i18n.language, {
 			weekday: "short",
 		}).format(d);
 		return `${wd} ${d.getDate()}. ${d.getMonth() + 1}.`;
 	}, [i18n.language, dayKey]);
+	const metricTimeZone = useMemo(deviceTimeZone, []);
+	const metricDate = useMemo(
+		() =>
+			new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium" }).format(
+				new Date(`${dayKey}T12:00:00`),
+			),
+		[i18n.language, dayKey],
+	);
+	const selectedFirmName = firmsWs.find((workspace) => workspace.id === firm)?.name;
+	const metricScope = t("metrics.scopeCompanies", {
+		scope: selectedFirmName ?? t("metrics.allCompanies"),
+	});
+	const metricPeriod = t("metrics.currentState", { date: metricDate });
+	const mailFreshness = digest ? t("metrics.mailDemoFreshness") : t("metrics.mailUnavailable");
 
 	// Dokud workspaces nedorazí (studený start přímo na /velin), NEjde o odepření,
 	// jen o načítání — locked screen by oprávněnému vedení jinak na okamžik problikl.
@@ -422,26 +459,87 @@ export function Velin() {
 				})}
 			</div>
 
-			{/* KPI řádek */}
+			<RadarPanel
+				workspaceId={firm}
+				onOpenTask={open}
+				onOpenDecision={(id, workspaceId) => {
+					setActiveWs(workspaceId);
+					void navigate({ to: "/meets", search: { decision: id, prostor: workspaceId } });
+				}}
+			/>
+
+			{/* KPI mají vlastní viditelný datový kontrakt; zásadní omezení nejsou schovaná v tooltipu. */}
 			<div
-				className="flex flex-wrap font-mono text-ink-2"
-				style={{ gap: 14, marginBottom: 14, fontSize: 11.5 }}
+				className="grid gap-3.5"
+				style={{
+					gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 190px), 1fr))",
+					marginBottom: 14,
+				}}
 			>
-				<span>
-					{t("velin.kpiOpen")}: <b className="font-display">{kpi(ready, view.kOpen)}</b>
-				</span>
-				<span style={{ color: "var(--w-overdue)" }}>
-					{t("velin.kpiOverdue")}: <b className="font-display">{kpi(ready, view.kOv)}</b>
-				</span>
-				<span>
-					{t("velin.kpiUnread")}: <b className="font-display">{digest ? digest.unread : "–"}</b>
-				</span>
-				<span>
-					{t("velin.kpiUrgent")}: <b className="font-display">{digest ? urgMails.length : "–"}</b>
-				</span>
-				<span>
-					{t("velin.kpiRisk")}: <b className="font-display">{kpi(ready, view.kRisk)}</b>
-				</span>
+				<KpiCard
+					compact
+					value={kpi(ready, view.kOpen)}
+					label={t("velin.kpiOpen")}
+					definition={{
+						scope: metricScope,
+						period: metricPeriod,
+						timeZone: metricTimeZone,
+						exclusions: t("velin.excludeTasks"),
+						formula: t("velin.formulaOpen"),
+					}}
+				/>
+				<KpiCard
+					compact
+					value={kpi(ready, view.kOv)}
+					label={t("velin.kpiOverdue")}
+					color="var(--w-overdue)"
+					definition={{
+						scope: metricScope,
+						period: metricPeriod,
+						timeZone: metricTimeZone,
+						exclusions: t("velin.excludeTasks"),
+						formula: t("velin.formulaOverdue"),
+					}}
+				/>
+				<KpiCard
+					compact
+					value={digest ? String(digest.unread) : "–"}
+					label={t("velin.kpiUnread")}
+					definition={{
+						scope: t("velin.scopeMailDemo"),
+						period: metricPeriod,
+						timeZone: metricTimeZone,
+						exclusions: t("velin.excludeUnread"),
+						formula: t("velin.formulaUnread"),
+						freshness: mailFreshness,
+					}}
+				/>
+				<KpiCard
+					compact
+					value={digest ? String(digest.urgent) : "–"}
+					label={t("velin.kpiUrgent")}
+					color="var(--w-brass-text)"
+					definition={{
+						scope: t("velin.scopeMailDemo"),
+						period: metricPeriod,
+						timeZone: metricTimeZone,
+						exclusions: t("velin.excludeUrgent"),
+						formula: t("velin.formulaUrgent"),
+						freshness: mailFreshness,
+					}}
+				/>
+				<KpiCard
+					compact
+					value={kpi(ready, view.kRisk)}
+					label={t("velin.kpiRisk")}
+					definition={{
+						scope: metricScope,
+						period: metricPeriod,
+						timeZone: metricTimeZone,
+						exclusions: t("velin.excludeGoals"),
+						formula: t("velin.formulaRisk"),
+					}}
+				/>
 			</div>
 
 			{/* grid karet */}
@@ -793,6 +891,9 @@ function Row({
 	pad?: string;
 }) {
 	return (
+		// Biome neumí odvodit, že role, tabIndex i klávesová obsluha jsou přítomné
+		// současně právě tehdy, když je řádek interaktivní.
+		// biome-ignore lint/a11y/noStaticElementInteractions: podmíněná interaktivita má shodně podmíněnou sémantiku i klávesnici
 		<div
 			onClick={onClick}
 			role={onClick ? "button" : undefined}

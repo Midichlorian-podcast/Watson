@@ -1,7 +1,5 @@
-# F1 (CC-P0-18) — blokující brána: typecheck, reálný lint, testy, build, audit.
-# Druhý job zvedne ephemeral PostgreSQL, aplikuje migrace a pustí contract test
-# (registr ↔ schéma ↔ sync rules) + drizzle smoke. verify:reminders a verify:rbac
-# potřebují seed/běžící API — zůstávají lokální (pnpm verify:db / verify:rbac).
+# F1 (CC-P0-18) — blokující brána: typecheck, lint, testy, build, audit a úplná
+# integrační sada proti čistému PostgreSQL + skutečně běžícímu API ve dvou 2FA režimech.
 name: CI
 
 on:
@@ -9,13 +7,20 @@ on:
     branches: [main]
   pull_request:
 
+# CI pouze čte repozitář; kompromitovaný krok nesmí získat write token.
+permissions:
+  contents: read
+
 jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      # Externí actions jsou připnuté na ověřené immutable SHA, ne na pohyblivý tag.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
           cache: pnpm
@@ -25,10 +30,19 @@ jobs:
       - run: pnpm test
       - run: pnpm --filter @watson/web test:corpus
       - run: pnpm build
-      # produkční závislosti bez known high/critical (F0 gate; moderate zatím tolerujeme)
-      - run: pnpm audit --prod --audit-level high
+      # Produkční závislosti bez known high/critical. Sanitizovaný report se
+      # uchová i při stop-ship nálezu, aby release rozhodnutí mělo důkaz.
+      - run: pnpm verify:dependency-audit
+      - name: Upload dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dependency-audit-production
+          path: artifacts/dependency-audit.json
+          if-no-files-found: error
+          retention-days: 30
 
-  db-contract:
+  api-integration:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -47,13 +61,14 @@ jobs:
     env:
       DATABASE_URL: postgres://watson:watson@localhost:5432/watson
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @watson/db db:migrate
-      - run: pnpm --filter @watson/api verify:contract
-      - run: pnpm --filter @watson/api verify:drizzle
+      - run: bash scripts/ci-api-integration.sh

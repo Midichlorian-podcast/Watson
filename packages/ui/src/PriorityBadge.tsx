@@ -19,7 +19,7 @@ export function PriorityBadge({
 				"inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs font-semibold text-ink-2",
 				className,
 			)}
-			aria-label={`Priorita P${priority}`}
+			title={`Priorita P${priority}`}
 		>
 			<span
 				className="h-1.5 w-1.5 rounded-full"

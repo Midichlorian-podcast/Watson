@@ -2,6 +2,9 @@ packages:
   - "apps/*"
   - "packages/*"
 
+overrides:
+  "@esbuild-kit/core-utils>esbuild": "0.25.12"
+
 # esbuild potřebuje postinstall pro nativní binárku (Vite, tsx).
 # wa-sqlite NEbuildíme (nese předkompilovanou WASM; build by vyžadoval emscripten).
 allowBuilds:

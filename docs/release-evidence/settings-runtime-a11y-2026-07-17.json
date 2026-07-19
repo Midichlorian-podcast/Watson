@@ -1,0 +1,381 @@
+{
+  "createdAt": "2026-07-17T01:13:31.502Z",
+  "browsers": [
+    "chromium",
+    "webkit"
+  ],
+  "pages": 8,
+  "reducedMotion": true,
+  "keyboard": [
+    {
+      "browser": "chromium",
+      "taskCardLayering": true,
+      "dialogTabStops": 14,
+      "focusRestored": true,
+      "mailThreadKeyboard": true,
+      "separatorBefore": 389,
+      "separatorAfter": 409
+    },
+    {
+      "browser": "webkit",
+      "taskCardLayering": true,
+      "dialogTabStops": 14,
+      "focusRestored": true,
+      "mailThreadKeyboard": true,
+      "separatorBefore": 389,
+      "separatorAfter": 409
+    }
+  ],
+  "reflow": [
+    {
+      "browser": "chromium",
+      "results": [
+        {
+          "route": "/",
+          "overflow": false,
+          "hasMain": true
+        },
+        {
+          "route": "/mail",
+          "overflow": false,
+          "hasMain": true
+        },
+        {
+          "route": "/nastaveni",
+          "overflow": false,
+          "hasMain": true
+        }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "results": [
+        {
+          "route": "/",
+          "overflow": false,
+          "hasMain": true
+        },
+        {
+          "route": "/mail",
+          "overflow": false,
+          "hasMain": true
+        },
+        {
+          "route": "/nastaveni",
+          "overflow": false,
+          "hasMain": true
+        }
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "browser": "chromium",
+      "results": [
+        {
+          "section": "profil",
+          "width": 390,
+          "urlSection": "profil",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "tym",
+          "width": 390,
+          "urlSection": "tym",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "zabezpeceni",
+          "width": 390,
+          "urlSection": "zabezpeceni",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "data",
+          "width": 390,
+          "urlSection": "data",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "integrace",
+          "width": 390,
+          "urlSection": "integrace",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "oznameni",
+          "width": 390,
+          "urlSection": "oznameni",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "vzhled",
+          "width": 390,
+          "urlSection": "vzhled",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "profil",
+          "width": 1440,
+          "urlSection": "profil",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "tym",
+          "width": 1440,
+          "urlSection": "tym",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "zabezpeceni",
+          "width": 1440,
+          "urlSection": "zabezpeceni",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "data",
+          "width": 1440,
+          "urlSection": "data",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "integrace",
+          "width": 1440,
+          "urlSection": "integrace",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "oznameni",
+          "width": 1440,
+          "urlSection": "oznameni",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "vzhled",
+          "width": 1440,
+          "urlSection": "vzhled",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        }
+      ],
+      "legacyMailAdminLink": true,
+      "roleMenuEscapeFocus": true
+    },
+    {
+      "browser": "webkit",
+      "results": [
+        {
+          "section": "profil",
+          "width": 390,
+          "urlSection": "profil",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "tym",
+          "width": 390,
+          "urlSection": "tym",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "zabezpeceni",
+          "width": 390,
+          "urlSection": "zabezpeceni",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "data",
+          "width": 390,
+          "urlSection": "data",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "integrace",
+          "width": 390,
+          "urlSection": "integrace",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "oznameni",
+          "width": 390,
+          "urlSection": "oznameni",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "vzhled",
+          "width": 390,
+          "urlSection": "vzhled",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "profil",
+          "width": 1440,
+          "urlSection": "profil",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "tym",
+          "width": 1440,
+          "urlSection": "tym",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "zabezpeceni",
+          "width": 1440,
+          "urlSection": "zabezpeceni",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "data",
+          "width": 1440,
+          "urlSection": "data",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "integrace",
+          "width": 1440,
+          "urlSection": "integrace",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "oznameni",
+          "width": 1440,
+          "urlSection": "oznameni",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        },
+        {
+          "section": "vzhled",
+          "width": 1440,
+          "urlSection": "vzhled",
+          "activeLink": true,
+          "heading": true,
+          "overflow": false,
+          "violations": [],
+          "events": []
+        }
+      ],
+      "legacyMailAdminLink": true,
+      "roleMenuEscapeFocus": true
+    }
+  ],
+  "failureCounts": {
+    "overflow": 0,
+    "missingMain": 0,
+    "violations": 0,
+    "runtimeErrors": 0,
+    "settings": 0
+  },
+  "failures": {
+    "overflow": [],
+    "missingMain": [],
+    "violations": [],
+    "runtimeErrors": [],
+    "settings": []
+  }
+}

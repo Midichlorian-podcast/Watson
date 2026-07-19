@@ -1,0 +1,61 @@
+{
+  "createdAt": "2026-07-17T00:12:04.610Z",
+  "browsers": [
+    "chromium",
+    "webkit"
+  ],
+  "results": [
+    {
+      "browser": "chromium",
+      "signIn": true,
+      "initialSync": true,
+      "offlineLocalCreate": true,
+      "offlineTrustState": true,
+      "trustStateMobileReflow": true,
+      "serverWriteHeldOffline": true,
+      "reconnectUpload": true,
+      "editRoundTrip": true,
+      "moveRoundTrip": true,
+      "rejectionCaptured": true,
+      "syncProblemTrustState": true,
+      "rejectionDiscarded": true,
+      "retryResolved": true,
+      "addDialogA11y": true,
+      "taskDetailA11y": true,
+      "twoFactorEnrollment": true,
+      "twoFactorRecoveryRotation": true,
+      "meetingPlanTranscriptCommit": true,
+      "meetingDecisionLog": true,
+      "meetingReviewA11y": true,
+      "backupEncryptedDownload": true,
+      "backupDryRun": true,
+      "backupRestoreApply": true
+    },
+    {
+      "browser": "webkit",
+      "signIn": true,
+      "initialSync": true,
+      "offlineLocalCreate": true,
+      "offlineTrustState": true,
+      "trustStateMobileReflow": true,
+      "serverWriteHeldOffline": true,
+      "reconnectUpload": true,
+      "editRoundTrip": true,
+      "moveRoundTrip": true,
+      "rejectionCaptured": true,
+      "syncProblemTrustState": true,
+      "rejectionDiscarded": true,
+      "retryResolved": true,
+      "addDialogA11y": true,
+      "taskDetailA11y": true,
+      "twoFactorEnrollment": true,
+      "twoFactorRecoveryRotation": true,
+      "meetingPlanTranscriptCommit": true,
+      "meetingDecisionLog": true,
+      "meetingReviewA11y": true,
+      "backupEncryptedDownload": true,
+      "backupDryRun": true,
+      "backupRestoreApply": true
+    }
+  ]
+}

@@ -68,6 +68,61 @@ export type ProjectLayout = (typeof PROJECT_LAYOUTS)[number];
 export const PROJECT_KINDS = ["flow", "goal", "cycle"] as const;
 export type ProjectKind = (typeof PROJECT_KINDS)[number];
 
+/**
+ * Lehká startovní přednastavení projektu. Nejsou to verzované šablony: pouze při založení
+ * zvolí smysluplný typ, výchozí pohled a sadu stavů; projekt je potom zcela běžný a upravitelný.
+ */
+export const PROJECT_PRESETS = ["blank", "team_pipeline", "delivery", "recurring"] as const;
+export type ProjectPreset = (typeof PROJECT_PRESETS)[number];
+export const PROJECT_PRESET_DEFINITIONS: Record<
+	ProjectPreset,
+	{
+		kind: ProjectKind;
+		layout: ProjectLayout;
+		statuses: ReadonlyArray<{ name: string; isDone: boolean }>;
+	}
+> = {
+	blank: {
+		kind: "flow",
+		layout: "list",
+		statuses: [
+			{ name: "K udělání", isDone: false },
+			{ name: "Probíhá", isDone: false },
+			{ name: "Hotovo", isDone: true },
+		],
+	},
+	team_pipeline: {
+		kind: "flow",
+		layout: "board",
+		statuses: [
+			{ name: "Příjem", isDone: false },
+			{ name: "Naplánováno", isDone: false },
+			{ name: "Probíhá", isDone: false },
+			{ name: "Ke kontrole", isDone: false },
+			{ name: "Hotovo", isDone: true },
+		],
+	},
+	delivery: {
+		kind: "goal",
+		layout: "board",
+		statuses: [
+			{ name: "Plán", isDone: false },
+			{ name: "Probíhá", isDone: false },
+			{ name: "Ke kontrole", isDone: false },
+			{ name: "Hotovo", isDone: true },
+		],
+	},
+	recurring: {
+		kind: "cycle",
+		layout: "calendar",
+		statuses: [
+			{ name: "Připraveno", isDone: false },
+			{ name: "Probíhá", isDone: false },
+			{ name: "Hotovo", isDone: true },
+		],
+	},
+};
+
 /** Stav projektu (Cloud Design): Aktivní / Pozastavený / Archiv / Hotovo. */
 export const PROJECT_STATUSES = [
 	"active",
@@ -76,6 +131,17 @@ export const PROJECT_STATUSES = [
 	"done",
 ] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+/**
+ * Volitelné podmíněné milníky projektu. Stav milníku se nikdy neukládá ručně:
+ * vždy se odvozuje z autoritativních úkolů projektu.
+ */
+export const PROJECT_MILESTONE_CONDITIONS = [
+	"task_completed",
+	"completed_count",
+	"all_tasks_completed",
+] as const;
+export type ProjectMilestoneCondition = (typeof PROJECT_MILESTONE_CONDITIONS)[number];
 
 /** Postupy (štafeta) — stav běžící instance řetězce. */
 export const CHAIN_STATES = ["active", "done", "canceled", "on_hold"] as const;
@@ -142,6 +208,10 @@ export const REMINDER_TYPES = [
 ] as const;
 export type ReminderType = (typeof REMINDER_TYPES)[number];
 
+/** Režim reakce na blokaci úkolu nebo konflikt dostupnosti. */
+export const TASK_CONFLICT_POLICIES = ["warning", "strict"] as const;
+export type TaskConflictPolicy = (typeof TASK_CONFLICT_POLICIES)[number];
+
 /** Notifikační kanály (MVP: push + e-mail; in_app pro inbox). */
 export const NOTIFICATION_CHANNELS = ["push", "email", "in_app"] as const;
 export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
@@ -164,8 +234,8 @@ export const AI_SUGGESTION_STATUS = [
 ] as const;
 export type AiSuggestionStatus = (typeof AI_SUGGESTION_STATUS)[number];
 
-/** Aktér auditní události (člověk vs AI). */
-export const ACTOR_TYPES = ["user", "ai"] as const;
+/** Aktér auditní události (člověk, AI nebo automatická systémová změna). */
+export const ACTOR_TYPES = ["user", "ai", "system"] as const;
 export type ActorType = (typeof ACTOR_TYPES)[number];
 
 /** Vlastník uloženého filtru / palety. */

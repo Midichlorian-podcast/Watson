@@ -1,6 +1,16 @@
 import { PowerSyncDatabase } from "@powersync/web";
+import { API_URL } from "../api";
 import { queryClient } from "../queryClient";
+import { storageGet, storageKeys, storageRemove, storageSet } from "../storage";
+import { withCrossWindowLock } from "../windowCoordinator";
+import { browserSupportsSafeMultiWindowData } from "../windowSurfaces";
 import { AppSchema } from "./AppSchema";
+import {
+	assertPowerSyncStartup,
+	connectBeforePublish,
+	deleteIndexedDatabase,
+	isReusablePowerSyncStatus,
+} from "./connectionLifecycle";
 import { WatsonConnector } from "./connector";
 
 /**
@@ -20,6 +30,8 @@ import { WatsonConnector } from "./connector";
 
 const LAST_USER_KEY = "watson.device.lastUser";
 const LEGACY_WIPED_KEY = "watson.device.legacyDbWiped";
+const ENCRYPTION_MIGRATED_PREFIX = "watson.device.dbEncrypted.v1.";
+const PLAINTEXT_CLEANUP_PREFIX = "watson.device.plaintextDbCleanup.v1.";
 
 /** Vzhledové preference přežijí změnu identity; VŠE ostatní watson* se maže. */
 const COSMETIC_KEYS = new Set<string>([
@@ -43,10 +55,15 @@ const COSMETIC_KEYS = new Set<string>([
 
 // HMR pojistka: re-exekuce modulu (Vite) nesmí zahodit běžící instanci — jinak
 // by konzumenti po HMR viděli powerSync undefined (pád Sidebar/useStatus).
-const hmr = globalThis as {
+type PowerSyncHmrState = {
 	__watsonPowerSync?: PowerSyncDatabase;
 	__watsonUserHash?: string | null;
 };
+
+// Produkční stránka nesmí vystavovat živý databázový objekt na globalThis.
+// Globální úložiště je potřeba pouze ve Vite dev režimu, kde drží instanci přes HMR.
+const hmr: PowerSyncHmrState =
+	import.meta.env?.DEV === true ? (globalThis as PowerSyncHmrState) : {};
 
 // Živá vazba — nastaví ji initPowerSyncForUser dřív, než se vyrenderuje router.
 export let powerSync: PowerSyncDatabase = hmr.__watsonPowerSync as PowerSyncDatabase;
@@ -70,29 +87,109 @@ async function userHash(userId: string): Promise<string> {
 }
 
 function wipeSensitiveLocalState() {
-	for (const key of Object.keys(localStorage)) {
-		if (key.startsWith("watson") && !COSMETIC_KEYS.has(key)) localStorage.removeItem(key);
+	for (const key of storageKeys()) {
+		if (key.startsWith("watson") && !COSMETIC_KEYS.has(key)) storageRemove(key);
 	}
 	queryClient.clear();
 }
 
 /** Jednorázově vyčistí legacy sdílený watson.db (data všech dřívějších přihlášení). */
 async function wipeLegacySharedDb() {
-	if (localStorage.getItem(LEGACY_WIPED_KEY) === "1") return;
+	if (storageGet(LEGACY_WIPED_KEY) === "1") return;
 	try {
-		const legacy = new PowerSyncDatabase({
-			schema: AppSchema,
-			database: { dbFilename: "watson.db" },
-		});
-		await legacy.disconnectAndClear();
-		await legacy.close();
-		// disconnectAndClear smaže řádky, ale IndexedDB soubor (wa-sqlite VFS)
-		// zůstává — odstraň i ten, ať po sdílené DB nezbude nic.
-		indexedDB.deleteDatabase("watson.db");
+		// Databázi neotvírat: wa-sqlite VFS drží IndexedDB handle až do konce
+		// stránky a fyzické deleteDatabase by pak zůstalo zablokované.
+		await deleteIndexedDatabase("watson.db");
+		storageSet(LEGACY_WIPED_KEY, "1");
 	} catch (err) {
 		console.warn("[powersync] čištění legacy watson.db selhalo:", err);
 	}
-	localStorage.setItem(LEGACY_WIPED_KEY, "1");
+}
+
+async function fetchLocalDataKey(): Promise<string> {
+	const response = await fetch(`${API_URL}/api/me/local-data-key`, {
+		credentials: "include",
+		cache: "no-store",
+	});
+	if (!response.ok) throw new Error(`local_data_key_http_${response.status}`);
+	const body = (await response.json()) as { key?: unknown; version?: unknown };
+	if (typeof body.key !== "string" || body.key.length < 32 || body.version !== 1) {
+		throw new Error("local_data_key_invalid");
+	}
+	return body.key;
+}
+
+/**
+ * Jednorázový přechod ze staré nešifrované per-user DB. Nejprve synchronně
+ * odešle CELOU lokální CRUD frontu; teprve potom cache smaže. Při offline stavu
+ * nebo serverové chybě migrace failne a původní DB i neodeslané změny zůstanou
+ * nedotčené — aplikace nabídne retry místo tiché ztráty dat.
+ */
+async function migratePlaintextDb(h: string): Promise<string> {
+	const marker = `${ENCRYPTION_MIGRATED_PREFIX}${h}`;
+	const cleanupMarker = `${PLAINTEXT_CLEANUP_PREFIX}${h}`;
+	const plaintextFilename = `watson-${h}.db`;
+	const encryptedFilename = `watson-${h}-encrypted-v2.db`;
+	const state = storageGet(marker);
+	// Hodnota 1 pochází z dřívější verze, která šifrovala původní filename.
+	if (state === "1") return plaintextFilename;
+	if (state === "2") {
+		if (storageGet(cleanupMarker) === "1") {
+			try {
+				// Při novém startu už starý wa-sqlite VFS handle neexistuje.
+				await deleteIndexedDatabase(plaintextFilename, indexedDB, 1_000);
+				storageRemove(cleanupMarker);
+			} catch (error) {
+				// Jiná otevřená karta může úklid dočasně blokovat; data už byla
+				// logicky vyčištěna a pokus se zopakuje při příštím startu.
+				console.warn("[powersync] odložený úklid plaintext DB zatím neproběhl", {
+					name: error instanceof Error ? error.name : "UnknownError",
+				});
+			}
+		}
+		return encryptedFilename;
+	}
+	// Čistá instalace nemá co migrovat. Neotvírat prázdnou plaintext DB jen
+	// kvůli detekci — její VFS handle by zbytečně zablokoval fyzický úklid.
+	if (typeof indexedDB.databases === "function") {
+		const databases = await indexedDB.databases();
+		if (!databases.some((database) => database.name === plaintextFilename)) {
+			storageSet(marker, "2");
+			return encryptedFilename;
+		}
+	}
+	const old = new PowerSyncDatabase({
+		schema: AppSchema,
+		database: { dbFilename: plaintextFilename },
+	});
+	const connector = new WatsonConnector();
+	try {
+		await old.waitForReady();
+		// uploadData vždy dokončí právě jednu transakci. Pevný strop chrání před
+		// poškozenou/nekonečně doplňovanou frontou; běžně smyčka proběhne 0–N×.
+		for (let n = 0; n < 10_000; n += 1) {
+			const pending = await old.getNextCrudTransaction();
+			if (!pending) break;
+			await connector.uploadData(old);
+			if (n === 9_999) throw new Error("plaintext_migration_queue_limit");
+		}
+		await old.disconnectAndClear();
+		await old.close();
+		// PowerSync/wa-sqlite neuvolní VFS IndexedDB handle dostatečně brzo pro
+		// bezpečné znovuotevření se šifrováním pod stejným názvem. Nová šifrovaná
+		// DB proto používá verzovaný filename; fyzický úklid se provede při
+		// příštím startu. Marker se zapisuje až po úplném vyčištění staré fronty.
+		storageSet(marker, "2");
+		storageSet(cleanupMarker, "1");
+		return encryptedFilename;
+	} catch (error) {
+		try {
+			await old.close();
+		} catch {
+			/* původní DB zůstává pro další bezpečný pokus */
+		}
+		throw new Error("local_database_encryption_migration_failed", { cause: error });
+	}
 }
 
 /**
@@ -103,35 +200,66 @@ async function wipeLegacySharedDb() {
 export function initPowerSyncForUser(userId: string): Promise<void> {
 	return enqueue(async () => {
 		const h = await userHash(userId);
-		if (currentHash === h && powerSync) return;
-
-		if (powerSync) {
-			try {
-				await powerSync.disconnect();
-				await powerSync.close();
-			} catch (err) {
-				console.warn("[powersync] zavírání staré DB selhalo:", err);
+		return withCrossWindowLock(`powersync-init:${h}`, async () => {
+			if (
+				currentHash === h &&
+				powerSync &&
+				!powerSync.closed &&
+				isReusablePowerSyncStatus(powerSync.currentStatus)
+			) {
+				return;
 			}
-		}
-		// Jiná identita, než pro kterou tu jsou lokální data → vyčistit.
-		if (localStorage.getItem(LAST_USER_KEY) !== h) wipeSensitiveLocalState();
-		await wipeLegacySharedDb();
-		localStorage.setItem(LAST_USER_KEY, h);
 
-		const db = new PowerSyncDatabase({
-			schema: AppSchema,
-			database: { dbFilename: `watson-${h}.db` },
+			if (powerSync) {
+				try {
+					await powerSync.disconnect();
+					await powerSync.close();
+				} catch (err) {
+					console.warn("[powersync] zavírání staré DB selhalo:", err);
+				}
+			}
+			// Jiná identita, než pro kterou tu jsou lokální data → vyčistit.
+			if (storageGet(LAST_USER_KEY) !== h) wipeSensitiveLocalState();
+			await wipeLegacySharedDb();
+			const encryptionKey = await fetchLocalDataKey();
+			const dbFilename = await migratePlaintextDb(h);
+			storageSet(LAST_USER_KEY, h);
+
+			const db = new PowerSyncDatabase({
+				schema: AppSchema,
+				database: { dbFilename },
+				encryptionKey,
+				// SDK používá SharedWorker pro DB i sync stream. Explicitní flag drží
+				// Watson na stejné, otestovatelné hranici i po budoucím upgradu SDK.
+				flags: { enableMultiTabs: browserSupportsSafeMultiWindowData() },
+			});
+			try {
+				await connectBeforePublish({
+					candidate: db,
+					connect: async (candidate) => {
+						// SDK connection manager chybu inicializace streamu interně polyká.
+						// `waitForReady` proto musí proběhnout přímo zde a výsledný status
+						// musí obsahovat buď spojení, nebo dříve potvrzenou offline cache.
+						await candidate.waitForReady();
+						await candidate.connect(new WatsonConnector());
+						assertPowerSyncStartup(candidate.currentStatus);
+					},
+					publish: (candidate) => {
+						powerSync = candidate;
+						currentHash = h;
+						hmr.__watsonPowerSync = candidate;
+						hmr.__watsonUserHash = h;
+						// Dev-only handle pro ladění/verifikaci z konzole (dynamický import ve Vite
+						// vyrábí druhou instanci modulu, takže live-binding z konzole nejde použít).
+						if (import.meta.env?.DEV === true) {
+							(window as unknown as { __watsonDb?: PowerSyncDatabase }).__watsonDb = candidate;
+						}
+					},
+				});
+			} catch (error) {
+				throw new Error("local_database_connect_failed", { cause: error });
+			}
 		});
-		powerSync = db;
-		currentHash = h;
-		hmr.__watsonPowerSync = db;
-		hmr.__watsonUserHash = h;
-		// Dev-only handle pro ladění/verifikaci z konzole (dynamický import ve Vite
-		// vyrábí druhou instanci modulu, takže live-binding z konzole nejde použít).
-		if (import.meta.env.DEV) {
-			(window as unknown as { __watsonDb?: PowerSyncDatabase }).__watsonDb = db;
-		}
-		await db.connect(new WatsonConnector());
 	});
 }
 
@@ -154,7 +282,7 @@ export function shutdownPowerSync(opts?: { removeLocalData?: boolean }): Promise
 		}
 		if (opts?.removeLocalData) {
 			wipeSensitiveLocalState();
-			localStorage.removeItem(LAST_USER_KEY);
+			storageRemove(LAST_USER_KEY);
 		}
 		currentHash = null;
 		hmr.__watsonUserHash = null;

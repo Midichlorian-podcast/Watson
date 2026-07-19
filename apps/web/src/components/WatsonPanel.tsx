@@ -2,11 +2,11 @@ import { useQuery as usePsQuery } from "@powersync/react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useSession } from "../lib/auth-client";
 import type { GoalRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
-import { useFocusTrap } from "../lib/useFocusTrap";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 
 // Lokální dnešek (ne UTC) — konzistentní s lib/tasks, jinak po půlnoci posun o den.
 const todayISO = () => {
@@ -29,19 +29,7 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 	const { t } = useTranslation();
 	const { data: session } = useSession();
 	const navigate = useNavigate();
-	const trapRef = useFocusTrap<HTMLDivElement>(true);
-
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key !== "Escape") return;
-			// Nad drawerem může být vyšší vrstva (⌘K paleta / tahák) — tu zavře Esc dřív;
-			// vlastní data-watson-layer z dotazu vylučujeme, ať se drawer zavře sám.
-			if (document.querySelector("[data-esc-layer]:not([data-watson-layer])")) return;
-			onClose();
-		};
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
+	const trapRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 
 	const { data: tasks } = usePsQuery<TaskRow>("SELECT id, due_date, completed_at FROM tasks");
 	const userId = session?.user?.id;
@@ -115,7 +103,7 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.3)", zIndex: 42 }}
+				style={{ background: "rgba(10,14,20,.3)", zIndex: "var(--w-layer-drawer)" }}
 			/>
 			<div
 				ref={trapRef}
@@ -131,7 +119,7 @@ export function WatsonPanel({ onClose }: { onClose: () => void }) {
 					width: 384,
 					maxWidth: "92vw",
 					boxShadow: "var(--w-shadow)",
-					zIndex: 43,
+					zIndex: "calc(var(--w-layer-drawer) + 1)",
 				}}
 			>
 				{/* header */}

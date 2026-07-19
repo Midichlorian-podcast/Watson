@@ -74,9 +74,12 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 		year: "numeric",
 	}).format(first);
 	// iniciály dnů od pondělí (Intl narrow; 2026-06-01 = pondělí)
-	const weekdays = Array.from({ length: 7 }, (_, i) =>
-		new Intl.DateTimeFormat(i18n.language, { weekday: "narrow" }).format(new Date(2026, 5, 1 + i)),
-	);
+	const weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((key, i) => ({
+		key,
+		label: new Intl.DateTimeFormat(i18n.language, { weekday: "narrow" }).format(
+			new Date(2026, 5, 1 + i),
+		),
+	}));
 	const shift = (dir: -1 | 1) =>
 		setYm(({ y, m }) => {
 			const nm = m + dir;
@@ -102,8 +105,8 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 							setYm({ y: d.getFullYear(), m: d.getMonth() });
 						}}
 						aria-label={t("calendar.today")}
-						className="rounded-md border border-line font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
-						style={{ fontSize: 10, padding: "2px 8px" }}
+						className="min-h-11 rounded-md border border-line px-3 font-display font-semibold text-ink-3 hover:border-brass hover:text-brass-text"
+						style={{ fontSize: 10 }}
 					>
 						{new Intl.DateTimeFormat(i18n.language, { day: "numeric" }).format(new Date())}.
 					</button>
@@ -112,8 +115,8 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 					type="button"
 					onClick={() => shift(-1)}
 					aria-label={t("calendar.prev")}
-					className="grid place-items-center rounded-md border border-line text-ink-2 hover:border-brass"
-					style={{ width: 22, height: 22, fontSize: 12 }}
+					className="grid size-11 place-items-center rounded-md border border-line text-ink-2 hover:border-brass"
+					style={{ fontSize: 12 }}
 				>
 					‹
 				</button>
@@ -121,8 +124,8 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 					type="button"
 					onClick={() => shift(1)}
 					aria-label={t("calendar.next")}
-					className="grid place-items-center rounded-md border border-line text-ink-2 hover:border-brass"
-					style={{ width: 22, height: 22, fontSize: 12 }}
+					className="grid size-11 place-items-center rounded-md border border-line text-ink-2 hover:border-brass"
+					style={{ fontSize: 12 }}
 				>
 					›
 				</button>
@@ -133,9 +136,9 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 				className="grid font-mono text-ink-3"
 				style={{ gridTemplateColumns: "repeat(7, 1fr)", fontSize: 9, textAlign: "center" }}
 			>
-				{weekdays.map((w, i) => (
-					<span key={`${w}-${i}`} style={{ padding: "2px 0 4px" }}>
-						{w}
+				{weekdays.map((weekday) => (
+					<span key={weekday.key} style={{ padding: "2px 0 4px" }}>
+						{weekday.label}
 					</span>
 				))}
 			</div>
@@ -145,21 +148,22 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 				{cells.map((c) => {
 					const info = byDay.get(c.iso);
 					const isToday = c.iso === tdy;
-					const dots: string[] = [];
+					const dots: { key: string; bg: string }[] = [];
 					if (info) {
-						if (info.overdue) dots.push("var(--w-overdue)");
+						if (info.overdue) dots.push({ key: "overdue", bg: "var(--w-overdue)" });
 						if (info.open > 0)
 							for (let i = 0; i < Math.min(info.overdue ? 2 : 3, Math.ceil(info.open / 2)); i++)
-								dots.push("var(--w-brass)");
-						if (dots.length === 0 && info.done > 0) dots.push("var(--w-ink-3)");
+								dots.push({ key: `open-${i}`, bg: "var(--w-brass)" });
+						if (dots.length === 0 && info.done > 0)
+							dots.push({ key: "done", bg: "var(--w-ink-3)" });
 					}
 					return (
 						<button
 							key={c.iso}
 							type="button"
 							onClick={() => onDay(c.iso)}
-							className="flex flex-col items-center rounded-lg hover:bg-panel-2"
-							style={{ padding: "3px 0 4px", gap: 2, opacity: c.inMonth ? 1 : 0.35 }}
+							className="flex min-h-11 flex-col items-center justify-center rounded-lg hover:bg-panel-2"
+							style={{ padding: "3px 0 4px", gap: 2 }}
 						>
 							<span
 								className="grid place-items-center font-display font-semibold"
@@ -169,16 +173,16 @@ export function CalendarWidget({ onDay }: { onDay: (dateISO: string) => void }) 
 									borderRadius: 999,
 									fontSize: 11.5,
 									background: isToday ? "var(--w-brass)" : "transparent",
-									color: isToday ? "#fff" : "var(--w-ink)",
+									color: isToday ? "#fff" : c.inMonth ? "var(--w-ink)" : "var(--w-ink-3)",
 								}}
 							>
 								{c.day}
 							</span>
 							<span className="flex" style={{ gap: 2, height: 4 }}>
-								{dots.slice(0, 3).map((bg, i) => (
+								{dots.slice(0, 3).map((dot) => (
 									<span
-										key={`${c.iso}-${i}`}
-										style={{ width: 4, height: 4, borderRadius: 999, background: bg }}
+										key={dot.key}
+										style={{ width: 4, height: 4, borderRadius: 999, background: dot.bg }}
 									/>
 								))}
 							</span>

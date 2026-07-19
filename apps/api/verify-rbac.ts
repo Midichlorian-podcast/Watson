@@ -55,7 +55,7 @@ async function login(email: string): Promise<string> {
 	const cookie = v.headers.getSetCookie?.().join("; ") ?? v.headers.get("set-cookie") ?? "";
 	const sess = cookie
 		.split(/,(?=\s*\w+=)/)
-		.map((s) => s.split(";")[0]!.trim())
+		.map((s) => s.split(";")[0]?.trim() ?? "")
 		.filter(Boolean)
 		.join("; ");
 	if (!sess) throw new Error(`login ${email}: chybí session cookie`);
@@ -110,7 +110,8 @@ async function main() {
 				emailVerified: true,
 			})
 			.returning({ id: users.id, email: users.email });
-		return u!;
+		if (!u) throw new Error(`fixture_user_missing:${slug}`);
+		return u;
 	};
 	const OW = await mkUser("owner");
 	const AD = await mkUser("admin");
@@ -124,7 +125,8 @@ async function main() {
 		.insert(workspaces)
 		.values({ name: "RBAC test ws", ownerId: OW.id, isPersonal: false })
 		.returning({ id: workspaces.id });
-	const wsId = ws!.id;
+	if (!ws) throw new Error("fixture_workspace_missing");
+	const wsId = ws.id;
 	await db.insert(memberships).values([
 		// OW je owner přes workspaces.owner_id; membership má schválně jen "member",
 		// aby šel postavit scénář „poslední admin" (owner sám je nedegradovatelný).
@@ -140,7 +142,8 @@ async function main() {
 		.insert(projects)
 		.values({ workspaceId: wsId, name: "RBAC projekt", ownerId: OW.id })
 		.returning({ id: projects.id });
-	const pid = proj!.id;
+	if (!proj) throw new Error("fixture_project_missing");
+	const pid = proj.id;
 	await db.insert(projectMembers).values([
 		{ projectId: pid, userId: PM.id, role: "manager" },
 		{ projectId: pid, userId: ED.id, role: "editor" },

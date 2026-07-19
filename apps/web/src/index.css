@@ -6,38 +6,101 @@
 
 /* Mapování brand tokenů do Tailwind v4 témata (utility jako bg-paper, text-navy...). */
 @theme {
-  --color-navy: var(--w-navy);
-  --color-navy-2: var(--w-navy-2);
-  --color-brass: var(--w-brass);
-  --color-brass-text: var(--w-brass-text);
-  --color-paper: var(--w-paper);
-  --color-card: var(--w-card);
-  --color-ink: var(--w-ink);
-  --color-ink-2: var(--w-ink-2);
-  --color-ink-3: var(--w-ink-3);
-  --color-line: var(--w-line);
-  --color-success: var(--w-success);
-  --color-overdue: var(--w-overdue);
-  --color-panel-2: var(--w-panel-2);
-  --color-sidebar: var(--w-sidebar);
-  --color-sidebar-ink: var(--w-sidebar-ink);
-  --color-brass-soft: var(--w-brass-soft);
-  --color-success-soft: var(--w-success-soft);
-  --color-overdue-soft: var(--w-overdue-soft);
-  --color-p1: var(--w-p1);
-  --color-p2: var(--w-p2);
-  --color-p3: var(--w-p3);
-  --color-p4: var(--w-p4);
+	--color-navy: var(--w-navy);
+	--color-navy-2: var(--w-navy-2);
+	--color-brass: var(--w-brass);
+	--color-brass-text: var(--w-brass-text);
+	--color-paper: var(--w-paper);
+	--color-card: var(--w-card);
+	--color-ink: var(--w-ink);
+	--color-ink-2: var(--w-ink-2);
+	--color-ink-3: var(--w-ink-3);
+	--color-line: var(--w-line);
+	--color-success: var(--w-success);
+	--color-overdue: var(--w-overdue);
+	--color-panel-2: var(--w-panel-2);
+	--color-sidebar: var(--w-sidebar);
+	--color-sidebar-ink: var(--w-sidebar-ink);
+	--color-brass-soft: var(--w-brass-soft);
+	--color-success-soft: var(--w-success-soft);
+	--color-overdue-soft: var(--w-overdue-soft);
+	--color-p1: var(--w-p1);
+	--color-p2: var(--w-p2);
+	--color-p3: var(--w-p3);
+	--color-p4: var(--w-p4);
 
-  --font-display: var(--w-font-display);
-  --font-body: var(--w-font-body);
-  --font-mono: var(--w-font-mono);
+	--font-display: var(--w-font-display);
+	--font-body: var(--w-font-body);
+	--font-mono: var(--w-font-mono);
 }
 
 html,
 body,
 #root {
 	height: 100%;
+	max-width: 100%;
+	/* Horizontální gesto smí ovládat konkrétní povrch (kalendář, swipe řádku),
+	   nesmí ale pokračovat do viewportu a v Safari odtáhnout celou aplikaci. */
+	overscroll-behavior-x: none;
+}
+
+html,
+body {
+	/* `hidden` je fallback pro starší Safari; `clip` nevytváří další scroll container. */
+	overflow-x: hidden;
+	overflow-x: clip;
+}
+
+/* Den/týden jsou nativní pixelový pás s jemným viditelným posuvníkem. Po doběhu
+   se dorovnají na den; víkend je klidnější a pondělí zůstává čitelné v každé kotvě. */
+.w-calendar-strip {
+	overscroll-behavior-x: none;
+	overflow-anchor: none;
+	scrollbar-color: color-mix(in srgb, var(--w-ink-3) 55%, transparent) transparent;
+	scrollbar-width: thin;
+}
+
+.w-calendar-strip::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.w-calendar-strip::-webkit-scrollbar-thumb {
+	border: 2px solid transparent;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--w-ink-3) 55%, transparent);
+	background-clip: padding-box;
+}
+
+@keyframes w-swipe-threshold-pulse {
+	50% {
+		transform: scale(1.035);
+		filter: brightness(1.08);
+	}
+}
+
+/* Safari neumí vyvolat haptiku Mac trackpadu. Tato mikroodezva je viditelný
+   ekvivalent; na platformách s Vibration API ji useSwipe doplní skutečnou vibrací. */
+[data-swipe-pulse] [data-swipe-feedback] {
+	animation: w-swipe-threshold-pulse 130ms ease-out;
+}
+
+[data-swipe-pulse="commit"] [data-swipe-feedback] {
+	animation-duration: 180ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	[data-swipe-pulse] [data-swipe-feedback] {
+		animation: none;
+	}
+}
+
+.w-calendar-day-weekend {
+	background-color: color-mix(in srgb, var(--w-panel-2) 82%, var(--w-card));
+}
+
+.w-calendar-day-monday {
+	box-shadow: inset 2px 0 0 color-mix(in srgb, var(--w-brass) 72%, var(--w-line));
 }
 
 body {
@@ -47,6 +110,486 @@ body {
 	font-family: var(--w-font-body);
 	line-height: 1.55;
 	-webkit-font-smoothing: antialiased;
+}
+
+/* Jediný povrch Nastavení: adresovatelné sekce s pevnou navigací na desktopu
+   a horizontálním, klávesnicí dostupným přepínačem na malém displeji. */
+.w-settings-shell {
+	max-width: 1080px;
+	margin: 0 auto;
+	padding: 24px 24px 90px;
+}
+.w-settings-layout {
+	display: grid;
+	grid-template-columns: 210px minmax(0, 680px);
+	gap: 32px;
+	align-items: start;
+}
+.w-settings-nav {
+	position: sticky;
+	top: 16px;
+	display: grid;
+	gap: 4px;
+}
+.w-settings-content {
+	min-width: 0;
+}
+/* Po zobrazení hlavního sidebaru zbývá Nastavení výrazně méně místa než udává
+   viewport. Jednosloupcový režim proto zapínáme dřív, než se začnou překrývat
+   profil, popisy a akce (kritická oblast byla přibližně 840–1080 px). */
+@media (max-width: 1080px) {
+	.w-settings-shell {
+		padding: 18px 14px 90px;
+	}
+	.w-settings-layout {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 20px;
+	}
+	.w-settings-nav {
+		position: static;
+		display: flex;
+		overflow-x: auto;
+		padding: 2px 0 8px;
+		scrollbar-width: thin;
+	}
+	.w-settings-nav > a {
+		min-width: max-content;
+	}
+}
+@media (max-width: 520px) {
+	.w-settings-account-card {
+		flex-wrap: wrap;
+	}
+	.w-settings-account-actions {
+		width: 100%;
+		flex-wrap: wrap;
+	}
+	.w-settings-account-actions > button {
+		min-height: 44px;
+		flex: 1 1 150px;
+	}
+}
+
+/* F4 — Integration Center: health má čitelnou datovou hierarchii, lifecycle
+   potvrzení zůstává v kontextu karty a na mobilu se akce nesmrsknou pod 44 px. */
+.w-integration-center {
+	display: grid;
+	gap: 12px;
+}
+.w-integration-intro {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+}
+.w-integration-intro h2 {
+	margin: 0;
+	font-family: var(--w-font-display);
+	font-size: 17px;
+	color: var(--w-ink);
+}
+.w-integration-intro p,
+.w-integration-title p,
+.w-integration-details p,
+.w-integration-confirm p {
+	margin: 4px 0 0;
+	font-size: 12px;
+	color: var(--w-ink-3);
+}
+.w-integration-intro > span {
+	flex: none;
+	padding: 3px 9px;
+	border: 1px solid var(--w-line);
+	border-radius: 999px;
+	font-size: 10.5px;
+	font-weight: 700;
+	color: var(--w-ink-3);
+}
+.w-integration-card,
+.w-integration-loading,
+.w-integration-error {
+	padding: 16px;
+	border: 1px solid var(--w-line);
+	border-radius: 13px;
+	background: var(--w-card);
+}
+.w-integration-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+}
+.w-integration-mark {
+	display: grid;
+	place-items: center;
+	width: 38px;
+	height: 38px;
+	flex: none;
+	border: 1px solid color-mix(in srgb, var(--w-brass) 55%, var(--w-line));
+	border-radius: 10px;
+	background: var(--w-brass-soft);
+	font-family: var(--w-font-display);
+	font-size: 12px;
+	font-weight: 800;
+	letter-spacing: 0.05em;
+	color: var(--w-brass-text);
+}
+.w-integration-title {
+	min-width: 0;
+	flex: 1;
+}
+.w-integration-title > div {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	flex-wrap: wrap;
+}
+.w-integration-title h3 {
+	margin: 0;
+	font-family: var(--w-font-display);
+	font-size: 14px;
+	color: var(--w-ink);
+}
+.w-integration-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 10.5px;
+	font-weight: 700;
+	color: var(--w-ink-2);
+}
+.w-integration-status::before {
+	content: "";
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--integration-status);
+}
+.w-integration-mode,
+.w-integration-notice {
+	margin-top: 13px;
+	padding: 9px 11px;
+	border: 1px solid color-mix(in srgb, var(--w-p3) 28%, var(--w-line));
+	border-radius: 9px;
+	background: color-mix(in srgb, var(--w-p3) 7%, var(--w-card));
+	font-size: 11.5px;
+	color: var(--w-ink-2);
+}
+.w-integration-mode.warning,
+.w-integration-notice.error {
+	border-color: color-mix(in srgb, var(--w-p2) 35%, var(--w-line));
+	background: color-mix(in srgb, var(--w-p2) 8%, var(--w-card));
+}
+.w-integration-notice.ok {
+	border-color: color-mix(in srgb, var(--w-success) 35%, var(--w-line));
+	background: color-mix(in srgb, var(--w-success) 8%, var(--w-card));
+}
+.w-integration-health {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 1px;
+	margin: 14px 0 0;
+	overflow: hidden;
+	border: 1px solid var(--w-line);
+	border-radius: 9px;
+	background: var(--w-line);
+}
+.w-integration-health > div {
+	min-width: 0;
+	padding: 9px 10px;
+	background: var(--w-panel-2);
+}
+.w-integration-health dt {
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--w-ink-3);
+}
+.w-integration-health dd {
+	margin: 3px 0 0;
+	font-size: 11.5px;
+	color: var(--w-ink-2);
+	overflow-wrap: anywhere;
+}
+.w-integration-details {
+	margin-top: 12px;
+	font-size: 11.5px;
+	color: var(--w-ink-2);
+}
+.w-integration-details summary {
+	min-height: 30px;
+	cursor: pointer;
+	font-weight: 700;
+	color: var(--w-ink-2);
+}
+.w-integration-details ul {
+	margin: 8px 0 0;
+	padding-left: 20px;
+}
+.w-integration-actions,
+.w-integration-confirm > div:last-child {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 14px;
+	flex-wrap: wrap;
+}
+.w-integration-actions button,
+.w-integration-confirm button,
+.w-integration-error button {
+	min-height: 38px;
+	padding: 7px 12px;
+	border: 1px solid var(--w-line);
+	border-radius: 8px;
+	background: transparent;
+	font-family: var(--w-font-display);
+	font-size: 11.5px;
+	font-weight: 700;
+	color: var(--w-ink-2);
+	cursor: pointer;
+}
+
+/* F8c — developer API control plane. Secrets never leave the transient callout. */
+.w-developer {
+	display: grid;
+	gap: 12px;
+	margin-top: 22px;
+}
+.w-developer-toolbar,
+.w-developer-form-actions,
+.w-developer-secret > div {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+.w-developer-toolbar > a {
+	margin-right: auto;
+}
+.w-developer button,
+.w-developer-toolbar > a {
+	min-height: 38px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 7px 12px;
+	border: 1px solid var(--w-line);
+	border-radius: 8px;
+	background: transparent;
+	color: var(--w-ink-2);
+	font: 700 11.5px/1 var(--w-font-display);
+	cursor: pointer;
+	text-decoration: none;
+}
+.w-developer button.primary {
+	border-color: color-mix(in srgb, var(--w-brass) 55%, var(--w-line));
+	background: var(--w-brass-soft);
+	color: var(--w-brass-text);
+}
+.w-developer button:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+.w-developer-secret,
+.w-developer-form {
+	display: grid;
+	gap: 12px;
+	padding: 14px;
+	border: 1px solid color-mix(in srgb, var(--w-success) 35%, var(--w-line));
+	border-radius: 11px;
+	background: color-mix(in srgb, var(--w-success) 7%, var(--w-card));
+	color: var(--w-ink-2);
+}
+.w-developer-secret code {
+	padding: 10px;
+	border: 1px solid var(--w-line);
+	border-radius: 8px;
+	background: var(--w-panel-2);
+	font-size: 11px;
+	overflow-wrap: anywhere;
+	user-select: all;
+}
+.w-developer-form {
+	border-color: var(--w-line);
+	background: var(--w-card);
+}
+.w-developer-form > label {
+	display: grid;
+	gap: 6px;
+	font-size: 11.5px;
+	font-weight: 700;
+	color: var(--w-ink-2);
+}
+.w-developer-form input[type="text"],
+.w-developer-form input[type="url"],
+.w-developer-form > label > input:not([type]) {
+	min-height: 42px;
+	width: 100%;
+	padding: 8px 10px;
+	border: 1px solid var(--w-line);
+	border-radius: 8px;
+	background: var(--w-panel-2);
+	color: var(--w-ink);
+}
+.w-developer-choices {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 7px;
+	margin: 0;
+	padding: 10px;
+	border: 1px solid var(--w-line);
+	border-radius: 9px;
+}
+.w-developer-choices legend {
+	padding: 0 5px;
+	font-size: 11px;
+	font-weight: 800;
+	color: var(--w-ink-2);
+}
+.w-developer-choices label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 34px;
+	font-size: 11.5px;
+	color: var(--w-ink-2);
+}
+.w-developer-choices input {
+	width: 17px;
+	height: 17px;
+	accent-color: var(--w-brass);
+}
+.w-developer-columns {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+}
+.w-developer-columns > section {
+	min-width: 0;
+}
+.w-developer-columns h3 {
+	margin: 0 0 8px;
+	font: 800 12px/1.3 var(--w-font-display);
+	color: var(--w-ink);
+}
+.w-developer-item,
+.w-developer-empty {
+	position: relative;
+	display: grid;
+	gap: 5px;
+	margin: 0 0 8px;
+	padding: 12px;
+	border: 1px solid var(--w-line);
+	border-radius: 10px;
+	background: var(--w-card);
+}
+.w-developer-item > div:first-child {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.w-developer-item strong {
+	font-size: 12px;
+	color: var(--w-ink);
+}
+.w-developer-item span,
+.w-developer-item small,
+.w-developer-empty {
+	font-size: 10.5px;
+	color: var(--w-ink-3);
+}
+.w-developer-item p {
+	margin: 0;
+	font-size: 10.5px;
+	color: var(--w-ink-2);
+}
+.w-developer-url {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.w-developer-item > button {
+	justify-self: end;
+}
+@media (max-width: 720px) {
+	.w-developer {
+		padding-bottom: calc(82px + env(safe-area-inset-bottom));
+	}
+	.w-developer button,
+	.w-developer-toolbar > a {
+		min-height: 44px;
+	}
+	.w-developer-columns,
+	.w-developer-choices {
+		grid-template-columns: 1fr;
+	}
+	.w-developer-toolbar > a {
+		width: 100%;
+		margin: 0;
+	}
+	.w-developer-toolbar > button {
+		flex: 1;
+	}
+}
+.w-integration-actions button.primary {
+	border-color: var(--w-brass);
+	background: var(--w-brass-soft);
+	color: var(--w-brass-text);
+}
+.w-integration-actions button.danger,
+.w-integration-confirm button.danger {
+	color: var(--w-overdue);
+}
+.w-integration-actions button:disabled,
+.w-integration-confirm button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+.w-integration-confirm {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 12px;
+	margin-top: 12px;
+	padding: 11px;
+	border: 1px solid color-mix(in srgb, var(--w-overdue) 35%, var(--w-line));
+	border-radius: 9px;
+	background: color-mix(in srgb, var(--w-overdue) 6%, var(--w-card));
+	font-size: 12px;
+	color: var(--w-ink);
+}
+.w-integration-confirm > div:last-child {
+	margin-top: 0;
+}
+.w-integration-error {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	font-size: 12px;
+	color: var(--w-ink-2);
+}
+@media (max-width: 600px) {
+	.w-integration-intro,
+	.w-integration-confirm {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.w-integration-intro {
+		display: grid;
+	}
+	.w-integration-intro > span {
+		justify-self: start;
+	}
+	.w-integration-health {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.w-integration-actions button,
+	.w-integration-confirm button {
+		min-height: 44px;
+		flex: 1 1 135px;
+	}
 }
 
 /* Tweaks (#39) — hustota řádků. Zhuštěno na přání uživatele (víc karet na obrazovku,
@@ -105,8 +648,20 @@ body {
 	animation: watson-spin 0.7s linear infinite;
 }
 @media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+	html *,
+	html *::before,
+	html *::after {
+		animation-duration: 1ms !important;
+		animation-iteration-count: 1 !important;
+		transition-delay: 0ms !important;
+		transition-duration: 1ms !important;
+	}
 	.watson-spin {
-		animation-duration: 2s;
+		animation-duration: 2s !important;
+		animation-iteration-count: infinite !important;
 	}
 }
 
@@ -117,22 +672,51 @@ body {
 .w-taskmeta {
 	display: contents;
 }
+.w-taskquick {
+	display: none;
+}
 @media (max-width: 480px) {
 	.w-taskcard {
 		flex-wrap: wrap;
 	}
+	/* Mobilní informační hierarchie: 1) stav + název + akce, 2) termín/deadline/
+	   priorita/status/lidé, 3) projekt a kontext. `display: contents` mění pouze
+	   layout; sémantika a klikací plocha karty zůstávají beze změny. */
+	.w-taskmain {
+		display: contents;
+	}
+	.w-taskcard [data-task-title] {
+		order: 0;
+		min-width: 0;
+		flex: 1 1 120px;
+	}
 	.w-taskmeta {
 		display: flex;
+		order: 1;
 		flex-basis: 100%;
 		min-width: 0;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 4px 8px;
-		margin: 2px 0 0 37px;
+		margin: 3px 0 0 37px;
+	}
+	.w-tasksub {
+		order: 2;
+		flex: 1 1 100%;
+		min-width: 0;
+		margin: 1px 0 0 37px !important;
 	}
 	/* hover-only rychlé přeplánování na dotyku neexistuje — jen by kradlo šířku */
 	.w-taskmeta [data-qsched] {
 		display: none;
+	}
+	/* Na dotyku zpřístupni stejné bezpečné akce, které jsou na desktopu v context menu. */
+	.w-taskquick {
+		display: grid;
+		order: 0;
+		width: 44px;
+		height: 44px;
+		margin-left: auto;
 	}
 	/* podřádek (projekt, chip postupu, checklist…) se smí zalomit, ne přetéct */
 	.w-tasksub {
@@ -148,5 +732,8 @@ body {
 		content: "";
 		position: absolute;
 		inset: -13px;
+	}
+	.w-comment-decision {
+		min-height: 44px;
 	}
 }

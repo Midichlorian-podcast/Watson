@@ -1,5 +1,5 @@
 import type { Priority } from "@watson/shared";
-import type { CSSProperties } from "react";
+import type { CSSProperties, MouseEvent } from "react";
 import { cn } from "./cn";
 import { Icon } from "./Icon";
 
@@ -38,12 +38,14 @@ export interface TaskCardProps {
 	recurring?: boolean;
 	/** Připomínka — zvoneček v podřádku. */
 	reminder?: boolean;
+	/** Lokalizovaný štítek, pokud úkol čeká na nehotové předchůdce. */
+	blockedBy?: string;
 	/** Počet komentářů v podřádku. */
 	comments?: number;
 	/** Režim „každý zvlášť" — pilulka `{label} · N/M` (prototyp ř. 437). */
 	assignAll?: { done: number; total: number; label: string };
 	/** Avatary přiřazených (max 3; první brass při shared_all). */
-	avatars?: { initials: string; brass?: boolean }[];
+	avatars?: { id: string; initials: string; brass?: boolean }[];
 	/** Spící krok postupu — šrafovaný řádek (prototyp data-dormant). */
 	dormant?: boolean;
 	/** Kontext vrstveného podúkolu — „↑ {rodič}" v podřádku. */
@@ -66,6 +68,8 @@ export interface TaskCardProps {
 	 * chipy „Dnes / Zítra / Př. týden" před termínem. Lokalizuje konzument.
 	 */
 	sched?: { items: { key: string; label: string }[]; onShift: (key: string) => void };
+	/** Viditelný vstup do rychlých akcí na dotykovém zařízení. */
+	quickMenu?: { label: string; onOpen: (event: MouseEvent<HTMLButtonElement>) => void };
 	/** aria pro zaškrtávátko když je hotovo (klik → odškrtne). Lokalizuje konzument. */
 	doneLabel?: string;
 	/** aria pro zaškrtávátko když není hotovo (klik → dokončí). Lokalizuje konzument. */
@@ -106,6 +110,7 @@ export function TaskCard({
 	checklist,
 	recurring,
 	reminder,
+	blockedBy,
 	comments,
 	assignAll,
 	avatars,
@@ -117,6 +122,7 @@ export function TaskCard({
 	done,
 	sel,
 	sched,
+	quickMenu,
 	// packages/ui nemá i18n → EN neutrální fallback; konzument (TaskItem) předává lokalizované.
 	doneLabel = "Mark as not done",
 	undoneLabel = "Complete",
@@ -140,14 +146,14 @@ export function TaskCard({
 		!!checklist ||
 		recurring ||
 		reminder ||
+		!!blockedBy ||
 		!!comments;
 
 	return (
 		<div
-			onClick={onOpen}
 			className={cn(
 				// w-taskcard: na ≤480 px se metadata zalomí pod název (CC-P0-17, index.css)
-				"group w-taskcard flex cursor-pointer items-center rounded-[10px] border border-line transition-shadow",
+				"group w-taskcard relative flex cursor-pointer items-center rounded-[10px] border border-line transition-shadow",
 				!rowBg && "hover:bg-panel-2",
 				"hover:shadow-md",
 			)}
@@ -159,10 +165,16 @@ export function TaskCard({
 					done || dormant
 						? "var(--w-shadow-sm)"
 						: `inset 3px 0 0 ${meeting ? "var(--w-brass)" : PRI[priority]}, var(--w-shadow-sm)`,
-				opacity: done ? 0.5 : dormant ? 0.6 : 1,
 				background: rowBg,
 			}}
 		>
+			<button
+				type="button"
+				data-task-open
+				aria-label={name}
+				onClick={onOpen}
+				className="absolute inset-0 z-[1] rounded-[inherit] bg-transparent focus-visible:outline-2 focus-visible:outline-brass focus-visible:outline-offset-[-2px]"
+			/>
 			{/* výběr do hromadných akcí (prototyp data-selbox, ř. 550–551) */}
 			{sel && (
 				<button
@@ -174,7 +186,7 @@ export function TaskCard({
 					title={sel.title}
 					aria-pressed={sel.on}
 					className={cn(
-						"w-taskselbox grid shrink-0 place-items-center border-[1.6px] border-line transition-opacity hover:border-brass",
+						"w-taskselbox relative z-[2] grid shrink-0 place-items-center border-[1.6px] border-line transition-opacity hover:border-brass",
 						// skrytý checkbox nesmí být klikatelný (opacity-0 na dotyku =
 						// neviditelný cíl) → pointer-events-none; hover/focus/vybraný vrací auto
 						sel.on
@@ -206,7 +218,7 @@ export function TaskCard({
 				aria-label={done ? doneLabel : undoneLabel}
 				className={cn(
 					// w-taskcheck: na dotyku dostává 44px hit-area přes ::after (index.css)
-					"w-taskcheck relative grid shrink-0 place-items-center rounded-full",
+					"w-taskcheck relative z-[2] grid shrink-0 place-items-center rounded-full",
 					!done && "hover:border-brass",
 				)}
 				style={{
@@ -242,8 +254,9 @@ export function TaskCard({
 			/>
 
 			{/* název + podřádek */}
-			<div className="min-w-0 flex-1">
+			<div className="w-taskmain min-w-0 flex-1">
 				<div
+					data-task-title
 					className={cn(
 						"truncate font-display font-semibold",
 						done ? "text-ink-3 line-through" : "text-ink",
@@ -291,7 +304,7 @@ export function TaskCard({
 									e.stopPropagation();
 									fromMeeting.onClick?.();
 								}}
-								className="inline-flex shrink-0 cursor-pointer items-center border-none font-display font-semibold"
+								className="relative z-[2] inline-flex shrink-0 cursor-pointer items-center border-none font-display font-semibold"
 								style={{
 									gap: 4,
 									fontSize: 10.5,
@@ -361,6 +374,20 @@ export function TaskCard({
 								/>
 							</svg>
 						)}
+						{blockedBy && !done && (
+							<span
+								className="inline-flex shrink-0 items-center font-display font-semibold"
+								style={{
+									fontSize: 10.5,
+									padding: "2px 8px",
+									borderRadius: 999,
+									background: "var(--w-overdue-soft)",
+									color: "var(--w-overdue)",
+								}}
+							>
+								↳ {blockedBy}
+							</span>
+						)}
 						{!!comments && (
 							<span
 								className="inline-flex items-center font-mono text-ink-3"
@@ -391,6 +418,23 @@ export function TaskCard({
 				)}
 			</div>
 
+			{/* Na dotyku je vstup do bezpečných akcí přímo v prvním řádku vedle názvu.
+			    Na desktopu zůstává skrytý a stejné akce obslouží context menu. */}
+			{quickMenu && (
+				<button
+					type="button"
+					aria-label={quickMenu.label}
+					title={quickMenu.label}
+					onClick={(event) => {
+						event.stopPropagation();
+						quickMenu.onOpen(event);
+					}}
+					className="w-taskquick relative z-[2] shrink-0 place-items-center rounded-lg border border-line bg-card text-ink-2 hover:border-brass hover:text-brass-text"
+				>
+					<Icon name="vice" size={18} />
+				</button>
+			)}
+
 			{/* Pravostranná metadata: na desktopu display:contents (layout 1:1 beze změny),
 			    na ≤480 px vlastní zalomený řádek pod názvem (CC-P0-17). */}
 			<span className="w-taskmeta">
@@ -409,7 +453,7 @@ export function TaskCard({
 									e.stopPropagation();
 									sched.onShift(it.key);
 								}}
-								className="cursor-pointer whitespace-nowrap rounded-md border border-line bg-card font-mono text-ink-3 hover:border-brass hover:text-brass-text"
+								className="relative z-[2] cursor-pointer whitespace-nowrap rounded-md border border-line bg-card font-mono text-ink-3 hover:border-brass hover:text-brass-text"
 								style={{ fontSize: 9.5, padding: "2px 6px" }}
 							>
 								{it.label}
@@ -535,7 +579,7 @@ export function TaskCard({
 					<span className="inline-flex shrink-0 items-center">
 						{avatars.map((a, i) => (
 							<span
-								key={`${a.initials}-${i}`}
+								key={a.id}
 								className="flex items-center justify-center rounded-full font-display font-semibold"
 								style={{
 									width: 22,
@@ -586,7 +630,7 @@ function FlowChip({ flow }: { flow: NonNullable<TaskCardProps["flow"]> }) {
 				flow.onClick?.();
 			}}
 			title={`${flow.name} · krok ${flow.pos}/${flow.total}`}
-			className="inline-flex max-w-56 shrink-0 items-center font-display font-semibold"
+			className="relative z-[2] inline-flex max-w-56 shrink-0 items-center font-display font-semibold"
 			style={{
 				gap: 5,
 				fontSize: 10.5,

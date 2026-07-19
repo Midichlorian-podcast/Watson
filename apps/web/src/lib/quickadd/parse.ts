@@ -41,8 +41,8 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	// 1) Deadline !d. m. [rrrr]
 	const dl = work.match(/!\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})?/);
 	if (dl) {
-		const da = +dl[1]!;
-		const mo = +dl[2]!;
+		const da = +(dl[1] ?? "");
+		const mo = +(dl[2] ?? "");
 		const y = dl[3] ? +dl[3] : year;
 		if (validDate(y, mo, da)) {
 			draft.deadline = `${y}-${pad(mo)}-${pad(da)}`;
@@ -53,7 +53,7 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	// 2) Priorita p1-p4
 	const pr = work.match(/\bp([1-4])\b/i);
 	if (pr) {
-		draft.priority = +pr[1]! as Priority;
+		draft.priority = +(pr[1] ?? "") as Priority;
 		cut(pr, "priority");
 	}
 
@@ -61,21 +61,21 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	let tH: number | null = null;
 	let tM = 0;
 	if ((m = work.match(/\b(?:v|ve|od)\s*([01]?\d|2[0-3])[:.]([0-5]\d)\b/i))) {
-		tH = +m[1]!;
-		tM = +m[2]!;
+		tH = +(m[1] ?? "");
+		tM = +(m[2] ?? "");
 		cut(m, "time");
 	} else if ((m = work.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/))) {
-		tH = +m[1]!;
-		tM = +m[2]!;
+		tH = +(m[1] ?? "");
+		tM = +(m[2] ?? "");
 		cut(m, "time");
 	} else if ((m = work.match(/\b(?:v|ve|od)\s+(\d{1,2})\s*hodin\p{L}*/iu))) {
-		if (+m[1]! <= 23) {
-			tH = +m[1]!;
+		if (+(m[1] ?? "") <= 23) {
+			tH = +(m[1] ?? "");
 			tM = 0;
 			cut(m, "time");
 		}
 	} else if ((m = work.match(/\b(?:v|ve|od)\s+(\p{L}+(?:\s+\p{L}+)?)\s+hodin\p{L}*/iu))) {
-		const v = czNum(m[1]!);
+		const v = czNum(m[1] ?? "");
 		if (v != null && v <= 23) {
 			tH = v;
 			tM = 0;
@@ -87,16 +87,16 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	// 4) Trvání (6 variant, else-if řetěz)
 	let dur: number | null = null;
 	if ((m = work.match(/(?:po dobu\s+)?(\d+)\s*min(?:ut\p{L}*)?(?![\p{L}])/iu))) {
-		dur = +m[1]!;
+		dur = +(m[1] ?? "");
 		cut(m, "duration");
 	} else if ((m = work.match(/po dobu\s+(\p{L}+(?:\s+\p{L}+)?)\s*minut\p{L}*/iu))) {
-		const v = czNum(m[1]!);
+		const v = czNum(m[1] ?? "");
 		if (v != null) {
 			dur = v;
 			cut(m, "duration");
 		}
 	} else if ((m = work.match(/(?<![\p{L}])(\p{L}+(?:\s+\p{L}+)?)\s+minut\p{L}*/iu))) {
-		const v = czNum(m[1]!);
+		const v = czNum(m[1] ?? "");
 		if (v != null) {
 			dur = v;
 			cut(m, "duration");
@@ -107,10 +107,10 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	} else if (
 		(m = work.match(/(?:po dobu\s+)?(\d+(?:[.,]\d+)?)\s*(?:hodin\p{L}*|hod\p{L}*|h)(?![\p{L}])/iu))
 	) {
-		dur = Math.round(Number.parseFloat(m[1]!.replace(",", ".")) * 60);
+		dur = Math.round(Number.parseFloat((m[1] ?? "").replace(",", ".")) * 60);
 		cut(m, "duration");
 	} else if ((m = work.match(/po dobu\s+(\p{L}+)\s+hodin\p{L}*/iu))) {
-		const v = czNum(m[1]!);
+		const v = czNum(m[1] ?? "");
 		if (v != null) {
 			dur = v * 60;
 			cut(m, "duration");
@@ -123,14 +123,14 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	let relDays: number | null = null;
 	const rel = work.match(/\bza\s+(\d+)\s*dn[íiy](?![\p{L}])/iu);
 	if (rel) {
-		relDays = Number.parseInt(rel[1]!, 10);
+		relDays = Number.parseInt(rel[1] ?? "", 10);
 		cut(rel, "date");
 	}
 
 	// 5) Vícedenní N dn[íiy]
 	const dd = work.match(/(\d+)\s*dn[íiy](?![\p{L}])/iu);
 	if (dd) {
-		draft.days = Math.max(1, Math.min(60, Number.parseInt(dd[1]!, 10)));
+		draft.days = Math.max(1, Math.min(60, Number.parseInt(dd[1] ?? "", 10)));
 		cut(dd);
 	}
 
@@ -141,8 +141,8 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 		dateKind = "custom";
 		customDate = addDays(today, relDays);
 	} else if ((m = work.match(/\b(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})?/))) {
-		const da = +m[1]!;
-		const mo = +m[2]!;
+		const da = +(m[1] ?? "");
+		const mo = +(m[2] ?? "");
 		const y = m[3] ? +m[3] : year;
 		if (validDate(y, mo, da)) {
 			dateKind = "custom";
@@ -183,8 +183,9 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 				dateKind = "custom";
 				customDate = weekdayDate(w.d, aheadM ? 1 : 0, today);
 				// Vyřízni jen den (a případné „příští") — index-based, ne globální RECVOCAB.
-				const tokStart = bm.index + bm[0].indexOf(bm[1]!);
-				blank(tokStart, tokStart + bm[1]!.length, "repeat");
+				const weekdayToken = bm[1] ?? "";
+				const tokStart = bm.index + bm[0].indexOf(weekdayToken);
+				blank(tokStart, tokStart + weekdayToken.length, "repeat");
 				if (aheadM) blank(aheadM.index, aheadM.index + aheadM[0].length, "repeat");
 				break;
 			}
@@ -194,7 +195,7 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	// 9) Projekt #X (jen přesná shoda názvu)
 	const hash = work.match(/#(\p{L}+)/u);
 	if (hash) {
-		const q = hash[1]!;
+		const q = hash[1] ?? "";
 		const exact = ctx.projects.find((p) => p.name.toLowerCase() === q.toLowerCase());
 		if (exact) draft.projectId = exact.id;
 		cut(hash, "proj");
@@ -209,7 +210,7 @@ export function parseQuick(text: string, ctx: ParseCtx): ParsedDraft {
 	while ((am = are.exec(work))) {
 		const t = am[0].trim();
 		if (t) hits.push({ t, kind: "person" });
-		personQueries.push(am[1]!);
+		personQueries.push(am[1] ?? "");
 	}
 	base = base.replace(/\s{2,}/g, " ").trim();
 	const cleanName = base

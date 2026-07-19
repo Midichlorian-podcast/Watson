@@ -8,65 +8,45 @@
  * kontrolou (R5) přes členství v projektu. Přidat tabulku = přidat záznam do registru,
  * žádné natvrdo psané SQL per tabulka.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { createHash, randomUUID } from "node:crypto";
 import { getDb, sql } from "@watson/db";
 import { Hono } from "hono";
-import { exportJWK, generateKeyPair, importJWK, type JWK, SignJWT } from "jose";
+import { SignJWT } from "jose";
+import { z } from "zod";
 import { auth } from "./auth";
+import { loadSigningKeyRing, SIGNING_ALG } from "./signingKeys";
+import { reminderEmailAvailability } from "./serviceIntegrations";
+import { preflightAvailabilityForSyncWrite } from "./taskAvailability";
 
-const KID = "watson-dev-1";
-const ALG = "RS256";
 const AUDIENCE = "powersync";
+const POWERSYNC_ISSUER = process.env.POWERSYNC_ISSUER ?? "watson-powersync";
 /** Bridge-token pro LuckyOS employee API (zaměstnanecký modul). */
 const LUCKYOS_AUDIENCE = "luckyos";
-const BRIDGE_ISSUER = "watson";
-const keyDir = fileURLToPath(new URL("../.keys", import.meta.url));
-const keyFile = fileURLToPath(new URL("../.keys/powersync-key.json", import.meta.url));
+const LUCKYOS_ISSUER = process.env.LUCKYOS_ISSUER ?? "watson-luckyos";
 
-let privateKey: CryptoKey;
-let publicJwk: JWK;
+// Oddělené compromise domains. JWKS obsahuje aktuální i staré veřejné klíče
+// během overlap rotace, ale podpis vždy používá právě currentKid.
+const powerSyncKeyRing = await loadSigningKeyRing("powersync");
+const luckyOsKeyRing = await loadSigningKeyRing("luckyos");
 
-async function loadKeys() {
-	if (existsSync(keyFile)) {
-		// CC-P0-12: soubor s privátním klíčem smí číst jen vlastník — starší generace
-		// ho zapsala s výchozím 644, tak práva zpřísni i zpětně.
-		chmodSync(keyFile, 0o600);
-		const stored = JSON.parse(readFileSync(keyFile, "utf8")) as {
-			privateJwk: JWK;
-			publicJwk: JWK;
-		};
-		privateKey = (await importJWK(stored.privateJwk, ALG)) as CryptoKey;
-		publicJwk = stored.publicJwk;
-		return;
-	}
-	const { privateKey: priv, publicKey: pub } = await generateKeyPair(ALG, {
-		extractable: true,
-	});
-	privateKey = priv as CryptoKey;
-	const privateJwk = await exportJWK(priv);
-	publicJwk = { ...(await exportJWK(pub)), kid: KID, alg: ALG, use: "sig" };
-	if (!existsSync(keyDir)) mkdirSync(keyDir, { recursive: true, mode: 0o700 });
-	// CC-P0-12: privátní klíč pouze pro vlastníka (0600), ne world-readable 644
-	writeFileSync(keyFile, JSON.stringify({ privateJwk, publicJwk }, null, 2), { mode: 0o600 });
-	console.log("[watson-api] vygenerován nový PowerSync RSA keypair (.keys/)");
-}
-await loadKeys();
+export const getPowerSyncJwks = () => powerSyncKeyRing.publicJwks;
+export const getLuckyOsJwks = () => luckyOsKeyRing.publicJwks;
 
 /** Krátkodobý JWT pro PowerSync (sub = user id). */
-async function issueToken(userId: string) {
+export async function issuePowerSyncToken(userId: string) {
 	return new SignJWT({})
-		.setProtectedHeader({ alg: ALG, kid: KID })
+		.setProtectedHeader({ alg: SIGNING_ALG, kid: powerSyncKeyRing.currentKid })
 		.setSubject(userId)
 		.setAudience(AUDIENCE)
+		.setIssuer(POWERSYNC_ISSUER)
 		.setIssuedAt()
 		.setExpirationTime("10m")
-		.sign(privateKey);
+		.sign(powerSyncKeyRing.privateKey);
 }
 
 /**
  * Krátkodobý bridge-token pro LuckyOS employee API (server-to-server). LuckyOS ho ověří
- * proti JWKS na `/api/powersync/jwks` (stejný keypair), zkontroluje `aud`/`iss`/`exp`
+ * proti JWKS na `/api/employee/jwks` (oddělený keyring), zkontroluje `aud`/`iss`/`exp`
  * a z claimu `email` dohledá osobu. Nikdy neopustí server (prohlížeč ho nevidí).
  * Spec pro LuckyOS: files/ZAMESTNANEC_LUCKYOS_pozadavky_2026-07-12.md §1.
  */
@@ -76,25 +56,75 @@ export async function issueBridgeToken(claims: { email: string; personId?: strin
 		role: "employee",
 		...(claims.personId ? { person_id: claims.personId } : {}),
 	})
-		.setProtectedHeader({ alg: ALG, kid: KID })
+		.setProtectedHeader({ alg: SIGNING_ALG, kid: luckyOsKeyRing.currentKid })
 		.setSubject(claims.personId ?? claims.email)
 		.setAudience(LUCKYOS_AUDIENCE)
-		.setIssuer(BRIDGE_ISSUER)
+		.setIssuer(LUCKYOS_ISSUER)
 		.setIssuedAt()
 		.setExpirationTime("5m")
-		.sign(privateKey);
+		.sign(luckyOsKeyRing.privateKey);
+}
+
+/**
+ * LuckyOS v1 M2M token. Unlike the compatibility token above it never carries
+ * e-mail or a browser-provided person ID. LuckyOS resolves `watson_user_id`
+ * through its active external identity link and independently verifies the
+ * person ID encoded in the request path.
+ */
+export async function issueLuckyOsV1Token(claims: {
+	organizationId: string;
+	watsonUserId: string;
+	scopes: readonly string[];
+}) {
+	const organizationId = claims.organizationId.trim();
+	const watsonUserId = claims.watsonUserId.trim();
+	const scopes = [...new Set(claims.scopes.map((scope) => scope.trim()))];
+	if (
+		!organizationId ||
+		organizationId.length > 255 ||
+		!watsonUserId ||
+		watsonUserId.length > 255 ||
+		scopes.length < 1 ||
+		scopes.length > 64 ||
+		scopes.some((scope) => !/^[a-z][a-z0-9-]*:(read|write)$/.test(scope)) ||
+		scopes.join(" ").length > 2_000
+	) {
+		throw new Error("invalid_luckyos_v1_token_claims");
+	}
+	return new SignJWT({
+		organization_id: organizationId,
+		watson_user_id: watsonUserId,
+		scope: scopes.join(" "),
+	})
+		.setProtectedHeader({ alg: SIGNING_ALG, kid: luckyOsKeyRing.currentKid, typ: "JWT" })
+		.setJti(randomUUID())
+		.setSubject(watsonUserId)
+		.setAudience("lucky-os")
+		.setIssuer("watson")
+		.setIssuedAt()
+		.setExpirationTime("4m")
+		.sign(luckyOsKeyRing.privateKey);
 }
 
 export const powersyncRoutes = new Hono<{ Variables: { requestId: string } }>();
 
 /** JWKS — PowerSync service sem chodí pro veřejné klíče. */
-powersyncRoutes.get("/api/powersync/jwks", (c) => c.json({ keys: [publicJwk] }));
+powersyncRoutes.get("/api/powersync/jwks", (c) =>
+	c.json({ keys: getPowerSyncJwks() }),
+);
+/** LuckyOS nikdy nedostane PowerSync klíče a naopak. Alias odpovídá integračnímu kontraktu. */
+powersyncRoutes.get("/api/employee/jwks", (c) =>
+	c.json({ keys: getLuckyOsJwks() }),
+);
+powersyncRoutes.get("/api/integrations/luckyos/jwks", (c) =>
+	c.json({ keys: getLuckyOsJwks() }),
+);
 
 /** Vydá PowerSync token přihlášenému uživateli + endpoint sync služby. */
 powersyncRoutes.get("/api/powersync/token", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const token = await issueToken(session.user.id);
+	const token = await issuePowerSyncToken(session.user.id);
 	return c.json({
 		token,
 		powersync_url: process.env.POWERSYNC_URL || "http://localhost:8080",
@@ -105,11 +135,13 @@ powersyncRoutes.get("/api/powersync/token", async (c) => {
 // Registr zapisovatelných tabulek
 // ─────────────────────────────────────────────────────────────────────────────
 
-type ColType = "text" | "int" | "bool" | "ts";
+type ColType = "text" | "int" | "bool" | "ts" | "json";
 
 interface TableDef {
 	/** Zapisovatelné sloupce → typ (pro správný cast SQLite→Postgres). `id` se řeší zvlášť. */
 	columns: Record<string, ColType>;
+	/** Uživatelské texty s produktovým limitem; kontrola před DB dává stabilní 422. */
+	maxLengths?: Record<string, number>;
 	/** Má sloupec `updated_at` (nastaví se now() při zápisu). */
 	hasUpdatedAt: boolean;
 	/** Sloupec autora — na PUT se vyplní serverovým userId (atribuce, R10). */
@@ -139,6 +171,9 @@ interface TableDef {
 	/** FK sloupce na řádek (se sloupcem project_id), jehož projekt musí být útočníkův —
 	 *  brání cross-project referenci (parent_id/section_id/status_id). */
 	refProjectCols?: { col: string; table: string }[];
+	/** FK na workspace-scoped tabulku z project-scoped řádku; cíl musí patřit
+	 *  do stejného workspace jako projekt řádku (tasks.meeting_id → meetings). */
+	refTenantCols?: { col: string; table: string }[];
 	/** Sloupce s user_id, které musí být členem projektu řádku (assignments.user_id). */
 	memberCols?: string[];
 	/** FK sloupce na řádek se sloupcem `workspace_id`, jehož workspace musí být STEJNÝ jako
@@ -147,6 +182,11 @@ interface TableDef {
 	refWorkspaceCols?: { col: string; table: string }[];
 	/** Sloupce s user_id, které musí být členem workspace řádku (list_items.who_id). Audit S7. */
 	memberWorkspaceCols?: string[];
+	/** Řádek přiřazuje lidi k úkolu, který může být KOTEVNÍM úkolem porady — o účastnících
+	 *  (a tím o přístupu k doslovnému přepisu, §15/3) rozhoduje jen účastník nebo zakladatel
+	 *  porady. Bez toho si kterýkoli editor projektu přidá assignment sám a přepis si odemkne
+	 *  (audit CC-P0-13/F1: „pozvání" musí být akt účastníka, ne samoobsluha). */
+	meetingHubGuard?: boolean;
 }
 
 /** Pořadí projektových rolí (R5) — vyšší číslo = víc práv. */
@@ -154,6 +194,37 @@ const PROJECT_ROLE_RANK: Record<string, number> = {
 	commenter: 1,
 	editor: 2,
 	manager: 3,
+};
+
+type WorkspaceRole = "guest" | "member" | "manager" | "admin" | "owner";
+const WORKSPACE_ROLE_RANK: Record<WorkspaceRole, number> = {
+	guest: 0,
+	member: 1,
+	manager: 2,
+	admin: 3,
+	owner: 4,
+};
+
+/**
+ * Centrální default-deny policy pro workspace-scoped sync zdroje. Chybějící
+ * resource/action není „member může", ale zákaz. Jemné author/project/tenant
+ * guardy se vyhodnocují navíc pod touto minimální rolí.
+ */
+export const WORKSPACE_WRITE_POLICY: Record<
+	string,
+	Partial<Record<Op, WorkspaceRole>>
+> = {
+	goals: { PUT: "manager", PATCH: "manager", DELETE: "manager" },
+	goal_projects: { PUT: "manager", PATCH: "manager", DELETE: "manager" },
+	goal_milestones: { PUT: "manager", PATCH: "manager", DELETE: "manager" },
+	contacts: { PUT: "member", PATCH: "member", DELETE: "member" },
+	lists: { PUT: "member", PATCH: "member", DELETE: "member" },
+	list_sections: { PUT: "member", PATCH: "member", DELETE: "member" },
+	list_items: { PUT: "member", PATCH: "member", DELETE: "member" },
+	list_templates: { PUT: "manager", PATCH: "manager", DELETE: "manager" },
+	// Metadata meetings smí vzniknout pouze /api/meetings/plan nebo /extract.
+	// Sync nechává jen autorovu editaci/odstranění starších řádků.
+	meetings: { PATCH: "member" },
 };
 
 /** Write registry — exportovaný i pro contract test (verify-contract.ts). */
@@ -165,10 +236,12 @@ export const TABLES: Record<string, TableDef> = {
 			parent_id: "text",
 			name: "text",
 			description: "text",
+			why_now: "text",
 			priority: "int",
 			color: "text",
 			due_date: "ts",
 			start_date: "ts",
+			start_timezone: "text",
 			deadline: "ts",
 			duration_min: "int",
 			days: "int",
@@ -184,6 +257,7 @@ export const TABLES: Record<string, TableDef> = {
 			meeting_id: "text",
 			completed_at: "ts",
 		},
+		maxLengths: { why_now: 1000 },
 		hasUpdatedAt: true,
 		creatorCol: "created_by",
 		projectVia: { kind: "column", col: "project_id" },
@@ -192,6 +266,37 @@ export const TABLES: Record<string, TableDef> = {
 			{ col: "section_id", table: "sections" },
 			{ col: "status_id", table: "statuses" },
 		],
+		refTenantCols: [{ col: "meeting_id", table: "meetings" }],
+	},
+	task_dependencies: {
+		columns: {
+			project_id: "text",
+			blocking_task_id: "text",
+			blocked_task_id: "text",
+			created_by: "text",
+		},
+		hasUpdatedAt: false,
+		creatorCol: "created_by",
+		createOnly: true,
+		projectVia: { kind: "column", col: "project_id" },
+		refProjectCols: [
+			{ col: "blocking_task_id", table: "tasks" },
+			{ col: "blocked_task_id", table: "tasks" },
+		],
+	},
+	task_custom_field_values: {
+		columns: {
+			field_id: "text",
+			task_id: "text",
+			project_id: "text",
+			value: "json",
+			updated_by: "text",
+		},
+		hasUpdatedAt: true,
+		ownerCol: "updated_by",
+		minRole: "editor",
+		projectVia: { kind: "task", col: "task_id" },
+		refProjectCols: [{ col: "field_id", table: "project_custom_fields" }],
 	},
 	sections: {
 		columns: { project_id: "text", name: "text", position: "int" },
@@ -215,11 +320,22 @@ export const TABLES: Record<string, TableDef> = {
 			status: "text",
 			delivery_date: "ts",
 			definition_of_done: "text",
+			milestones_enabled: "bool",
+			urgent_acceptance_enabled: "bool",
+			urgent_acceptance_priority: "int",
 			archived_at: "ts",
 		},
 		hasUpdatedAt: true,
 		// Přejmenování/barvu smí editor; převod vlastnictví, viditelnost a archivaci jen manager.
-		managerCols: ["owner_id", "visibility", "status", "archived_at"],
+		managerCols: [
+			"owner_id",
+			"visibility",
+			"status",
+			"milestones_enabled",
+			"urgent_acceptance_enabled",
+			"urgent_acceptance_priority",
+			"archived_at",
+		],
 		projectVia: { kind: "self" },
 	},
 	statuses: {
@@ -243,14 +359,63 @@ export const TABLES: Record<string, TableDef> = {
 		hasUpdatedAt: false,
 		projectVia: { kind: "task", col: "task_id" },
 		memberCols: ["user_id"],
+		meetingHubGuard: true,
 	},
 	comments: {
-		columns: { task_id: "text", project_id: "text", body: "text" },
+		columns: { task_id: "text", project_id: "text", parent_id: "text", body: "text" },
+		maxLengths: { body: 10_000 },
 		hasUpdatedAt: true,
 		creatorCol: "author_id",
 		minRole: "commenter",
 		authorEditOnly: true,
 		projectVia: { kind: "task", col: "task_id" },
+		refProjectCols: [{ col: "parent_id", table: "comments" }],
+	},
+	comment_decisions: {
+		columns: {
+			comment_id: "text",
+			task_id: "text",
+			project_id: "text",
+		},
+		hasUpdatedAt: false,
+		creatorCol: "marked_by",
+		createOnly: true,
+		minRole: "editor",
+		projectVia: { kind: "task", col: "task_id" },
+		refProjectCols: [{ col: "comment_id", table: "comments" }],
+	},
+	mentions: {
+		columns: {
+			comment_id: "text",
+			task_id: "text",
+			project_id: "text",
+			user_id: "text",
+		},
+		hasUpdatedAt: false,
+		creatorCol: "created_by",
+		createOnly: true,
+		authorEditOnly: true,
+		minRole: "commenter",
+		projectVia: { kind: "task", col: "task_id" },
+		refProjectCols: [{ col: "comment_id", table: "comments" }],
+		memberCols: ["user_id"],
+	},
+	comment_reactions: {
+		columns: {
+			comment_id: "text",
+			task_id: "text",
+			project_id: "text",
+			user_id: "text",
+			emoji: "text",
+		},
+		hasUpdatedAt: false,
+		creatorCol: "user_id",
+		ownerCol: "user_id",
+		createOnly: true,
+		authorEditOnly: true,
+		minRole: "commenter",
+		projectVia: { kind: "task", col: "task_id" },
+		refProjectCols: [{ col: "comment_id", table: "comments" }],
 	},
 	task_occurrence_overrides: {
 		columns: {
@@ -260,7 +425,9 @@ export const TABLES: Record<string, TableDef> = {
 			done: "bool",
 			skipped: "bool",
 		},
-		hasUpdatedAt: false,
+		// Plánovací override sloupce mění výhradně atomický recurrence command.
+		// Offline sync dál bezpečně zapisuje jen done/skipped a obnovuje updated_at.
+		hasUpdatedAt: true,
 		projectVia: { kind: "task", col: "task_id" },
 	},
 	// R6 — per-uživatelská barva úkolu (overlay nad tasks; syncuje se jen vlastní barva).
@@ -366,6 +533,10 @@ export const TABLES: Record<string, TableDef> = {
 		columns: { goal_id: "text", project_id: "text", workspace_id: "text" },
 		hasUpdatedAt: false,
 		workspaceVia: { kind: "column", col: "workspace_id" },
+		refWorkspaceCols: [
+			{ col: "goal_id", table: "goals" },
+			{ col: "project_id", table: "projects" },
+		],
 	},
 	goal_milestones: {
 		columns: {
@@ -377,6 +548,7 @@ export const TABLES: Record<string, TableDef> = {
 		},
 		hasUpdatedAt: false,
 		workspaceVia: { kind: "column", col: "workspace_id" },
+		refWorkspaceCols: [{ col: "goal_id", table: "goals" }],
 	},
 	// Seznamy — checklisty na akce (handoff 2026-07-10): instance + sekce + položky + šablony.
 	contacts: {
@@ -391,6 +563,7 @@ export const TABLES: Record<string, TableDef> = {
 		},
 		hasUpdatedAt: true,
 		creatorCol: "created_by",
+		authorEditOnly: true,
 		workspaceVia: { kind: "column", col: "workspace_id" },
 	},
 	// Meets — porada (sidecar kotevního úkolu). Klient smí ZALOŽIT metadata (title/status +
@@ -399,6 +572,7 @@ export const TABLES: Record<string, TableDef> = {
 	// existující id nic nepřepíše; authorEditOnly = PATCH/DELETE jen autor nebo admin prostoru
 	// (audit Fáze 1: jinak mohl kdokoli z prostoru smazat poradu VČETNĚ serverového přepisu).
 	meetings: {
+		patchOnly: true,
 		columns: {
 			workspace_id: "text",
 			title: "text",
@@ -424,6 +598,7 @@ export const TABLES: Record<string, TableDef> = {
 		},
 		hasUpdatedAt: true,
 		creatorCol: "created_by",
+		authorEditOnly: true,
 		workspaceVia: { kind: "column", col: "workspace_id" },
 		refWorkspaceCols: [
 			{ col: "project_id", table: "projects" },
@@ -481,6 +656,50 @@ type Db = ReturnType<typeof getDb>;
 // biome-ignore lint: drizzle execute vrací driver-specific řádky
 type Rows = any;
 
+class SyncWriteConflict extends Error {
+	constructor(
+		readonly clientCode:
+			| "create_conflict"
+			| "idempotency_key_reused"
+			| "stale_write"
+			| "row_missing",
+	) {
+		super(clientCode);
+	}
+}
+
+/** JSON se stabilním pořadím klíčů pro kontrolní součet idempotentní operace. */
+function canonicalJson(value: unknown): string {
+	if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+	const record = value as Record<string, unknown>;
+	return `{${Object.keys(record)
+		.filter((key) => record[key] !== undefined)
+		.sort()
+		.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+		.join(",")}}`;
+}
+
+function writePayloadHash(value: unknown): string {
+	return createHash("sha256").update(canonicalJson(value)).digest("hex");
+}
+
+const syncWriteSchema = z
+	.object({
+		op: z.enum(["PUT", "PATCH", "DELETE"]),
+		table: z
+			.string()
+			.min(1)
+			.max(64)
+			.regex(/^[a-z_]+$/),
+		id: z.string().uuid(),
+		data: z.record(z.unknown()).optional(),
+		previous: z.record(z.unknown()).optional(),
+		clientId: z.string().min(1).max(128),
+		operationId: z.union([z.string().min(1).max(32), z.number().int().nonnegative()]),
+	})
+	.strict();
+
 /**
  * Deterministická chyba dat/omezení Postgresu (class 22 = data exception, 23 = integrity
  * constraint) → 400, ať klient op zahodí a NEblokuje upload frontu (500 = PowerSync retry forever).
@@ -493,6 +712,12 @@ type Rows = any;
  * Centrum sync problémů podle něj rozliší důvod odmítnutí.
  */
 function safeWriteError(err: unknown): { error: string; code: string | null } {
+	if (err instanceof SyncWriteConflict) {
+		return { error: "write_conflict", code: err.clientCode };
+	}
+	if (sqlstateOf(err) === "23505") {
+		return { error: "write_conflict", code: "create_conflict" };
+	}
 	return { error: "write_failed", code: sqlstateOf(err) };
 }
 
@@ -515,11 +740,51 @@ function isDeterministicDbError(err: unknown): boolean {
 	return code != null && /^(22|23)[0-9A-Za-z]{3}$/.test(code);
 }
 
+function writeErrorStatus(err: unknown): 409 | 422 | 500 {
+	if (err instanceof SyncWriteConflict || sqlstateOf(err) === "23505") return 409;
+	return isDeterministicDbError(err) ? 422 : 500;
+}
+
+/** Strukturovaný log bez SQL, parametrů, message a stacku. */
+function writeErrorLog(err: unknown, requestId: string | null): void {
+	const code = err instanceof SyncWriteConflict ? err.clientCode : sqlstateOf(err);
+	console.error(
+		JSON.stringify({
+			level: "error",
+			event: "sync_write_failed",
+			requestId,
+			name: err instanceof Error ? err.name : "UnknownError",
+			code,
+		}),
+	);
+}
+
 function coerce(type: ColType, v: unknown): unknown {
 	if (v == null) return null;
 	if (type === "int") return typeof v === "number" ? v : Number(v);
 	if (type === "bool") return v === true || v === 1 || v === "1" || v === "true";
+	if (type === "json") return typeof v === "string" ? v : JSON.stringify(v);
 	return String(v); // text + ts (ISO string → timestamptz cast Postgresem)
+}
+
+/** Sjednotí SQLite snapshot a Postgres hodnotu pro optimistický compare-and-swap. */
+function comparable(type: ColType, value: unknown, serializedJson = false): unknown {
+	if (value == null) return null;
+	if (type === "bool") return value === true || value === 1 || value === "1" || value === "true";
+	if (type === "int") return Number(value);
+	if (type === "ts") {
+		const date = value instanceof Date ? value : new Date(String(value));
+		return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
+	}
+	if (type === "json") {
+		if (!serializedJson || typeof value !== "string") return canonicalJson(value);
+		try {
+			return canonicalJson(JSON.parse(value));
+		} catch {
+			return canonicalJson(value);
+		}
+	}
+	return String(value);
 }
 
 async function projectViaTask(db: Db, taskId: string | null): Promise<string | null> {
@@ -605,7 +870,12 @@ async function creatorOfRow(
 /** Role uživatele v prostoru (memberships) — null = není člen. */
 async function workspaceRole(db: Db, workspaceId: string, userId: string): Promise<string | null> {
 	const rows = (await db.execute(
-		sql`SELECT role FROM memberships WHERE workspace_id = ${workspaceId} AND user_id = ${userId} LIMIT 1`,
+		sql`SELECT CASE WHEN w.owner_id = ${userId} THEN 'owner'::text ELSE m.role::text END AS role
+		    FROM workspaces w
+		    LEFT JOIN memberships m ON m.workspace_id = w.id AND m.user_id = ${userId}
+		    WHERE w.id = ${workspaceId}
+		      AND (w.owner_id = ${userId} OR m.user_id IS NOT NULL)
+		    LIMIT 1`,
 	)) as Rows;
 	return (rows[0]?.role as string) ?? null;
 }
@@ -630,6 +900,36 @@ async function workspaceFromDb(
  * Vrací null, pokud řádek zatím neexistuje (offline: reference se ještě nenahrála) —
  * v tom případě se kontrola přeskočí (stejně shovívavě jako refProjectCols).
  */
+/**
+ * §15/3 — o účastnících porady (a tím o přístupu k přepisu) rozhoduje jen účastník
+ * nebo zakladatel. Vrací poradu, jejímž kotevním úkolem `taskId` je (nebo null).
+ */
+async function meetingOfHubTask(
+	db: Db,
+	taskId: string,
+): Promise<{ id: string; created_by: string | null } | null> {
+	const rows = (await db.execute(
+		sql`SELECT id, created_by FROM meetings WHERE hub_task_id = ${taskId} LIMIT 1`,
+	)) as Rows;
+	return (rows[0] as { id: string; created_by: string | null } | undefined) ?? null;
+}
+
+/** Je `userId` mezi účastníky porady (assignments kotevního úkolu)? */
+async function isHubParticipant(db: Db, hubTaskId: string, userId: string): Promise<boolean> {
+	const rows = (await db.execute(
+		sql`SELECT 1 AS v FROM assignments WHERE task_id = ${hubTaskId} AND user_id = ${userId} LIMIT 1`,
+	)) as Rows;
+	return rows.length > 0;
+}
+
+/** task_id assignmentu podle jeho id (DELETE/PATCH nenesou data). */
+async function taskOfAssignment(db: Db, id: string): Promise<string | null> {
+	const rows = (await db.execute(
+		sql`SELECT task_id AS v FROM assignments WHERE id = ${id} LIMIT 1`,
+	)) as Rows;
+	return (rows[0]?.v as string) ?? null;
+}
+
 async function workspaceOfRow(db: Db, table: string, id: string): Promise<string | null> {
 	const rows = (await db.execute(
 		sql`SELECT workspace_id AS v FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
@@ -665,34 +965,42 @@ async function applyWrite(
 		return;
 	}
 
-	const set: { col: string; val: unknown }[] = Object.keys(def.columns)
-		.filter((c) => c in data)
-		.map((c) => ({ col: c, val: coerce(def.columns[c]!, data[c]) }));
-	if (op === "PUT" && def.creatorCol) set.push({ col: def.creatorCol, val: userId });
+	const set: { col: string; val: unknown; type: ColType }[] = Object.keys(def.columns)
+		// U CREATE autoritu identity drží server. Klientský lokální řádek může
+		// `created_by` obsahovat kvůli optimistickému UI, nesmí ale vytvořit druhý
+		// stejnojmenný INSERT sloupec ani podvrhnout jiného autora.
+		.filter((c) => c in data && !(op === "PUT" && c === def.creatorCol))
+		.flatMap((c) => {
+			const type = def.columns[c];
+			return type ? [{ col: c, val: coerce(type, data[c]), type }] : [];
+		});
+	if (op === "PUT" && def.creatorCol)
+		set.push({ col: def.creatorCol, val: userId, type: "text" });
 
 	if (op === "PUT") {
 		const cols = ["id", ...set.map((s) => s.col)];
-		const vals = [sql`${id}`, ...set.map((s) => sql`${s.val}`)];
-		const updates = set.map((s) => sql`${sql.raw(s.col)} = EXCLUDED.${sql.raw(s.col)}`);
-		if (def.hasUpdatedAt) updates.push(sql`updated_at = now()`);
-		// createOnly (CC-P0-06 krok): PUT na existující id NIC nepřepíše — žádný upsert,
-		// žádné přepsání autora. Ticho (DO NOTHING) je bezpečné: server zůstane pravdou.
-		const onConflict = def.createOnly
-			? sql`ON CONFLICT (id) DO NOTHING`
-			: sql`ON CONFLICT (id) DO UPDATE SET ${sql.join(updates, sql`, `)}`;
+		const vals = [
+			sql`${id}`,
+			...set.map((s) => (s.type === "json" ? sql`${s.val}::jsonb` : sql`${s.val}`)),
+		];
+		// PowerSync PUT je CREATE, nikoli upsert. Nová operace se stejným business id
+		// skončí 409; legitimní retry pozná auditedWrite podle idempotency receipt.
 		await db.execute(sql`
       INSERT INTO ${sql.raw(table)} (${sql.join(
 				cols.map((c) => sql.raw(c)),
 				sql`, `,
 			)})
       VALUES (${sql.join(vals, sql`, `)})
-      ${onConflict}
     `);
 		return;
 	}
 
 	// PATCH — jen sloupce přítomné v datech
-	const updates = set.map((s) => sql`${sql.raw(s.col)} = ${s.val}`);
+	const updates = set.map((s) =>
+		s.type === "json"
+			? sql`${sql.raw(s.col)} = ${s.val}::jsonb`
+			: sql`${sql.raw(s.col)} = ${s.val}`,
+	);
 	if (def.hasUpdatedAt) updates.push(sql`updated_at = now()`);
 	if (updates.length === 0) return;
 	await db.execute(
@@ -718,25 +1026,89 @@ async function auditedWrite(
 	id: string,
 	data: Record<string, unknown>,
 	userId: string,
-	ctx: { workspaceId: string | null; requestId: string | null },
-): Promise<void> {
-	await db.transaction(async (tx) => {
+	ctx: {
+		workspaceId: string | null;
+		requestId: string | null;
+		clientId: string;
+		operationId: string;
+		payloadHash: string;
+		previous: Record<string, unknown> | null;
+	},
+): Promise<"applied" | "replayed"> {
+	return db.transaction(async (tx) => {
+		// Receipt je v téže transakci jako business zápis i audit. Concurrent retry
+		// se po commitu první operace změní na replay; při rollbacku nezůstane falešný receipt.
+		const inserted = (await tx.execute(sql`
+			INSERT INTO sync_write_receipts
+				(id, user_id, client_id, operation_id, payload_hash, created_at)
+			VALUES
+				(${crypto.randomUUID()}, ${userId}, ${ctx.clientId}, ${ctx.operationId}, ${ctx.payloadHash}, now())
+			ON CONFLICT (user_id, client_id, operation_id) DO NOTHING
+			RETURNING payload_hash
+		`)) as Rows;
+		if (inserted.length === 0) {
+			const existing = (await tx.execute(sql`
+				SELECT payload_hash
+				FROM sync_write_receipts
+				WHERE user_id = ${userId}
+				  AND client_id = ${ctx.clientId}
+				  AND operation_id = ${ctx.operationId}
+				LIMIT 1
+			`)) as Rows;
+			if (existing[0]?.payload_hash !== ctx.payloadHash) {
+				throw new SyncWriteConflict("idempotency_key_reused");
+			}
+			return "replayed" as const;
+		}
+
 		const before =
 			op === "PUT"
 				? null
-				: (((await tx.execute(
-						sql`SELECT * FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
-					)) as Rows)[0] ?? null);
+				: ((
+						(await tx.execute(
+							sql`SELECT * FROM ${sql.raw(table)} WHERE id = ${id} LIMIT 1`,
+						)) as Rows
+					)[0] ?? null);
+		if (op !== "PUT") {
+			if (!before) throw new SyncWriteConflict("row_missing");
+			for (const [columnName, type] of Object.entries(def.columns)) {
+				const expected = ctx.previous?.[columnName];
+				if (!Object.is(comparable(type, before[columnName]), comparable(type, expected, true))) {
+					throw new SyncWriteConflict("stale_write");
+				}
+			}
+		}
 		await applyWrite(tx, table, def, op, id, data, userId);
 		// task_activity JE už audit (per-úkol historie) — neaudituj audit, jen šum.
-		if (table === "task_activity") return;
+		if (table === "task_activity") return "applied" as const;
 		const action = op === "PUT" ? "put" : op === "PATCH" ? "patch" : "delete";
-		const diff = op === "DELETE" ? null : sql`${JSON.stringify(data)}::jsonb`;
-		const beforeJson = before ? sql`${JSON.stringify(before)}::jsonb` : null;
+		let auditData: Record<string, unknown> = data;
+		let auditBefore: Record<string, unknown> | null = before;
+		if (table === "task_custom_field_values") {
+			const fieldId = String(data.field_id ?? before?.field_id ?? "");
+			const fieldRows = (await tx.execute(sql`
+				SELECT name, field_type FROM project_custom_fields WHERE id = ${fieldId} LIMIT 1
+			`)) as Rows;
+			const field = fieldRows[0];
+			auditData = {
+				...data,
+				field_name: field?.name ?? null,
+				field_type: field?.field_type ?? null,
+			};
+			if (before)
+				auditBefore = {
+					...before,
+					field_name: field?.name ?? null,
+					field_type: field?.field_type ?? null,
+				};
+		}
+		const diff = op === "DELETE" ? null : sql`${JSON.stringify(auditData)}::jsonb`;
+		const beforeJson = auditBefore ? sql`${JSON.stringify(auditBefore)}::jsonb` : null;
 		await tx.execute(sql`
       INSERT INTO audit_events (id, workspace_id, actor_type, actor_user_id, entity, entity_id, action, diff, before, request_id, created_at)
       VALUES (${crypto.randomUUID()}, ${ctx.workspaceId}, 'user', ${userId}, ${table}, ${id}, ${action}, ${diff}, ${beforeJson}, ${ctx.requestId}, now())
     `);
+		return "applied" as const;
 	});
 }
 
@@ -749,23 +1121,57 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 	if (!session) return c.json({ error: "unauthorized" }, 401);
 	const userId = session.user.id;
 
-	const body = (await c.req.json()) as {
-		op: Op;
-		table: string;
-		id: string;
-		data?: Record<string, unknown>;
+	const parsed = syncWriteSchema.safeParse(await c.req.json().catch(() => null));
+	if (!parsed.success) return c.json({ error: "invalid_write_envelope" }, 422);
+	const body = {
+		...parsed.data,
+		operationId: String(parsed.data.operationId),
 	};
 
 	const def = TABLES[body.table];
 	if (!def) return c.json({ error: `tabulka '${body.table}' není zapisovatelná` }, 400);
 
-	const data = body.data ?? {};
+	const data = { ...(body.data ?? {}) };
+	const previous = body.previous ?? null;
+	for (const [columnName, maxLength] of Object.entries(def.maxLengths ?? {})) {
+		const value = data[columnName];
+		if (value != null && String(value).length > maxLength) {
+			return c.json({ error: "field_too_long", field: columnName, maxLength }, 422);
+		}
+	}
+	// E-mailový reminder lze přijmout jen při nakonfigurovaném a osobně povoleném
+	// provideru. Offline zápis tak neskončí ve falešně doručitelném stavu.
+	if (body.table === "reminders" && data.channel === "email") {
+		const availability = await reminderEmailAvailability(userId);
+		if (!availability.enabled) return c.json({ error: availability.reason }, 422);
+	}
+	if (body.table === "tasks" && data.start_timezone != null) {
+		try {
+			new Intl.DateTimeFormat("en-GB", { timeZone: String(data.start_timezone) }).format(0);
+		} catch {
+			return c.json({ error: "invalid_start_timezone" }, 422);
+		}
+	}
+	if (body.op !== "PUT") {
+		const missing = Object.keys(def.columns).filter(
+			(columnName) => !previous || !Object.hasOwn(previous, columnName),
+		);
+		if (missing.length > 0) {
+			return c.json({ error: "missing_write_precondition" }, 422);
+		}
+	}
+	const payloadHash = writePayloadHash({
+		op: body.op,
+		table: body.table,
+		id: body.id,
+		data,
+		previous,
+	});
 	const db = getDb();
 
 	// Append-only tabulky (audit log): měnit ani mazat nelze.
 	if (def.appendOnly && body.op !== "PUT") return c.json({ error: "append-only" }, 403);
-	if (def.patchOnly && body.op === "PUT")
-		return c.json({ error: "create_via_api_only" }, 400);
+	if (def.patchOnly && body.op === "PUT") return c.json({ error: "create_via_api_only" }, 400);
 
 	// Vlastníkův sloupec (osobní připomínky/barvy/audit) — server VŽDY dosadí session userId.
 	// Klient nemůže padělat cizí identitu ani injektovat řádek do overlaye/pushe jiného uživatele.
@@ -773,6 +1179,8 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 
 	// Workspace-scoped tabulky (cíle): membership + role kontrola přes memberships.
 	if (def.workspaceVia) {
+		const minimumRole = WORKSPACE_WRITE_POLICY[body.table]?.[body.op];
+		if (!minimumRole) return c.json({ error: "workspace_action_not_allowed" }, 403);
 		const wsNeed = new Set<string>();
 		let rowWs: string | null = null;
 		if (body.op === "PUT" || body.op === "PATCH") {
@@ -793,6 +1201,12 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 				const role = await workspaceRole(db, w, userId);
 				if (!role) return c.json({ error: "forbidden" }, 403);
 				if (role === "guest") return c.json({ error: "read-only-host" }, 403);
+				if (
+					(WORKSPACE_ROLE_RANK[role as WorkspaceRole] ?? -1) <
+					WORKSPACE_ROLE_RANK[minimumRole]
+				) {
+					return c.json({ error: "insufficient-workspace-role" }, 403);
+				}
 			}
 		}
 		try {
@@ -804,8 +1218,8 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 					const refId = data[ref.col] as string | undefined;
 					if (!refId) continue;
 					const refWs = await workspaceOfRow(db, ref.table, refId);
-					// null = reference se ještě nenahrála (offline) → přeskoč (jako refProjectCols).
-					if (refWs && refWs !== rowWs) return c.json({ error: "cross-workspace-reference" }, 403);
+					if (!refWs) return c.json({ error: "reference_not_found", field: ref.col }, 422);
+					if (refWs !== rowWs) return c.json({ error: "cross-workspace-reference" }, 403);
 				}
 				// who_id apod. musí být člen workspace řádku (ne cizí/neexistující uživatel).
 				for (const col of def.memberWorkspaceCols ?? []) {
@@ -824,7 +1238,7 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 					let ok = false;
 					for (const w of wsNeed) {
 						const role = await workspaceRole(db, w, userId);
-						if (role === "admin" || role === "manager") ok = true;
+						if (role === "admin" || role === "manager" || role === "owner") ok = true;
 					}
 					if (!ok) return c.json({ error: "author-only" }, 403);
 				}
@@ -832,12 +1246,16 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 			await auditedWrite(db, body.table, def, body.op, body.id, data, userId, {
 				workspaceId: rowWs,
 				requestId: c.get("requestId") ?? null,
+				clientId: body.clientId,
+				operationId: body.operationId,
+				payloadHash,
+				previous,
 			});
 		} catch (err) {
-			console.error(`[watson-api][req:${c.get("requestId") ?? "-"}] write selhal:`, err);
+			writeErrorLog(err, c.get("requestId") ?? null);
 			return c.json(
 				{ ...safeWriteError(err), requestId: c.get("requestId") ?? null },
-				isDeterministicDbError(err) ? 400 : 500,
+				writeErrorStatus(err),
 			);
 		}
 		return c.json({ ok: true });
@@ -849,23 +1267,37 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 		// R5 — uživatel musí být členem KAŽDÉHO projektu, kterého se řádek dotkne:
 		// cílový (z dat), současný (z DB — i u PUT kvůli upsert ON CONFLICT) a projekty FK referencí.
 		const need = new Set<string>();
+		// Projekt samotného řádku (nikoli projekt FK reference) určuje tenant pro audit
+		// a cross-tenant reference.
+		let rowProject: string | null = null;
 		if (body.op === "PUT" || body.op === "PATCH") {
 			const t = await projectFromData(db, def, data, body.id);
-			if (t) need.add(t);
+			if (t) {
+				need.add(t);
+				rowProject = t;
+			}
 			// Anti-spoof: denormalizovaný project_id (řídí sync bucket) MUSÍ odpovídat projektu
 			// odvozenému z task_id — jinak by šel řádek podstrčit do cizího bucketu (#3).
 			if (t && def.projectVia?.kind === "task") data.project_id = t;
 		}
 		if (body.op === "PUT" || body.op === "PATCH" || body.op === "DELETE") {
 			const cur = await projectFromDb(db, body.table, def, body.id);
-			if (cur) need.add(cur);
+			if (cur) {
+				need.add(cur);
+				rowProject ??= cur;
+			}
 		}
 		// FK reference (parent_id/section_id/status_id) musí ukazovat do projektu, kde je útočník člen.
 		for (const ref of def.refProjectCols ?? []) {
 			const refId = data[ref.col] as string | undefined;
 			if (refId) {
 				const p = await projectOfRow(db, ref.table, refId);
-				if (p) need.add(p);
+				if (!p) return c.json({ error: "reference_not_found", field: ref.col }, 422);
+				// Být členem obou projektů nestačí: parent/section/status/task/comment
+				// musí patřit přímo do projektu zapisovaného řádku.
+				if (rowProject && p !== rowProject)
+					return c.json({ error: "cross-project-reference", field: ref.col }, 403);
+				need.add(p);
 			}
 		}
 		// DELETE neexistujícího řádku = no-op (idempotentní upload).
@@ -900,6 +1332,17 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 				if (!ok) return c.json({ error: "author-only" }, 403);
 			}
 		}
+		// §15/3 / audit CC-P0-13/F1 — účastníky porady mění jen účastník nebo zakladatel.
+		// Bez toho by si editor projektu přidal assignment na kotevní úkol a odemkl si tím
+		// doslovný přepis (a stejně tak by mohl účastníky svévolně odebírat).
+		if (def.meetingHubGuard) {
+			const taskId = (data.task_id as string | undefined) ?? (await taskOfAssignment(db, body.id));
+			const meet = taskId ? await meetingOfHubTask(db, taskId) : null;
+			if (meet && taskId) {
+				const allowed = meet.created_by === userId || (await isHubParticipant(db, taskId, userId));
+				if (!allowed) return c.json({ error: "not-a-participant" }, 403);
+			}
+		}
 		// member sloupce (assignments.user_id) musí být člen projektu řádku.
 		for (const col of def.memberCols ?? []) {
 			const uid = data[col] as string | undefined;
@@ -911,17 +1354,47 @@ powersyncRoutes.post("/api/sync/write", async (c) => {
 			}
 		}
 
-		const auditWs =
-			need.size > 0 ? await workspaceOfRow(db, "projects", [...need][0] as string) : null;
+		const auditWs = rowProject
+			? await workspaceOfRow(db, "projects", rowProject)
+			: need.size > 0
+				? await workspaceOfRow(db, "projects", [...need][0] as string)
+				: null;
+		// CC-P0-15: meeting_id úkolu nesmí ukazovat do jiného workspace.
+		if ((body.op === "PUT" || body.op === "PATCH") && auditWs) {
+			for (const ref of def.refTenantCols ?? []) {
+				const refId = data[ref.col] as string | undefined;
+				if (!refId) continue;
+				const refWs = await workspaceOfRow(db, ref.table, refId);
+				if (!refWs) return c.json({ error: "reference_not_found", field: ref.col }, 422);
+				if (refWs !== auditWs) return c.json({ error: "cross-workspace-reference" }, 403);
+			}
+		}
+		if (auditWs) {
+			const availability = await preflightAvailabilityForSyncWrite(db, {
+				workspaceId: auditWs,
+				actorUserId: userId,
+				table: body.table,
+				op: body.op,
+				id: body.id,
+				data,
+			});
+			if (availability && !availability.canSchedule) {
+				return c.json({ error: "availability_conflict", availability }, 409);
+			}
+		}
 		await auditedWrite(db, body.table, def, body.op, body.id, data, userId, {
 			workspaceId: auditWs,
 			requestId: c.get("requestId") ?? null,
+			clientId: body.clientId,
+			operationId: body.operationId,
+			payloadHash,
+			previous,
 		});
 	} catch (err) {
-		console.error(`[watson-api][req:${c.get("requestId") ?? "-"}] write selhal:`, err);
+		writeErrorLog(err, c.get("requestId") ?? null);
 		return c.json(
 			{ ...safeWriteError(err), requestId: c.get("requestId") ?? null },
-			isDeterministicDbError(err) ? 400 : 500,
+			writeErrorStatus(err),
 		);
 	}
 

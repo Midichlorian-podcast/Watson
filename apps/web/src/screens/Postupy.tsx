@@ -1,19 +1,33 @@
 import { useQuery as usePsQuery } from "@powersync/react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "@watson/i18n";
 import { Icon } from "@watson/ui";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AutomationCenter } from "../components/AutomationCenter";
+import { CopyLinkButton } from "../components/CopyLinkButton";
+import { DataLoading } from "../components/Loading";
 import { API_URL } from "../lib/api";
 import { useSession } from "../lib/auth-client";
-import { type ChainStepLite, repairChain, rewindToStep } from "../lib/chainAdvance";
+import {
+	activateStepManually,
+	type ChainStepLite,
+	repairChain,
+	rewindToStep,
+} from "../lib/chainAdvance";
 import { shiftChain, toggleChainWeekend } from "../lib/chainReflow";
+import { useEmployeeHub } from "../lib/employee";
+import { useEmployeeLifecycle } from "../lib/employeeLifecycle";
+import { focusOnMount } from "../lib/focusOnMount";
 import { initials } from "../lib/format";
 import type { ChainRow, TaskRow } from "../lib/powersync/AppSchema";
 import { powerSync } from "../lib/powersync/db";
-import { useProjects } from "../lib/projects";
+import { useProjectsWithState } from "../lib/projects";
+import { storageGet } from "../lib/storage";
 import { useTaskDetail } from "../lib/taskDetail";
 import { NOT_MEETING, toggleTask } from "../lib/tasks";
+import { showToast } from "../lib/toast";
+import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { useWorkspace, useWorkspaces } from "../lib/workspace";
 
 type Member = { id: string; name: string; email: string };
@@ -224,7 +238,7 @@ const TEMPLATES: {
 /** Šablony uložené z běžících postupů (localStorage, prototyp saveFlowAsTemplate). */
 function savedTemplates(): typeof TEMPLATES {
 	try {
-		return JSON.parse(localStorage.getItem("watson.flowTemplates") ?? "[]") as typeof TEMPLATES;
+		return JSON.parse(storageGet("watson.flowTemplates") ?? "[]") as typeof TEMPLATES;
 	} catch {
 		return [];
 	}
@@ -239,12 +253,16 @@ export function Postupy() {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const search = useSearch({ from: "/postupy" });
-	const projects = useProjects();
+	const { projects, isLoading: projectsLoading } = useProjectsWithState();
 	const { activeWs } = useWorkspace();
 	const { data: workspaces } = useWorkspaces();
 	const activeWsInfo = (workspaces ?? []).find((w) => w.id === activeWs);
 	const { data: session } = useSession();
 	const meId = session?.user?.id;
+	const employeeHub = useEmployeeHub();
+	const employeeLifecycle = useEmployeeLifecycle(
+		employeeHub.data?.linked === true && employeeHub.data.selfService,
+	);
 
 	const [mineOnly, setMineOnly] = useState(false);
 	const [modalOpen, setModalOpen] = useState(false);
@@ -255,15 +273,15 @@ export function Postupy() {
 	);
 	const wsProjectIds = useMemo(() => new Set(wsProjects.map((p) => p.id)), [wsProjects]);
 
-	const { data: chains } = usePsQuery<ChainRow>("SELECT * FROM chains ORDER BY created_at DESC");
-	const { data: steps } = usePsQuery<StepFull>(
+	const { data: chains, isLoading: chainsLoading } = usePsQuery<ChainRow>("SELECT * FROM chains ORDER BY created_at DESC");
+	const { data: steps, isLoading: stepsLoading } = usePsQuery<StepFull>(
 		"SELECT id, chain_id, task_id, project_id, position, gate, step_state, activated_at FROM chain_steps ORDER BY position",
 	);
-	const { data: tasks } = usePsQuery<TaskRow>(
+	const { data: tasks, isLoading: tasksLoading } = usePsQuery<TaskRow>(
 		// NOT_MEETING — porada nesmí být krokem štafety (audit Fáze 1: chybějící filtr)
 		`SELECT id, name, project_id, priority, due_date, completed_at, description, assignment_mode FROM tasks WHERE ${NOT_MEETING}`,
 	);
-	const { data: assignments } = usePsQuery<{
+	const { data: assignments, isLoading: assignmentsLoading } = usePsQuery<{
 		task_id: string | null;
 		user_id: string | null;
 	}>("SELECT task_id, user_id FROM assignments");
@@ -291,8 +309,10 @@ export function Postupy() {
 			return (await r.json()).members as Member[];
 		},
 	});
-	const memberName = (id: string | null | undefined) =>
-		(team ?? []).find((m) => m.id === id)?.name ?? "";
+	const memberName = useCallback(
+		(id: string | null | undefined) => (team ?? []).find((m) => m.id === id)?.name ?? "",
+		[team],
+	);
 
 	/** Role kroku — builder ji ukládá do popisu úkolu jako „Role: X" (prototyp flowView, ř. 2554). */
 	const stepRole = (st: ChainStepLite) => {
@@ -358,7 +378,19 @@ export function Postupy() {
 	}, [chains, steps, taskById, wsProjectIds, wsProjects, assigneesByTask, meId, memberName, t]);
 
 	const shown = mineOnly ? view.filter((v) => v.mine) : view;
+	const personalLifecycle = (employeeLifecycle.data?.instances ?? []).filter(
+		(instance) => !["completed", "cancelled"].includes(instance.status),
+	);
 	const selected = search.postup ? (view.find((v) => v.ch.id === search.postup) ?? null) : null;
+	if (search.view === "automation") {
+		return (
+			<AutomationCenter
+				workspaceId={activeWs}
+				projects={wsProjects}
+				onBack={() => void navigate({ to: "/postupy", search: {} })}
+			/>
+		);
+	}
 
 	return (
 		<div className="mx-auto max-w-[920px]" style={{ padding: "20px 22px 90px" }}>
@@ -383,8 +415,15 @@ export function Postupy() {
 				</span>
 				<button
 					type="button"
+					onClick={() => void navigate({ to: "/postupy", search: { view: "automation" } })}
+					className="ml-auto min-h-11 rounded-lg border border-line bg-card px-3 font-display text-xs font-bold text-ink-2 hover:border-brass"
+				>
+					Automatizace
+				</button>
+				<button
+					type="button"
 					onClick={() => setMineOnly((o) => !o)}
-					className="ml-auto inline-flex items-center gap-1.5 rounded-lg border font-display font-semibold"
+					className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border font-display font-semibold"
 					style={{
 						fontSize: 12,
 						padding: "7px 11px",
@@ -416,7 +455,40 @@ export function Postupy() {
 				{t("flows.subtitle")}
 			</p>
 
-			{view.length === 0 ? (
+			{personalLifecycle.length > 0 && (
+				<section className="mb-5 rounded-2xl border border-brass/30 bg-brass-soft/40 p-4" aria-labelledby="personal-lifecycle-heading">
+					<div className="flex flex-wrap items-start gap-3">
+						<div className="flex h-9 w-9 items-center justify-center rounded-xl bg-card text-brass-text shadow-sm">
+							<Icon name="postup" size={18} />
+						</div>
+						<div className="min-w-0 flex-1">
+							<h2 id="personal-lifecycle-heading" className="font-display text-sm font-bold text-ink">{t("employee.lifecycle.proceduresTitle")}</h2>
+							<p className="mt-1 font-body text-xs leading-relaxed text-ink-3">{t("employee.lifecycle.proceduresDescription")}</p>
+						</div>
+						<Link to="/zamestnanec" hash="nastup-a-odchod" className="inline-flex min-h-11 items-center rounded-lg border border-brass/30 bg-card px-3 font-display text-xs font-bold text-brass-text hover:border-brass">
+							{t("employee.lifecycle.open")}
+						</Link>
+					</div>
+					<div className="mt-3 grid gap-2 sm:grid-cols-2">
+						{personalLifecycle.map((instance) => {
+							const percent = Math.round((instance.completedCount / instance.totalCount) * 100);
+							return (
+								<Link key={instance.id} to="/zamestnanec" hash={instance.type} className="rounded-xl border border-line bg-card p-3 transition hover:border-brass hover:shadow-sm">
+									<div className="flex items-center gap-2">
+										<span className="min-w-0 flex-1 truncate font-display text-xs font-bold text-ink">{instance.title}</span>
+										<span className="shrink-0 font-mono text-[10px] text-ink-3">{instance.completedCount}/{instance.totalCount}</span>
+									</div>
+									<div className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-2"><div className="h-full rounded-full bg-brass" style={{ width: `${percent}%` }} /></div>
+								</Link>
+							);
+						})}
+					</div>
+				</section>
+			)}
+
+			{projectsLoading || chainsLoading || stepsLoading || tasksLoading || assignmentsLoading ? (
+				<DataLoading />
+			) : view.length === 0 ? (
 				<div className="text-center" style={{ padding: "60px 20px" }}>
 					<div className="font-body text-ink-3" style={{ fontSize: 14 }}>
 						{t("flows.empty")}
@@ -533,8 +605,8 @@ export function Postupy() {
 					taskById={taskById}
 					stepWho={stepWho}
 					stepAvatar={stepAvatar}
-					isMine={(st) => !!(st.task_id && meId && assigneesByTask.get(st.task_id)?.includes(meId))}
 					meId={meId}
+					workspaceId={selected.proj?.workspace_id}
 					onClose={() => void navigate({ to: "/postupy", search: {} })}
 				/>
 			)}
@@ -548,8 +620,8 @@ function FlowDetail({
 	taskById,
 	stepWho,
 	stepAvatar,
-	isMine,
 	meId,
+	workspaceId,
 	onClose,
 }: {
 	data: {
@@ -564,20 +636,31 @@ function FlowDetail({
 	stepWho: (st: ChainStepLite) => string;
 	/** Avatar kroku — iniciály / ◇ (role) / ? (nepřiřazený) — prototyp flowView. */
 	stepAvatar: (st: ChainStepLite) => string;
-	/** Je krok přiřazen mně? (chip „Připomenout" — prototyp canRemind, ř. 1136) */
-	isMine: (st: ChainStepLite) => boolean;
 	meId: string | undefined;
+	workspaceId: string | null | undefined;
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
+	const panelRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 	const { open: openTask, openId } = useTaskDetail();
 	const { ch, chSteps, total, done, now } = data;
 	const [pendingRewind, setPendingRewind] = useState<string | null>(null);
+	const [activatingManual, setActivatingManual] = useState<string | null>(null);
 	const skipWk = !!ch.skip_weekend;
 	// data-esc-layer signalizuje otevřenou vrstvu (kbNav/BulkBar), ale JEN dokud nad ní
 	// nestojí detail úkolu (openId) — jinak by blunt Esc-guard detailu (querySelector) našel
 	// naši vrstvu a zablokoval si vlastní zavření. Vzor NotifCenter.
 	const escLayer = openId ? undefined : "";
+	const completeStep = useCallback(
+		async (st: StepFull) => {
+			const tk = st.task_id ? taskById.get(st.task_id) : undefined;
+			if (!tk) return;
+			// Přes toggleTask (ne přímý UPDATE): dopočítá R9 status_id, u shared_all srovná
+			// per-osoba assignments (R2), zapíše undo a sám posune postup.
+			await toggleTask(tk, meId);
+		},
+		[taskById, meId],
+	);
 
 	// Otevření detailu = idempotentní oprava stavu kroků z tasks.completed_at (napraví drift ze
 	// souběžných offline změn; zapisuje jen když se stav liší → obvykle no-op).
@@ -591,10 +674,6 @@ function FlowDetail({
 			// Esc ani Enter nesmí propadnout sem, jinak Enter dokončí krok / Esc zavře postup
 			// pod otevřeným detailem úkolu (vzor sourozeneckých overlayů).
 			if (openId || document.querySelector("[data-esc-layer]:not([data-flow-layer])")) return;
-			if (e.key === "Escape") {
-				onClose();
-				return;
-			}
 			// Enter dokončí aktivní krok (prototyp ř. 2227).
 			const el = document.activeElement as HTMLElement | null;
 			const typing =
@@ -606,7 +685,7 @@ function FlowDetail({
 		};
 		window.addEventListener("keydown", h);
 		return () => window.removeEventListener("keydown", h);
-	}, [onClose, now, openId]);
+	}, [now, openId, completeStep]);
 
 	/** Uložit jako šablonu (prototyp saveFlowAsTemplate, ř. 2495) — per-user do localStorage. */
 	const STATE_LABEL: Record<string, string> = {
@@ -622,12 +701,20 @@ function FlowDetail({
 		? `${t("flows.etaCca")} ${fmtDay(dues.sort()[dues.length - 1] ?? null)}`
 		: "";
 
-	const completeStep = async (st: StepFull) => {
-		const tk = st.task_id ? taskById.get(st.task_id) : undefined;
-		if (!tk) return;
-		// Přes toggleTask (ne přímý UPDATE): dopočítá R9 status_id, u shared_all srovná
-		// per-osoba assignments (R2), zapíše undo a sám posune postup (advanceChainForTask).
-		await toggleTask(tk, meId);
+	const activateManual = async (st: StepFull) => {
+		if (activatingManual) return;
+		setActivatingManual(st.id);
+		try {
+			await activateStepManually(st);
+		} catch (error) {
+			showToast(
+				t("flows.manualActivationError", {
+					code: error instanceof Error ? error.message : "manual_activation_failed",
+				}),
+			);
+		} finally {
+			setActivatingManual(null);
+		}
 	};
 
 	return (
@@ -637,9 +724,13 @@ function FlowDetail({
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.34)", zIndex: 42 }}
+				style={{ background: "rgba(10,14,20,.34)", zIndex: "var(--w-layer-drawer)" }}
 			/>
 			<div
+				ref={panelRef}
+				role="dialog"
+				aria-modal="true"
+				aria-label={ch.name ?? t("flows.title")}
 				data-esc-layer={escLayer}
 				data-flow-layer={escLayer}
 				className="fixed top-0 right-0 bottom-0 flex flex-col border-line border-l bg-card"
@@ -647,7 +738,7 @@ function FlowDetail({
 					width: 470,
 					maxWidth: "94vw",
 					boxShadow: "var(--w-shadow)",
-					zIndex: 43,
+					zIndex: "calc(var(--w-layer-drawer) + 1)",
 				}}
 			>
 				{/* hlavička */}
@@ -681,11 +772,12 @@ function FlowDetail({
 						<span className="shrink-0 font-mono text-ink" style={{ fontSize: 15 }}>
 							{done}/{total}
 						</span>
+						<CopyLinkButton entity="flow" id={ch.id} workspaceId={workspaceId} />
 						<button
 							type="button"
 							onClick={onClose}
 							aria-label={t("common.cancel")}
-							className="flex shrink-0 text-ink-3 hover:text-ink"
+							className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-panel-2 hover:text-ink"
 						>
 							<Icon name="zavrit" size={16} />
 						</button>
@@ -900,6 +992,23 @@ function FlowDetail({
 										</span>
 									</div>
 									<div className="mt-2.5 flex items-center justify-end gap-2">
+										{sk === "dormant" && st.gate === "manual" && (
+											<button
+												type="button"
+												onClick={() => void activateManual(st)}
+												disabled={!!activatingManual}
+												className="rounded-lg border border-brass font-display font-bold text-brass-text"
+												style={{
+													padding: "6px 13px",
+													fontSize: 12,
+													opacity: activatingManual ? 0.55 : 1,
+												}}
+											>
+												{activatingManual === st.id
+													? t("flows.activatingManual")
+													: t("flows.activateManual")}
+											</button>
+										)}
 										{sk === "active" && (
 											<button
 												type="button"
@@ -974,12 +1083,14 @@ function FlowModal({
 	onCreated: (chainId: string) => void;
 }) {
 	const { t } = useTranslation();
+	const modalRef = useOverlayLayer<HTMLDivElement>(true, onClose);
 	const [name, setName] = useState("");
 	const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
 	const [anchor, setAnchor] = useState(addDays(todayISO(), 7));
 	const [tpl, setTpl] = useState<string | null>(null);
 	const [rows, setRows] = useState<
 		{
+			id: string;
 			name: string;
 			offset: number;
 			priority: number;
@@ -992,14 +1103,6 @@ function FlowModal({
 	>([]);
 	const [members, setMembers] = useState<Member[]>([]);
 	const allTemplates = useMemo(() => [...savedTemplates(), ...TEMPLATES], []);
-
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		window.addEventListener("keydown", h);
-		return () => window.removeEventListener("keydown", h);
-	}, [onClose]);
 
 	// R5 — po změně projektu vyčistit přiřazení kroků: staré who[] míří na členy předchozího
 	// projektu, kteří v novém nejsou (a v UI zmizí, takže je nelze odškrtnout) → insert by
@@ -1033,6 +1136,7 @@ function FlowModal({
 		setRows(
 			tp.steps.map((s) => ({
 				...s,
+				id: crypto.randomUUID(),
 				who: [],
 				role: "",
 				mode: s.mode ?? "any",
@@ -1126,13 +1230,18 @@ function FlowModal({
 				aria-label={t("common.cancel")}
 				onClick={onClose}
 				className="fixed inset-0"
-				style={{ background: "rgba(10,14,20,.42)", zIndex: 50 }}
+				style={{ background: "rgba(10,14,20,.42)", zIndex: "var(--w-layer-modal)" }}
 			/>
 			<div
 				className="pointer-events-none fixed inset-0 flex items-start justify-center"
-				style={{ zIndex: 51, paddingTop: "7vh" }}
+				style={{ zIndex: "calc(var(--w-layer-modal) + 1)", paddingTop: "7vh" }}
 			>
 				<div
+					ref={modalRef}
+					role="dialog"
+					aria-modal="true"
+					aria-label={t("flows.modalTitle")}
+					data-esc-layer
 					className="pointer-events-auto max-h-[86vh] overflow-auto rounded-2xl border border-line bg-card"
 					style={{ width: 680, maxWidth: "95vw", boxShadow: "var(--w-shadow)" }}
 				>
@@ -1166,8 +1275,7 @@ function FlowModal({
 
 					<div style={{ padding: "18px 20px" }}>
 						<input
-							// biome-ignore lint/a11y/noAutofocus: builder modal
-							autoFocus
+							ref={focusOnMount}
 							value={name}
 							onChange={(e) => setName(e.target.value)}
 							placeholder={t("flows.namePlaceholder")}
@@ -1236,6 +1344,7 @@ function FlowModal({
 									setTpl(null);
 									setRows([
 										{
+											id: crypto.randomUUID(),
 											name: "",
 											offset: 0,
 											priority: 3,
@@ -1270,9 +1379,7 @@ function FlowModal({
 								</div>
 								{rows.map((r, i) => (
 									<div
-										// stabilní key (index) — dřív obsahoval r.name → input se při psaní
-										// remountoval a ztrácel focus po jednom písmenu
-										key={i}
+										key={r.id}
 										className="mb-2 rounded-xl border border-line bg-card"
 										style={{ padding: "12px 13px" }}
 									>
@@ -1449,6 +1556,7 @@ function FlowModal({
 										setRows((rs) => [
 											...rs,
 											{
+												id: crypto.randomUUID(),
 												name: "",
 												offset: (rs[rs.length - 1]?.offset ?? 0) + 1,
 												priority: 3,

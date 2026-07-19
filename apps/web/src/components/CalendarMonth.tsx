@@ -2,15 +2,21 @@ import { useTranslation } from "@watson/i18n";
 import { useMemo, useState } from "react";
 import { useAddTask } from "../lib/addTask";
 import { useSession } from "../lib/auth-client";
+import { calendarDayClassName, calendarDayKind } from "../lib/calendarGesture";
 import type { TaskRow } from "../lib/powersync/AppSchema";
 import { useProjects } from "../lib/projects";
 import { useRowMeta } from "../lib/rowMeta";
 import { useTaskDetail } from "../lib/taskDetail";
-import { startMinOf } from "../lib/tasks";
-import { toggleTask } from "../lib/tasks";
+import { startMinOf, toggleTask } from "../lib/tasks";
 // sdílené helpery rozsahu úkolu (tIso/tIsoEnd/addDaysISO) — kruhový import je bezpečný,
 // používají se až za renderu
-import { addDaysISO, tIso, tIsoEnd } from "./Calendar";
+import {
+	addDaysISO,
+	availabilitySegment,
+	type CalendarAvailabilityBlock,
+	tIso,
+	tIsoEnd,
+} from "./Calendar";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -24,12 +30,16 @@ const startMin = (t: TaskRow): number | null => startMinOf(t);
  */
 export function CalendarMonth({
 	tasks,
+	availability = [],
+	timeZone = "Europe/Prague",
 	controlledBase,
 	borderColorOf,
 	onOpenDay,
 	onDropDay,
 }: {
 	tasks: TaskRow[];
+	availability?: CalendarAvailabilityBlock[];
+	timeZone?: string;
 	/** Řízený měsíc (z Calendar toolbaru) — skryje vlastní hlavičku. */
 	controlledBase?: Date;
 	/** Barva levého okraje chipu (priorita/projekt dle gear menu). */
@@ -135,14 +145,18 @@ export function CalendarMonth({
 
 			{/* dny v týdnu */}
 			<div className="grid grid-cols-7 gap-1.5" style={{ marginTop: 10 }}>
-				{weekdayLabels.map((w) => (
+				{weekdayLabels.map((w, index) => {
+					const day = new Date(2024, 0, 1 + index);
+					return (
 					<div
 						key={w}
-						className="pb-1 text-center font-display font-bold text-[11px] text-ink-3 uppercase tracking-wider"
+						data-calendar-day-kind={calendarDayKind(day)}
+						className={`${calendarDayClassName(day)} pb-1 text-center font-display font-bold text-[11px] text-ink-3 uppercase tracking-wider`}
 					>
 						{w}
 					</div>
-				))}
+					);
+				})}
 			</div>
 
 			{/* mřížka — fixní výška řádků 126px, overflow hidden (ř. 2871) */}
@@ -150,13 +164,21 @@ export function CalendarMonth({
 				{cells.map((cell) => {
 					const { date: d, iso, inMonth } = cell;
 					const isToday = iso === todayIso;
+					const dayKind = calendarDayKind(d);
 					const list = byDay.get(iso) ?? [];
 					const shown = list.slice(0, 3);
 					const more = list.length - shown.length;
+					const availabilityToday = availability
+						.map((block) => ({ block, segment: availabilitySegment(block, iso, timeZone) }))
+						.filter(
+							(value): value is { block: CalendarAvailabilityBlock; segment: { start: number; end: number } } =>
+								Boolean(value.segment),
+						);
 					return (
-						// biome-ignore lint/a11y/useKeyWithClickEvents: klik do prázdné buňky = nový úkol
-						<div
+						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							key={iso}
+							data-calendar-date={iso}
+							data-calendar-day-kind={dayKind}
 							onClick={(e) => {
 								if ((e.target as HTMLElement).closest("[data-mchip]")) return;
 								openAdd({ date: iso });
@@ -165,14 +187,16 @@ export function CalendarMonth({
 							onDrop={(e) => {
 								e.preventDefault();
 								const id = e.dataTransfer.getData("text/plain");
-								if (id && !id.includes("@")) onDropDay?.(id, iso, null);
+								if (id) onDropDay?.(id, iso, null);
 							}}
-							className="flex cursor-pointer flex-col gap-[3px] overflow-hidden rounded-[10px] border p-1.5"
+							className={`${calendarDayClassName(d)} flex cursor-pointer flex-col gap-[3px] overflow-hidden rounded-[10px] border p-1.5`}
 							style={{
 								borderColor: isToday ? "var(--w-brass)" : inMonth ? "var(--w-line)" : "transparent",
 								// přesahové dny (jiný měsíc) ztlumené — patrné, ale nesplývají s aktuálním
 								background: isToday
 									? "var(--w-brass-soft)"
+									: dayKind === "weekend"
+										? "color-mix(in srgb, var(--w-panel-2) 82%, var(--w-card))"
 									: inMonth
 										? "var(--w-card)"
 										: "var(--w-panel-2)",
@@ -193,16 +217,47 @@ export function CalendarMonth({
 							>
 								{d.getDate()}
 							</span>
+							{availabilityToday.length > 0 && (
+								<div
+									data-mchip
+									role="note"
+									aria-label={availabilityToday
+										.map(
+											({ block }) =>
+												`${t(`availability.kind.${block.kind ?? "unavailable"}`)}${block.approval_status === "pending" ? ` · ${t("availability.approval.pending")}` : ""}`,
+										)
+										.join(", ")}
+									style={{
+										minHeight: 16,
+										border: "1px dashed var(--w-brass)",
+										borderRadius: 4,
+										padding: "1px 4px",
+										background: availabilityToday.some(({ block }) => block.kind === "focus")
+											? "repeating-linear-gradient(135deg, var(--w-brass-soft), var(--w-brass-soft) 5px, var(--w-card) 5px, var(--w-card) 10px)"
+											: "var(--w-panel-2)",
+										color: "var(--w-brass-text)",
+										fontSize: 9.5,
+										fontWeight: 700,
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+										whiteSpace: "nowrap",
+									}}
+								>
+									{t(`availability.kind.${availabilityToday[0]?.block.kind ?? "unavailable"}`)}
+									{availabilityToday[0]?.block.approval_status === "pending" ? ` · ${t("availability.approval.pending")}` : ""}
+									{availabilityToday.length > 1 ? ` +${availabilityToday.length - 1}` : ""}
+								</div>
+							)}
 							{shown.map((tk) => {
 								const done = Boolean(tk.completed_at);
 								const sm = startMin(tk);
 								const ava = metaOf(tk).avatars[0];
 								return (
-									// biome-ignore lint/a11y/useKeyWithClickEvents: chip, klik = detail
-									<div
+									<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										key={tk.id}
 										data-mchip
-										draggable={!tk.id.includes("@")}
+										data-calendar-task-id={tk.id}
+										draggable
 										onDragStart={(e) => e.dataTransfer.setData("text/plain", tk.id)}
 										onClick={(e) => {
 											e.stopPropagation();
