@@ -10,8 +10,12 @@ import {
 	useState,
 } from "react";
 import { useAddTask } from "../lib/addTask";
-import { calendarWeekMinWidth, calendarWheelDirection } from "../lib/calendarViewport";
 import { useSession } from "../lib/auth-client";
+import {
+	calendarDayClassName,
+	calendarDayKind,
+	consumeCalendarWheel,
+} from "../lib/calendarGesture";
 import { materializeRecurringTasks, type OccurrenceOverrideRow } from "../lib/occurrenceProjection";
 import { parseOccId } from "../lib/occurrences";
 import type {
@@ -491,31 +495,44 @@ export function Calendar({
 		return () => window.removeEventListener("keydown", h);
 	}, [shiftCur, goToday, setMode]);
 
-	// Týden má vlastní nativní horizontální scroll. V Den/Měsíc čekáme na konec gesta
-	// a provedeme nejvýš jeden krok; starý while-loop dokázal z jediného swipu vyrobit
-	// až osm renderů a osm routerových navigací.
+	// Trackpad zachovává původní model Watsonu: obsah má vždy šířku obrazovky a gesto
+	// posouvá kotvu. V týdnu je to rolovací sedmidenní okno po jednom dni; měsíc se
+	// posouvá po měsících. Více kroků z jednoho impulzu sloučíme do jednoho renderu za frame.
 	const wheelAcc = useRef(0);
-	const wheelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const wheelOffset = useRef(0);
+	const wheelFrame = useRef<number | null>(null);
 	useEffect(
 		() => () => {
-			if (wheelTimer.current) clearTimeout(wheelTimer.current);
+			if (wheelFrame.current !== null) cancelAnimationFrame(wheelFrame.current);
 		},
 		[],
 	);
-	const onWheel = (e: React.WheelEvent) => {
-		if (modeRef.current === "week") return;
-		if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-		e.preventDefault();
-		wheelAcc.current += e.deltaX;
-		if (wheelTimer.current) clearTimeout(wheelTimer.current);
-		wheelTimer.current = setTimeout(() => {
-			const dir = calendarWheelDirection(wheelAcc.current, 0);
-			wheelAcc.current = 0;
-			wheelTimer.current = null;
-			if (!dir) return;
-			shiftCur(dir);
-		}, 90);
-	};
+	useEffect(() => {
+		const root = rootRef.current;
+		if (!root) return;
+		const onWheel = (event: WheelEvent) => {
+			if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+			event.preventDefault();
+			const progress = consumeCalendarWheel(wheelAcc.current, event.deltaX, event.deltaY);
+			wheelAcc.current = progress.remainder;
+			if (!progress.offset) return;
+			wheelOffset.current += progress.offset;
+			if (wheelFrame.current !== null) return;
+			wheelFrame.current = requestAnimationFrame(() => {
+				wheelFrame.current = null;
+				const offset = wheelOffset.current;
+				wheelOffset.current = 0;
+				if (!offset) return;
+				const currentMode = modeRef.current;
+				const next = new Date(curRef.current);
+				if (currentMode === "month") next.setMonth(next.getMonth() + offset, 1);
+				else next.setDate(next.getDate() + offset);
+				commitNavigation(currentMode, next);
+			});
+		};
+		root.addEventListener("wheel", onWheel, { passive: false });
+		return () => root.removeEventListener("wheel", onWheel);
+	}, [commitNavigation]);
 
 	const borderColorOf = (tk: TaskRow) =>
 		calBorder === "project" ? projColor(tk.project_id) : `var(--w-p${tk.priority ?? 4})`;
@@ -685,7 +702,6 @@ export function Calendar({
 			data-testid="calendar-root"
 			className="flex min-h-0 flex-col"
 			style={{ height: rootH, overscrollBehaviorX: "none" }}
-			onWheel={onWheel}
 		>
 			{/* toolbar — lišta s border-b (prototyp ř. 491–503) */}
 			<div
@@ -1148,24 +1164,19 @@ function WeekColumns({
 }) {
 	const { t } = useTranslation();
 	const uc = useUserColors();
-	const minWidth = calendarWeekMinWidth(days.length);
 	return (
-		<div
-			data-calendar-horizontal-scroll
-			className="w-calendar-horizontal-scroll flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden"
-		>
+		<div className="flex min-h-0 flex-1 flex-col">
 			{/* hlavičková lišta */}
-			<div
-				className="flex flex-none border-line border-b"
-				style={{ width: `max(100%, ${minWidth}px)` }}
-			>
+			<div className="flex flex-none border-line border-b">
 				{days.map((d) => {
 					const iso = isoOf(d);
 					const isToday = iso === todayIso;
 					return (
 						<div
 							key={iso}
-							className="min-w-0 flex-1 border-line border-l text-center"
+							data-calendar-day-header={iso}
+							data-calendar-day-kind={calendarDayKind(d)}
+							className={`${calendarDayClassName(d)} min-w-0 flex-1 border-line border-l text-center`}
 							style={{
 								padding: "7px 4px",
 								background: isToday ? "var(--w-brass-soft)" : undefined,
@@ -1195,14 +1206,10 @@ function WeekColumns({
 				})}
 			</div>
 			{/* ploché sloupce — flex:1 min-height:0 overflow auto (prototyp ř. 2607) */}
-			<div
-				className="flex min-h-0 flex-1 items-stretch overflow-y-auto"
-				style={{ width: `max(100%, ${minWidth}px)` }}
-			>
+			<div className="flex min-h-0 flex-1 items-stretch overflow-y-auto">
 				{days.map((d) => {
 					const iso = isoOf(d);
 					const isToday = iso === todayIso;
-					const wknd = d.getDay() === 0 || d.getDay() === 6;
 					const list = calTasks
 						.filter((tk) => hit(tk, iso))
 						.sort((a, b) => (startMin(a) ?? -1) - (startMin(b) ?? -1));
@@ -1221,15 +1228,13 @@ function WeekColumns({
 						<div
 							role="region"
 							key={iso}
-							className="flex min-w-0 flex-1 flex-col border-line border-l"
+							data-calendar-day={iso}
+							data-calendar-day-kind={calendarDayKind(d)}
+							className={`${calendarDayClassName(d)} flex min-w-0 flex-1 flex-col border-line border-l`}
 							style={{
 								gap: 4,
 								padding: "6px 4px",
-								background: isToday
-									? "rgba(198,138,62,.05)"
-									: wknd
-										? "rgba(120,120,140,.04)"
-										: undefined,
+								background: isToday ? "rgba(198,138,62,.05)" : undefined,
 							}}
 							onDragOver={(e) => e.preventDefault()}
 							onDrop={(e) => {
@@ -1389,7 +1394,6 @@ function TimeGrid({
 	const { metaOf } = useRowMeta();
 	const uc = useUserColors();
 	const H = 1440 * PPM;
-	const minWidth = calendarWeekMinWidth(days.length, days.length > 1);
 	const weekGridRef = useRef<HTMLDivElement>(null);
 	const allDayRef = useRef<HTMLDivElement>(null);
 	const [nowMin, setNowMin] = useState(
@@ -1777,10 +1781,7 @@ function TimeGrid({
 
 	return (
 		// full-bleed flex sloupec — bez rounded karty (prototyp buildWeek, ř. 2861)
-		<div
-			data-calendar-horizontal-scroll
-			className="w-calendar-horizontal-scroll flex min-h-0 flex-1 flex-col overflow-x-auto overflow-y-hidden"
-		>
+		<div className="flex min-h-0 flex-1 flex-col">
 			{/* plovoucí náhled tažené celodenní karty (vizuální feedback dragu) */}
 			{chipGhost && (
 				<div
@@ -1913,21 +1914,20 @@ function TimeGrid({
 				})()}
 			{/* hlavička dnů (jen týden; den view ji nemá — ř. 2846) */}
 			{isos.length > 1 && (
-				<div
-					className="flex flex-none"
-					style={{
-						marginLeft: 46,
-						width: `calc(max(100%, ${minWidth}px) - 46px)`,
-					}}
-				>
+				<div className="flex flex-none" style={{ marginLeft: 46 }}>
 					{days.map((d) => {
 						const iso = isoOf(d);
 						const isToday = iso === todayIso;
 						return (
 							<div
 								key={iso}
-								className="min-w-0 flex-1 text-center"
-								style={{ padding: "6px 0 4px" }}
+								data-calendar-day-header={iso}
+								data-calendar-day-kind={calendarDayKind(d)}
+								className={`${calendarDayClassName(d)} min-w-0 flex-1 text-center`}
+								style={{
+									padding: "6px 0 4px",
+									background: isToday ? "var(--w-brass-soft)" : undefined,
+								}}
 							>
 								<div
 									className="font-display font-bold uppercase"
@@ -1961,7 +1961,6 @@ function TimeGrid({
 				style={{
 					minHeight: 30,
 					background: "var(--w-panel-2)",
-					width: `max(100%, ${minWidth}px)`,
 				}}
 			>
 				{/* gutter popisek vertikálně i horizontálně na středu (prototyp ř. 2824) */}
@@ -2018,11 +2017,12 @@ function TimeGrid({
 					)}
 					{/* celodenní chipy per sloupec — jednodenní (týden) / vše přes hit (den); rozpočet + „+N" */}
 					<div className="flex">
-						{isos.map((iso) => {
+						{isos.map((iso, index) => {
 							const colM = allDay.cols.get(iso) ?? { chips: [], overflow: [] };
 							const list = colM.chips;
 							const overflowN = colM.overflow.length;
 							const isToday = iso === todayIso;
+							const day = days[index] ?? fromISO(iso);
 							return (
 								<div
 									role="button"
@@ -2034,11 +2034,13 @@ function TimeGrid({
 										}
 									}}
 									key={iso}
+									data-calendar-day={iso}
+									data-calendar-day-kind={calendarDayKind(day)}
 									onClick={(e) => {
 										if ((e.target as HTMLElement).closest("[data-adchip]")) return;
 										onAdd(iso, null);
 									}}
-									className="flex min-w-0 flex-1 flex-col border-line border-l"
+									className={`${calendarDayClassName(day)} flex min-w-0 flex-1 flex-col border-line border-l`}
 									style={{
 										gap: 3,
 										padding: 4,
@@ -2140,7 +2142,6 @@ function TimeGrid({
 			<div
 				ref={scrollRef}
 				className="min-h-0 flex-1 overflow-y-auto"
-				style={{ width: `max(100%, ${minWidth}px)` }}
 			>
 				<div
 					ref={weekGridRef}
@@ -2162,7 +2163,6 @@ function TimeGrid({
 					{days.map((d) => {
 						const iso = isoOf(d);
 						const isToday = iso === todayIso;
-						const wknd = d.getDay() === 0 || d.getDay() === 6;
 						// segment [segS, segE) úkolu v TOMTO sloupci (min od půlnoci sloupce).
 						// Vícedenní časovaný úkol = spojité segmenty: start→půlnoc, plné dny, půlnoc→konec.
 						// Při resize „bottom" použij živý konec z dragu (přes sloupce).
@@ -2239,6 +2239,8 @@ function TimeGrid({
 									}
 								}}
 								key={iso}
+								data-calendar-day={iso}
+								data-calendar-day-kind={calendarDayKind(d)}
 								onClick={gridClickAdd(iso)}
 								onPointerDown={createDown(iso)}
 								onDragOver={(e) => e.preventDefault()}
@@ -2249,13 +2251,9 @@ function TimeGrid({
 									const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 									void onMove(id, iso, snap((e.clientY - rect.top) / PPM));
 								}}
-								className="relative min-w-0 flex-1 border-line border-l"
+								className={`${calendarDayClassName(d)} relative min-w-0 flex-1 border-line border-l`}
 								style={{
-									background: isToday
-										? "var(--w-brass-soft)"
-										: wknd
-											? "rgba(120,120,140,.045)"
-											: undefined,
+									background: isToday ? "var(--w-brass-soft)" : undefined,
 								}}
 							>
 								{/* hodinové linky */}

@@ -51,24 +51,14 @@ body {
 	overflow-x: clip;
 }
 
-/* Týdenní kalendář je skutečný horizontální povrch. Safari tak po trackpadu
-   posouvá dny uvnitř Watsonu a gesto se nepřenese na celý dokument. */
-.w-calendar-horizontal-scroll {
-	overscroll-behavior-x: contain;
-	-webkit-overflow-scrolling: touch;
-	scrollbar-gutter: stable;
-	scrollbar-color: var(--w-ink-3) transparent;
+/* Kalendář je vždy široký přesně jako obrazovka. Trackpad mění jeho datumovou
+   kotvu; víkend je klidnější a pondělí zůstává čitelné i v rolovacím 7denním okně. */
+.w-calendar-day-weekend {
+	background-color: color-mix(in srgb, var(--w-panel-2) 82%, var(--w-card));
 }
 
-.w-calendar-horizontal-scroll::-webkit-scrollbar {
-	height: 10px;
-}
-
-.w-calendar-horizontal-scroll::-webkit-scrollbar-thumb {
-	border: 3px solid transparent;
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--w-ink-3) 62%, transparent);
-	background-clip: padding-box;
+.w-calendar-day-monday {
+	box-shadow: inset 2px 0 0 color-mix(in srgb, var(--w-brass) 72%, var(--w-line));
 }
 
 body {

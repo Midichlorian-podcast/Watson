@@ -56,38 +56,91 @@ async function waitForCalendar(page: Page) {
 	await page.getByRole("status", { name: "Synchronizováno", exact: true }).first().waitFor({
 		timeout: 30_000,
 	});
-	await page.locator("[data-calendar-horizontal-scroll]").waitFor({ timeout: 10_000 });
 }
 
-async function assertHorizontalTrackpad(page: Page, label: string) {
-	const surface = page.locator("[data-calendar-horizontal-scroll]").first();
-	const before = await surface.evaluate((element) => {
-		const html = document.documentElement;
-		element.scrollLeft = 0;
+async function weekHeaderDays(page: Page) {
+	return page.locator("[data-calendar-day-header]").evaluateAll((elements) =>
+		elements.map((element) => ({
+			date: (element as HTMLElement).dataset.calendarDayHeader ?? "",
+			kind: (element as HTMLElement).dataset.calendarDayKind ?? "",
+		})),
+	);
+}
+
+async function waitForWeekStart(page: Page, expected: string) {
+	await page.waitForFunction(
+		(date) =>
+			document.querySelector<HTMLElement>("[data-calendar-day-header]")?.dataset
+				.calendarDayHeader === date,
+		expected,
+		{ timeout: 1_000 },
+	);
+}
+
+async function waitForUrlState(page: Page, range: string, date: string) {
+	await page.waitForURL(
+		(url) => url.searchParams.get("rozsah") === range && url.searchParams.get("datum") === date,
+		{ timeout: 2_000 },
+	);
+}
+
+async function swipe(page: Page, deltaX: number) {
+	await page.locator('[data-testid="calendar-root"]').hover();
+	await page.mouse.wheel(deltaX, 0);
+}
+
+async function assertSevenDayWindow(page: Page, expectedStart: string, label: string) {
+	const days = await weekHeaderDays(page);
+	assert.equal(days.length, 7, `${label}: week must render exactly seven days`);
+	assert.equal(days[0]?.date, expectedStart, `${label}: wrong rolling-window anchor`);
+	assert.equal(
+		new Set(days.map((day) => day.date)).size,
+		7,
+		`${label}: week contains duplicate dates`,
+	);
+	assert.equal(
+		days.filter((day) => day.kind === "monday").length,
+		1,
+		`${label}: Monday boundary is missing`,
+	);
+	assert.equal(
+		days.filter((day) => day.kind === "weekend").length,
+		2,
+		`${label}: weekend treatment is missing`,
+	);
+	const presentation = await page.locator("[data-calendar-day-header]").evaluateAll((elements) => {
+		const monday = elements.find(
+			(element) => (element as HTMLElement).dataset.calendarDayKind === "monday",
+		);
+		const weekend = elements.find(
+			(element) => (element as HTMLElement).dataset.calendarDayKind === "weekend",
+		);
+		const weekday = elements.find(
+			(element) => (element as HTMLElement).dataset.calendarDayKind === "weekday",
+		);
 		return {
-			clientWidth: element.clientWidth,
-			scrollWidth: element.scrollWidth,
-			documentLeft: html.scrollLeft,
-			url: location.href,
+			mondayShadow: monday ? getComputedStyle(monday).boxShadow : "none",
+			weekendBackground: weekend ? getComputedStyle(weekend).backgroundColor : "",
+			weekdayBackground: weekday ? getComputedStyle(weekday).backgroundColor : "",
 		};
 	});
-	assert.ok(
-		before.scrollWidth > before.clientWidth + 100,
-		`${label}: calendar surface is not horizontally scrollable (${before.clientWidth}/${before.scrollWidth})`,
+	assert.notEqual(presentation.mondayShadow, "none", `${label}: Monday is not bounded visually`);
+	assert.notEqual(
+		presentation.weekendBackground,
+		presentation.weekdayBackground,
+		`${label}: weekend is not visually quieter`,
 	);
-	await surface.hover();
-	await page.mouse.wheel(520, 0);
-	await page.waitForTimeout(180);
-	const after = await surface.evaluate((element) => ({
-		scrollLeft: element.scrollLeft,
+}
+
+async function assertDocumentContained(page: Page, label: string) {
+	const metrics = await page.evaluate(() => ({
 		documentLeft: document.documentElement.scrollLeft,
 		bodyLeft: document.body.scrollLeft,
-		url: location.href,
+		overflows: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
 	}));
-	assert.ok(after.scrollLeft > 40, `${label}: horizontal trackpad gesture did not move days`);
-	assert.equal(after.documentLeft, 0, `${label}: document moved horizontally`);
-	assert.equal(after.bodyLeft, 0, `${label}: body moved horizontally`);
-	assert.equal(after.url, before.url, `${label}: week scroll unexpectedly changed calendar date`);
+	assert.equal(metrics.documentLeft, 0, `${label}: document moved horizontally`);
+	assert.equal(metrics.bodyLeft, 0, `${label}: body moved horizontally`);
+	assert.equal(metrics.overflows, false, `${label}: calendar escaped into document overflow`);
 }
 
 async function runBrowser(
@@ -109,27 +162,61 @@ async function runBrowser(
 		page.on("console", (message) => {
 			if (message.type() === "error") runtimeErrors.push(message.text());
 		});
-		await page.goto(`${WEB}/nadchazejici?zobrazeni=calendar&rozsah=week&datum=2026-07-11`, {
+		await page.goto(`${WEB}/nadchazejici?zobrazeni=calendar&rozsah=week&datum=2026-07-13`, {
 			waitUntil: "domcontentloaded",
 			timeout: 30_000,
 		});
 		await waitForCalendar(page);
 
 		await page.getByRole("button", { name: "Mřížka", exact: true }).click();
-		await assertHorizontalTrackpad(page, `${name}:grid:900`);
+		await assertSevenDayWindow(page, "2026-07-13", `${name}:grid:900`);
+		const wheelStarted = performance.now();
+		await swipe(page, 256);
+		await swipe(page, 256);
+		await waitForWeekStart(page, "2026-07-29");
+		const wheelToPaintMs = Math.round(performance.now() - wheelStarted);
+		assert.ok(wheelToPaintMs < 500, `${name}: wheel paint took ${wheelToPaintMs}ms`);
+		await waitForUrlState(page, "week", "2026-07-29");
+		await assertSevenDayWindow(page, "2026-07-29", `${name}:grid:rolling`);
+		await swipe(page, -32);
+		await waitForWeekStart(page, "2026-07-28");
+		await waitForUrlState(page, "week", "2026-07-28");
+		await assertDocumentContained(page, `${name}:grid:900`);
+
 		await page.setViewportSize({ width: 390, height: 844 });
-		await assertHorizontalTrackpad(page, `${name}:grid:390`);
-		assert.equal(
-			await page.evaluate(
-				() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
-			),
-			false,
-			`${name}: calendar escaped into document overflow`,
-		);
+		await assertSevenDayWindow(page, "2026-07-28", `${name}:grid:390`);
+		await assertDocumentContained(page, `${name}:grid:390`);
 
 		await page.setViewportSize({ width: 900, height: 820 });
 		await page.getByRole("button", { name: "Sloupce", exact: true }).click();
-		await assertHorizontalTrackpad(page, `${name}:columns:900`);
+		await assertSevenDayWindow(page, "2026-07-28", `${name}:columns:900`);
+		await swipe(page, 32);
+		await waitForWeekStart(page, "2026-07-29");
+		await waitForUrlState(page, "week", "2026-07-29");
+
+		await page.locator('[data-calendar-range="day"]').click();
+		await waitForUrlState(page, "day", "2026-07-29");
+		await swipe(page, 64);
+		await page.locator('[data-calendar-day="2026-07-31"]').first().waitFor({ timeout: 1_000 });
+		await waitForUrlState(page, "day", "2026-07-31");
+		await assertDocumentContained(page, `${name}:day`);
+
+		await page.locator('[data-calendar-range="month"]').click();
+		await waitForUrlState(page, "month", "2026-07-31");
+		await swipe(page, 32);
+		await page.locator('[data-calendar-date="2026-08-01"]').waitFor({ timeout: 1_000 });
+		await waitForUrlState(page, "month", "2026-08-01");
+		assert.equal(
+			await page.locator('[data-calendar-day-kind="monday"]').count() > 0,
+			true,
+			`${name}: month is missing Monday boundaries`,
+		);
+		assert.equal(
+			await page.locator('[data-calendar-day-kind="weekend"]').count() > 0,
+			true,
+			`${name}: month is missing weekend treatment`,
+		);
+		await assertDocumentContained(page, `${name}:month`);
 
 		const label = page.locator('[data-testid="calendar-range-label"]');
 		const beforeLabel = await label.textContent();
@@ -143,10 +230,10 @@ async function runBrowser(
 		);
 		const clickToPaintMs = Math.round(performance.now() - clickStarted);
 		assert.ok(clickToPaintMs < 500, `${name}: navigation paint took ${clickToPaintMs}ms`);
-		await page.waitForURL(/datum=2026-07-18/, { timeout: 2_000 });
+		await waitForUrlState(page, "month", "2026-09-01");
 		assert.deepEqual(runtimeErrors, [], `${name}: runtime errors`);
 		await context.close();
-		return { browser: name, clickToPaintMs };
+		return { browser: name, clickToPaintMs, wheelToPaintMs };
 	} finally {
 		await browser.close();
 	}
