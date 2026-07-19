@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useOverlayLayer } from "../lib/useOverlayLayer";
 import { PersonalMailComposer } from "./PersonalMailComposer";
+import { MAIL_COMPOSE_EVENT } from "./events";
 import {
 	PERSONAL_COMPOSE_INTENT_EVENT,
 	takePersonalComposeIntent,
@@ -257,6 +258,15 @@ export function PersonalMailWorkspace({
 			window.clearTimeout(timer);
 			window.removeEventListener(PERSONAL_COMPOSE_INTENT_EVENT, consume);
 		};
+	}, []);
+	useEffect(() => {
+		const compose = () => {
+			setComposerReply(null);
+			setComposerPrefill(null);
+			setComposerOpen(true);
+		};
+		window.addEventListener(MAIL_COMPOSE_EVENT, compose);
+		return () => window.removeEventListener(MAIL_COMPOSE_EVENT, compose);
 	}, []);
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent) => {

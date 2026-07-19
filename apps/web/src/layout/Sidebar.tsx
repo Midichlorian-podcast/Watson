@@ -23,6 +23,7 @@ import { useProjects } from "../lib/projects";
 import { openWatsonWindow, windowSurfaceForPath } from "../lib/windowSurfaces";
 import { isLeadership, useWorkspace, useWorkspaces } from "../lib/workspace";
 import { useMailUnread } from "../mail/state";
+import { MAIL_COMPOSE_EVENT } from "../mail/events";
 import { CORE_NAV, EMPLOYEE_NAV, type NavItem, TOOL_NAV, VELIN_NAV } from "./nav";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -153,6 +154,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 	const { openAdd } = useAddTask();
 	const { data: session } = useSession();
 	const path = useRouterState({ select: (s) => s.location.pathname });
+	const onMail = path.startsWith("/mail");
 	const navigationMode = useNavigationMode();
 	const [toolsOpen, setToolsOpen] = useState(false);
 	// Aktivní projektový filtr (?projekt=) — zvýraznění řádku projektu (prototyp data-projrow).
@@ -415,11 +417,14 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 				</button>
 			</div>
 
-			{/* + Přidat úkol */}
+			{/* Primární akce odpovídá právě otevřenému pracovnímu kontextu. */}
 			<button
 				type="button"
-				onClick={() => openAdd()}
-				title={t("shell.newTask")}
+				onClick={() => {
+					if (onMail) window.dispatchEvent(new Event(MAIL_COMPOSE_EVENT));
+					else openAdd();
+				}}
+				title={onMail ? "Napsat nový e-mail" : t("shell.newTask")}
 				className="font-display hover:brightness-105"
 				style={{
 					display: "flex",
@@ -438,7 +443,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
 				}}
 			>
 				<Icon name="pridat" size={collapsed ? 16 : 14} />
-				{!collapsed && t("shell.addTask")}
+				{!collapsed && (onMail ? "Napsat e-mail" : t("shell.addTask"))}
 			</button>
 
 			{/* nav */}

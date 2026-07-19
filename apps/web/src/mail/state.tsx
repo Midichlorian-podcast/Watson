@@ -334,7 +334,8 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const [exp, setExpState] = useState<Record<string, boolean>>({});
 	const [translated, setTranslated] = useState(false);
 	const [imgOk, setImgOk] = useState<Record<string, boolean>>({});
-	const [sum, setSum] = useState(true);
+	// Shrnutí je pomocný kontext, ne hlavní obsah vlákna; výchozí stav je kompaktní.
+	const [sum, setSum] = useState(false);
 	const [undo, setUndo] = useState<UndoState | null>(null);
 	const [warn, setWarn] = useState<{ id: string; markDone: boolean } | null>(null);
 	const [collArmed, setCollArmed] = useState<Record<string, boolean>>({});

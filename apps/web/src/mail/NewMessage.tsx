@@ -268,6 +268,8 @@ export function NewMessage({ open, onClose }: { open: boolean; onClose: () => vo
 
 	return (
 		<div
+			role="dialog"
+			aria-label="Nová zpráva"
 			data-esc-layer
 			data-screen-label="Nová zpráva"
 			style={{

@@ -24,6 +24,7 @@ import { openWatsonWindow } from "../lib/windowSurfaces";
 import { CheatSheet } from "./CheatSheet";
 import { MailDemoBanner } from "./DemoBanner";
 import { DeniScreen } from "./DeniScreen";
+import { MAIL_COMPOSE_EVENT } from "./events";
 import { FloatComposer } from "./FloatComposer";
 import { MailList, useListRows } from "./MailList";
 import { MailSub } from "./MailSub";
@@ -252,6 +253,13 @@ export function MailScreen() {
 		const h = () => openSearch();
 		window.addEventListener("watson-mail:search", h);
 		return () => window.removeEventListener("watson-mail:search", h);
+	}, []);
+	useEffect(() => {
+		const compose = () => {
+			if (mRef.current.folder !== "osobni") setNewOn(true);
+		};
+		window.addEventListener(MAIL_COMPOSE_EVENT, compose);
+		return () => window.removeEventListener(MAIL_COMPOSE_EVENT, compose);
 	}, []);
 
 	// forward z vlákna (Přeposlat → m.newMsg): jakmile se objeví, otevři Novou zprávu

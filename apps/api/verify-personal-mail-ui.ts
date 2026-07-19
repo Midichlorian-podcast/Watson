@@ -235,6 +235,16 @@ async function run(browserName: "chromium" | "webkit") {
 			throw new Error("personal_mail_ui_body_leaked_in_summary");
 		}
 
+		// Primární CTA shellu se v mailovém kontextu přepne z úkolu na e-mail
+		// a v osobní složce musí otevřít skutečný osobní composer, ne týmové demo.
+		await page.locator("aside").getByRole("button", { name: "Napsat e-mail", exact: true }).click();
+		let composer = page.getByRole("dialog", { name: "Nová osobní zpráva", exact: true });
+		await composer.waitFor();
+		if ((await page.getByRole("dialog", { name: "Nová zpráva", exact: true }).count()) !== 0) {
+			throw new Error("personal_mail_ui_sidebar_opened_team_demo");
+		}
+		await composer.getByRole("button", { name: "Zrušit", exact: true }).click();
+
 		// Watson smí návrh mailu označit jako provedený jen tehdy, když skutečně
 		// otevře osobní composer s přesným obsahem. Přenos je jednorázový a nejde
 		// přes URL; route stub izoluje UI kontrakt od externího AI providera.
@@ -266,7 +276,7 @@ async function run(browserName: "chromium" | "webkit") {
 		await watson.getByText("Návrh e-mailu: „Audit Watsona“", { exact: true }).waitFor();
 		await watson.getByRole("button", { name: "Provést 1", exact: true }).click();
 		await page.waitForURL(/\/mail(?:\?|$)/, { timeout: 30_000 });
-		let composer = page.getByRole("dialog", { name: "Nová osobní zpráva", exact: true });
+		composer = page.getByRole("dialog", { name: "Nová osobní zpráva", exact: true });
 		await composer.waitFor({ timeout: 30_000 });
 		if (
 			(await composer.getByLabel("Komu", { exact: true }).inputValue()) !==

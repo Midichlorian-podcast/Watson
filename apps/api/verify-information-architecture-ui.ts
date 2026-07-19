@@ -489,6 +489,58 @@ async function verifyCalendarNavigation(
 	);
 }
 
+async function verifyMailCommunicationHierarchy(
+	page: Page,
+	browserName: "chromium" | "webkit",
+) {
+	await page.goto(`${WEB}/mail`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+	const thread = page.locator("[data-threadpane]");
+	await thread.waitFor({ timeout: 30_000 });
+	const primaryReply = thread.locator("[data-mail-primary-reply]");
+	const composer = thread.locator("[data-mail-reply-composer]");
+	const editor = composer.locator("[data-rte]");
+	const suggestion = composer.locator("[data-mail-ai-suggestion]");
+	const preview = suggestion.locator("[data-mail-ai-preview]");
+	await primaryReply.waitFor();
+	await editor.waitFor();
+	await preview.waitFor();
+	const suggestionBox = await suggestion.boundingBox();
+	if (!suggestionBox || suggestionBox.height > 130) {
+		throw new Error(`ia_ui_mail_ai_not_compact_${browserName}:${suggestionBox?.height ?? "missing"}`);
+	}
+	const previewText = (await preview.innerText()).trim();
+	if (!previewText || previewText.length > 190 || previewText.includes("S pozdravem")) {
+		throw new Error(`ia_ui_mail_ai_preview_not_one_sentence_${browserName}:${previewText}`);
+	}
+	const tasks = thread.locator("[data-mail-context-tasks]");
+	if ((await tasks.count()) > 0 && (await tasks.getAttribute("open")) !== null) {
+		throw new Error(`ia_ui_mail_tasks_not_collapsed_${browserName}`);
+	}
+	await primaryReply.click();
+	await page.waitForFunction(() => document.activeElement?.matches("[data-rte]"), undefined, {
+		timeout: 5_000,
+	});
+
+	const more = thread.getByRole("button", { name: "Další akce s e-mailem", exact: true });
+	await more.click();
+	const workflow = thread.locator("[data-mail-workflow-menu]");
+	await workflow.getByText(/Předat/).waitFor();
+	await workflow.getByText("Vytvořit navázaný úkol", { exact: true }).waitFor();
+	await more.click();
+
+	const sidebar = page.locator("aside");
+	const compose = sidebar.getByRole("button", { name: "Napsat e-mail", exact: true });
+	await compose.click();
+	const newMessage = page.getByRole("dialog", { name: "Nová zpráva", exact: true });
+	await newMessage.waitFor();
+	await newMessage.getByRole("button", { name: "Zavřít novou zprávu", exact: true }).click();
+	await assertAxeClean(page, `${browserName}_mail_communication_hierarchy`);
+	await screenshot(page, browserName, "ia-mail-communication-hierarchy");
+	console.log(
+		`  ✓ ${browserName}: mail prioritizes reply/compose; AI, tasks and handoff are secondary`,
+	);
+}
+
 async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit") {
 	const fixture = await provision(browserName, "admin");
 	const memberOnly = await provisionMemberOnlyWorkspace(fixture.userId, browserName);
@@ -632,6 +684,7 @@ async function verifyAdmin(browser: Browser, browserName: "chromium" | "webkit")
 		)
 			throw new Error(`ia_ui_upcoming_default_reload_${browserName}`);
 		await verifyCalendarNavigation(page, browserName, runtimeErrors);
+		await verifyMailCommunicationHierarchy(page, browserName);
 
 		await page.goto(`${WEB}/projekty`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 		await page.getByRole("button", { name: "Přidat projekt do Mých záložek", exact: true }).click();

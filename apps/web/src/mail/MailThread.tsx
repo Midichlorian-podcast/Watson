@@ -76,6 +76,17 @@ const textToHtml = (txt: string): string =>
 				.join("<br>")
 		: "";
 
+/** Jedna obsahová věta pro kompaktní náhled AI návrhu; samotné oslovení přeskočí. */
+const suggestionPreview = (paragraphs: string[]): string => {
+	const clean = paragraphs.map((paragraph) => paragraph.replace(/\s+/g, " ").trim()).filter(Boolean);
+	const source =
+		clean.find(
+			(paragraph) => !/^(dobrý den|ahoj|vážen(?:ý|á|í))[^.!?]{0,90}[.!?]?$/i.test(paragraph),
+		) ?? clean[0] ?? "";
+	const sentence = source.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() ?? source;
+	return sentence.length > 180 ? `${sentence.slice(0, 177).trimEnd()}…` : sentence;
+};
+
 /* ── sdílené kousky markup ── */
 
 const avStyle = (size: number, fs: number): CSSProperties => ({
@@ -211,6 +222,8 @@ export function MailThread() {
 	// Volba podpisu odpovědi PRO TENTO MAIL (per-mail override); null = výchozí dle schránky.
 	const [replySigOverride, setReplySigOverride] = useState<string | null>(null);
 	const [colorPop, setColorPop] = useState(false);
+	const [aiDraftExpanded, setAiDraftExpanded] = useState(false);
+	const [contextTasksExpanded, setContextTasksExpanded] = useState(false);
 	const headRef = useRef<HTMLDivElement>(null);
 	const compRef = useRef<HTMLDivElement>(null);
 	const rteRef = useRef<HTMLDivElement>(null);
@@ -259,6 +272,8 @@ export function MailThread() {
 		setConf(false);
 		setHostPrev(false);
 		setTaskM(false);
+		setAiDraftExpanded(false);
+		setContextTasksExpanded(false);
 	}, [tid]);
 
 	/**
@@ -468,6 +483,8 @@ export function MailThread() {
 	// mode: bez konceptu + AI návrh → karta „draft"; jinak edit/empty (RTE)
 	let mode: "draft" | "edit" | "empty" = dr?.mode ?? (canDraft && t.aiDraft ? "draft" : "empty");
 	if (mode === "draft" && !(canDraft && t.aiDraft)) mode = "empty";
+	const showAiDraft = mode === "draft" && canDraft && !!t.aiDraft;
+	const aiDraftPreview = suggestionPreview(t.draft ?? []);
 	const quick = t.quick ?? [];
 	const showQuickRow =
 		mode !== "draft" && !draftText && !e.sent && !e.closed && aiOn && quick.length > 0;
@@ -501,9 +518,8 @@ export function MailThread() {
 			}
 		}, 30);
 	};
-	/** Odpovědět z karty/tlačítek: přepne draft kartu do edit režimu a fokusne. */
+	/** Odpovědět z tlačítek: editor je vždy dostupný, akce jej pouze fokusne. */
 	const startEdit = () => {
-		if (mode === "draft") m.setDraft(t.id, draftText);
 		focusComp();
 	};
 
@@ -786,11 +802,31 @@ export function MailThread() {
 								flex: "none",
 								alignItems: "center",
 								flexWrap: "wrap",
-								justifyContent: "flex-end",
-							}}
-						>
-							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-								onClick={() => setPop(pop === "flag" ? null : "flag")}
+									justifyContent: "flex-end",
+								}}
+							>
+								<button
+									type="button"
+									data-primary
+									data-mail-primary-reply
+									onClick={startEdit}
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										gap: 6,
+										minHeight: 32,
+										padding: "6px 12px",
+									}}
+								>
+									<svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
+										<path d="M6 3.2 L2.6 6.6 L6 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+										<path d="M2.6 6.6 H8.6 A2.9 2.9 0 0 1 11.5 9.5 V10.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+									</svg>
+									Odpovědět
+								</button>
+								<span style={{ width: 1, height: 20, background: "var(--line)", margin: "0 2px" }} />
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+									onClick={() => setPop(pop === "flag" ? null : "flag")}
 								title="Priorita a urgence vlákna — P1 až P4"
 								data-pflag={e.flag}
 							>
@@ -802,88 +838,11 @@ export function MailThread() {
 								data-mstate={e.st}
 								style={{ cursor: "pointer" }}
 							>
-								{STL[e.st] ?? e.st}
-								<ChevSvg style={{ opacity: 0.6 }} />
-							</span>
-							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-								onClick={() => setPop(pop === "assign" ? null : "assign")}
-								title="Přiřazená odpovědná osoba"
-								style={{
-									display: "inline-flex",
-									alignItems: "center",
-									gap: 6,
-									border: "1px solid var(--line)",
-									borderRadius: 999,
-									padding: "2px 9px 2px 3px",
-									cursor: "pointer",
-									background: "var(--panel)",
-								}}
-							>
-								{owner ? (
-									<span data-av={owner.av} style={{ ...avStyle(19, 8), display: "inline-flex" }}>
-										{owner.ini}
-									</span>
-								) : (
-									<span
-										style={{
-											width: 19,
-											height: 19,
-											borderRadius: "50%",
-											border: "1.4px dashed var(--ink-3)",
-											display: "inline-flex",
-										}}
-									/>
-								)}
-								<span
-									data-actlbl
-									style={{
-										fontFamily: "var(--w-font-display)",
-										fontWeight: 600,
-										fontSize: 11.5,
-										color: "var(--ink-2)",
-									}}
-								>
-									{owner ? first(owner.n) : "Přiřadit"}
+									{STL[e.st] ?? e.st}
+									<ChevSvg style={{ opacity: 0.6 }} />
 								</span>
-								<ChevSvg style={{ color: "var(--ink-3)" }} />
-							</span>
-							<span style={{ width: 1, height: 20, background: "var(--line)", margin: "0 2px" }} />
-							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-								onClick={() => setTaskM(true)}
-								title="Udělej z mailu úkol — formulář s prioritou, termínem a projektem, propojí se s vláknem"
-								data-ghost
-								style={{
-									display: "inline-flex",
-									alignItems: "center",
-									gap: 5,
-									fontSize: 11.5,
-									padding: "6px 10px",
-								}}
-							>
-								<svg width="11" height="11" viewBox="0 0 13 13" aria-hidden>
-									<line
-										x1="6.5"
-										y1="2"
-										x2="6.5"
-										y2="11"
-										stroke="currentColor"
-										strokeWidth="1.7"
-										strokeLinecap="round"
-									/>
-									<line
-										x1="2"
-										y1="6.5"
-										x2="11"
-										y2="6.5"
-										stroke="currentColor"
-										strokeWidth="1.7"
-										strokeLinecap="round"
-									/>
-								</svg>
-								<span data-actlbl>Úkol</span>
-							</span>
-							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-								onClick={() => setPop(pop === "more" ? null : "more")}
+								<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+									onClick={() => setPop(pop === "more" ? null : "more")}
 								aria-label="Další akce s e-mailem"
 								title="Další akce s e-mailem"
 								data-ghost
@@ -899,26 +858,10 @@ export function MailThread() {
 								<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden>
 									<circle cx="8" cy="3.5" r="1.3" fill="currentColor" />
 									<circle cx="8" cy="8" r="1.3" fill="currentColor" />
-									<circle cx="8" cy="12.5" r="1.3" fill="currentColor" />
-								</svg>
-							</span>
-							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
-								onClick={() => m.rowAct(t.id, "done")}
-								title="Hotovo — terminální stav, urgence se už neobnoví"
-								data-ghost
-								style={{
-									display: "inline-flex",
-									alignItems: "center",
-									gap: 5,
-									fontSize: 11.5,
-									padding: "6px 11px",
-									color: "var(--success-ink)",
-								}}
-							>
-								<CheckSvg size={11} />
-								<span data-actlbl>Hotovo</span>
-							</span>
-						</div>
+										<circle cx="8" cy="12.5" r="1.3" fill="currentColor" />
+									</svg>
+								</span>
+							</div>
 					)}
 				</div>
 
@@ -1129,10 +1072,40 @@ export function MailThread() {
 					</div>
 				)}
 
-				{/* popover: další akce — plné ⋯ menu (prototyp ř. 871–895) */}
-				{pop === "more" && !t.personal && (
-					<div style={popShell(226, 5)}>
-						<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+					{/* popover: další akce — plné ⋯ menu (prototyp ř. 871–895) */}
+					{pop === "more" && !t.personal && (
+						<div data-mail-workflow-menu style={popShell(246, 5)}>
+							<div style={popTitle}>Práce s vláknem</div>
+							<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+								onClick={() => setPop("assign")}
+								data-menuitem
+							>
+								<span style={{ flex: 1 }}>{owner ? `Předat od ${first(owner.n)}` : "Předat / přiřadit"}</span>
+								<span style={menuBadge}>workflow</span>
+							</div>
+							<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+								onClick={() => {
+									setPop(null);
+									setTaskM(true);
+								}}
+								data-menuitem
+							>
+								<span style={{ flex: 1 }}>Vytvořit navázaný úkol</span>
+								<span style={menuBadge}>úkol</span>
+							</div>
+							<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
+								onClick={() => {
+									setPop(null);
+									m.rowAct(t.id, "done");
+								}}
+								data-menuitem
+								style={{ color: "var(--success-ink)" }}
+							>
+								<span style={{ flex: 1 }}>Označit vlákno jako Hotovo</span>
+								<CheckSvg size={11} />
+							</div>
+							<div style={{ height: 1, background: "var(--line)", margin: "4px 6px" }} />
+							<div role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 							onClick={() => {
 								setPop(null);
 								// Deep link stále respektuje oprávnění cílové schránky (L-22).
@@ -1550,29 +1523,38 @@ export function MailThread() {
 
 							{/* navázané úkoly (prototyp ř. 953–960) */}
 							{links.length > 0 && (
-								<div
+								<details
+									data-mail-context-tasks
+									open={contextTasksExpanded}
+									onToggle={(event) => setContextTasksExpanded(event.currentTarget.open)}
 									style={{
-										display: "flex",
-										gap: 8,
-										alignItems: "center",
-										flexWrap: "wrap",
 										border: "1px solid var(--line)",
 										borderRadius: 11,
-										padding: "8px 12px",
 										marginBottom: 6,
 										background: "var(--panel)",
 									}}
 								>
-									<span
+									<summary
 										style={{
-											fontFamily: "var(--w-font-mono)",
-											fontSize: 9.5,
-											color: "var(--ink-3)",
-											flex: "none",
+											display: "flex",
+											alignItems: "center",
+											gap: 8,
+											padding: "7px 11px",
+											cursor: "pointer",
+											listStyle: "none",
 										}}
 									>
-										NAVÁZANÉ ÚKOLY
-									</span>
+										<span style={{ fontFamily: "var(--w-font-display)", fontWeight: 700, fontSize: 10.5, color: "var(--ink-3)", flex: "none" }}>
+											{links.length === 1 ? "Navázaný úkol" : `Navázané úkoly (${links.length})`}
+										</span>
+										<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+											{links[0]?.n}
+										</span>
+										<span style={{ fontFamily: "var(--w-font-mono)", fontSize: 10, color: "var(--brass-text)", flex: "none" }}>
+											{contextTasksExpanded ? "Sbalit" : "Rozbalit"}
+										</span>
+									</summary>
+									<div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "0 11px 9px" }}>
 									{links.map((tk) => {
 										const rec = m.bridge.taskStates?.[tk.app];
 										return (
@@ -1622,7 +1604,8 @@ export function MailThread() {
 											</span>
 										);
 									})}
-								</div>
+									</div>
+								</details>
 							)}
 
 							{/* AI shrnutí vlákna (prototyp ř. 961–969) */}
@@ -1669,19 +1652,21 @@ export function MailThread() {
 										>
 											SHRNUTÍ VLÁKNA
 										</div>
-										{m.sum && (
-											<div
-												style={{
-													fontFamily: "var(--w-font-body)",
-													fontSize: 12.5,
-													color: "var(--ink-2)",
-													lineHeight: 1.55,
-													marginTop: 3,
-												}}
-											>
-												{t.sum}
-											</div>
-										)}
+										<div
+											style={{
+												fontFamily: "var(--w-font-body)",
+												fontSize: 12,
+												color: "var(--ink-2)",
+												lineHeight: 1.5,
+												marginTop: 3,
+												display: m.sum ? "block" : "-webkit-box",
+												WebkitLineClamp: m.sum ? undefined : 1,
+												WebkitBoxOrient: m.sum ? undefined : "vertical",
+												overflow: m.sum ? undefined : "hidden",
+											}}
+										>
+											{m.sum ? t.sum : suggestionPreview([t.sum ?? ""])}
+										</div>
 									</div>
 									<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 										onClick={() => m.setSum(!m.sum)}
@@ -1693,7 +1678,7 @@ export function MailThread() {
 											flex: "none",
 										}}
 									>
-										{m.sum ? "skrýt" : "zobrazit"}
+										{m.sum ? "Sbalit" : "Rozbalit"}
 									</span>
 								</div>
 							)}
@@ -2274,9 +2259,10 @@ export function MailThread() {
 
 			{/* ── VRSTVA 2: composer (prototyp ř. 1147–1380) — RTE + toolbar + karty ── */}
 			{/* CSS ≥1440 vnucuje [data-tpane="mail"] display:flex !important → nutný column */}
-			<div
-				ref={compRef}
-				data-tpane="mail"
+				<div
+					ref={compRef}
+					data-tpane="mail"
+					data-mail-reply-composer
 				style={{
 					flex: "none",
 					flexDirection: "column",
@@ -2296,7 +2282,11 @@ export function MailThread() {
 						paddingBottom: 7,
 					}}
 				>
-					<LockSvg size={11} style={{ color: "var(--ink-3)", flex: "none" }} />
+						<strong style={{ fontFamily: "var(--w-font-display)", fontSize: 13.5, color: "var(--ink)" }}>
+							Odpověď
+						</strong>
+						<span style={{ width: 1, height: 16, background: "var(--line)", flex: "none" }} />
+						<LockSvg size={11} style={{ color: "var(--ink-3)", flex: "none" }} />
 					<span style={{ fontFamily: "var(--w-font-body)", fontSize: 11.5, color: "var(--ink-3)" }}>
 						Odpovídáš jako
 					</span>
@@ -2391,17 +2381,19 @@ export function MailThread() {
 					</span>
 				</div>
 
-				{/* AI draft karta (prototyp comp.isDraft, ř. 1183–1209) — jen aiDraft && AI on && bez konceptu */}
-				{mode === "draft" && (
+				{/* Watson je pomocník composeru: kompaktní náhled, editor zůstává vždy dostupný. */}
+				{showAiDraft && (
 					<div
+						data-mail-ai-suggestion
 						style={{
-							border: "1.5px solid var(--brass)",
+							border: "1px solid var(--brass)",
 							background: "var(--brass-soft)",
-							borderRadius: 13,
-							padding: "11px 13px",
+							borderRadius: 11,
+							padding: "8px 10px",
+							marginBottom: 8,
 						}}
 					>
-						<div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+						<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
 							<span
 								style={{
 									width: 17,
@@ -2428,7 +2420,7 @@ export function MailThread() {
 									color: "var(--brass-text)",
 								}}
 							>
-								Watson · návrh odpovědi
+								Watson navrhuje odpověď
 							</span>
 							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => setCpop(cpop === "why" ? null : "why")}
@@ -2440,7 +2432,7 @@ export function MailThread() {
 									cursor: "pointer",
 								}}
 							>
-								proč tenhle návrh?
+								Proč?
 							</span>
 							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => m.setDraft(t.id, "", "empty")}
@@ -2495,28 +2487,37 @@ export function MailThread() {
 								</div>
 							</div>
 						)}
-						<div
-							role="region"
-							// biome-ignore lint/a11y/noNoninteractiveTabindex: Posuvný text musí být dosažitelný klávesnicí (axe scrollable-region-focusable).
-							tabIndex={0}
-							aria-label="Návrh odpovědi od Watsonu"
-							style={{ maxHeight: 148, overflow: "auto" }}
-						>
-							{keyedValues(t.draft ?? [], (paragraph) => paragraph).map(({ key, value: p }) => (
-								<p
-									key={key}
-									style={{
-										fontFamily: "var(--w-font-body)",
-										fontSize: 12.5,
-										color: "var(--ink)",
-										lineHeight: 1.6,
-										margin: "0 0 6px",
-									}}
-								>
-									{p}
-								</p>
-							))}
-						</div>
+						{aiDraftExpanded ? (
+							<div
+								role="region"
+								// biome-ignore lint/a11y/noNoninteractiveTabindex: Posuvný text musí být dosažitelný klávesnicí (axe scrollable-region-focusable).
+								tabIndex={0}
+								aria-label="Celý návrh odpovědi od Watsonu"
+								style={{ maxHeight: 148, overflow: "auto", marginTop: 7 }}
+							>
+								{keyedValues(t.draft ?? [], (paragraph) => paragraph).map(({ key, value: p }) => (
+									<p key={key} style={{ fontFamily: "var(--w-font-body)", fontSize: 12, color: "var(--ink)", lineHeight: 1.55, margin: "0 0 6px" }}>
+										{p}
+									</p>
+								))}
+							</div>
+						) : (
+							<div
+								data-mail-ai-preview
+								style={{
+									fontFamily: "var(--w-font-body)",
+									fontSize: 12,
+									color: "var(--ink-2)",
+									lineHeight: 1.45,
+									marginTop: 5,
+									overflow: "hidden",
+									textOverflow: "ellipsis",
+									whiteSpace: "nowrap",
+								}}
+							>
+								{aiDraftPreview}
+							</div>
+						)}
 						<div
 							style={{
 								display: "flex",
@@ -2534,8 +2535,15 @@ export function MailThread() {
 								data-ghost
 								style={{ fontSize: 11.5, padding: "6px 12px", background: "var(--panel)" }}
 							>
-								Použít a upravit
+								Vložit do odpovědi
 							</span>
+							<button
+								type="button"
+								onClick={() => setAiDraftExpanded((expanded) => !expanded)}
+								style={{ border: 0, background: "transparent", color: "var(--brass-text)", minHeight: 30, padding: "4px 6px", cursor: "pointer", fontFamily: "var(--w-font-display)", fontWeight: 650, fontSize: 11.5 }}
+							>
+								{aiDraftExpanded ? "Sbalit návrh" : "Celý návrh"}
+							</button>
 							<span role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.click(); } }}
 								onClick={() => m.setDraft(t.id, "", "empty")}
 								data-ghost
@@ -2557,8 +2565,6 @@ export function MailThread() {
 					</div>
 				)}
 
-				{mode !== "draft" && (
-					<>
 						{/* quick reply chipy (prototyp comp.quick) */}
 						{showQuickRow && (
 							<div
@@ -3517,8 +3523,6 @@ export function MailThread() {
 								)}
 							</div>
 						)}
-					</>
-				)}
 			</div>
 
 			{/* ── undo lišta po odeslání (prototyp ř. 2225–2230) ── */}

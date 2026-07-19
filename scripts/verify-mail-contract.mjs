@@ -40,6 +40,11 @@ const [schema, vault, contentVault, powersync, mailAccounts, mailSync, mailImapS
     read("packages/db/drizzle/0087_mail_shared_draft_guards.sql"),
     read("packages/db/drizzle/0088_sour_zarda.sql"),
   ]);
+const [teamThread, sidebar, mailEvents] = await Promise.all([
+  read("apps/web/src/mail/MailThread.tsx"),
+  read("apps/web/src/layout/Sidebar.tsx"),
+  read("apps/web/src/mail/events.ts"),
+]);
 
 assert.match(schema, /mailAccounts = pgTable/);
 assert.match(schema, /mailAccountCredentials = pgTable/);
@@ -153,6 +158,17 @@ assert.match(personalComposer, /Nezapomněl\/a jsi přílohu/);
 assert.match(personalComposer, /Po kliknutí máš 10 sekund na vrácení odeslání/);
 assert.match(personalComposer, /Návrh se nikdy neodešle sám/);
 assert.match(personalComposer, /Nahradit rozepsaný text návrhem/);
+assert.match(teamThread, /data-mail-primary-reply/);
+assert.match(teamThread, /data-mail-reply-composer/);
+assert.match(teamThread, /data-mail-ai-preview/);
+assert.match(teamThread, /data-mail-context-tasks/);
+assert.match(teamThread, /data-mail-workflow-menu/);
+assert.doesNotMatch(teamThread, /\{mode !== "draft" &&/);
+assert.match(sidebar, /onMail \? "Napsat e-mail"/);
+assert.match(sidebar, /MAIL_COMPOSE_EVENT/);
+assert.match(mailEvents, /watson-mail:compose/);
+assert.match(mailScreen, /addEventListener\(MAIL_COMPOSE_EVENT/);
+assert.match(personalWorkspace, /addEventListener\(MAIL_COMPOSE_EVENT/);
 assert.match(mailScreen, /<MailDemoBanner/);
 assert.match(demoBanner, /data-mail-demo-banner/);
 assert.match(env, /MAIL_VAULT_KEYS_JSON/);
