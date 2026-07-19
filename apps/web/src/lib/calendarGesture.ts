@@ -1,5 +1,9 @@
 export const CALENDAR_WHEEL_THRESHOLD = 32;
 export const CALENDAR_WHEEL_MAX_STEPS = 8;
+export const CALENDAR_STRIP_BUFFER_DAYS = 3;
+export const CALENDAR_STRIP_SETTLE_MS = 110;
+export const CALENDAR_STRIP_SNAP_MS = 150;
+export const CALENDAR_INITIAL_HOUR = 6;
 
 export interface CalendarWheelProgress {
 	offset: number;
@@ -22,8 +26,39 @@ export function calendarDayClassName(day: Date | number): string {
 	return "";
 }
 
+export function calendarStripDayWidth(viewportWidth: number, visibleDays: number): number {
+	if (!Number.isFinite(viewportWidth) || viewportWidth <= 0 || visibleDays < 1) return 0;
+	return viewportWidth / Math.floor(visibleDays);
+}
+
+export function calendarStripCenter(dayWidth: number, bufferDays: number): number {
+	if (!Number.isFinite(dayWidth) || dayWidth <= 0 || bufferDays < 0) return 0;
+	return dayWidth * Math.floor(bufferDays);
+}
+
+/** Nejbližší celodenní kotva po doběhnutí nativní setrvačnosti trackpadu. */
+export function nearestCalendarDayOffset(
+	scrollLeft: number,
+	center: number,
+	dayWidth: number,
+	minOffset: number,
+	maxOffset: number,
+): number {
+	if (!Number.isFinite(scrollLeft) || !Number.isFinite(center) || dayWidth <= 0) return 0;
+	return Math.max(minOffset, Math.min(maxOffset, Math.round((scrollLeft - center) / dayWidth)));
+}
+
+export function calendarInitialScrollTop(
+	pixelsPerMinute: number,
+	hour = CALENDAR_INITIAL_HOUR,
+	topPadding = 8,
+): number {
+	if (!Number.isFinite(pixelsPerMinute) || pixelsPerMinute <= 0) return 0;
+	return Math.max(0, Math.min(24, hour) * 60 * pixelsPerMinute - topPadding);
+}
+
 /**
- * Převádí horizontální trackpad deltu na diskrétní posun kalendářní kotvy.
+ * Převádí horizontální trackpad deltu na diskrétní posun měsíční kotvy.
  * Zbytek se zachová mezi eventy, takže i jemné Safari delty postupně překročí práh.
  * Jeden event je omezený stejně jako v původním prototypu, aby velký impuls
  * nepřeskočil nekontrolovaně desítky dnů.

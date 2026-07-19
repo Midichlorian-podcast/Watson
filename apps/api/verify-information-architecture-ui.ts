@@ -417,6 +417,10 @@ async function verifyCalendarNavigation(
 	runtimeErrors: string[],
 ) {
 	const runtimeErrorStart = runtimeErrors.length;
+	await page.evaluate(() => {
+		localStorage.setItem("watson.calWeekView", "grid");
+		localStorage.setItem("watson.calDensity", "comfortable");
+	});
 	const waitForState = async (range: "day" | "week" | "month", date: string) => {
 		try {
 			await page.waitForURL(
@@ -474,29 +478,115 @@ async function verifyCalendarNavigation(
 
 	await calendar.getByRole("button", { name: "Další", exact: true }).click();
 	await waitForState("week", "2026-07-20");
+	const weekStrip = calendar.locator('[data-calendar-strip="week-grid"]');
+	await weekStrip.waitFor();
+	const weekGeometry = await weekStrip.evaluate((element) => ({
+		clientWidth: element.clientWidth,
+		scrollLeft: element.scrollLeft,
+		scrollTop: element.scrollTop,
+		visibleDays: element.getAttribute("data-calendar-visible-days"),
+		initialHour: element.getAttribute("data-calendar-initial-hour"),
+	}));
+	const primaryWeekHeaders = calendar.locator(
+		'[data-calendar-day-header][data-calendar-primary="true"]',
+	);
+	if (
+		weekGeometry.visibleDays !== "7" ||
+		weekGeometry.initialHour !== "6" ||
+		Math.abs(weekGeometry.scrollTop - (6 * 60 * 0.62 - 8)) > 2 ||
+		(await primaryWeekHeaders.count()) !== 7 ||
+		(await primaryWeekHeaders.first().getAttribute("data-calendar-day-header")) !== "2026-07-20" ||
+		(await primaryWeekHeaders.last().getAttribute("data-calendar-day-header")) !== "2026-07-26"
+	) {
+		throw new Error(
+			`ia_ui_calendar_week_geometry_${browserName}:${JSON.stringify(weekGeometry)}`,
+		);
+	}
+
+	// Během gesta se hýbe pouze pixelový pás; datum se změní až po doběhu a snapu.
+	const weekDayWidth = weekGeometry.clientWidth / 7;
+	await calendar.dispatchEvent("wheel", { deltaX: weekDayWidth * 0.72, deltaY: 0 });
+	await page.waitForTimeout(40);
+	const fluidWeek = await weekStrip.evaluate((element) => ({
+		scrollLeft: element.scrollLeft,
+		viewportX: window.scrollX,
+	}));
+	if (
+		!page.url().includes("datum=2026-07-20") ||
+		fluidWeek.scrollLeft <= weekGeometry.scrollLeft + weekDayWidth * 0.5 ||
+		fluidWeek.viewportX !== 0
+	) {
+		throw new Error(`ia_ui_calendar_week_not_fluid_${browserName}:${JSON.stringify(fluidWeek)}`);
+	}
+	await waitForState("week", "2026-07-21");
+	await page.waitForFunction(() => {
+		const first = document.querySelector<HTMLElement>(
+			'[data-calendar-day-header][data-calendar-primary="true"]',
+		);
+		return first?.dataset.calendarDayHeader === "2026-07-21";
+	});
+	const snappedWeek = await weekStrip.evaluate((element) => {
+		const width = element.clientWidth / 7;
+		return { scrollLeft: element.scrollLeft, center: width * 3 };
+	});
+	if (Math.abs(snappedWeek.scrollLeft - snappedWeek.center) > 2) {
+		throw new Error(`ia_ui_calendar_week_not_centered_${browserName}:${JSON.stringify(snappedWeek)}`);
+	}
+	await calendar.getByRole("button", { name: "Sloupce", exact: true }).click();
+	const columnStrip = calendar.locator('[data-calendar-strip="week-columns"]');
+	await columnStrip.waitFor();
+	const columnGeometry = await columnStrip.evaluate((element) => ({
+		clientWidth: element.clientWidth,
+		scrollLeft: element.scrollLeft,
+		visibleDays: element.getAttribute("data-calendar-visible-days"),
+	}));
+	if (columnGeometry.visibleDays !== "7") {
+		throw new Error(
+			`ia_ui_calendar_columns_geometry_${browserName}:${JSON.stringify(columnGeometry)}`,
+		);
+	}
+	await calendar.dispatchEvent("wheel", {
+		deltaX: (columnGeometry.clientWidth / 7) * 0.72,
+		deltaY: 0,
+	});
+	await waitForState("week", "2026-07-22");
+	await calendar.getByRole("button", { name: "Mřížka", exact: true }).click();
+	await calendar.locator('[data-calendar-strip="week-grid"]').waitFor();
 
 	const day = calendar.locator('[data-calendar-range="day"]');
 	await day.click();
-	await waitForState("day", "2026-07-20");
+	await waitForState("day", "2026-07-22");
 	if ((await day.getAttribute("aria-pressed")) !== "true") {
 		throw new Error(`ia_ui_calendar_day_not_selected_${browserName}`);
 	}
 
 	await page.keyboard.press("ArrowRight");
-	await waitForState("day", "2026-07-21");
-
-	// Dvě prahové jednotky horizontálního gesta (2 × 32 px) posunou den o dva.
-	await calendar.dispatchEvent("wheel", { deltaX: 64, deltaY: 0 });
 	await waitForState("day", "2026-07-23");
-	await calendar.dispatchEvent("wheel", { deltaX: -32, deltaY: 0 });
-	await waitForState("day", "2026-07-22");
+	const dayStrip = calendar.locator('[data-calendar-strip="day-grid"]');
+	await dayStrip.waitFor();
+	await dayStrip.evaluate((element) => {
+		element.scrollTop = 310;
+	});
+	const dayWidth = await dayStrip.evaluate((element) => element.clientWidth);
+	await calendar.dispatchEvent("wheel", { deltaX: dayWidth * 0.64, deltaY: 0 });
+	await page.waitForTimeout(40);
+	if (!page.url().includes("datum=2026-07-23")) {
+		throw new Error(`ia_ui_calendar_day_committed_too_early_${browserName}:${page.url()}`);
+	}
+	await waitForState("day", "2026-07-24");
+	const preservedVertical = await dayStrip.evaluate((element) => element.scrollTop);
+	if (Math.abs(preservedVertical - 310) > 2) {
+		throw new Error(`ia_ui_calendar_vertical_reset_${browserName}:${preservedVertical}`);
+	}
+	await calendar.dispatchEvent("wheel", { deltaX: -dayWidth * 0.64, deltaY: 0 });
+	await waitForState("day", "2026-07-23");
 	if ((await page.evaluate(() => window.scrollX)) !== 0) {
 		throw new Error(`ia_ui_calendar_moved_viewport_${browserName}`);
 	}
 
 	const month = calendar.locator('[data-calendar-range="month"]');
 	await month.click();
-	await waitForState("month", "2026-07-22");
+	await waitForState("month", "2026-07-23");
 	await calendar.getByRole("button", { name: "Další", exact: true }).click();
 	await waitForState("month", "2026-08-01");
 	// WebKit jinak může přenést zrušený bootstrap request do dalšího page.goto
@@ -519,7 +609,7 @@ async function verifyCalendarNavigation(
 	runtimeErrors.splice(runtimeErrorStart);
 
 	console.log(
-		`  ✓ ${browserName}: calendar navigation stays inside the surface without viewport drift`,
+		`  ✓ ${browserName}: calendar uses a fluid seven-day strip, day snap and stable 06:00 orientation`,
 	);
 }
 

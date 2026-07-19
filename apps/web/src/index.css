@@ -51,8 +51,26 @@ body {
 	overflow-x: clip;
 }
 
-/* Kalendář je vždy široký přesně jako obrazovka. Trackpad mění jeho datumovou
-   kotvu; víkend je klidnější a pondělí zůstává čitelné i v rolovacím 7denním okně. */
+/* Den/týden jsou nativní pixelový pás s jemným viditelným posuvníkem. Po doběhu
+   se dorovnají na den; víkend je klidnější a pondělí zůstává čitelné v každé kotvě. */
+.w-calendar-strip {
+	overscroll-behavior-x: none;
+	scrollbar-color: color-mix(in srgb, var(--w-ink-3) 55%, transparent) transparent;
+	scrollbar-width: thin;
+}
+
+.w-calendar-strip::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.w-calendar-strip::-webkit-scrollbar-thumb {
+	border: 2px solid transparent;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--w-ink-3) 55%, transparent);
+	background-clip: padding-box;
+}
+
 .w-calendar-day-weekend {
 	background-color: color-mix(in srgb, var(--w-panel-2) 82%, var(--w-card));
 }
