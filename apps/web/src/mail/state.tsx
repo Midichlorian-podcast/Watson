@@ -35,6 +35,13 @@ import {
 	TH,
 } from "./data";
 import { belongsToActiveTeamInbox, countsAsUnread, isUrgentMailFlag } from "./digest";
+import {
+	DEFAULT_MAIL_SWIPE_CONFIG,
+	type MailSwipeAction,
+	type MailSwipeConfig,
+	type MailSwipeSlot,
+	normalizeMailSwipeConfig,
+} from "./swipeConfig";
 
 /** Per-thread overrides (prototyp `ov` + eff, ř. 3449–3465). */
 export interface ThreadOv {
@@ -183,6 +190,10 @@ interface MailCtxValue {
 	setFlag: (id: string, flag: string) => void;
 	setThreadState: (id: string, st: string) => void;
 	setOwner: (id: string, owner: string | null) => void;
+	// čtyři uživatelsky konfigurovatelné swipe sloty
+	swipeConfig: MailSwipeConfig;
+	setSwipeAction: (slot: MailSwipeSlot, action: MailSwipeAction) => void;
+	resetSwipeConfig: () => void;
 	// koncepty + odesílání
 	drafts: Record<string, DraftState>;
 	setDraft: (id: string, text: string, mode?: DraftState["mode"]) => void;
@@ -270,6 +281,7 @@ const LS = {
 	mbRead: "watson-mail.mbRead",
 	sig: "watson-mail.sig",
 	sigs: "watson-mail.sigs",
+	swipe: "watson-mail.swipe.v1",
 };
 
 const loadJSON = <T,>(key: string, fallback: T): T => {
@@ -319,6 +331,9 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 	const [perOsoba, setPerOsobaRaw] = useState(() => storageGet(LS.perOsoba) !== "false");
 	const [mbRead, setMbReadState] = useState<Record<string, "per" | "shared">>(() =>
 		loadJSON(LS.mbRead, {}),
+	);
+	const [swipeConfig, setSwipeConfig] = useState<MailSwipeConfig>(() =>
+		normalizeMailSwipeConfig(loadJSON<unknown>(LS.swipe, DEFAULT_MAIL_SWIPE_CONFIG)),
 	);
 	// volba podpisu per identita — drží jen explicitní volby, defaulty řeší SigPicker.sigIdOf
 	const [sigChoice, setSigChoiceState] = useState<Record<string, string>>({});
@@ -583,7 +598,11 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 					undoPatch({ spam: true }, "Označeno jako blokované");
 					break;
 				case "unread":
-					setOv(id, { read: !e.read });
+					if (unreadFor(t)) {
+						undoPatch({ read: true }, "Označeno jako přečtené");
+					} else {
+						undoPatch({ read: false }, "Označeno jako nepřečtené");
+					}
 					break;
 				case "mute":
 					setOv(id, { muted: !e.muted });
@@ -593,7 +612,7 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 					break;
 			}
 		},
-		[eff, ovOf, setOv],
+		[eff, ovOf, setOv, unreadFor],
 	);
 
 	const bulkAct = useCallback<MailCtxValue["bulkAct"]>(
@@ -912,6 +931,18 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			return next;
 		});
 	}, []);
+	const setSwipeAction = useCallback((slot: MailSwipeSlot, action: MailSwipeAction) => {
+		setSwipeConfig((current) => {
+			const next = { ...current, [slot]: action };
+			storageSet(LS.swipe, JSON.stringify(next));
+			return next;
+		});
+	}, []);
+	const resetSwipeConfig = useCallback(() => {
+		const next = { ...DEFAULT_MAIL_SWIPE_CONFIG };
+		storageSet(LS.swipe, JSON.stringify(next));
+		setSwipeConfig(next);
+	}, []);
 	const setSigChoice = useCallback((mb: string, sigId: string) => {
 		setSigChoiceState((s) => {
 			const next = { ...s, [mb]: sigId };
@@ -1076,6 +1107,9 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			setFlag: setFlagAct,
 			setThreadState,
 			setOwner,
+			swipeConfig,
+			setSwipeAction,
+			resetSwipeConfig,
 			drafts,
 			setDraft,
 			attached,
@@ -1161,6 +1195,9 @@ export function MailProvider({ children, bridge }: { children: ReactNode; bridge
 			setFlagAct,
 			setThreadState,
 			setOwner,
+			swipeConfig,
+			setSwipeAction,
+			resetSwipeConfig,
 			drafts,
 			setDraft,
 			attached,

@@ -541,15 +541,127 @@ async function verifyMailCommunicationHierarchy(
 	const swipeRows = page.locator('[data-swipe-surface="mail"]');
 	const swipeRowCount = await swipeRows.count();
 	if (swipeRowCount < 1) throw new Error(`ia_ui_mail_swipe_surface_missing_${browserName}`);
-	const swipeRow = swipeRows.nth(0);
+	const swipeRow = page.locator('[data-tid="opjak"]');
+	await swipeRow.waitFor();
 	if ((await swipeRow.evaluate((element) => getComputedStyle(element).overscrollBehaviorX)) !== "none") {
 		throw new Error(`ia_ui_mail_swipe_not_contained_${browserName}`);
 	}
-	await swipeRow.dispatchEvent("wheel", { deltaX: 24, deltaY: 0 });
-	await swipeRow.dispatchEvent("wheel", { deltaX: 0, deltaY: 32 });
+	const defaultSwipe = await swipeRow.evaluate((element) => ({
+		r1: element.getAttribute("data-swipe-r1"),
+		r2: element.getAttribute("data-swipe-r2"),
+		l1: element.getAttribute("data-swipe-l1"),
+		l2: element.getAttribute("data-swipe-l2"),
+	}));
+	if (
+		defaultSwipe.r1 !== "read" ||
+		defaultSwipe.r2 !== "pin" ||
+		defaultSwipe.l1 !== "archive" ||
+		defaultSwipe.l2 !== "snooze"
+	) {
+		throw new Error(`ia_ui_mail_swipe_defaults_${browserName}:${JSON.stringify(defaultSwipe)}`);
+	}
+
+	// V testu zpřístupníme haptiku i WebKitu. Produkce ji volá progresivně:
+	// platforma bez Vibration API zachová stejnou vizuální prahovou odezvu.
+	await page.evaluate(`
+		window.__watsonSwipeBuzz = [];
+		Object.defineProperty(navigator, "vibrate", {
+			configurable: true,
+			value: function (pattern) {
+				window.__watsonSwipeBuzz.push(Array.isArray(pattern) ? (pattern[0] || 0) : pattern);
+				return true;
+			}
+		});
+	`);
+
+	const unreadBeforeVertical = await swipeRow.getAttribute("data-unread");
+	await swipeRow.dispatchEvent("wheel", { deltaX: 0, deltaY: 80 });
+	await page.waitForTimeout(240);
+	if ((await swipeRow.getAttribute("data-unread")) !== unreadBeforeVertical) {
+		throw new Error(`ia_ui_mail_vertical_wheel_triggered_swipe_${browserName}`);
+	}
+
+	// Přirozený swipe doprava přichází z trackpadu jako záporné deltaX.
+	// Krátký práh přepne read/unread až po usazení gesta.
+	await swipeRow.dispatchEvent("wheel", { deltaX: -120, deltaY: 0 });
+	if ((await swipeRow.locator("[data-swu]").getAttribute("data-mag")) !== "r1") {
+		throw new Error(`ia_ui_mail_short_swipe_preview_${browserName}`);
+	}
+	await page.waitForTimeout(240);
+	if ((await swipeRow.getAttribute("data-unread")) === unreadBeforeVertical) {
+		throw new Error(`ia_ui_mail_short_swipe_action_${browserName}`);
+	}
+
+	// Velký práh je samostatný stav a spouští se až po skončení gesta.
+	await swipeRow.dispatchEvent("wheel", { deltaX: -270, deltaY: 0 });
+	if ((await swipeRow.locator("[data-swu]").getAttribute("data-mag")) !== "r2") {
+		throw new Error(`ia_ui_mail_long_swipe_preview_${browserName}`);
+	}
+	await page.waitForTimeout(240);
+	if ((await swipeRow.getAttribute("data-pinned")) !== "true") {
+		throw new Error(`ia_ui_mail_long_swipe_action_${browserName}`);
+	}
+	const buzz = await page.evaluate(
+		() => (window as typeof window & { __watsonSwipeBuzz?: number[] }).__watsonSwipeBuzz ?? [],
+	);
+	if (!buzz.includes(7) || !buzz.includes(14)) {
+		throw new Error(`ia_ui_mail_swipe_haptics_${browserName}:${buzz.join(",")}`);
+	}
 	if ((await page.evaluate(() => window.scrollX)) !== 0) {
 		throw new Error(`ia_ui_mail_swipe_moved_viewport_${browserName}`);
 	}
+
+	// Každý ze čtyř slotů musí být samostatně nastavitelný a přetrvat reload.
+	await page.goto(`${WEB}/nastaveni?sekce=integrace`, {
+		waitUntil: "domcontentloaded",
+		timeout: 30_000,
+	});
+	const swipeSettings = page.locator("[data-mail-swipe-settings]");
+	await swipeSettings.waitFor();
+	const configured = { r1: "pin", r2: "set_aside", l1: "assign", l2: "read" } as const;
+	for (const [slot, action] of Object.entries(configured)) {
+		await swipeSettings.locator(`[data-mail-swipe-slot="${slot}"] select`).selectOption(action);
+	}
+	await page.reload({ waitUntil: "domcontentloaded" });
+	await swipeSettings.waitFor();
+	for (const [slot, action] of Object.entries(configured)) {
+		if (
+			(await swipeSettings.locator(`[data-mail-swipe-slot="${slot}"] select`).inputValue()) !== action
+		) {
+			throw new Error(`ia_ui_mail_swipe_setting_not_persisted_${browserName}:${slot}`);
+		}
+	}
+	await page.setViewportSize({ width: 390, height: 844 });
+	const mobileSwipeLayout = await swipeSettings.evaluate((element) => ({
+		clientWidth: element.clientWidth,
+		scrollWidth: element.scrollWidth,
+		selectWidths: [...element.querySelectorAll("select")].map((select) => select.getBoundingClientRect().width),
+	}));
+	if (
+		mobileSwipeLayout.scrollWidth > mobileSwipeLayout.clientWidth + 1 ||
+		mobileSwipeLayout.selectWidths.some((width) => width < 220 || width > mobileSwipeLayout.clientWidth)
+	) {
+		throw new Error(`ia_ui_mail_swipe_settings_mobile_${browserName}:${JSON.stringify(mobileSwipeLayout)}`);
+	}
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await page.goto(`${WEB}/mail`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+	await thread.waitFor();
+	const configuredRow = page.locator('[data-tid="opjak"]');
+	await configuredRow.waitFor();
+	for (const [slot, action] of Object.entries(configured)) {
+		if ((await configuredRow.getAttribute(`data-swipe-${slot}`)) !== action) {
+			throw new Error(`ia_ui_mail_swipe_setting_not_live_${browserName}:${slot}`);
+		}
+	}
+	await page.goto(`${WEB}/nastaveni?sekce=integrace`, {
+		waitUntil: "domcontentloaded",
+		timeout: 30_000,
+	});
+	await swipeSettings.waitFor();
+	await swipeSettings.getByRole("button", { name: "Obnovit výchozí mapování", exact: true }).click();
+	await page.goto(`${WEB}/mail`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+	await thread.waitFor();
+
 	const suggestionBox = await suggestion.boundingBox();
 	if (!suggestionBox || suggestionBox.height > 130) {
 		throw new Error(`ia_ui_mail_ai_not_compact_${browserName}:${suggestionBox?.height ?? "missing"}`);
@@ -583,7 +695,7 @@ async function verifyMailCommunicationHierarchy(
 	await assertAxeClean(page, `${browserName}_mail_communication_hierarchy`);
 	await screenshot(page, browserName, "ia-mail-communication-hierarchy");
 	console.log(
-		`  ✓ ${browserName}: mail prioritizes reply/compose; AI, tasks and handoff are secondary`,
+		`  ✓ ${browserName}: mail hierarchy and four configurable contained swipe states work`,
 	);
 }
 

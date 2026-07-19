@@ -78,12 +78,17 @@
 [data-swpill="r"]{ left:8px; }
 [data-swpill="l"]{ right:8px; }
 [data-mag="r0"] [data-swpill="r"], [data-mag="l0"] [data-swpill="l"]{ opacity:.55; }
+[data-mag="r1"] [data-swpill="r"], [data-mag="l1"] [data-swpill="l"]{ box-shadow:inset 0 0 0 2px rgba(255,255,255,.38); }
+[data-mag="r2"] [data-swpill="r"], [data-mag="l2"] [data-swpill="l"]{ box-shadow:inset 0 0 0 3px rgba(255,255,255,.62), 0 3px 12px rgba(0,0,0,.14); }
 [data-swu][data-act="done"] [data-swpill]{ background:var(--success); }
 [data-swu][data-act="pin"] [data-swpill]{ background:var(--brass); }
 [data-swu][data-act="snooze"] [data-swpill]{ background:#24395a; }
 [data-swu][data-act="arch"] [data-swpill]{ background:var(--ink-3); }
 [data-swu][data-act="trash"] [data-swpill]{ background:var(--overdue); }
 [data-swu][data-act="unread"] [data-swpill]{ background:var(--avatar-navy); }
+[data-swu][data-act="assign"] [data-swpill]{ background:var(--mb-info); }
+[data-swu][data-act="aside"] [data-swpill]{ background:var(--mb-podcast); }
+[data-swu][data-act="none"] [data-swpill]{ background:var(--ink-3); }
 [data-swtxt]{ white-space:nowrap; }
 [data-accell]{ width:76px; flex:none; text-align:center; padding:10px 0; font-family:var(--w-font-display); font-weight:700; font-size:11.5px; cursor:pointer; border-radius:8px; }
 [data-accell][data-v="2"]{ color:var(--brass-text); }

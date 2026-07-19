@@ -27,6 +27,7 @@ import { useWatson } from "../lib/watson";
 import { CtxMenu } from "./CtxMenu";
 import { AI_QUEUE_SEED, type AiQueueItem, GK, type MailThread, MB, P, SLA, STL } from "./data";
 import { type ThreadEff, useMail } from "./state";
+import type { MailSwipeAction } from "./swipeConfig";
 
 /** Ženská příjmení v seed světě (prototyp FEM — „už četla" vs „už četl"). */
 const FEM: Record<string, 1> = { tm: 1, mh: 1, ps: 1 };
@@ -396,42 +397,70 @@ function MailRow({
 	const swcRef = useRef<HTMLDivElement>(null);
 	const swuRef = useRef<HTMLDivElement>(null);
 
-	// stavové akce stran — reverzní pro reverzní stav (feedback: pin↔odepnout…)
+	// Akce jsou plně konfigurovatelné, ale jejich význam zůstává stavový:
+	// přečtené↔nepřečtené, pin↔odepnout, archiv↔obnovit atd.
+	const actionFor = (action: MailSwipeAction) => {
+		switch (action) {
+			case "read":
+				return {
+					css: "unread",
+					label: vm.unread ? "Přečtené" : "Nepřečtené",
+					run: () => m.rowAct(t.id, "unread"),
+				};
+			case "pin":
+				return {
+					css: "pin",
+					label: e.pin ? "Odepnout" : "Připnout",
+					run: () => m.rowAct(t.id, "pin"),
+				};
+			case "done":
+				return e.closed
+					? {
+							css: "done",
+							label: "Vrátit",
+							run: () => {
+								m.setOv(t.id, { closed: false, st: "otevreny" });
+								showToast("Vráceno mezi otevřené");
+							},
+						}
+					: { css: "done", label: "Hotovo", run: () => m.rowAct(t.id, "done") };
+			case "archive":
+				return e.arch
+					? { css: "arch", label: "Obnovit", run: () => m.rowAct(t.id, "restore") }
+					: { css: "arch", label: "Archiv", run: () => m.rowAct(t.id, "arch") };
+			case "snooze":
+				return e.snoozed
+					? { css: "snooze", label: "Probudit", run: () => m.rowAct(t.id, "restore") }
+					: { css: "snooze", label: "Odložit", run: () => m.rowAct(t.id, "snooze") };
+			case "trash":
+				return e.trash
+					? { css: "trash", label: "Obnovit", run: () => m.rowAct(t.id, "restore") }
+					: { css: "trash", label: "Koš", run: () => m.rowAct(t.id, "trash") };
+			case "assign":
+				return {
+					css: "assign",
+					label: e.owner === "ad" ? "Uvolnit" : "Převzít",
+					run: () => m.setOwner(t.id, e.owner === "ad" ? null : "ad"),
+				};
+			case "set_aside":
+				return e.snoozed === "bez termínu"
+					? { css: "aside", label: "Vrátit", run: () => m.rowAct(t.id, "restore") }
+					: {
+							css: "aside",
+							label: "Set Aside",
+							run: () => {
+								m.setOv(t.id, { snoozed: "bez termínu" });
+								showToast("Set Aside — čeká v Odloženo bez termínu");
+							},
+						};
+			case "none":
+				return { css: "none", label: "Bez akce", run: () => {} };
+		}
+	};
 	const sideActs = (side: SwipeSide) =>
 		side === "r"
-			? [
-					e.closed
-						? {
-								css: "done",
-								label: "Vrátit",
-								run: () => {
-									m.setOv(t.id, { closed: false, st: "otevreny" });
-									showToast("Vráceno mezi otevřené");
-								},
-							}
-						: { css: "done", label: "Hotovo", run: () => m.rowAct(t.id, "done") },
-					{
-						css: "pin",
-						label: e.pin ? "Odepnout" : "Připnout",
-						run: () => m.rowAct(t.id, "pin"),
-					},
-				]
-			: [
-					e.snoozed
-						? {
-								css: "snooze",
-								label: "Probudit",
-								run: () => m.rowAct(t.id, "restore"),
-							}
-						: {
-								css: "snooze",
-								label: "Odložit",
-								run: () => m.rowAct(t.id, "snooze"),
-							},
-					e.arch
-						? { css: "arch", label: "Obnovit", run: () => m.rowAct(t.id, "restore") }
-						: { css: "arch", label: "Archiv", run: () => m.rowAct(t.id, "arch") },
-				];
+			? [actionFor(m.swipeConfig.r1), actionFor(m.swipeConfig.r2)]
+			: [actionFor(m.swipeConfig.l1), actionFor(m.swipeConfig.l2)];
 
 	// vizuál: hook dodává eased dx + mag → DOM zápis (data-swu/pilulky prototypu)
 	const swApply = (dx: number, mag: string) => {
@@ -465,12 +494,12 @@ function MailRow({
 	const swipe = useSwipe({
 		onUpdate: swApply,
 		onSwipe: (mag: "r1" | "r2" | "l1" | "l2") => {
-			const acts = sideActs(mag[0] === "r" ? "r" : "l");
-			acts[mag.endsWith("2") ? 1 : 0]?.run();
+			actionFor(m.swipeConfig[mag]).run();
 		},
 	});
 	return (
 		<div
+			ref={swipe.surfaceRef}
 			role="group"
 			aria-label={`Vlákno ${t.subj}`}
 			onContextMenu={(ev) => {
@@ -482,8 +511,15 @@ function MailRow({
 			data-tid={t.id}
 			data-mrow
 			data-swipe-surface="mail"
+			data-swipe-r1={m.swipeConfig.r1}
+			data-swipe-r2={m.swipeConfig.r2}
+			data-swipe-l1={m.swipeConfig.l1}
+			data-swipe-l2={m.swipeConfig.l2}
 			data-sel={m.sel === t.id || undefined}
 			data-unread={vm.unread || undefined}
+			data-pinned={e.pin || undefined}
+			data-archived={e.arch || undefined}
+			data-snoozed={!!e.snoozed || undefined}
 			style={{
 				touchAction: "pan-y",
 				overscrollBehaviorX: "none",

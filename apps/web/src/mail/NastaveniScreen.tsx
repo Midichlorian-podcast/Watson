@@ -5,7 +5,8 @@
  * schránkách" na SDÍLENÝ m.perOsoba/m.setPerOsoba (globální výchozí, per
  * schránka se ladí v Administraci). Zbytek (notifikace, VIP, soukromí,
  * chování po archivaci, OOO, podpisy) je demo vrstva držená lokálně
- * (useState z NAST_SEED). Swipe gesta vynechána — seznam je zatím nemá.
+ * (useState z NAST_SEED). Čtyři swipe sloty jsou živá perzistentní preference
+ * MailProvideru a seznam jejich změnu používá okamžitě.
  */
 import { useState } from "react";
 import { useTheme } from "../layout/useTheme";
@@ -14,6 +15,7 @@ import { MB, NAST_SEED, type NastSeed } from "./data";
 import { MailboxWizard } from "./MailboxWizard";
 import { sigIdOf } from "./SigPicker";
 import { useMail } from "./state";
+import { MAIL_SWIPE_ACTIONS, type MailSwipeAction, type MailSwipeSlot } from "./swipeConfig";
 
 /** Kopie osobního seedu — lokální demo stav se nesmí propsat do seedu. */
 const nastInit = (): NastSeed => ({
@@ -61,6 +63,29 @@ const headStyle = {
 	padding: "13px 18px 11px",
 	borderBottom: "1px solid var(--line)",
 } as const;
+
+const SWIPE_ACTION_LABEL: Record<MailSwipeAction, string> = {
+	read: "Přečtené / nepřečtené",
+	pin: "Připnout / odepnout",
+	archive: "Archivovat / obnovit",
+	snooze: "Odložit / probudit",
+	done: "Hotovo / vrátit",
+	trash: "Přesunout do koše",
+	assign: "Převzít / uvolnit",
+	set_aside: "Set Aside / vrátit",
+	none: "Bez akce",
+};
+
+const SWIPE_SLOT_ROWS: Array<{
+	slot: MailSwipeSlot;
+	label: string;
+	hint: string;
+}> = [
+	{ slot: "r1", label: "Krátce doprava", hint: "první práh · 110 px" },
+	{ slot: "r2", label: "Dlouze doprava", hint: "druhý práh · 260 px" },
+	{ slot: "l1", label: "Krátce doleva", hint: "první práh · 110 px" },
+	{ slot: "l2", label: "Dlouze doleva", hint: "druhý práh · 260 px" },
+];
 
 /** Inline editor jednoho podpisu (název + tělo po řádcích). */
 function SigEditor({
@@ -279,6 +304,110 @@ export function NastaveniScreen({ embedded = false }: { embedded?: boolean } = {
 						</div>
 					</div>
 				)}
+
+				{/* ── Čtyři konfigurovatelná swipe gesta (Spark model) ── */}
+				<div style={{ ...cardStyle, marginTop: 18 }} data-mail-swipe-settings>
+					<div style={headStyle}>Gesta přejetím</div>
+					<div
+						style={{
+							padding: "10px 18px",
+							fontFamily: "var(--w-font-body)",
+							fontSize: 11,
+							lineHeight: 1.5,
+							color: "var(--ink-3)",
+							background: "var(--panel-2)",
+						}}
+					>
+						Každý směr má malý a velký práh. Akce se potvrdí puštěním; podporované zařízení
+						krátce zavibruje při dosažení prahu a znovu při provedení.
+					</div>
+					{SWIPE_SLOT_ROWS.map(({ slot, label, hint }) => (
+						<label
+							key={slot}
+							data-mail-swipe-slot={slot}
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 12,
+								padding: "11px 18px",
+								borderBottom: "1px solid var(--line)",
+								flexWrap: "wrap",
+							}}
+						>
+							<span style={{ flex: 1, minWidth: 150 }}>
+								<span
+									style={{
+										display: "block",
+										fontFamily: "var(--w-font-display)",
+										fontWeight: 700,
+										fontSize: 12,
+										color: "var(--ink-2)",
+									}}
+								>
+									{label}
+								</span>
+								<span
+									style={{
+										display: "block",
+										fontFamily: "var(--w-font-mono)",
+										fontSize: 9.5,
+										color: "var(--ink-3)",
+										marginTop: 2,
+									}}
+								>
+									{hint}
+								</span>
+							</span>
+							<select
+								aria-label={`Akce pro ${label.toLowerCase()}`}
+								value={m.swipeConfig[slot]}
+								onChange={(event) =>
+									m.setSwipeAction(slot, event.target.value as MailSwipeAction)
+								}
+								style={{
+									minHeight: 44,
+									minWidth: 220,
+									border: "1px solid var(--line)",
+									borderRadius: 9,
+									background: "var(--panel)",
+									color: "var(--ink)",
+									padding: "0 10px",
+									fontFamily: "var(--w-font-body)",
+									fontSize: 12,
+								}}
+							>
+								{MAIL_SWIPE_ACTIONS.map((action) => (
+									<option key={action} value={action}>
+										{SWIPE_ACTION_LABEL[action]}
+									</option>
+								))}
+							</select>
+						</label>
+					))}
+					<div style={{ padding: "10px 18px" }}>
+						<button
+							type="button"
+							onClick={() => {
+								m.resetSwipeConfig();
+								showToast("Výchozí gesta obnovena");
+							}}
+							style={{
+								minHeight: 44,
+								border: "1px solid var(--line)",
+								borderRadius: 9,
+								background: "transparent",
+								color: "var(--ink-2)",
+								padding: "0 13px",
+								fontFamily: "var(--w-font-display)",
+								fontWeight: 600,
+								fontSize: 11.5,
+								cursor: "pointer",
+							}}
+						>
+							Obnovit výchozí mapování
+						</button>
+					</div>
+				</div>
 
 				{/* ── Notifikace (prototyp ř. 1627–1651) ── */}
 				<div style={cardStyle}>

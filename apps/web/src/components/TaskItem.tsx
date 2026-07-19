@@ -205,6 +205,7 @@ export function TaskItem({
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: obal zpracovává pouze dotykové swipe gesto, všechny akce uvnitř zůstávají nativní ovládací prvky
 		<div
+			ref={swipe.surfaceRef}
 			{...swipe.handlers}
 			onContextMenu={(e) => cm.open(e, ctxItems)}
 			data-swipe-surface="task"
