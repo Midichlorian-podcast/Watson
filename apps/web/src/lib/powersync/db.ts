@@ -5,7 +5,12 @@ import { storageGet, storageKeys, storageRemove, storageSet } from "../storage";
 import { withCrossWindowLock } from "../windowCoordinator";
 import { browserSupportsSafeMultiWindowData } from "../windowSurfaces";
 import { AppSchema } from "./AppSchema";
-import { connectBeforePublish, deleteIndexedDatabase } from "./connectionLifecycle";
+import {
+	assertPowerSyncStartup,
+	connectBeforePublish,
+	deleteIndexedDatabase,
+	isReusablePowerSyncStatus,
+} from "./connectionLifecycle";
 import { WatsonConnector } from "./connector";
 
 /**
@@ -196,7 +201,14 @@ export function initPowerSyncForUser(userId: string): Promise<void> {
 	return enqueue(async () => {
 		const h = await userHash(userId);
 		return withCrossWindowLock(`powersync-init:${h}`, async () => {
-			if (currentHash === h && powerSync) return;
+			if (
+				currentHash === h &&
+				powerSync &&
+				!powerSync.closed &&
+				isReusablePowerSyncStatus(powerSync.currentStatus)
+			) {
+				return;
+			}
 
 			if (powerSync) {
 				try {
@@ -224,7 +236,14 @@ export function initPowerSyncForUser(userId: string): Promise<void> {
 			try {
 				await connectBeforePublish({
 					candidate: db,
-					connect: async (candidate) => candidate.connect(new WatsonConnector()),
+					connect: async (candidate) => {
+						// SDK connection manager chybu inicializace streamu interně polyká.
+						// `waitForReady` proto musí proběhnout přímo zde a výsledný status
+						// musí obsahovat buď spojení, nebo dříve potvrzenou offline cache.
+						await candidate.waitForReady();
+						await candidate.connect(new WatsonConnector());
+						assertPowerSyncStartup(candidate.currentStatus);
+					},
 					publish: (candidate) => {
 						powerSync = candidate;
 						currentHash = h;

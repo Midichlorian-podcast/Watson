@@ -37,7 +37,7 @@ export function App() {
 	// CC-P0-03: router se NErenderuje, dokud není otevřená per-user DB právě
 	// přihlášeného uživatele — jinak by dotazy četly databázi předchozí identity.
 	const [dbUserId, setDbUserId] = useState<string | null>(null);
-	const [dbError, setDbError] = useState<string | null>(null);
+	const [dbError, setDbError] = useState<{ message: string; code: string } | null>(null);
 	const [dbAttempt, setDbAttempt] = useState(0);
 	const userId = session?.user?.id ?? null;
 
@@ -56,10 +56,16 @@ export function App() {
 				if (!cancelled) setDbUserId(userId);
 			})
 			.catch((error: unknown) => {
+				const errorChain = safeDbErrorChain(error);
 				if (import.meta.env.DEV) {
-					console.error(`[powersync] init selhal ${JSON.stringify(safeDbErrorChain(error))}`);
+					console.error(`[powersync] init selhal ${JSON.stringify(errorChain)}`);
 				}
-				if (!cancelled) setDbError("Lokální data se nepodařilo bezpečně otevřít nebo zašifrovat.");
+				if (!cancelled) {
+					setDbError({
+						message: "Lokální data se nepodařilo bezpečně otevřít nebo připojit.",
+						code: errorChain.map((item) => item.code).join(" → ") || "local_database_unknown",
+					});
+				}
 			});
 		return () => {
 			cancelled = true;
@@ -75,10 +81,15 @@ export function App() {
 			return (
 				<div className="grid min-h-full place-items-center p-6">
 					<div className="max-w-md text-center">
-						<p className="text-sm font-semibold text-ink">{dbError}</p>
+						<p className="text-sm font-semibold text-ink">{dbError.message}</p>
 						<p className="mt-2 text-sm text-ink-3">
 							Zkontroluj připojení. Neodeslané offline změny zůstaly na zařízení a nebyly smazány.
 						</p>
+						{import.meta.env.DEV && (
+							<p data-db-init-error className="mt-2 font-mono text-ink-3 text-xs">
+								Vývojový kód: {dbError.code}
+							</p>
+						)}
 						<button
 							type="button"
 							className="mt-4 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white"

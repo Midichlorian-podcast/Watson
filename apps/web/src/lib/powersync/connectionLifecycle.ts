@@ -2,6 +2,41 @@ type DatabaseCandidate = {
 	close: () => Promise<void>;
 };
 
+export type StartupSyncStatus = {
+	connected?: boolean;
+	connecting?: boolean;
+	hasSynced?: boolean;
+	lastSyncedAt?: Date | string | null;
+	dataFlowStatus?: { downloadError?: unknown };
+};
+
+/**
+ * PowerSync `connect()` může při chybě vytvoření streamu interně chybu spolknout
+ * a vrátit se s výchozím prázdným statusem. Takový stav nesmí být publikovaný
+ * jako hotová DB — UI by pak navždy tvrdilo „Ověřuji data…“ bez recovery akce.
+ * Dříve potvrzená cache je naopak použitelná i při aktuálním výpadku sítě.
+ */
+export function assertPowerSyncStartup(status: StartupSyncStatus): void {
+	const cached = status.hasSynced === true || status.lastSyncedAt != null;
+	if (cached) return;
+	if (status.dataFlowStatus?.downloadError != null) {
+		throw new Error("powersync_initial_download_failed");
+	}
+	if (status.connected) return;
+	throw new Error("powersync_connection_not_started");
+}
+
+/** Zda lze HMR instanci bezpečně znovu použít místo vytvoření nové. */
+export function isReusablePowerSyncStatus(status: StartupSyncStatus): boolean {
+	const cached = status.hasSynced === true || status.lastSyncedAt != null;
+	if (!cached && status.dataFlowStatus?.downloadError != null) return false;
+	return Boolean(
+		status.connected ||
+			status.connecting ||
+			cached,
+	);
+}
+
 /**
  * Připojení databáze je transakční z pohledu zbytku aplikace: kandidát se
  * zveřejní až po úspěšném dokončení inicializace. Při chybě se vždy zavře,

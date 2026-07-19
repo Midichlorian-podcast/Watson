@@ -7,7 +7,7 @@
 		"dev": "tsx watch src/index.ts",
 		"build": "tsc",
 		"start": "node dist/index.js",
-		"test": "tsx verify-ops-metrics.ts && tsx verify-public-api-unit.ts",
+		"test": "tsx verify-ops-metrics.ts && tsx verify-public-api-unit.ts && tsx verify-local-data-key-policy.ts",
 		"lint": "biome lint . --error-on-warnings",
 		"typecheck": "tsc --noEmit",
 		"verify:reminders": "tsx verify-reminders.ts",

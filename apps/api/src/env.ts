@@ -41,8 +41,9 @@ export const env = {
 	backupSigningSecret: process.env.BACKUP_SIGNING_SECRET,
 	/**
 	 * Kořenový secret pro per-user klíče lokální PowerSync DB. Nesmí se sdílet
-	 * s Better Auth ani exporty. Změna hodnoty záměrně invaliduje jen lokální
-	 * cache (serverová data zůstávají autoritativní).
+	 * s Better Auth ani exporty. Produkce a izolované testovací porty hodnotu
+	 * respektují; primární localhost 8787 používá stabilní dev kořen, aby
+	 * dočasný UI audit neznečitelnil Safari cache na společném originu.
 	 */
 	localDataEncryptionSecret: process.env.LOCAL_DATA_ENCRYPTION_SECRET,
 	/** Rotovatelný AES-256-GCM keyring výhradně pro mailbox OAuth/IMAP credentials. */

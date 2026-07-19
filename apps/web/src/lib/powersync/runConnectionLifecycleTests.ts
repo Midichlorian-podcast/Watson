@@ -1,4 +1,9 @@
-import { connectBeforePublish, deleteIndexedDatabase } from "./connectionLifecycle";
+import {
+	assertPowerSyncStartup,
+	connectBeforePublish,
+	deleteIndexedDatabase,
+	isReusablePowerSyncStatus,
+} from "./connectionLifecycle";
 
 let failed = 0;
 const check = (label: string, condition: boolean, detail?: unknown) => {
@@ -77,6 +82,49 @@ console.log("(c) fyzické smazání IndexedDB");
 	request.onsuccess?.();
 	await deletion;
 	check("promise proběhne po onsuccess", resolved);
+}
+
+console.log("(d) tichý prázdný startup status se nesmí publikovat");
+{
+	let emptyRejected = false;
+	try {
+		assertPowerSyncStartup({});
+	} catch (error) {
+		emptyRejected = error instanceof Error && error.message === "powersync_connection_not_started";
+	}
+	check("prázdný status je chyba, ne nekonečné Ověřuji data", emptyRejected);
+	let downloadRejected = false;
+	try {
+		assertPowerSyncStartup({ dataFlowStatus: { downloadError: new Error("network") } });
+	} catch (error) {
+		downloadRejected =
+			error instanceof Error && error.message === "powersync_initial_download_failed";
+	}
+	check("cold-start download chyba je explicitní", downloadRejected);
+	let connectedDownloadRejected = false;
+	try {
+		assertPowerSyncStartup({
+			connected: true,
+			dataFlowStatus: { downloadError: new Error("invalid token") },
+		});
+	} catch (error) {
+		connectedDownloadRejected =
+			error instanceof Error && error.message === "powersync_initial_download_failed";
+	}
+	check("spojení bez cache neschová download chybu", connectedDownloadRejected);
+	check("živé spojení je použitelné", isReusablePowerSyncStatus({ connected: true }));
+	check(
+		"dříve potvrzená offline cache je použitelná",
+		isReusablePowerSyncStatus({ connected: false, hasSynced: true }),
+	);
+	check(
+		"HMR nepřevezme cold-start instanci s download chybou",
+		!isReusablePowerSyncStatus({
+			connected: true,
+			dataFlowStatus: { downloadError: new Error("invalid token") },
+		}),
+	);
+	check("prázdná HMR instance se znovu nepoužije", !isReusablePowerSyncStatus({}));
 }
 
 if (failed) {

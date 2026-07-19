@@ -1,5 +1,4 @@
 import "./env"; // načte .env (musí být první)
-import { createHmac } from "node:crypto";
 import { serve } from "@hono/node-server";
 import {
 	and,
@@ -50,6 +49,7 @@ import { intakeFormRoutes } from "./intakeForms";
 import { integrationRoutes } from "./integrations";
 import { knowledgeRoutes } from "./knowledge";
 import { luckyOsV1Routes } from "./luckyOsV1";
+import { deriveLocalDataKey, resolveLocalDataEncryptionRoot } from "./localDataKey";
 import { mailAccountRoutes } from "./mailAccounts";
 import { mailAdvancedRoutes } from "./mailAdvanced";
 import { mailExecutionRoutes } from "./mailExecution";
@@ -539,12 +539,14 @@ app.get("/api/me", async (c) => {
 app.get("/api/me/local-data-key", async (c) => {
 	const session = await auth.api.getSession({ headers: c.req.raw.headers });
 	if (!session) return c.json({ error: "unauthorized" }, 401);
-	const root =
-		env.localDataEncryptionSecret ??
-		"watson-dev-local-data-encryption-secret-not-for-production";
-	const key = createHmac("sha256", root)
-		.update(`watson-local-db:v1:${session.user.id}`)
-		.digest("base64url");
+	const root = resolveLocalDataEncryptionRoot({
+		configuredSecret: env.localDataEncryptionSecret,
+		nodeEnv: process.env.NODE_ENV,
+		apiPort: env.apiPort,
+		authUrl: env.authUrl,
+		webOrigins: env.webOrigins,
+	});
+	const key = deriveLocalDataKey(root, session.user.id);
 	return c.json({ key, version: 1 });
 });
 
